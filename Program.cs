@@ -51,9 +51,11 @@ internal static class Program
     private const int HOTKEY_OPEN_SETTINGS = 5;
     private const int HOTKEY_COUNT = 5;
 
-    // 설정 파일명
-    private const string ConfigFileName = "config.json";
-    private const string AppDataFolderName = "KoEnVue";
+    // TrayClickAction 값 (P3: 매직 문자열 금지, Phase 06에서 enum 전환 예정)
+    private const string TrayClickToggle = "toggle";
+    private const string TrayClickSettings = "settings";
+
+    // 설정 파일명 → DefaultConfig에서 참조
 
     // ================================================================
     // 진입점
@@ -92,6 +94,9 @@ internal static class Program
         // 9a. 렌더링 + 애니메이션 초기화
         Overlay.Initialize(_hwndOverlay, _config);
         Animation.Initialize(_hwndMain, _hwndOverlay, _config);
+
+        // 9b. 트레이 아이콘 초기화
+        Tray.Initialize(_hwndMain, _lastImeState, _config);
 
         // 10. 감지 스레드 시작
         StartDetectionThread();
@@ -154,10 +159,8 @@ internal static class Program
         // 탐색 순서: %APPDATA%\KoEnVue\config.json → exe dir → defaults
         string[] candidates =
         [
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                AppDataFolderName, ConfigFileName),
-            Path.Combine(AppContext.BaseDirectory, ConfigFileName),
+            DefaultConfig.GetDefaultConfigPath(),
+            Path.Combine(AppContext.BaseDirectory, DefaultConfig.ConfigFileName),
         ];
 
         foreach (string path in candidates)
@@ -361,7 +364,8 @@ internal static class Program
                 newState, _config, imeChanged: true);
         }
 
-        // Phase 05: Tray 아이콘/툴팁 갱신
+        if (_config.TrayEnabled)
+            Tray.UpdateState(newState, _config);
     }
 
     private static void HandleFocusChanged(IntPtr newHwndFocus)
@@ -417,18 +421,81 @@ internal static class Program
 
     private static void HandleTrayCallback(IntPtr lParam)
     {
-        // Phase 05: 트레이 아이콘 클릭/메뉴
+        uint mouseEvent = (uint)(lParam.ToInt64() & Win32Constants.LOWORD_MASK);
+        switch (mouseEvent)
+        {
+            case Win32Constants.WM_RBUTTONUP:
+                Tray.ShowMenu(_hwndMain, _config);
+                break;
+            case Win32Constants.WM_LBUTTONUP:
+                switch (_config.TrayClickAction)
+                {
+                    case TrayClickToggle:
+                        _indicatorVisible = !_indicatorVisible;
+                        if (!_indicatorVisible) HideOverlay();
+                        break;
+                    case TrayClickSettings:
+                        Tray.OpenSettingsFile(_configFilePath);
+                        break;
+                }
+                break;
+        }
     }
 
     private static void HandleHotkey(int hotkeyId)
     {
         Logger.Debug($"Hotkey pressed: {hotkeyId}");
-        // Phase 05: 핫키 동작 실행
+        switch (hotkeyId)
+        {
+            case HOTKEY_TOGGLE_VISIBILITY:
+                _indicatorVisible = !_indicatorVisible;
+                if (!_indicatorVisible) HideOverlay();
+                break;
+            case HOTKEY_CYCLE_STYLE:
+                const int indicatorStyleCount = (int)IndicatorStyle.CaretVbar + 1;
+                var nextStyle = (IndicatorStyle)(((int)_config.IndicatorStyle + 1) % indicatorStyleCount);
+                UpdateConfigAndNotify(c => c with { IndicatorStyle = nextStyle });
+                break;
+            case HOTKEY_CYCLE_POSITION:
+                var nextPos = _config.PositionMode switch
+                {
+                    PositionMode.Caret => PositionMode.Mouse,
+                    PositionMode.Mouse => PositionMode.Fixed,
+                    _ => PositionMode.Caret,
+                };
+                UpdateConfigAndNotify(c => c with { PositionMode = nextPos });
+                break;
+            case HOTKEY_CYCLE_DISPLAY:
+                var nextDisplay = _config.DisplayMode == DisplayMode.OnEvent
+                    ? DisplayMode.Always : DisplayMode.OnEvent;
+                UpdateConfigAndNotify(c => c with { DisplayMode = nextDisplay });
+                break;
+            case HOTKEY_OPEN_SETTINGS:
+                Tray.OpenSettingsFile(_configFilePath);
+                break;
+        }
     }
 
     private static void HandleMenuCommand(int commandId)
     {
-        // Phase 05: 트레이 메뉴 명령 처리
+        Tray.HandleMenuCommand(commandId, _config, _hwndMain, _configFilePath,
+            updateConfig: newConfig =>
+            {
+                _config = newConfig;
+                Overlay.HandleConfigChanged(_config);
+                if (_config.TrayEnabled)
+                    Tray.UpdateState(_lastImeState, _config);
+                Tray.SaveConfig(_config, _configFilePath);
+            });
+    }
+
+    private static void UpdateConfigAndNotify(Func<AppConfig, AppConfig> transform)
+    {
+        _config = transform(_config);
+        Overlay.HandleConfigChanged(_config);
+        if (_config.TrayEnabled)
+            Tray.UpdateState(_lastImeState, _config);
+        Tray.SaveConfig(_config, _configFilePath);
     }
 
     private static void HandlePowerResume()
@@ -712,7 +779,8 @@ internal static class Program
         if (_hwndOverlay != IntPtr.Zero)
             User32.DestroyWindow(_hwndOverlay);
 
-        // 5. Phase 05: Tray.Remove()
+        // 5. 트레이 아이콘 제거
+        Tray.Remove();
 
         // 6. Mutex 해제
         _mutex?.ReleaseMutex();

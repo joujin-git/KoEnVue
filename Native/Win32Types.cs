@@ -231,6 +231,7 @@ internal static class Win32Constants
     public const uint NIM_ADD            = 0x00000000;
     public const uint NIM_MODIFY         = 0x00000001;
     public const uint NIM_DELETE         = 0x00000002;
+    public const uint NIM_SETVERSION     = 0x00000004;
     public const uint NIF_MESSAGE        = 0x00000001;
     public const uint NIF_ICON           = 0x00000002;
     public const uint NIF_TIP            = 0x00000004;
@@ -265,6 +266,7 @@ internal static class Win32Constants
     public const uint MF_BYPOSITION      = 0x0400;
     public const uint TPM_BOTTOMALIGN    = 0x0020;
     public const uint TPM_LEFTALIGN      = 0x0000;
+    public const uint TPM_RIGHTBUTTON    = 0x0002;
     public const uint TPM_RETURNCMD      = 0x0100;
 
     // --- SetWindowPos ---
@@ -301,6 +303,9 @@ internal static class Win32Constants
     // LOWORD(HKL) -> LANGID, 0x0412 = 한국어
     public const ushort LANGID_KOREAN    = 0x0412;
     public const long HKL_LANGID_MASK   = 0xFFFF;  // LOWORD 추출 마스크
+
+    // --- LOWORD/HIWORD 마스크 ---
+    public const uint LOWORD_MASK       = 0xFFFF;
 
     // --- 버퍼 크기 ---
     public const int MAX_CLASS_NAME     = 256;

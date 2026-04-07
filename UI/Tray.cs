@@ -1,0 +1,447 @@
+using System.Diagnostics;
+using System.Text.Json;
+using KoEnVue.Config;
+using KoEnVue.Models;
+using KoEnVue.Native;
+using KoEnVue.Utils;
+
+namespace KoEnVue.UI;
+
+/// <summary>
+/// Shell_NotifyIconW 기반 시스템 트레이 아이콘 관리 + 팝업 메뉴 + 시작등록 + 설정파일 열기.
+/// WinForms NotifyIcon 사용 금지 (P1).
+/// </summary>
+internal static class Tray
+{
+    // ================================================================
+    // 메뉴 항목 ID (P3: 매직 넘버 금지)
+    // ================================================================
+
+    // 서브메뉴: 인디케이터 스타일
+    private const int IDM_STYLE_DOT       = 1001;
+    private const int IDM_STYLE_SQUARE    = 1002;
+    private const int IDM_STYLE_UNDERLINE = 1003;
+    private const int IDM_STYLE_VBAR      = 1004;
+    private const int IDM_STYLE_LABEL     = 1005;
+
+    // 서브메뉴: 표시 모드
+    private const int IDM_DISPLAY_EVENT   = 2001;
+    private const int IDM_DISPLAY_ALWAYS  = 2002;
+
+    // 서브메뉴: 투명도
+    private const int IDM_OPACITY_HIGH    = 3001;
+    private const int IDM_OPACITY_NORMAL  = 3002;
+    private const int IDM_OPACITY_LOW     = 3003;
+
+    // 메인 메뉴
+    private const int IDM_STARTUP         = 4001;
+    private const int IDM_OPEN_SETTINGS   = 4002;
+    private const int IDM_EXIT            = 4003;
+
+    // schtasks 작업 이름
+    private const string TaskName = "KoEnVue";
+
+    // 설정 파일 경로 → DefaultConfig에서 참조
+
+    // 투명도 프리셋 라벨 (P2: 한글)
+    private static readonly string[] OpacityLabels = ["진하게", "보통", "연하게"];
+
+    // P3: 매직 넘버 금지
+    private const double OpacityTolerance = 0.001;
+    private const int TooltipMaxLength = 127; // szTip[128], null 종료 고려
+    private const int SchtasksQueryTimeoutMs = 3000;
+    private const int SchtasksCommandTimeoutMs = 5000;
+
+    // ================================================================
+    // 내부 상태
+    // ================================================================
+
+    private static bool _initialized;
+    private static IntPtr _hwndMain;
+    private static SafeIconHandle? _currentIcon;
+
+    // ================================================================
+    // Public API
+    // ================================================================
+
+    /// <summary>
+    /// 트레이 아이콘 등록 (NIM_ADD + NIM_SETVERSION).
+    /// config.TrayEnabled == false 이면 건너뛴다.
+    /// </summary>
+    internal static unsafe void Initialize(IntPtr hwndMain, ImeState initialState, AppConfig config)
+    {
+        _hwndMain = hwndMain;
+
+        if (!config.TrayEnabled)
+        {
+            _initialized = false;
+            return;
+        }
+
+        _currentIcon = TrayIcon.CreateIcon(initialState, config);
+
+        NOTIFYICONDATAW nid = default;
+        nid.cbSize = (uint)sizeof(NOTIFYICONDATAW);
+        nid.hWnd = hwndMain;
+        nid.uFlags = Win32Constants.NIF_MESSAGE | Win32Constants.NIF_ICON
+                   | Win32Constants.NIF_TIP | Win32Constants.NIF_GUID;
+        nid.uCallbackMessage = AppMessages.WM_TRAY_CALLBACK;
+        nid.hIcon = _currentIcon.DangerousGetHandle();
+        nid.guidItem = DefaultConfig.AppGuid;
+
+        // szTip 복사 (unsafe fixed char 버퍼)
+        CopyTooltip(ref nid, initialState, config);
+
+        Shell32.Shell_NotifyIconW(Win32Constants.NIM_ADD, ref nid);
+
+        // NOTIFYICON_VERSION_4 활성화
+        nid.uVersion = Win32Constants.NOTIFYICON_VERSION_4;
+        Shell32.Shell_NotifyIconW(Win32Constants.NIM_SETVERSION, ref nid);
+
+        _initialized = true;
+        Logger.Info("Tray icon initialized");
+    }
+
+    /// <summary>
+    /// IME 상태 변경 시 아이콘 + 툴팁 갱신 (NIM_MODIFY).
+    /// </summary>
+    internal static unsafe void UpdateState(ImeState state, AppConfig config)
+    {
+        if (!_initialized) return;
+
+        var newIcon = TrayIcon.CreateIcon(state, config);
+
+        NOTIFYICONDATAW nid = default;
+        nid.cbSize = (uint)sizeof(NOTIFYICONDATAW);
+        nid.hWnd = _hwndMain;
+        nid.uFlags = Win32Constants.NIF_ICON | Win32Constants.NIF_TIP | Win32Constants.NIF_GUID;
+        nid.hIcon = newIcon.DangerousGetHandle();
+        nid.guidItem = DefaultConfig.AppGuid;
+
+        CopyTooltip(ref nid, state, config);
+
+        Shell32.Shell_NotifyIconW(Win32Constants.NIM_MODIFY, ref nid);
+
+        // 이전 아이콘 해제 후 교체
+        _currentIcon?.Dispose();
+        _currentIcon = newIcon;
+    }
+
+    /// <summary>
+    /// 트레이 아이콘 제거 (NIM_DELETE). 앱 종료 시 호출.
+    /// </summary>
+    internal static unsafe void Remove()
+    {
+        if (!_initialized) return;
+
+        NOTIFYICONDATAW nid = default;
+        nid.cbSize = (uint)sizeof(NOTIFYICONDATAW);
+        nid.uFlags = Win32Constants.NIF_GUID;
+        nid.guidItem = DefaultConfig.AppGuid;
+        Shell32.Shell_NotifyIconW(Win32Constants.NIM_DELETE, ref nid);
+
+        _currentIcon?.Dispose();
+        _currentIcon = null;
+        _initialized = false;
+
+        Logger.Info("Tray icon removed");
+    }
+
+    /// <summary>
+    /// 트레이 우클릭 팝업 메뉴 표시.
+    /// </summary>
+    internal static void ShowMenu(IntPtr hwndMain, AppConfig config)
+    {
+        if (!_initialized) return;
+
+        // --- 서브메뉴 1: 인디케이터 스타일 ---
+        IntPtr hStyleMenu = User32.CreatePopupMenu();
+        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_DOT, "점");
+        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_SQUARE, "사각");
+        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_UNDERLINE, "밑줄");
+        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_VBAR, "세로바");
+        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_LABEL, "텍스트");
+        uint currentStyleId = config.IndicatorStyle switch
+        {
+            IndicatorStyle.CaretDot => (uint)IDM_STYLE_DOT,
+            IndicatorStyle.CaretSquare => (uint)IDM_STYLE_SQUARE,
+            IndicatorStyle.CaretUnderline => (uint)IDM_STYLE_UNDERLINE,
+            IndicatorStyle.CaretVbar => (uint)IDM_STYLE_VBAR,
+            IndicatorStyle.Label => (uint)IDM_STYLE_LABEL,
+            _ => (uint)IDM_STYLE_DOT,
+        };
+        User32.CheckMenuRadioItem(hStyleMenu, (uint)IDM_STYLE_DOT, (uint)IDM_STYLE_LABEL,
+            currentStyleId, Win32Constants.MF_BYCOMMAND);
+
+        // --- 서브메뉴 2: 표시 모드 ---
+        IntPtr hDisplayMenu = User32.CreatePopupMenu();
+        User32.AppendMenuW(hDisplayMenu, Win32Constants.MF_STRING, (nuint)IDM_DISPLAY_EVENT, "이벤트 시만");
+        User32.AppendMenuW(hDisplayMenu, Win32Constants.MF_STRING, (nuint)IDM_DISPLAY_ALWAYS, "항상 표시");
+        uint currentDisplayId = config.DisplayMode == DisplayMode.OnEvent
+            ? (uint)IDM_DISPLAY_EVENT : (uint)IDM_DISPLAY_ALWAYS;
+        User32.CheckMenuRadioItem(hDisplayMenu, (uint)IDM_DISPLAY_EVENT, (uint)IDM_DISPLAY_ALWAYS,
+            currentDisplayId, Win32Constants.MF_BYCOMMAND);
+
+        // --- 서브메뉴 3: 투명도 ---
+        IntPtr hOpacityMenu = User32.CreatePopupMenu();
+        double[] presets = config.TrayQuickOpacityPresets;
+        if (presets.Length >= OpacityLabels.Length)
+        {
+            User32.AppendMenuW(hOpacityMenu, Win32Constants.MF_STRING, (nuint)IDM_OPACITY_HIGH,
+                $"{OpacityLabels[0]} {presets[0]}");
+            User32.AppendMenuW(hOpacityMenu, Win32Constants.MF_STRING, (nuint)IDM_OPACITY_NORMAL,
+                $"{OpacityLabels[1]} {presets[1]}");
+            User32.AppendMenuW(hOpacityMenu, Win32Constants.MF_STRING, (nuint)IDM_OPACITY_LOW,
+                $"{OpacityLabels[2]} {presets[2]}");
+
+            // 현재 opacity와 매칭되는 프리셋에 라디오 체크
+            uint opacityCheckId = 0;
+            if (Math.Abs(config.Opacity - presets[0]) < OpacityTolerance) opacityCheckId = (uint)IDM_OPACITY_HIGH;
+            else if (Math.Abs(config.Opacity - presets[1]) < OpacityTolerance) opacityCheckId = (uint)IDM_OPACITY_NORMAL;
+            else if (Math.Abs(config.Opacity - presets[2]) < OpacityTolerance) opacityCheckId = (uint)IDM_OPACITY_LOW;
+
+            if (opacityCheckId != 0)
+                User32.CheckMenuRadioItem(hOpacityMenu, (uint)IDM_OPACITY_HIGH, (uint)IDM_OPACITY_LOW,
+                    opacityCheckId, Win32Constants.MF_BYCOMMAND);
+        }
+
+        // --- 메인 메뉴 ---
+        IntPtr hMenu = User32.CreatePopupMenu();
+        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hStyleMenu, "인디케이터 스타일");
+        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hDisplayMenu, "표시 모드");
+        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hOpacityMenu, "투명도");
+        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
+
+        bool isStartup = IsStartupRegistered();
+        User32.AppendMenuW(hMenu, isStartup ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED,
+            (nuint)IDM_STARTUP, "시작 프로그램 등록");
+        User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_OPEN_SETTINGS, "설정 파일 열기...");
+        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_EXIT, "종료");
+
+        // --- 표시 (워크어라운드 적용) ---
+        User32.GetCursorPos(out POINT pt);
+        User32.SetForegroundWindow(hwndMain);
+        User32.TrackPopupMenu(hMenu, Win32Constants.TPM_RIGHTBUTTON,
+            pt.X, pt.Y, 0, hwndMain, IntPtr.Zero);
+        User32.PostMessage(hwndMain, Win32Constants.WM_NULL, IntPtr.Zero, IntPtr.Zero);
+
+        // --- 정리 (DestroyMenu은 서브메뉴도 자동 파괴) ---
+        User32.DestroyMenu(hMenu);
+    }
+
+    /// <summary>
+    /// WM_COMMAND 메뉴 명령 처리.
+    /// config 변경이 필요한 항목은 updateConfig 콜백으로 Program.cs에 위임.
+    /// </summary>
+    internal static void HandleMenuCommand(int commandId, AppConfig config, IntPtr hwndMain,
+        string? configFilePath, Action<AppConfig> updateConfig)
+    {
+        switch (commandId)
+        {
+            // --- 인디케이터 스타일 ---
+            case IDM_STYLE_DOT:
+                updateConfig(config with { IndicatorStyle = IndicatorStyle.CaretDot });
+                break;
+            case IDM_STYLE_SQUARE:
+                updateConfig(config with { IndicatorStyle = IndicatorStyle.CaretSquare });
+                break;
+            case IDM_STYLE_UNDERLINE:
+                updateConfig(config with { IndicatorStyle = IndicatorStyle.CaretUnderline });
+                break;
+            case IDM_STYLE_VBAR:
+                updateConfig(config with { IndicatorStyle = IndicatorStyle.CaretVbar });
+                break;
+            case IDM_STYLE_LABEL:
+                updateConfig(config with { IndicatorStyle = IndicatorStyle.Label });
+                break;
+
+            // --- 표시 모드 ---
+            case IDM_DISPLAY_EVENT:
+                updateConfig(config with { DisplayMode = DisplayMode.OnEvent });
+                break;
+            case IDM_DISPLAY_ALWAYS:
+                updateConfig(config with { DisplayMode = DisplayMode.Always });
+                break;
+
+            // --- 투명도 ---
+            case IDM_OPACITY_HIGH:
+                if (config.TrayQuickOpacityPresets.Length >= 1)
+                    updateConfig(config with { Opacity = config.TrayQuickOpacityPresets[0] });
+                break;
+            case IDM_OPACITY_NORMAL:
+                if (config.TrayQuickOpacityPresets.Length >= 2)
+                    updateConfig(config with { Opacity = config.TrayQuickOpacityPresets[1] });
+                break;
+            case IDM_OPACITY_LOW:
+                if (config.TrayQuickOpacityPresets.Length >= 3)
+                    updateConfig(config with { Opacity = config.TrayQuickOpacityPresets[2] });
+                break;
+
+            // --- 시작 프로그램 등록 ---
+            case IDM_STARTUP:
+                ToggleStartupRegistration();
+                break;
+
+            // --- 설정 파일 열기 ---
+            case IDM_OPEN_SETTINGS:
+                OpenSettingsFile(configFilePath);
+                break;
+
+            // --- 종료 ---
+            case IDM_EXIT:
+                User32.PostQuitMessage(0);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 설정 파일을 시스템 기본 편집기로 연다.
+    /// </summary>
+    internal static void OpenSettingsFile(string? configFilePath)
+    {
+        string path = configFilePath ?? GetDefaultConfigPath();
+
+        try
+        {
+            // 파일 미존재 시 기본 설정으로 생성
+            if (!File.Exists(path))
+            {
+                string? dir = Path.GetDirectoryName(path);
+                if (dir is not null)
+                    Directory.CreateDirectory(dir);
+
+                var defaultConfig = new AppConfig();
+                string json = JsonSerializer.Serialize(defaultConfig, AppConfigJsonContext.Default.AppConfig);
+                File.WriteAllText(path, json);
+            }
+
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning($"Failed to open settings file: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// AppConfig를 config.json에 저장한다.
+    /// </summary>
+    internal static void SaveConfig(AppConfig config, string? configFilePath)
+    {
+        string path = configFilePath ?? GetDefaultConfigPath();
+
+        try
+        {
+            string? dir = Path.GetDirectoryName(path);
+            if (dir is not null)
+                Directory.CreateDirectory(dir);
+
+            string json = JsonSerializer.Serialize(config, AppConfigJsonContext.Default.AppConfig);
+            File.WriteAllText(path, json);
+            Logger.Debug($"Config saved to {path}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning($"Failed to save config: {ex.Message}");
+        }
+    }
+
+    // ================================================================
+    // Private — 툴팁
+    // ================================================================
+
+    /// <summary>
+    /// szTip fixed char 버퍼에 툴팁 텍스트를 복사한다.
+    /// I18n.cs 미존재 → Phase 06에서 I18n.GetTrayTooltip()으로 교체 예정.
+    /// </summary>
+    private static unsafe void CopyTooltip(ref NOTIFYICONDATAW nid, ImeState state, AppConfig config)
+    {
+        if (!config.TrayTooltip) return; // 빈 문자열 = 툴팁 숨김
+
+        string text = GetTooltipText(state);
+        ReadOnlySpan<char> tip = text.AsSpan();
+        int len = Math.Min(tip.Length, TooltipMaxLength);
+        fixed (char* pTip = nid.szTip)
+        {
+            tip[..len].CopyTo(new Span<char>(pTip, TooltipMaxLength + 1));
+        }
+    }
+
+    private static string GetTooltipText(ImeState state) => state switch
+    {
+        ImeState.Hangul => "한글 모드",
+        ImeState.English => "영문 모드",
+        ImeState.NonKorean => "영문 모드 (비한국어)",
+        _ => "KoEnVue",
+    };
+
+    // ================================================================
+    // Private — 시작 프로그램 등록 (schtasks)
+    // ================================================================
+
+    private static bool IsStartupRegistered()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("schtasks.exe", $"/query /tn \"{TaskName}\"")
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            using var proc = Process.Start(psi);
+            proc?.WaitForExit(SchtasksQueryTimeoutMs);
+            return proc?.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void ToggleStartupRegistration()
+    {
+        try
+        {
+            if (IsStartupRegistered())
+            {
+                // 삭제
+                RunSchtasks($"/delete /tn \"{TaskName}\" /f");
+                Logger.Info("Startup registration removed");
+            }
+            else
+            {
+                // 등록
+                string exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? "";
+                RunSchtasks($"/create /tn \"{TaskName}\" /tr \"\\\"{exePath}\\\"\" /sc ONLOGON /rl HIGHEST /f");
+                Logger.Info("Startup registration created");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning($"Failed to toggle startup registration: {ex.Message}");
+        }
+    }
+
+    private static void RunSchtasks(string arguments)
+    {
+        var psi = new ProcessStartInfo("schtasks.exe", arguments)
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        using var proc = Process.Start(psi);
+        proc?.WaitForExit(SchtasksCommandTimeoutMs);
+    }
+
+    // ================================================================
+    // Private — 유틸
+    // ================================================================
+
+    private static string GetDefaultConfigPath() =>
+        DefaultConfig.GetDefaultConfigPath();
+}

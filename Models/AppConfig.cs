@@ -175,7 +175,9 @@ internal sealed record AdvancedConfig
 /// NativeAOT 필수: JsonSerializerContext source generator.
 /// 리플렉션 비활성화 상태에서 직렬화/역직렬화를 수행.
 /// </summary>
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
+    WriteIndented = true)]
 [JsonSerializable(typeof(AppConfig))]
 [JsonSerializable(typeof(EventTriggersConfig))]
 [JsonSerializable(typeof(FixedPositionConfig))]
