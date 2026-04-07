@@ -188,6 +188,7 @@ internal static class Win32Constants
     // --- IME 메시지 ---
     public const uint WM_IME_CONTROL     = 0x0283;
     public const uint IMC_GETOPENSTATUS  = 0x0005;
+    public const uint IME_CMODE_HANGUL   = 0x01;
 
     // --- WinEvent 상수 ---
     public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
@@ -285,4 +286,8 @@ internal static class Win32Constants
     // --- GetKeyboardLayout ---
     // LOWORD(HKL) -> LANGID, 0x0412 = 한국어
     public const ushort LANGID_KOREAN    = 0x0412;
+    public const long HKL_LANGID_MASK   = 0xFFFF;  // LOWORD 추출 마스크
+
+    // --- 버퍼 크기 ---
+    public const int MAX_CLASS_NAME     = 256;
 }
