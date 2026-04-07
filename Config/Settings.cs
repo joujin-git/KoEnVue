@@ -102,6 +102,7 @@ internal static class Settings
 
         config = Migrate(config);
         config = Validate(config);
+        config = ThemePresets.Apply(config);
         return config;
     }
 

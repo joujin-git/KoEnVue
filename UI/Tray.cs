@@ -300,7 +300,8 @@ internal static class Tray
     {
         if (!config.TrayTooltip) return; // 빈 문자열 = 툴팁 숨김
 
-        string text = I18n.GetTrayTooltip(state);
+        string modePrefix = Settings.IsPortableMode ? I18n.PortableLabel : I18n.InstalledLabel;
+        string text = $"KoEnVue {modePrefix} - {I18n.GetTrayTooltip(state)}";
         ReadOnlySpan<char> tip = text.AsSpan();
         int len = Math.Min(tip.Length, TooltipMaxLength);
         fixed (char* pTip = nid.szTip)

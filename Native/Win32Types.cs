@@ -153,6 +153,14 @@ internal struct ICONINFO
     public IntPtr hbmColor;
 }
 
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal struct HIGHCONTRAST
+{
+    public uint cbSize;
+    public uint dwFlags;
+    public IntPtr lpszDefaultScheme;
+}
+
 // ================================================================
 // 상수
 // ================================================================
@@ -294,6 +302,11 @@ internal static class Win32Constants
 
     // --- 고대비 ---
     public const uint SPI_GETHIGHCONTRAST = 0x0042;
+    public const uint HCF_HIGHCONTRASTON  = 0x00000001;
+    public const int COLOR_HIGHLIGHT      = 13;
+
+    // --- UIA ---
+    public const int UIA_TextPattern2Id   = 10024;
 
     // --- 기타 ---
     public const uint CS_HREDRAW         = 0x0002;

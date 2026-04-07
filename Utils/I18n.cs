@@ -11,6 +11,9 @@ internal static class I18n
 {
     private static bool _isKorean = true;  // P2: 한글 기본
 
+    /// <summary>현재 한국어 모드 여부.</summary>
+    public static bool IsKorean => _isKorean;
+
     // ================================================================
     // 초기화
     // ================================================================
@@ -75,6 +78,13 @@ internal static class I18n
     public static string MenuStartup => _isKorean ? "시작 프로그램 등록" : "Start with Windows";
     public static string MenuOpenSettings => _isKorean ? "설정 파일 열기..." : "Open Settings...";
     public static string MenuExit => _isKorean ? "종료" : "Exit";
+
+    // ================================================================
+    // 포터블/설치 모드
+    // ================================================================
+
+    public static string PortableLabel => _isKorean ? "[포터블]" : "[Portable]";
+    public static string InstalledLabel => _isKorean ? "[설치]" : "[Installed]";
 
     // ================================================================
     // 트레이 툴팁

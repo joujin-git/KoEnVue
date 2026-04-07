@@ -90,9 +90,12 @@ internal static class CaretTracker
         var result = TryTier1WithRetry(hwndFocus, threadId, config);
         if (result.HasValue) { CacheMethod(processName, TierGuiThread); return result.Value; }
 
-        // Tier 2: UIA (Phase 07 placeholder)
-        result = TryTier2(hwndFocus, config);
-        if (result.HasValue) { CacheMethod(processName, TierUia); return result.Value; }
+        // Tier 2: UIA (SkipUiaForProcesses 가드)
+        if (!config.Advanced.SkipUiaForProcesses.Contains(processName, StringComparer.OrdinalIgnoreCase))
+        {
+            result = TryTier2(hwndFocus, config);
+            if (result.HasValue) { CacheMethod(processName, TierUia); return result.Value; }
+        }
 
         // Tier 3: 포커스 윈도우 영역 기반
         result = TryTier3(hwndFocus);
@@ -182,13 +185,16 @@ internal static class CaretTracker
     }
 
     /// <summary>
-    /// Tier 2: UI Automation. Phase 07에서 UiaClient 연결 시 구현.
+    /// Tier 2: UI Automation (UiaClient 경유, STA 스레드 호출).
     /// </summary>
     private static (int x, int y, int w, int h, string method)? TryTier2(
         IntPtr hwndFocus, AppConfig config)
     {
-        // Phase 07에서 UiaClient.GetCaretBounds 호출로 교체 예정
-        return null;
+        var bounds = UiaClient.GetCaretBounds(hwndFocus,
+            config.Advanced.UiaTimeoutMs, config.Advanced.UiaCacheTtlMs);
+        if (bounds is null) return null;
+        var (x, y, w, h) = bounds.Value;
+        return (x, y, w, h, MethodUia);
     }
 
     /// <summary>

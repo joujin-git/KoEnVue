@@ -51,6 +51,20 @@ internal static class Overlay
     private static int _lastY;
     private static byte _lastAlpha;
 
+    // 디버그 오버레이
+    private static volatile DebugInfo? _debugInfo;
+
+    // LabelStyle 상수 (P3: 매직 문자열 금지)
+    private const string LabelStyleText = "text";
+    private const string LabelStyleDot = "dot";
+    private const string LabelStyleIcon = "icon";
+
+    // 디버그 오버레이 상수
+    private const int DebugOverlayLineCount = 5;
+    private const int DebugOverlayLineHeight = 12;
+    private const int DebugOverlayWidth = 140;
+    private const int DebugOverlayFontSize = 8;
+
     // ================================================================
     // 초기화 / 해제
     // ================================================================
@@ -88,6 +102,11 @@ internal static class Overlay
         var pos = CalculateIndicatorPosition(caretX, caretY, caretH, config);
         EnsureResources(config);
         RenderIndicator(state, config);
+
+        // 디버그 오버레이 렌더링 (인디케이터 렌더 후, UpdateLayeredWindow 전)
+        if (config.Advanced.DebugOverlay && _debugInfo is { } dbg)
+            RenderDebugOverlay(dbg);
+
         UpdateOverlay(pos.x, pos.y, _currentWidth, _currentHeight, _lastAlpha);
         _lastX = pos.x;
         _lastY = pos.y;
@@ -154,6 +173,9 @@ internal static class Overlay
                 Win32Constants.SWP_NOMOVE | Win32Constants.SWP_NOSIZE | Win32Constants.SWP_NOACTIVATE);
     }
 
+    /// <summary>디버그 오버레이 데이터 설정 (감지 스레드에서 호출).</summary>
+    public static void SetDebugInfo(DebugInfo? info) => _debugInfo = info;
+
     /// <summary>강조 스케일 계산용.</summary>
     public static (int w, int h) GetBaseSize() => (_currentWidth, _currentHeight);
 
@@ -201,6 +223,13 @@ internal static class Overlay
                 _baseWidth = config.CaretVbarWidth;
                 _baseHeight = config.CaretVbarHeight;
                 break;
+        }
+
+        // 디버그 오버레이 활성 시 높이 확장 (5줄 x 8pt)
+        if (config.Advanced.DebugOverlay)
+        {
+            _baseWidth = Math.Max(_baseWidth, DebugOverlayWidth);
+            _baseHeight += DebugOverlayLineHeight * DebugOverlayLineCount;
         }
     }
 
@@ -378,7 +407,23 @@ internal static class Overlay
 
         Gdi32.SelectObject(_memDC, oldBrush);
 
-        // 텍스트 렌더링
+        // 라벨 스타일별 내부 렌더링
+        switch (config.LabelStyle)
+        {
+            case LabelStyleDot:
+                RenderLabelDot(state, config, w, h);
+                break;
+            case LabelStyleIcon:
+                RenderLabelIcon(state, config, w, h);
+                break;
+            default: // "text"
+                RenderLabelText(state, config, w, h);
+                break;
+        }
+    }
+
+    private static void RenderLabelText(ImeState state, AppConfig config, int w, int h)
+    {
         if (_currentFont is null) return;
 
         IntPtr oldFont = Gdi32.SelectObject(_memDC, _currentFont.DangerousGetHandle());
@@ -391,7 +436,42 @@ internal static class Overlay
         User32.DrawTextW(_memDC, labelText, labelText.Length, ref textRect,
             Win32Constants.DT_CENTER | Win32Constants.DT_VCENTER | Win32Constants.DT_SINGLELINE);
 
-        // 복원
+        Gdi32.SetTextColor(_memDC, oldTextColor);
+        Gdi32.SetBkMode(_memDC, oldBkMode);
+        Gdi32.SelectObject(_memDC, oldFont);
+    }
+
+    private static void RenderLabelDot(ImeState state, AppConfig config, int w, int h)
+    {
+        // shape 중앙에 foreground 색상 작은 원 (크기: h/3)
+        uint fgColor = ColorHelper.HexToColorRef(GetFgHex(state, config));
+        IntPtr hDotBrush = Gdi32.CreateSolidBrush(fgColor);
+        IntPtr oldBrush = Gdi32.SelectObject(_memDC, hDotBrush);
+
+        int dotSize = Math.Max(h / 3, 2);
+        int cx = (w - dotSize) / 2;
+        int cy = (h - dotSize) / 2;
+        Gdi32.Ellipse(_memDC, cx, cy, cx + dotSize, cy + dotSize);
+
+        Gdi32.SelectObject(_memDC, oldBrush);
+        Gdi32.DeleteObject(hDotBrush);
+    }
+
+    private static void RenderLabelIcon(ImeState state, AppConfig config, int w, int h)
+    {
+        if (_currentFont is null) return;
+
+        IntPtr oldFont = Gdi32.SelectObject(_memDC, _currentFont.DangerousGetHandle());
+        int oldBkMode = Gdi32.SetBkMode(_memDC, Win32Constants.TRANSPARENT);
+        uint fgColor = ColorHelper.HexToColorRef(GetFgHex(state, config));
+        uint oldTextColor = Gdi32.SetTextColor(_memDC, fgColor);
+
+        // 한글이면 "ㄱ", 영어/비한국어이면 "A"
+        string iconText = state == ImeState.Hangul ? "ㄱ" : "A";
+        var textRect = new RECT { Left = 0, Top = 0, Right = w, Bottom = h };
+        User32.DrawTextW(_memDC, iconText, iconText.Length, ref textRect,
+            Win32Constants.DT_CENTER | Win32Constants.DT_VCENTER | Win32Constants.DT_SINGLELINE);
+
         Gdi32.SetTextColor(_memDC, oldTextColor);
         Gdi32.SetBkMode(_memDC, oldBkMode);
         Gdi32.SelectObject(_memDC, oldFont);
@@ -417,6 +497,69 @@ internal static class Overlay
             ptr[offset + 1] = (byte)(g * a / 255);
             ptr[offset + 2] = (byte)(r * a / 255);
         }
+    }
+
+    // ================================================================
+    // 디버그 오버레이
+    // ================================================================
+
+    private static void RenderDebugOverlay(DebugInfo dbg)
+    {
+        int w = _currentWidth;
+        int h = _currentHeight;
+        int debugH = DpiHelper.Scale(DebugOverlayLineHeight * DebugOverlayLineCount, _currentDpiScale);
+        int debugY = h - debugH;  // 인디케이터 아래 영역
+
+        // 반투명 배경 (어두운 회색)
+        uint debugBgColor = ColorHelper.HexToColorRef("#1F1F1F");
+        IntPtr hDebugBrush = Gdi32.CreateSolidBrush(debugBgColor);
+        var debugRect = new RECT { Left = 0, Top = debugY, Right = w, Bottom = h };
+        User32.FillRect(_memDC, ref debugRect, hDebugBrush);
+        Gdi32.DeleteObject(hDebugBrush);
+
+        // 소형 폰트 생성 (8pt)
+        int debugFontH = -Kernel32.MulDiv(DebugOverlayFontSize, (int)_currentDpiY, 72);
+        IntPtr hDebugFont = Gdi32.CreateFontW(
+            debugFontH, 0, 0, 0,
+            Win32Constants.FW_NORMAL, 0, 0, 0,
+            Win32Constants.DEFAULT_CHARSET,
+            Win32Constants.OUT_TT_PRECIS,
+            Win32Constants.CLIP_DEFAULT_PRECIS,
+            Win32Constants.CLEARTYPE_QUALITY,
+            Win32Constants.DEFAULT_PITCH,
+            "Consolas");
+
+        IntPtr oldFont = Gdi32.SelectObject(_memDC, hDebugFont);
+        int oldBkMode = Gdi32.SetBkMode(_memDC, Win32Constants.TRANSPARENT);
+        uint oldTextColor = Gdi32.SetTextColor(_memDC, ColorHelper.HexToColorRef("#00FF00"));
+
+        // 5줄 텍스트
+        string[] lines =
+        [
+            $"M:{dbg.Method}",
+            $"X:{dbg.CaretX} Y:{dbg.CaretY}",
+            $"DPI:{dbg.DpiX}",
+            $"Poll:{dbg.PollingMs}ms",
+            $"C:{dbg.ClassName}",
+        ];
+
+        int lineH = DpiHelper.Scale(DebugOverlayLineHeight, _currentDpiScale);
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var lineRect = new RECT
+            {
+                Left = 2, Top = debugY + i * lineH,
+                Right = w - 2, Bottom = debugY + (i + 1) * lineH,
+            };
+            User32.DrawTextW(_memDC, lines[i], lines[i].Length, ref lineRect,
+                Win32Constants.DT_SINGLELINE);
+        }
+
+        // 복원
+        Gdi32.SetTextColor(_memDC, oldTextColor);
+        Gdi32.SetBkMode(_memDC, oldBkMode);
+        Gdi32.SelectObject(_memDC, oldFont);
+        Gdi32.DeleteObject(hDebugFont);
     }
 
     // ================================================================

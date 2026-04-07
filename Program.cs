@@ -462,17 +462,32 @@ internal static class Program
     private static void HandlePowerResume()
     {
         Logger.Info("Power resumed");
-        // Phase 07: IME 재감지, DPI/rcWork 재조회
+        // IME 재감지 트리거
+        _needCaretUpdate = true;
+        // DPI/rcWork 재조회
+        Overlay.HandleDpiChanged(_config);
     }
 
     private static void HandleDisplayChange()
     {
         Logger.Info("Display changed");
         Overlay.HandleDpiChanged(_config);
+
+        // 표시 중이면 위치 재계산
+        if (_indicatorVisible)
+            Animation.TriggerShow(_lastCaretX, _lastCaretY, _lastCaretH,
+                _lastImeState, _config, imeChanged: false);
     }
 
     private static void HandleSettingChange()
     {
+        // 고대비 / 시스템 테마 변경 감지
+        if (_config.Theme == "system")
+        {
+            _config = ThemePresets.Apply(_config);
+            Overlay.HandleConfigChanged(_config);
+        }
+
         // 작업표시줄 변경 시 표시 중이면 위치 재계산
         if (_indicatorVisible)
             Animation.TriggerShow(_lastCaretX, _lastCaretY, _lastCaretH,
@@ -582,6 +597,7 @@ internal static class Program
             // 5. 캐럿 위치 추적 (이벤트 발생 시 또는 Always 모드)
             if (_needCaretUpdate || appConfig.DisplayMode == DisplayMode.Always)
             {
+                long pollStart = Environment.TickCount64;
                 string procName = GetProcessName(processId);
                 var result = CaretTracker.GetCaretPosition(
                     hwndFocus, threadId, procName, appConfig);
@@ -591,6 +607,17 @@ internal static class Program
                     _lastCaretH = caret.h;  // volatile int 쓰기
                     User32.PostMessage(_hwndMain, AppMessages.WM_CARET_UPDATED,
                         (IntPtr)caret.x, (IntPtr)caret.y);
+
+                    // 디버그 오버레이 데이터 전달
+                    if (appConfig.Advanced.DebugOverlay)
+                    {
+                        long pollingMs = Environment.TickCount64 - pollStart;
+                        string className = SystemFilter.GetClassName(hwndFocus);
+                        IntPtr hMon = DpiHelper.GetMonitorFromPoint(caret.x, caret.y);
+                        (uint dpiX, _) = DpiHelper.GetRawDpi(hMon);
+                        Overlay.SetDebugInfo(new DebugInfo(
+                            caret.method, caret.x, caret.y, dpiX, pollingMs, className));
+                    }
                 }
 
                 _needCaretUpdate = false;
@@ -629,11 +656,10 @@ internal static class Program
     {
         Ole32.CoInitializeEx(IntPtr.Zero, Win32Constants.COINIT_APARTMENTTHREADED);
 
-        // Phase 07에서 IUIAutomation 인스턴스 생성 + 큐 기반 요청/응답 구현
+        UiaClient.Initialize();
+        UiaClient.ProcessRequests();
 
-        while (!_stopping)
-            Thread.Sleep(DefaultConfig.UiaLoopIntervalMs);
-
+        UiaClient.Shutdown();
         Ole32.CoUninitialize();
     }
 
@@ -726,22 +752,25 @@ internal static class Program
         // 2. 핫키 해제
         UnregisterHotkeys();
 
-        // 3. 애니메이션 + 렌더링 리소스 해제 (윈도우 파괴 전)
+        // 3. UIA 클라이언트 종료
+        UiaClient.Shutdown();
+
+        // 4. 애니메이션 + 렌더링 리소스 해제 (윈도우 파괴 전)
         Animation.Dispose();
         Overlay.Dispose();
 
-        // 4. 오버레이 윈도우 파괴
+        // 5. 오버레이 윈도우 파괴
         if (_hwndOverlay != IntPtr.Zero)
             User32.DestroyWindow(_hwndOverlay);
 
-        // 5. 트레이 아이콘 제거
+        // 6. 트레이 아이콘 제거
         Tray.Remove();
 
-        // 6. Mutex 해제
+        // 7. Mutex 해제
         _mutex?.ReleaseMutex();
         _mutex?.Dispose();
 
-        // 7. COM 해제
+        // 8. COM 해제
         Ole32.CoUninitialize();
 
         Logger.Info("KoEnVue stopped");
