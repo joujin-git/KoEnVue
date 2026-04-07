@@ -977,44 +977,57 @@ class OverlayState
 ```
 KoEnVue/
 ├── KoEnVue.csproj               # .NET 10 프로젝트 파일 (NativeAOT 설정 포함)
-├── app.manifest                 # UAC 관리자 권한 매니페스트
-├── Program.cs                   # 엔트리포인트, Win32 메시지 루프, 앱 라이프사이클 관리
+├── app.manifest                 # UAC 관리자 권한 매니페스트 + PerMonitorV2 DPI
+├── Program.cs                   # 엔트리포인트, Win32 메시지 루프, 3-스레드 관리, 이벤트 파이프라인
 ├── Models/
+│   ├── AppConfig.cs             # sealed record AppConfig — 불변 설정 객체 (100+ 속성, volatile 참조 교체용)
+│   ├── DebugInfo.cs             # record DebugInfo — 디버그 오버레이 표시 데이터
 │   ├── ImeState.cs              # enum ImeState { Hangul, English, NonKorean }
 │   ├── IndicatorStyle.cs        # enum IndicatorStyle { Label, CaretDot, CaretSquare, CaretUnderline, CaretVbar }
 │   ├── Placement.cs             # enum Placement { Left, Above, Below, CaretTopRight, CaretBelow, CaretOverlap }
+│   ├── CaretPlacement.cs        # enum CaretPlacement { Left, Right, Above, Below }
 │   ├── DisplayMode.cs           # enum DisplayMode { OnEvent, Always }
-│   └── AppConfig.cs             # record AppConfig — 불변 설정 객체 (volatile 참조 교체용)
+│   ├── AppFilterMode.cs         # enum AppFilterMode { Blacklist, Whitelist }
+│   ├── CaretMethod.cs           # enum CaretMethod { Auto, GuiThread, Uia, Mouse }
+│   ├── DetectionMethod.cs       # enum DetectionMethod { Auto, ImeDefault, ImeContext, KeyboardLayout }
+│   ├── FontWeight.cs            # enum FontWeight { Normal, Bold }
+│   ├── LabelShape.cs            # enum LabelShape { RoundedRect, Circle, Pill }
+│   ├── LogLevel.cs              # enum LogLevel { Debug, Info, Warning, Error }
+│   ├── NonKoreanImeMode.cs      # enum NonKoreanImeMode { Hide, Show }
+│   └── PositionMode.cs          # enum PositionMode { Caret, Mouse, Fixed }
 ├── Detector/
-│   ├── ImeStatus.cs             # IME 한/영 상태 감지 (IMM32 기반)
-│   ├── CaretTracker.cs          # 캐럿 위치 추적 (다단계 fallback)
-│   ├── SystemFilter.cs          # Windows 시스템 요소 필터링 (바탕화면, 작업표시줄 등 숨김 판정)
-│   └── UiaClient.cs             # UI Automation COM 직접 접근
+│   ├── ImeStatus.cs             # IME 한/영 상태 감지 (3-tier fallback + SetWinEventHook 하이브리드)
+│   ├── CaretTracker.cs          # 캐럿 위치 추적 (4-tier fallback + tier-1 재시도 + LRU 캐싱)
+│   ├── SystemFilter.cs          # Windows 시스템 요소 필터링 (8-조건 단락 평가 + IVirtualDesktopManager COM)
+│   └── UiaClient.cs             # UI Automation COM 직접 접근 (STA 스레드 전용)
 ├── UI/
-│   ├── Overlay.cs               # 플로팅 오버레이 윈도우 (CreateWindowExW + WS_EX_LAYERED + GDI)
-│   ├── Tray.cs                  # 시스템 트레이 (Shell_NotifyIconW 직접 구현)
-│   ├── TrayIcon.cs              # 트레이 아이콘 GDI 생성 (캐럿+점 디자인, 상태별 배경색 변경)
-│   └── Animation.cs             # 페이드인/아웃, 크기 변환 애니메이션 (UpdateLayeredWindow + SetTimer)
+│   ├── Overlay.cs               # 플로팅 오버레이 윈도우 (GDI 렌더링 + LabelStyle + DebugOverlay)
+│   ├── Animation.cs             # 페이드인/아웃 애니메이션 (WM_TIMER 상태 머신 + UpdateLayeredWindow)
+│   ├── Tray.cs                  # 시스템 트레이 (Shell_NotifyIconW + 팝업 메뉴 + schtasks 자동시작)
+│   └── TrayIcon.cs              # 트레이 아이콘 GDI 생성 (캐럿+점 디자인, 상태별 배경색 변경)
 ├── Config/
-│   ├── Settings.cs              # 설정 로드/저장/기본값/마이그레이션/검증
-│   └── DefaultConfig.cs         # 기본 설정 상수 + 픽셀 오프셋 상수 (LabelGap, CaretBoxGap 등)
+│   ├── DefaultConfig.cs         # 기본 설정 상수 + 픽셀 오프셋 + 타이밍 상수
+│   ├── Settings.cs              # 설정 로드/저장/검증/마이그레이션/핫리로드/앱프로필
+│   └── ThemePresets.cs          # 6개 테마 프리셋 (custom, minimal, vivid, pastel, dark, system)
 ├── Utils/
-│   ├── Startup.cs               # Task Scheduler 등록/해제 (자동 시작 + 수동 실행 바로가기, 관리자 권한)
-│   ├── I18n.cs                  # 한글/영문 UI 텍스트 관리 (한글 표시 우선)
 │   ├── DpiHelper.cs             # DPI 조회/스케일 계산 공통 유틸 (MonitorFromPoint + GetDpiForMonitor)
 │   ├── ColorHelper.cs           # 색상 변환 공통 유틸 (HEX → COLORREF, 파싱)
-│   └── Logger.cs                # 로깅 (System.Diagnostics.Trace)
+│   ├── Logger.cs                # 로깅 (System.Diagnostics.Trace, 4-레벨)
+│   └── I18n.cs                  # 한글/영문 UI 텍스트 관리 (한글 표시 우선, P2)
 ├── Native/
-│   ├── User32.cs                # User32.dll [LibraryImport] 선언
+│   ├── User32.cs                # User32.dll [LibraryImport] 선언 (40+)
 │   ├── Imm32.cs                 # Imm32.dll [LibraryImport] 선언
 │   ├── Shell32.cs               # Shell32.dll [LibraryImport] 선언
 │   ├── Gdi32.cs                 # Gdi32.dll [LibraryImport] 선언
 │   ├── Kernel32.cs              # Kernel32.dll [LibraryImport] 선언
 │   ├── Shcore.cs                # Shcore.dll [LibraryImport] 선언 (DPI)
-│   ├── Ole32.cs                 # Ole32.dll [LibraryImport] 선언 (COM: CoInitializeEx, CoCreateInstance)
+│   ├── Ole32.cs                 # Ole32.dll [LibraryImport] 선언 (COM)
+│   ├── OleAut32.cs              # OleAut32.dll [LibraryImport] 선언 (UIA)
 │   ├── Win32Types.cs            # Win32 구조체/상수/열거형 정의
 │   ├── AppMessages.cs           # 커스텀 윈도우 메시지 상수 (WM_APP+1~5, WM_USER+1)
-│   └── SafeGdiHandles.cs       # GDI SafeHandle 래퍼 (SafeFontHandle, SafeBitmapHandle, SafeIconHandle)
+│   ├── SafeGdiHandles.cs        # GDI SafeHandle 래퍼 (SafeFontHandle, SafeBitmapHandle, SafeIconHandle)
+│   ├── VirtualDesktop.cs        # IVirtualDesktopManager COM 인터페이스 ([GeneratedComInterface])
+│   └── UiaInterfaces.cs         # IUIAutomation COM 인터페이스 정의
 ```
 
 ### 5.2 스레드 모델
@@ -1522,6 +1535,11 @@ Win32 `CreatePopupMenu` + `AppendMenuW`로 메뉴를 동적 생성하고, `Track
 
 설정 파일에 `"config_version": 1` 필드를 포함한다. 향후 설정 스키마가 변경되면 버전 번호를 증가시키고, 앱 시작 시 자동으로 마이그레이션을 수행한다. 알 수 없는 키는 무시하고, 누락된 키는 기본값으로 채운다.
 
+**설정 로드 파이프라인 (Settings.LoadFromFile)**:
+```
+Deserialize → Migrate(config_version 체인) → Validate(범위 클램핑) → ThemePresets.Apply(테마 색상 적용)
+```
+
 ### 6.5 기본 설정 예제
 
 전체 설정 키는 약 80개이지만, 대부분 기본값으로 충분하다. 사용자가 config.json을 처음 편집할 때 참고할 수 있는 **필수 설정만 포함한 간소화 예제**:
@@ -1598,10 +1616,15 @@ static readonly Dictionary<string, (double min, double max)> Validation = new()
 > Windows 10 이후 메모장도 UTF-8이 기본 저장 형식이므로 UTF-8만 지원한다.
 
 ```
-1. UTF-8 BOM 감지 → 제거 후 UTF-8 파싱
-2. UTF-8 파싱 시도
-3. 파싱 실패 시 → DEFAULT_CONFIG 사용 + 로그 경고
+1. UTF-8 BOM 감지 → 제거
+2. System.Text.Json 역직렬화 (ReadCommentHandling=Skip, AllowTrailingCommas=true)
+3. Migrate(config_version 체인) → Validate(범위 클램핑) → ThemePresets.Apply
+4. 파싱 실패 시 → DEFAULT_CONFIG 사용 + 로그 경고
 ```
+
+> **JSON 주석/후행 쉼표 지원**: 사용자가 config.json을 직접 편집할 때
+> `// 주석`과 후행 쉼표(`[1, 2,]`)를 허용한다. `JsonSourceGenerationOptions`에
+> `ReadCommentHandling = Skip`, `AllowTrailingCommas = true`를 설정하여 처리.
 
 ### 6.8 설정 동시 접근 안전성
 
@@ -1609,19 +1632,14 @@ static readonly Dictionary<string, (double min, double max)> Validation = new()
 
 ```csharp
 // C# record로 불변 설정 객체 정의 — enum 타입 사용 (P3 원칙: 문자열 비교 금지)
+// record with 표현식으로 갱신 (AppConfigBuilder 불필요)
 record AppConfig(IndicatorStyle IndicatorStyle, DisplayMode DisplayMode, string HangulBg, ...);
 
 // volatile 참조 교체 — 읽기 측 락 불필요
-volatile AppConfig _config = AppConfig.Default;
+volatile AppConfig _config = new AppConfig();
 
-void UpdateConfig(Action<AppConfigBuilder> modifier)
-{
-    var builder = new AppConfigBuilder(_config);
-    modifier(builder);
-    var updated = builder.Build();
-    ValidateConfig(updated);
-    _config = updated;  // 원자적 참조 교체
-}
+// record with 표현식으로 변경 (AppConfigBuilder 불필요)
+_config = _config with { IndicatorStyle = newStyle };  // 원자적 참조 교체
 ```
 
 ---
@@ -1646,38 +1664,38 @@ void UpdateConfig(Action<AppConfigBuilder> modifier)
 ## 8. 구현 순서
 
 ### Week 1: 코어 엔진
-- [ ] Win32 P/Invoke 선언 (Native/*.cs — User32, Imm32, Shell32, GDI32, Kernel32, Shcore, Win32Types)
-- [ ] IME 상태 감지 모듈 (ImeStatus.cs) — Primary + Fallback 체인 + SetWinEventHook 보조 훅
-- [ ] 캐럿 위치 추적 모듈 (CaretTracker.cs) — GetGUIThreadInfo + UIA(타임아웃) + 포커스윈도우영역 + 마우스 fallback
-- [ ] 시스템 요소 필터링 (SystemFilter.cs) — 클래스명 블랙리스트 + hwndFocus + IsWindowVisible + 가상 데스크톱
-- [ ] 이벤트 트리거 판정 로직 — 포커스 변경 + IME 상태 변경 감지 + 드래그 중 숨김
-- [ ] 위치 안정성 로직 — label 고정 너비, 배치 방향 고정, 중심점 기준 확대, 서브픽셀 정렬 방지, 이벤트 시점 위치 고정(캐럿 미추적, 1.5초 자연 소멸)
-- [ ] 앱 라이프사이클 — 관리자 권한(app.manifest), 고정 GUID Mutex, 종료 정리, AppDomain.ProcessExit 크래시 복구
-- [ ] 설정 로드/저장 (Settings.cs) — System.Text.Json (Source Generator), UTF-8 파싱, 값 범위 검증, volatile 참조 교체, mtime 5초 체크
+- [x] Win32 P/Invoke 선언 (Native/*.cs — User32, Imm32, Shell32, GDI32, Kernel32, Shcore, Ole32, OleAut32, Win32Types, SafeGdiHandles, AppMessages) — **Phase 01 완료**
+- [x] IME 상태 감지 모듈 (ImeStatus.cs) — 3-tier fallback (ImmGetDefaultIMEWnd → ImmGetConversionStatus → GetKeyboardLayout) + SetWinEventHook 하이브리드 — **Phase 02 완료**
+- [x] 캐럿 위치 추적 모듈 (CaretTracker.cs) — 4-tier fallback (GetGUIThreadInfo → UIA placeholder → GetWindowRect → GetCursorPos) + 앱별 LRU 캐싱(50) + tier-1 50ms×3 재시도 — **Phase 02+03 완료**
+- [x] 시스템 요소 필터링 (SystemFilter.cs) — 8-조건 단락 평가 (보안데스크톱 + 숨김/최소화 + 가상데스크톱 + 클래스명 + 포커스 + 전체화면 + 드래그 + 앱필터) + IVirtualDesktopManager COM — **Phase 02 완료**
+- [x] 이벤트 트리거 판정 로직 — 포커스 변경 + IME 상태 변경 감지 + EventTriggers 가드 + 드래그 중 숨김 — **Phase 03 완료**
+- [x] 위치 안정성 로직 — label 고정 너비, 배치 방향 고정, 중심점 기준 확대, 서브픽셀 정렬 방지, 이벤트 시점 위치 고정(캐럿 미추적, 1.5초 자연 소멸) — **Phase 04 완료**
+- [x] 앱 라이프사이클 기반 — 관리자 권한(app.manifest), 고정 GUID(DefaultConfig.AppGuid), Mutex, 크래시 복구(NIM_DELETE), ProcessExit 정리 — **Phase 01+03 완료**
+- [x] 설정 로드/저장 (Settings.cs) — System.Text.Json (Source Generator), UTF-8 파싱, 값 범위 검증, volatile 참조 교체, mtime 5초 체크, 핫리로드, 앱프로필 — **Phase 06 완료**
 - [ ] 수동 검증: 메모장, VS Code, Chrome에서 상태 감지 확인 (NativeAOT 단일 exe 특성상 별도 테스트 프로젝트 없이 디버그 빌드 + 디버그 오버레이로 검증. 핵심 유틸 로직은 #if DEBUG 조건부 자체 검증 assert 포함)
 
 ### Week 2: UI + 트레이
-- [ ] 플로팅 오버레이 (Overlay.cs) — Win32 CreateWindowExW + WS_EX_LAYERED + GDI, 5종 인디케이터 스타일, 클릭 투과
-- [ ] 멀티 모니터 + DPI (DpiHelper.cs) — MonitorFromPoint, GetMonitorInfo(rcWork), Per-Monitor DPI, 공통 스케일링
-- [ ] DPI Awareness 선언 — app.manifest에 PerMonitorV2 + dpiAware fallback 추가
-- [ ] 페이드 애니메이션 (Animation.cs) — UpdateLayeredWindow (BLENDFUNCTION.SourceConstantAlpha) + SetTimer/WM_TIMER
-- [ ] 시스템 트레이 (Tray.cs) — P/Invoke Shell_NotifyIconW 직접 구현, 간이 설정 서브메뉴 (한글 표시)
-- [ ] 트레이 아이콘 (TrayIcon.cs) — GDI로 캐럿+점 아이콘 생성, 한/영 상태별 배경색 변경
-- [ ] 시작 프로그램 등록 (Startup.cs) — Task Scheduler 등록/해제
+- [x] 플로팅 오버레이 (Overlay.cs) — Win32 CreateWindowExW + WS_EX_LAYERED + GDI, 5종 인디케이터 스타일, 클릭 투과 — **Phase 04 완료**
+- [x] 멀티 모니터 + DPI (DpiHelper.cs) — MonitorFromPoint, GetMonitorInfo(rcWork), Per-Monitor DPI, 공통 스케일링 — **Phase 01 완료**
+- [x] DPI Awareness 선언 — app.manifest에 PerMonitorV2 + dpiAware fallback 추가 — **Phase 01 완료**
+- [x] 페이드 애니메이션 (Animation.cs) — UpdateLayeredWindow (BLENDFUNCTION.SourceConstantAlpha) + SetTimer/WM_TIMER 상태 머신 — **Phase 04 완료**
+- [x] 시스템 트레이 (Tray.cs) — P/Invoke Shell_NotifyIconW 직접 구현, 팝업 메뉴 + 간이 설정 서브메뉴 (한글 표시) — **Phase 05 완료**
+- [x] 트레이 아이콘 (TrayIcon.cs) — GDI로 캐럿+점 아이콘 생성, 한/영 상태별 배경색 변경 — **Phase 05 완료**
+- [x] 시작 프로그램 등록 — schtasks 기반 Task Scheduler 등록/해제 (Tray.cs 통합) — **Phase 05 완료**
 
 ### Week 3: 고급 감지 + 앱별 대응
-- [ ] UI Automation COM 접근 캐럿 추적 (UiaClient.cs)
-- [ ] 앱별 방식 캐싱 로직 (Dictionary + LRU, 최대 50개)
-- [ ] 앱별 프로필 (프로세스명/창 제목/윈도우 클래스 매칭)
-- [ ] 블랙리스트/화이트리스트 앱 필터
-- [ ] 글로벌 핫키 (P/Invoke → RegisterHotKey)
-- [ ] 포터블 모드 자동 감지 — exe 디렉토리에 config.json 존재 여부로 포터블/설치 모드 자동 판별, 트레이 메뉴에 현재 모드 표시
+- [x] UI Automation COM 접근 캐럿 추적 (UiaClient.cs) — STA 스레드 전용, [GeneratedComInterface] — **Phase 07 완료**
+- [x] 앱별 방식 캐싱 로직 (Dictionary + LRU, 최대 50개) — CaretTracker.cs에 구현 — **Phase 02 완료**
+- [x] 앱별 프로필 (프로세스명/창 제목/윈도우 클래스 매칭) — Settings.cs 앱프로필 — **Phase 06 완료**
+- [x] 블랙리스트/화이트리스트 앱 필터 — SystemFilter.PassesAppFilter에 구현 — **Phase 02 완료**
+- [x] 글로벌 핫키 (P/Invoke → RegisterHotKey) — 5종 핫키 등록/해제/파싱 — **Phase 03+05 완료**
+- [x] 포터블 모드 자동 감지 — exe 디렉토리에 config.json 존재 여부로 포터블/설치 모드 자동 판별 — **Phase 06 완료**
 
 ### Week 4: 마감 + 배포
-- [ ] 테마 프리셋 + Windows 강조색 연동
-- [ ] 라벨 스타일 표시 텍스트 옵션 (텍스트/점/ㄱA 아이콘) — 국기 이모지는 GDI 제약으로 미지원
-- [ ] 디버그 오버레이 모드
-- [ ] NativeAOT 빌드 (dotnet publish -c Release -r win-x64 /p:PublishAot=true)
+- [x] 테마 프리셋 (ThemePresets.cs — 6개 테마) — **Phase 07 완료**
+- [x] 라벨 스타일 표시 텍스트 옵션 (텍스트/점/ㄱA 아이콘) — 국기 이모지는 GDI 제약으로 미지원 — **Phase 04 완료**
+- [x] 디버그 오버레이 모드 (DebugOverlay) — **Phase 07 완료**
+- [x] NativeAOT 빌드 (dotnet publish -c Release -r win-x64) — **Phase 07 완료**
 - [ ] 통합 테스트: 5개 이상 앱 유형 × 멀티 모니터 환경에서 정상 동작 확인
 
 ---
