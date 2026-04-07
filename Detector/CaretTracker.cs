@@ -24,6 +24,9 @@ internal static class CaretTracker
     private const string MethodWindowRect = "window_rect";
     private const string MethodMouse = "mouse";
 
+    // --- Tier 1 재시도 (rcCaret==(0,0,0,0) 타이밍 이슈 대응) ---
+    private const int MaxTier1Retries = 3;
+
     // --- 앱별 감지 방식 LRU 캐시 ---
     private static readonly Dictionary<string, int> _methodCache = new();
     private static readonly LinkedList<string> _lruOrder = new();
@@ -48,7 +51,7 @@ internal static class CaretTracker
         {
             return config.CaretMethod switch
             {
-                "gui_thread" => TryTier1(hwndFocus, threadId),
+                "gui_thread" => TryTier1WithRetry(hwndFocus, threadId, config),
                 "uia" => TryTier2(hwndFocus, config),
                 "mouse" => TryTier4(),
                 _ => RunFullFallback(hwndFocus, threadId, processName, config),
@@ -83,8 +86,8 @@ internal static class CaretTracker
             // 캐시 실패 → 1순위부터 재시도
         }
 
-        // Tier 1: GetGUIThreadInfo → rcCaret → ClientToScreen
-        var result = TryTier1(hwndFocus, threadId);
+        // Tier 1: GetGUIThreadInfo → rcCaret → ClientToScreen (with retry)
+        var result = TryTier1WithRetry(hwndFocus, threadId, config);
         if (result.HasValue) { CacheMethod(processName, TierGuiThread); return result.Value; }
 
         // Tier 2: UIA (Phase 07 placeholder)
@@ -144,6 +147,38 @@ internal static class CaretTracker
         int h = gti.rcCaret.Bottom - gti.rcCaret.Top;
 
         return (pt.X, pt.Y, w, h, MethodGuiThread);
+    }
+
+    /// <summary>
+    /// Tier 1 with retry: rcCaret==(0,0,0,0)이면 CaretPollIntervalMs 간격으로 최대 3회 재시도.
+    /// GetGUIThreadInfo 자체 실패(API 에러)는 재시도 없이 즉시 null (타이밍 이슈가 아님).
+    /// </summary>
+    private static (int x, int y, int w, int h, string method)? TryTier1WithRetry(
+        IntPtr hwndFocus, uint threadId, AppConfig config)
+    {
+        for (int attempt = 0; attempt <= MaxTier1Retries; attempt++)
+        {
+            if (attempt > 0)
+                Thread.Sleep(config.CaretPollIntervalMs);
+
+            GUITHREADINFO gti = default;
+            gti.cbSize = (uint)Marshal.SizeOf<GUITHREADINFO>();
+
+            if (!User32.GetGUIThreadInfo(threadId, ref gti))
+                return null;  // API 실패 → 재시도 불필요
+
+            if (gti.rcCaret.Left == 0 && gti.rcCaret.Top == 0
+                && gti.rcCaret.Right == 0 && gti.rcCaret.Bottom == 0)
+                continue;  // 타이밍 이슈 → 재시도
+
+            POINT pt = new(gti.rcCaret.Left, gti.rcCaret.Top);
+            User32.ClientToScreen(gti.hwndCaret, ref pt);
+
+            int w = gti.rcCaret.Right - gti.rcCaret.Left;
+            int h = gti.rcCaret.Bottom - gti.rcCaret.Top;
+            return (pt.X, pt.Y, w, h, MethodGuiThread);
+        }
+        return null;  // 모든 재시도 소진
     }
 
     /// <summary>

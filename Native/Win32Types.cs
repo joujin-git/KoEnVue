@@ -233,6 +233,7 @@ internal static class Win32Constants
     public const uint WM_POWERBROADCAST  = 0x0218;
     public const uint WM_DISPLAYCHANGE   = 0x007E;
     public const uint WM_SETTINGCHANGE   = 0x001A;
+    public const uint WM_DPICHANGED     = 0x02E0;
     public const uint WM_RBUTTONUP       = 0x0205;
     public const uint WM_LBUTTONUP       = 0x0202;
     public const uint WM_APP             = 0x8000;

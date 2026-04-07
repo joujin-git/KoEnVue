@@ -63,7 +63,7 @@ phase-XX: 단계 설명
 
 - [x] Phase 01: Foundation (P/Invoke, Models, Utils, Config)
 - [x] Phase 02: Detection (IME 3-tier + Caret 4-tier + SystemFilter)
-- [ ] Phase 03: Core Loop (Program.cs + 3-thread + event pipeline)
+- [x] Phase 03: Core Loop (Program.cs + 3-thread + event pipeline)
 - [ ] Phase 04: Rendering (Overlay + Animation)
 - [ ] Phase 05: System UI (Tray + Hotkey)
 - [ ] Phase 06: Config (Settings + I18n)

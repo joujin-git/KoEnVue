@@ -102,4 +102,7 @@ internal static class DefaultConfig
 
     /// <summary>UI Automation 호출 타임아웃</summary>
     public const int UiaTimeoutMs = 200;
+
+    /// <summary>UIA 스레드 대기 루프 간격</summary>
+    public const int UiaLoopIntervalMs = 100;
 }
