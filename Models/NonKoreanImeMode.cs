@@ -16,4 +16,8 @@ internal enum NonKoreanImeMode
     /// <summary>인디케이터 표시 유지.</summary>
     [JsonStringEnumMemberName("show")]
     Show,
+
+    /// <summary>감소된 투명도로 인디케이터 표시.</summary>
+    [JsonStringEnumMemberName("dim")]
+    Dim,
 }

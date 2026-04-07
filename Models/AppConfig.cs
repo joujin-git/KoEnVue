@@ -38,7 +38,6 @@ internal sealed record AppConfig
     public int LabelBorderRadius { get; init; } = 6;
     public int BorderWidth { get; init; } = 0;
     public string BorderColor { get; init; } = "#000000";
-    public bool ShadowEnabled { get; init; } = false;
 
     // [외관 -- 색상]
     public string HangulBg { get; init; } = "#16A34A";
@@ -62,10 +61,10 @@ internal sealed record AppConfig
     public string HangulLabel { get; init; } = "한";
     public string EnglishLabel { get; init; } = "En";
     public string NonKoreanLabel { get; init; } = "EN";
-    public string LabelStyle { get; init; } = "text";  // "text" | "dot" | "icon"
+    public LabelStyle LabelStyle { get; init; } = LabelStyle.Text;
 
     // [외관 -- 테마]
-    public string Theme { get; init; } = "custom";
+    public Theme Theme { get; init; } = Theme.Custom;
 
     // [애니메이션]
     public bool AnimationEnabled { get; init; } = true;
@@ -92,7 +91,7 @@ internal sealed record AppConfig
 
     // [앱별 프로필] -- Phase 06에서 구현
     public Dictionary<string, JsonElement> AppProfiles { get; init; } = new();
-    public string AppProfileMatch { get; init; } = "process";
+    public AppProfileMatch AppProfileMatch { get; init; } = AppProfileMatch.Process;
     public AppFilterMode AppFilterMode { get; init; } = AppFilterMode.Blacklist;
     public string[] AppFilterList { get; init; } = [];
 
@@ -106,9 +105,9 @@ internal sealed record AppConfig
 
     // [시스템 트레이]
     public bool TrayEnabled { get; init; } = true;
-    public string TrayIconStyle { get; init; } = "caret_dot";
+    public TrayIconStyle TrayIconStyle { get; init; } = TrayIconStyle.CaretDot;
     public bool TrayTooltip { get; init; } = true;
-    public string TrayClickAction { get; init; } = "toggle";
+    public TrayClickAction TrayClickAction { get; init; } = TrayClickAction.Toggle;
     public bool TrayShowNotification { get; init; } = false;
     public double[] TrayQuickOpacityPresets { get; init; } = [0.95, 0.85, 0.6];
 
@@ -123,7 +122,7 @@ internal sealed record AppConfig
     public int LogMaxSizeMb { get; init; } = 10;
 
     // [다중 모니터]
-    public string MultiMonitor { get; init; } = "follow_caret";
+    public MultiMonitorMode MultiMonitor { get; init; } = MultiMonitorMode.FollowCaret;
     public bool PerMonitorScale { get; init; } = true;
     public bool ClampToWorkArea { get; init; } = true;
     public bool PreventCrossMonitor { get; init; } = true;
@@ -147,8 +146,8 @@ internal sealed record FixedPositionConfig
 {
     public int X { get; init; } = 100;
     public int Y { get; init; } = 100;
-    public string Anchor { get; init; } = "top_right";  // top_left|top_right|bottom_left|bottom_right|center|absolute
-    public string Monitor { get; init; } = "primary";   // primary|mouse|active
+    public FixedAnchor Anchor { get; init; } = FixedAnchor.TopRight;
+    public FixedMonitor Monitor { get; init; } = FixedMonitor.Primary;
 }
 
 internal sealed record OffsetConfig(int X, int Y)

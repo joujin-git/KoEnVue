@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using KoEnVue.Config;
 using KoEnVue.Detector;
@@ -49,10 +48,6 @@ internal static class Program
     private const int HOTKEY_OPEN_SETTINGS = 5;
     private const int HOTKEY_COUNT = 5;
 
-    // TrayClickAction 값 (P3: 매직 문자열 금지, Phase 06에서 enum 전환 예정)
-    private const string TrayClickToggle = "toggle";
-    private const string TrayClickSettings = "settings";
-
     // 설정 파일명 → DefaultConfig에서 참조
 
     // ================================================================
@@ -72,6 +67,7 @@ internal static class Program
 
         // 4. 로거 + I18n 초기화
         Logger.SetLevel(_config.LogLevel);
+        Logger.Initialize(_config);
         I18n.Load(_config.Language);
         Logger.Info("KoEnVue starting");
 
@@ -360,6 +356,7 @@ internal static class Program
     {
         _config = Settings.Load();
         Logger.SetLevel(_config.LogLevel);
+        Logger.Initialize(_config);
         I18n.Load(_config.Language);
         CaretTracker.ClearCache();
         Settings.ClearProfileCache();
@@ -391,11 +388,11 @@ internal static class Program
             case Win32Constants.WM_LBUTTONUP:
                 switch (_config.TrayClickAction)
                 {
-                    case TrayClickToggle:
+                    case TrayClickAction.Toggle:
                         _indicatorVisible = !_indicatorVisible;
                         if (!_indicatorVisible) HideOverlay();
                         break;
-                    case TrayClickSettings:
+                    case TrayClickAction.Settings:
                         Settings.OpenSettingsFile();
                         break;
                 }
@@ -482,7 +479,7 @@ internal static class Program
     private static void HandleSettingChange()
     {
         // 고대비 / 시스템 테마 변경 감지
-        if (_config.Theme == "system")
+        if (_config.Theme == Theme.System)
         {
             _config = ThemePresets.Apply(_config);
             Overlay.HandleConfigChanged(_config);
@@ -598,7 +595,7 @@ internal static class Program
             if (_needCaretUpdate || appConfig.DisplayMode == DisplayMode.Always)
             {
                 long pollStart = Environment.TickCount64;
-                string procName = GetProcessName(processId);
+                string procName = SystemFilter.GetProcessName(processId);
                 var result = CaretTracker.GetCaretPosition(
                     hwndFocus, threadId, procName, appConfig);
 
@@ -622,21 +619,6 @@ internal static class Program
 
                 _needCaretUpdate = false;
             }
-        }
-    }
-
-    private static string GetProcessName(uint processId)
-    {
-        if (processId == 0) return string.Empty;
-
-        try
-        {
-            using var proc = Process.GetProcessById((int)processId);
-            return proc.ProcessName;
-        }
-        catch
-        {
-            return string.Empty;
         }
     }
 
@@ -694,6 +676,15 @@ internal static class Program
             User32.UnregisterHotKey(_hwndMain, id);
     }
 
+    // 핫키 파싱 상수 (P3: 매직 스트링 금지)
+    private const string ModCtrl = "Ctrl";
+    private const string ModAlt = "Alt";
+    private const string ModShift = "Shift";
+    private const string ModWin = "Win";
+    private const string FKeyPrefix = "F";
+    private const int FKeyMin = 1;
+    private const int FKeyMax = 12;
+
     private static bool ParseHotkey(string hotkey, out uint modifiers, out uint vk)
     {
         modifiers = 0;
@@ -707,13 +698,13 @@ internal static class Program
         for (int i = 0; i < parts.Length - 1; i++)
         {
             string mod = parts[i].Trim();
-            if (mod.Equals("Ctrl", StringComparison.OrdinalIgnoreCase))
+            if (mod.Equals(ModCtrl, StringComparison.OrdinalIgnoreCase))
                 modifiers |= Win32Constants.MOD_CONTROL;
-            else if (mod.Equals("Alt", StringComparison.OrdinalIgnoreCase))
+            else if (mod.Equals(ModAlt, StringComparison.OrdinalIgnoreCase))
                 modifiers |= Win32Constants.MOD_ALT;
-            else if (mod.Equals("Shift", StringComparison.OrdinalIgnoreCase))
+            else if (mod.Equals(ModShift, StringComparison.OrdinalIgnoreCase))
                 modifiers |= Win32Constants.MOD_SHIFT;
-            else if (mod.Equals("Win", StringComparison.OrdinalIgnoreCase))
+            else if (mod.Equals(ModWin, StringComparison.OrdinalIgnoreCase))
                 modifiers |= Win32Constants.MOD_WIN;
             else
                 return false;
@@ -730,9 +721,15 @@ internal static class Program
             else
                 return false;
         }
+        else if (keyStr.StartsWith(FKeyPrefix, StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(keyStr.AsSpan(1), out int fNum)
+            && fNum >= FKeyMin && fNum <= FKeyMax)
+        {
+            vk = (uint)(Win32Constants.VK_F1 + fNum - 1);
+        }
         else
         {
-            return false;  // F1-F12 등은 Phase 05에서 확장
+            return false;
         }
 
         return vk != 0;
@@ -754,6 +751,9 @@ internal static class Program
 
         // 3. UIA 클라이언트 종료
         UiaClient.Shutdown();
+
+        // 3a. 파일 로거 종료
+        Logger.Shutdown();
 
         // 4. 애니메이션 + 렌더링 리소스 해제 (윈도우 파괴 전)
         Animation.Dispose();

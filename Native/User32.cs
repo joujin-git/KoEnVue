@@ -52,6 +52,9 @@ internal static partial class User32
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool GetMonitorInfoW(IntPtr hMonitor, ref MONITORINFOEXW lpmi);
 
+    [LibraryImport("user32.dll")]
+    internal static partial IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
     // === 마우스 ===
 
     [LibraryImport("user32.dll")]

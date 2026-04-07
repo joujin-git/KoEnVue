@@ -54,11 +54,6 @@ internal static class Overlay
     // 디버그 오버레이
     private static volatile DebugInfo? _debugInfo;
 
-    // LabelStyle 상수 (P3: 매직 문자열 금지)
-    private const string LabelStyleText = "text";
-    private const string LabelStyleDot = "dot";
-    private const string LabelStyleIcon = "icon";
-
     // 디버그 오버레이 상수
     private const int DebugOverlayLineCount = 5;
     private const int DebugOverlayLineHeight = 12;
@@ -127,6 +122,14 @@ internal static class Overlay
     public static void UpdateAlpha(byte alpha)
     {
         UpdateOverlay(_lastX, _lastY, _currentWidth, _currentHeight, alpha);
+    }
+
+    /// <summary>슬라이드 프레임: 위치만 변경 (비트맵 불변).</summary>
+    public static void UpdatePosition(int x, int y)
+    {
+        _lastX = x;
+        _lastY = y;
+        UpdateOverlay(x, y, _currentWidth, _currentHeight, _lastAlpha);
     }
 
     /// <summary>강조 프레임: 중심 기준 확대 (F-S04).</summary>
@@ -407,16 +410,48 @@ internal static class Overlay
 
         Gdi32.SelectObject(_memDC, oldBrush);
 
+        // 테두리 렌더링 (border_width > 0 일 때만)
+        int borderW = DpiHelper.Scale(config.BorderWidth, _currentDpiScale);
+        if (borderW > 0)
+        {
+            uint borderColor = ColorHelper.HexToColorRef(config.BorderColor);
+            IntPtr hBorderPen = Gdi32.CreatePen(Win32Constants.PS_SOLID, borderW, borderColor);
+            IntPtr hNullBrush = Gdi32.GetStockObject(Win32Constants.NULL_BRUSH);
+
+            IntPtr oldBorderPen = Gdi32.SelectObject(_memDC, hBorderPen);
+            IntPtr oldBorderBrush = Gdi32.SelectObject(_memDC, hNullBrush);
+
+            // 펜 폭 인셋: GDI 펜은 경로 중심에 그려지므로 halfBorder만큼 안쪽으로 오프셋
+            int halfBorder = borderW / 2;
+            switch (config.LabelShape)
+            {
+                case LabelShape.Circle:
+                    Gdi32.Ellipse(_memDC, halfBorder, halfBorder, w - halfBorder, h - halfBorder);
+                    break;
+                case LabelShape.Pill:
+                    Gdi32.RoundRect(_memDC, halfBorder, halfBorder, w - halfBorder, h - halfBorder, h, h);
+                    break;
+                default:
+                    int borderRadius = DpiHelper.Scale(config.LabelBorderRadius, _currentDpiScale);
+                    Gdi32.RoundRect(_memDC, halfBorder, halfBorder, w - halfBorder, h - halfBorder, borderRadius, borderRadius);
+                    break;
+            }
+
+            Gdi32.SelectObject(_memDC, oldBorderBrush);
+            Gdi32.SelectObject(_memDC, oldBorderPen);
+            Gdi32.DeleteObject(hBorderPen);
+        }
+
         // 라벨 스타일별 내부 렌더링
         switch (config.LabelStyle)
         {
-            case LabelStyleDot:
+            case LabelStyle.Dot:
                 RenderLabelDot(state, config, w, h);
                 break;
-            case LabelStyleIcon:
+            case LabelStyle.Icon:
                 RenderLabelIcon(state, config, w, h);
                 break;
-            default: // "text"
+            default: // Text
                 RenderLabelText(state, config, w, h);
                 break;
         }
@@ -606,8 +641,7 @@ internal static class Overlay
                 effectiveCaretH = 0;
                 break;
             case PositionMode.Fixed:
-                anchorX = config.FixedPosition.X;
-                anchorY = config.FixedPosition.Y;
+                (anchorX, anchorY) = ResolveFixedPosition(config);
                 effectiveCaretH = 0;
                 break;
             default: // Caret
@@ -754,6 +788,62 @@ internal static class Overlay
             && y >= workArea.Top + margin
             && x + w <= workArea.Right - margin
             && y + h <= workArea.Bottom - margin;
+    }
+
+    // ================================================================
+    // Fixed 위치 해석
+    // ================================================================
+
+    /// <summary>
+    /// anchor + monitor 설정에 따라 Fixed 모드의 스크린 좌표를 계산.
+    /// </summary>
+    private static (int x, int y) ResolveFixedPosition(AppConfig config)
+    {
+        var fp = config.FixedPosition;
+
+        // absolute: raw 좌표 그대로
+        if (fp.Anchor == FixedAnchor.Absolute)
+            return (fp.X, fp.Y);
+
+        // 모니터 영역 조회
+        IntPtr hMonitor = ResolveMonitor(fp.Monitor);
+        RECT mon = DpiHelper.GetMonitorRect(hMonitor);
+
+        int monW = mon.Right - mon.Left;
+        int monH = mon.Bottom - mon.Top;
+
+        // 앵커 기준점에서 X,Y 오프셋 적용
+        return fp.Anchor switch
+        {
+            FixedAnchor.TopLeft => (mon.Left + fp.X, mon.Top + fp.Y),
+            FixedAnchor.TopRight => (mon.Right - fp.X, mon.Top + fp.Y),
+            FixedAnchor.BottomLeft => (mon.Left + fp.X, mon.Bottom - fp.Y),
+            FixedAnchor.BottomRight => (mon.Right - fp.X, mon.Bottom - fp.Y),
+            FixedAnchor.Center => (mon.Left + monW / 2 + fp.X, mon.Top + monH / 2 + fp.Y),
+            _ => (mon.Left + fp.X, mon.Top + fp.Y),  // fallback → top_left
+        };
+    }
+
+    /// <summary>
+    /// monitor 설정값에 따라 대상 모니터 핸들을 반환.
+    /// </summary>
+    private static IntPtr ResolveMonitor(FixedMonitor monitor)
+    {
+        if (monitor == FixedMonitor.Mouse)
+        {
+            User32.GetCursorPos(out POINT cursor);
+            return User32.MonitorFromPoint(cursor, Win32Constants.MONITOR_DEFAULTTONEAREST);
+        }
+
+        if (monitor == FixedMonitor.Active)
+        {
+            IntPtr hwndFg = User32.GetForegroundWindow();
+            if (hwndFg != IntPtr.Zero)
+                return User32.MonitorFromWindow(hwndFg, Win32Constants.MONITOR_DEFAULTTONEAREST);
+        }
+
+        // Primary 또는 알 수 없는 값 → 기본 모니터
+        return User32.MonitorFromWindow(IntPtr.Zero, Win32Constants.MONITOR_DEFAULTTOPRIMARY);
     }
 
     // ================================================================

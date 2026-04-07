@@ -63,6 +63,9 @@ internal static partial class Gdi32
     [LibraryImport("gdi32.dll")]
     internal static partial IntPtr GetStockObject(int i);
 
+    [LibraryImport("gdi32.dll")]
+    internal static partial IntPtr CreatePen(int iStyle, int cWidth, uint color);
+
     // 참고: DrawTextW는 user32.dll 소속 → User32.cs에 선언됨
     // 참고: MulDiv는 kernel32.dll 소속 → Kernel32.cs에 선언됨
 }

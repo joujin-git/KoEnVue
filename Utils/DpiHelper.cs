@@ -73,4 +73,15 @@ internal static class DpiHelper
     {
         return User32.MonitorFromPoint(new POINT(x, y), Win32Constants.MONITOR_DEFAULTTONEAREST);
     }
+
+    /// <summary>
+    /// 모니터의 전체 영역(rcMonitor)을 반환한다.
+    /// </summary>
+    public static RECT GetMonitorRect(IntPtr hMonitor)
+    {
+        var monitorInfo = new MONITORINFOEXW();
+        monitorInfo.cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFOEXW>();
+        User32.GetMonitorInfoW(hMonitor, ref monitorInfo);
+        return monitorInfo.rcMonitor;
+    }
 }

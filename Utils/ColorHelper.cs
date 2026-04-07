@@ -47,4 +47,22 @@ internal static class ColorHelper
 
         return (r, g, b);
     }
+
+    /// <summary>
+    /// COLORREF (0x00BBGGRR)에서 RGB 채널 추출.
+    /// GetSysColor 등 Win32 API 반환값을 개별 채널로 분리할 때 사용.
+    /// </summary>
+    public static (byte R, byte G, byte B) ColorRefToRgb(uint colorRef)
+    {
+        byte r = (byte)(colorRef & 0xFF);
+        byte g = (byte)((colorRef >> 8) & 0xFF);
+        byte b = (byte)((colorRef >> 16) & 0xFF);
+        return (r, g, b);
+    }
+
+    /// <summary>
+    /// RGB 바이트를 "#RRGGBB" HEX 문자열로 변환.
+    /// </summary>
+    public static string RgbToHex(byte r, byte g, byte b)
+        => $"#{r:X2}{g:X2}{b:X2}";
 }

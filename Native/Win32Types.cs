@@ -204,7 +204,8 @@ internal static class Win32Constants
     public const uint EVENT_OBJECT_IME_HIDE   = 0x8028;
     public const uint EVENT_OBJECT_IME_CHANGE = 0x8029;  // Windows SDK WinUser.h 정의
 
-    // --- MonitorFromPoint 플래그 ---
+    // --- MonitorFromPoint / MonitorFromWindow 플래그 ---
+    public const uint MONITOR_DEFAULTTOPRIMARY = 0x00000001;
     public const uint MONITOR_DEFAULTTONEAREST = 0x00000002;
 
     // --- UpdateLayeredWindow ---
@@ -228,6 +229,10 @@ internal static class Win32Constants
 
     // --- GDI stock objects ---
     public const int NULL_PEN            = 8;
+    public const int NULL_BRUSH          = 5;
+
+    // --- GDI pen styles ---
+    public const int PS_SOLID            = 0;
 
     // --- DrawTextW 포맷 ---
     public const uint DT_CENTER          = 0x0001;
@@ -285,6 +290,20 @@ internal static class Win32Constants
 
     // --- 입력 ---
     public const int VK_LBUTTON          = 0x01;
+
+    // --- F 키 ---
+    public const int VK_F1               = 0x70;
+    public const int VK_F2               = 0x71;
+    public const int VK_F3               = 0x72;
+    public const int VK_F4               = 0x73;
+    public const int VK_F5               = 0x74;
+    public const int VK_F6               = 0x75;
+    public const int VK_F7               = 0x76;
+    public const int VK_F8               = 0x77;
+    public const int VK_F9               = 0x78;
+    public const int VK_F10              = 0x79;
+    public const int VK_F11              = 0x7A;
+    public const int VK_F12              = 0x7B;
 
     // --- 핫키 모디파이어 ---
     public const uint MOD_ALT            = 0x0001;

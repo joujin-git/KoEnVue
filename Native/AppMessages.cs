@@ -49,6 +49,7 @@ internal static class AppMessages
     public const nuint TIMER_ID_HOLD      = 2;  // one-shot, 유지 시간
     public const nuint TIMER_ID_HIGHLIGHT = 3;  // ~16ms, 강조 스케일
     public const nuint TIMER_ID_TOPMOST   = 4;  // 5000ms, TOPMOST 재적용
+    public const nuint TIMER_ID_SLIDE     = 5;  // ~16ms, 슬라이드 위치 보간
 
     // --- WM_USER 기반 ---
 

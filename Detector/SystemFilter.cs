@@ -181,6 +181,14 @@ internal static class SystemFilter
     internal static string GetProcessName(IntPtr hwnd)
     {
         User32.GetWindowThreadProcessId(hwnd, out uint processId);
+        return GetProcessName(processId);
+    }
+
+    /// <summary>
+    /// 프로세스 ID로부터 프로세스 이름 조회.
+    /// </summary>
+    internal static string GetProcessName(uint processId)
+    {
         if (processId == 0) return string.Empty;
 
         try

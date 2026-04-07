@@ -341,9 +341,9 @@ internal static class Settings
     {
         return config.AppProfileMatch switch
         {
-            "process" => SystemFilter.GetProcessName(hwnd).ToLowerInvariant(),
-            "class" => SystemFilter.GetClassName(hwnd),
-            "title" => GetWindowTitle(hwnd),
+            AppProfileMatch.Process => SystemFilter.GetProcessName(hwnd).ToLowerInvariant(),
+            AppProfileMatch.Class => SystemFilter.GetClassName(hwnd),
+            AppProfileMatch.Title => GetWindowTitle(hwnd),
             _ => SystemFilter.GetProcessName(hwnd).ToLowerInvariant(),
         };
     }
@@ -364,7 +364,7 @@ internal static class Settings
     /// </summary>
     private static AppConfig? MatchProfile(AppConfig global, string key)
     {
-        if (global.AppProfileMatch == "title")
+        if (global.AppProfileMatch == AppProfileMatch.Title)
         {
             // title 모드: 각 프로필 키를 Regex 패턴으로 매칭
             // NativeAOT: RegexOptions.Compiled 금지 (Reflection.Emit 불가)

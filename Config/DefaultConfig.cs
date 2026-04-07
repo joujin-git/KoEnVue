@@ -50,6 +50,12 @@ internal static class DefaultConfig
     /// <summary>확대 -> 원래 크기 복귀 시간</summary>
     public const int ScaleReturnMs = 300;
 
+    /// <summary>애니메이션 프레임 간격 (~60fps)</summary>
+    public const uint AnimationFrameMs = 16;
+
+    /// <summary>Dim 모드 투명도 감소 계수 (50%)</summary>
+    public const double DimOpacityFactor = 0.5;
+
     // === 감지 ===
 
     /// <summary>감지 폴링 간격</summary>

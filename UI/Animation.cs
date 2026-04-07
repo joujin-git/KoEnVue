@@ -37,8 +37,17 @@ internal static class Animation
     private static long _highlightStartTick;
     private static double _highlightStartScale;
 
+    // 슬라이드 보간
+    private static bool _slideActive;
+    private static long _slideStartTick;
+    private static int _slideFromX, _slideFromY, _slideToX, _slideToY;
+    private static int _slideDurationMs;
+
     // forceHidden 플래그 (FadingOut 완료 시 Hidden 강제)
     private static bool _forceHidden;
+
+    // Dim 모드 alpha 계산용 IME 상태
+    private static ImeState _currentState;
 
     // 윈도우 핸들
     private static IntPtr _hwndMain;
@@ -63,6 +72,7 @@ internal static class Animation
         User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_FADE);
         User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_HOLD);
         User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_HIGHLIGHT);
+        User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_SLIDE);
         User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_TOPMOST);
     }
 
@@ -86,6 +96,7 @@ internal static class Animation
             : config.EventDisplayDurationMs;
 
         // 2. targetAlpha 계산
+        _currentState = state;
         _targetAlpha = GetTargetAlpha(config, active: true);
 
         // 3. 상태별 분기
@@ -96,7 +107,9 @@ internal static class Animation
             User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_HOLD,
                 (uint)_holdDurationMs, IntPtr.Zero);
 
+            var (prevX, prevY) = Overlay.GetLastPosition();
             Overlay.Show(caretX, caretY, caretH, state, config);
+            TryStartSlide(prevX, prevY, config);
 
             if (imeChanged)
             {
@@ -104,21 +117,37 @@ internal static class Animation
                 if (config.ChangeHighlight)
                     StartHighlight(config);
             }
+
+            // Dim↔Full 전환 즉시 반영
+            if (_currentAlpha != _targetAlpha)
+            {
+                _currentAlpha = _targetAlpha;
+                Overlay.UpdateAlpha(_targetAlpha);
+            }
         }
         else if (_phase == AnimPhase.Idle)
         {
             // Always 모드 유휴 → 활성으로 복귀
             StartFade(_currentAlpha, _targetAlpha, config.FadeInMs);
             _phase = AnimPhase.FadingIn;
-            User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, 16, IntPtr.Zero);
+            User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
 
+            var (prevX, prevY) = Overlay.GetLastPosition();
             Overlay.Show(caretX, caretY, caretH, state, config);
+            TryStartSlide(prevX, prevY, config);
 
             if (imeChanged)
             {
                 Overlay.UpdateColor(state, config);
                 if (config.ChangeHighlight)
                     StartHighlight(config);
+            }
+
+            // Dim↔Full 전환 즉시 반영
+            if (_currentAlpha != _targetAlpha)
+            {
+                _currentAlpha = _targetAlpha;
+                Overlay.UpdateAlpha(_targetAlpha);
             }
         }
         else if (_phase == AnimPhase.FadingOut)
@@ -127,9 +156,11 @@ internal static class Animation
             User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_FADE);
             StartFade(_currentAlpha, _targetAlpha, config.FadeInMs);
             _phase = AnimPhase.FadingIn;
-            User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, 16, IntPtr.Zero);
+            User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
 
+            var (prevX, prevY) = Overlay.GetLastPosition();
             Overlay.Show(caretX, caretY, caretH, state, config);
+            TryStartSlide(prevX, prevY, config);
 
             if (imeChanged)
             {
@@ -147,7 +178,7 @@ internal static class Animation
             {
                 StartFade(0, _targetAlpha, config.FadeInMs);
                 _phase = AnimPhase.FadingIn;
-                User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, 16, IntPtr.Zero);
+                User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
             }
             else
             {
@@ -175,6 +206,8 @@ internal static class Animation
             HandleHoldTimer(config);
         else if (timerId == AppMessages.TIMER_ID_HIGHLIGHT)
             HandleHighlightTimer(config);
+        else if (timerId == AppMessages.TIMER_ID_SLIDE)
+            HandleSlideTimer();
         else if (timerId == AppMessages.TIMER_ID_TOPMOST)
             Overlay.ForceTopmost();
     }
@@ -229,7 +262,7 @@ internal static class Animation
 
         StartFade(_currentAlpha, endAlpha, config.FadeOutMs);
         _phase = AnimPhase.FadingOut;
-        User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, 16, IntPtr.Zero);
+        User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
     }
 
     private static void HandleHighlightTimer(AppConfig config)
@@ -276,7 +309,9 @@ internal static class Animation
         User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_FADE);
         User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_HOLD);
         User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_HIGHLIGHT);
+        User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_SLIDE);
         _highlightActive = false;
+        _slideActive = false;
 
         // 2. 모드별 분기
         if (config.DisplayMode == DisplayMode.Always && !forceHidden)
@@ -287,7 +322,7 @@ internal static class Animation
                 _forceHidden = false;
                 StartFade(_currentAlpha, endAlpha, config.FadeOutMs);
                 _phase = AnimPhase.FadingOut;
-                User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, 16, IntPtr.Zero);
+                User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
             }
             else
             {
@@ -304,7 +339,7 @@ internal static class Animation
                 _forceHidden = forceHidden;
                 StartFade(_currentAlpha, 0, config.FadeOutMs);
                 _phase = AnimPhase.FadingOut;
-                User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, 16, IntPtr.Zero);
+                User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
             }
             else
             {
@@ -339,6 +374,10 @@ internal static class Animation
         if (isCaretBox)
             raw = Math.Max(config.CaretBoxMinOpacity, raw);
 
+        // Dim 모드: NonKorean + Dim이면 active/idle 모두 50% 감소
+        if (_currentState == ImeState.NonKorean && config.NonKoreanIme == NonKoreanImeMode.Dim)
+            raw *= DefaultConfig.DimOpacityFactor;
+
         return (byte)(raw * 255);
     }
 
@@ -355,12 +394,70 @@ internal static class Animation
         _highlightActive = true;
         _highlightStartScale = config.HighlightScale;
         _highlightStartTick = Stopwatch.GetTimestamp();
-        User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_HIGHLIGHT, 16, IntPtr.Zero);
+        User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_HIGHLIGHT, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
     }
 
     private static double GetElapsedMs(long startTick)
     {
         long now = Stopwatch.GetTimestamp();
         return (now - startTick) * 1000.0 / Stopwatch.Frequency;
+    }
+
+    // ================================================================
+    // 슬라이드 애니메이션
+    // ================================================================
+
+    /// <summary>
+    /// Overlay.Show 호출 후 이전/새 위치를 비교하여 슬라이드 시작.
+    /// DWM VSync 내 같은 메시지 핸들러에서 Show→UpdatePosition 연속 호출이므로
+    /// 중간 위치는 화면에 표시되지 않는다.
+    /// </summary>
+    private static void TryStartSlide(int prevX, int prevY, AppConfig config)
+    {
+        var (newX, newY) = Overlay.GetLastPosition();
+
+        if (config.SlideAnimation && config.SlideSpeedMs > 0
+            && (prevX != newX || prevY != newY))
+        {
+            // 이전 위치로 즉시 복원 (같은 프레임 — DWM이 수집 전)
+            Overlay.UpdatePosition(prevX, prevY);
+            StartSlide(prevX, prevY, newX, newY, config.SlideSpeedMs);
+        }
+    }
+
+    private static void StartSlide(int fromX, int fromY, int toX, int toY, int durationMs)
+    {
+        _slideActive = true;
+        _slideFromX = fromX;
+        _slideFromY = fromY;
+        _slideToX = toX;
+        _slideToY = toY;
+        _slideDurationMs = durationMs;
+        _slideStartTick = Stopwatch.GetTimestamp();
+        User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_SLIDE, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
+    }
+
+    private static void HandleSlideTimer()
+    {
+        if (!_slideActive) return;
+
+        double elapsed = GetElapsedMs(_slideStartTick);
+        double t = _slideDurationMs > 0 ? Math.Clamp(elapsed / _slideDurationMs, 0.0, 1.0) : 1.0;
+
+        // ease-out cubic: 1 - (1-t)^3
+        double eased = 1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t);
+
+        int x = _slideFromX + (int)Math.Round((_slideToX - _slideFromX) * eased);
+        int y = _slideFromY + (int)Math.Round((_slideToY - _slideFromY) * eased);
+
+        Overlay.UpdatePosition(x, y);
+
+        if (t >= 1.0)
+        {
+            User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_SLIDE);
+            _slideActive = false;
+            // 최종 위치 보정
+            Overlay.UpdatePosition(_slideToX, _slideToY);
+        }
     }
 }
