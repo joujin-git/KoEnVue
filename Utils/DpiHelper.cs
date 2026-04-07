@@ -55,6 +55,17 @@ internal static class DpiHelper
     }
 
     /// <summary>
+    /// 모니터의 raw DPI 값을 반환. HFONT 생성 시 dpiY 필요.
+    /// </summary>
+    public static (uint dpiX, uint dpiY) GetRawDpi(IntPtr hMonitor)
+    {
+        int hr = Shcore.GetDpiForMonitor(hMonitor, Win32Constants.MDT_EFFECTIVE_DPI,
+            out uint dpiX, out uint dpiY);
+        if (hr != 0 || dpiX == 0) return ((uint)BASE_DPI, (uint)BASE_DPI);
+        return (dpiX, dpiY);
+    }
+
+    /// <summary>
     /// 좌표가 속한 모니터 핸들을 반환한다.
     /// MONITOR_DEFAULTTONEAREST: 가상 데스크톱 밖이면 가장 가까운 모니터.
     /// </summary>

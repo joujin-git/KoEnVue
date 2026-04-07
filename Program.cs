@@ -5,6 +5,7 @@ using KoEnVue.Config;
 using KoEnVue.Detector;
 using KoEnVue.Models;
 using KoEnVue.Native;
+using KoEnVue.UI;
 using KoEnVue.Utils;
 
 namespace KoEnVue;
@@ -27,6 +28,12 @@ internal static class Program
     private static volatile ImeState _lastImeState = ImeState.English;
     private static volatile bool _needCaretUpdate;
     private static volatile bool _indicatorVisible;
+    private static volatile int _lastCaretH;  // 감지 스레드 → 메인 스레드
+
+    // 캐럿 위치 (메인 스레드 전용)
+    private static int _lastCaretX;
+    private static int _lastCaretY;
+    private static bool _caretPositionKnown;
 
     // 라이프사이클
     private static Mutex? _mutex;
@@ -79,8 +86,12 @@ internal static class Program
         // 8. 메인 윈도우 생성 (메시지 전용, 화면 미표시)
         _hwndMain = CreateMainWindow();
 
-        // 9. 오버레이 윈도우 생성 (Phase 04에서 렌더링 연결)
+        // 9. 오버레이 윈도우 생성
         _hwndOverlay = CreateOverlayWindow();
+
+        // 9a. 렌더링 + 애니메이션 초기화
+        Overlay.Initialize(_hwndOverlay, _config);
+        Animation.Initialize(_hwndMain, _hwndOverlay, _config);
 
         // 10. 감지 스레드 시작
         StartDetectionThread();
@@ -339,7 +350,17 @@ internal static class Program
         if (_config.EventTriggers.OnImeChange)
             _needCaretUpdate = true;
 
-        // Phase 04: Overlay 색상 변경 + 표시 트리거
+        // 캐럿 위치 미수신 시 표시 건너뜀
+        if (!_caretPositionKnown) return;
+
+        // Always 모드이거나 EventTrigger 활성 시 표시 트리거
+        if (_config.DisplayMode == DisplayMode.Always || _config.EventTriggers.OnImeChange)
+        {
+            _indicatorVisible = true;
+            Animation.TriggerShow(_lastCaretX, _lastCaretY, _lastCaretH,
+                newState, _config, imeChanged: true);
+        }
+
         // Phase 05: Tray 아이콘/툴팁 갱신
     }
 
@@ -351,13 +372,25 @@ internal static class Program
         if (_config.EventTriggers.OnFocusChange)
             _needCaretUpdate = true;
 
-        // Phase 04: 위치 재계산 + 표시 트리거
+        // 캐럿 위치 미수신 시 표시 건너뜀
+        if (!_caretPositionKnown) return;
+
+        if (_config.DisplayMode == DisplayMode.Always || _config.EventTriggers.OnFocusChange)
+        {
+            _indicatorVisible = true;
+            Animation.TriggerShow(_lastCaretX, _lastCaretY, _lastCaretH,
+                _lastImeState, _config, imeChanged: false);
+        }
     }
 
     private static void HandleCaretUpdated(int x, int y)
     {
         Logger.Debug($"Caret position: ({x}, {y})");
-        // Phase 04: Overlay 위치 업데이트
+        _caretPositionKnown = true;
+        _lastCaretX = x;
+        _lastCaretY = y;
+        _indicatorVisible = true;
+        Animation.TriggerShow(x, y, _lastCaretH, _lastImeState, _config, imeChanged: false);
     }
 
     private static void HandleConfigChanged()
@@ -365,13 +398,13 @@ internal static class Program
         _config = LoadConfig();
         Logger.SetLevel(_config.LogLevel);
         CaretTracker.ClearCache();
+        Overlay.HandleConfigChanged(_config);
         Logger.Info("Config reloaded");
     }
 
     private static void HideOverlay()
     {
-        if (_hwndOverlay != IntPtr.Zero)
-            User32.ShowWindow(_hwndOverlay, Win32Constants.SW_HIDE);
+        Animation.TriggerHide(_config);
         _indicatorVisible = false;
     }
 
@@ -379,7 +412,7 @@ internal static class Program
 
     private static void HandleTimer(IntPtr timerId)
     {
-        // Phase 04: Animation 프레임 처리
+        Animation.HandleTimer((nuint)(nint)timerId, _config);
     }
 
     private static void HandleTrayCallback(IntPtr lParam)
@@ -407,19 +440,22 @@ internal static class Program
     private static void HandleDisplayChange()
     {
         Logger.Info("Display changed");
-        // Phase 07: 모니터 DPI 재조회, rcWork 재계산
+        Overlay.HandleDpiChanged(_config);
     }
 
     private static void HandleSettingChange()
     {
-        // Phase 07: 작업표시줄 변경 → rcWork 재계산, 고대비 감지
+        // 작업표시줄 변경 시 표시 중이면 위치 재계산
+        if (_indicatorVisible)
+            Animation.TriggerShow(_lastCaretX, _lastCaretY, _lastCaretH,
+                _lastImeState, _config, imeChanged: false);
     }
 
     private static void HandleDpiChanged(IntPtr wParam, IntPtr lParam)
     {
         // wParam: HIWORD=newDpiY, LOWORD=newDpiX
         // lParam: RECT* (새 DPI에 맞는 권장 크기/위치)
-        // Phase 04: HFONT/DIB 재생성
+        Overlay.HandleDpiChanged(_config);
     }
 
     // ================================================================
@@ -501,8 +537,8 @@ internal static class Program
                     (IntPtr)(int)currentIme, IntPtr.Zero);
             }
 
-            // 5. 캐럿 위치 추적 (이벤트 발생 시에만)
-            if (_needCaretUpdate)
+            // 5. 캐럿 위치 추적 (이벤트 발생 시 또는 Always 모드)
+            if (_needCaretUpdate || _config.DisplayMode == DisplayMode.Always)
             {
                 string procName = GetProcessName(processId);
                 var result = CaretTracker.GetCaretPosition(
@@ -510,6 +546,7 @@ internal static class Program
 
                 if (result is { } caret)
                 {
+                    _lastCaretH = caret.h;  // volatile int 쓰기
                     User32.PostMessage(_hwndMain, AppMessages.WM_CARET_UPDATED,
                         (IntPtr)caret.x, (IntPtr)caret.y);
                 }
@@ -667,12 +704,15 @@ internal static class Program
         // 2. 핫키 해제
         UnregisterHotkeys();
 
-        // 3. 오버레이 윈도우 파괴
+        // 3. 애니메이션 + 렌더링 리소스 해제 (윈도우 파괴 전)
+        Animation.Dispose();
+        Overlay.Dispose();
+
+        // 4. 오버레이 윈도우 파괴
         if (_hwndOverlay != IntPtr.Zero)
             User32.DestroyWindow(_hwndOverlay);
 
-        // 4. Phase 05: Tray.Remove()
-        // 5. Phase 04: GDI 리소스 해제
+        // 5. Phase 05: Tray.Remove()
 
         // 6. Mutex 해제
         _mutex?.ReleaseMutex();

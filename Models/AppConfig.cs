@@ -16,11 +16,11 @@ internal sealed record AppConfig
     public EventTriggersConfig EventTriggers { get; init; } = new();
 
     // [위치]
-    public string PositionMode { get; init; } = "caret";   // "caret" | "mouse" | "fixed"
+    public PositionMode PositionMode { get; init; } = PositionMode.Caret;
     public FixedPositionConfig FixedPosition { get; init; } = new();
     public OffsetConfig CaretOffset { get; init; } = new(-2, 0);
     public OffsetConfig MouseOffset { get; init; } = new(20, 25);
-    public string CaretPlacement { get; init; } = "left";   // "left" | "above" | "below" | "right"
+    public CaretPlacement CaretPlacement { get; init; } = CaretPlacement.Left;
     public bool CaretPlacementAutoFlip { get; init; } = true;
     public int ScreenEdgeMargin { get; init; } = 8;
 
@@ -32,7 +32,7 @@ internal sealed record AppConfig
     public int CaretUnderlineHeight { get; init; } = 3;
     public int CaretVbarWidth { get; init; } = 3;
     public int CaretVbarHeight { get; init; } = 16;
-    public string LabelShape { get; init; } = "rounded_rect";
+    public LabelShape LabelShape { get; init; } = LabelShape.RoundedRect;
     public int LabelWidth { get; init; } = 28;
     public int LabelHeight { get; init; } = 24;
     public int LabelBorderRadius { get; init; } = 6;
@@ -58,7 +58,7 @@ internal sealed record AppConfig
     // [외관 -- 텍스트]
     public string FontFamily { get; init; } = "맑은 고딕";
     public int FontSize { get; init; } = 12;
-    public string FontWeight { get; init; } = "bold";
+    public FontWeight FontWeight { get; init; } = FontWeight.Bold;
     public string HangulLabel { get; init; } = "한";
     public string EnglishLabel { get; init; } = "En";
     public string NonKoreanLabel { get; init; } = "EN";
@@ -80,9 +80,9 @@ internal sealed record AppConfig
     // [동작 -- 감지]
     public int PollIntervalMs { get; init; } = 80;
     public int CaretPollIntervalMs { get; init; } = 50;
-    public string DetectionMethod { get; init; } = "auto";
-    public string CaretMethod { get; init; } = "auto";
-    public string NonKoreanIme { get; init; } = "hide";
+    public DetectionMethod DetectionMethod { get; init; } = DetectionMethod.Auto;
+    public CaretMethod CaretMethod { get; init; } = CaretMethod.Auto;
+    public NonKoreanImeMode NonKoreanIme { get; init; } = NonKoreanImeMode.Hide;
     public bool HideInFullscreen { get; init; } = true;
     public bool HideWhenNoFocus { get; init; } = true;
     public bool HideOnLockScreen { get; init; } = true;
@@ -93,7 +93,7 @@ internal sealed record AppConfig
     // [앱별 프로필] -- Phase 06에서 구현
     public Dictionary<string, JsonElement> AppProfiles { get; init; } = new();
     public string AppProfileMatch { get; init; } = "process";
-    public string AppFilterMode { get; init; } = "blacklist";
+    public AppFilterMode AppFilterMode { get; init; } = AppFilterMode.Blacklist;
     public string[] AppFilterList { get; init; } = [];
 
     // [핫키]
@@ -116,7 +116,7 @@ internal sealed record AppConfig
     public bool StartupWithWindows { get; init; } = false;
     public bool StartupMinimized { get; init; } = true;
     public bool SingleInstance { get; init; } = true;
-    public string LogLevel { get; init; } = "WARNING";
+    public LogLevel LogLevel { get; init; } = LogLevel.Warning;
     public string Language { get; init; } = "ko";
     public bool LogToFile { get; init; } = false;
     public string LogFilePath { get; init; } = "";

@@ -209,10 +209,23 @@ internal static class Win32Constants
     public const uint BI_RGB             = 0;
     public const uint DIB_RGB_COLORS     = 0;
 
+    // --- CreateFontW 파라미터 ---
+    public const int FW_NORMAL           = 400;
+    public const int FW_BOLD             = 700;
+    public const byte DEFAULT_CHARSET    = 1;
+    public const byte OUT_TT_PRECIS      = 4;
+    public const byte CLIP_DEFAULT_PRECIS = 0;
+    public const byte CLEARTYPE_QUALITY  = 5;
+    public const byte DEFAULT_PITCH      = 0;
+
+    // --- GDI stock objects ---
+    public const int NULL_PEN            = 8;
+
     // --- DrawTextW 포맷 ---
     public const uint DT_CENTER          = 0x0001;
     public const uint DT_VCENTER         = 0x0004;
     public const uint DT_SINGLELINE      = 0x0020;
+    public const uint DT_CALCRECT        = 0x0400;
 
     // --- Shell_NotifyIconW ---
     public const uint NIM_ADD            = 0x00000000;

@@ -1,0 +1,366 @@
+using System.Diagnostics;
+using KoEnVue.Config;
+using KoEnVue.Models;
+using KoEnVue.Native;
+using KoEnVue.Utils;
+
+namespace KoEnVue.UI;
+
+/// <summary>
+/// WM_TIMER 기반 애니메이션 상태 머신.
+/// Overlay의 public API를 직접 호출 (단방향 의존).
+/// 모든 호출은 메인 스레드에서만 수행.
+/// </summary>
+internal static class Animation
+{
+    // ================================================================
+    // 상태 모델
+    // ================================================================
+
+    private enum AnimPhase { Hidden, FadingIn, Holding, FadingOut, Idle }
+
+    private static AnimPhase _phase = AnimPhase.Hidden;
+    private static byte _currentAlpha;
+    private static byte _targetAlpha;
+
+    // 페이드 보간
+    private static long _fadeStartTick;
+    private static byte _fadeStartAlpha;
+    private static byte _fadeEndAlpha;
+    private static int _fadeDurationMs;
+
+    // Hold 타이머
+    private static int _holdDurationMs;
+
+    // 강조 (1.3x → 1.0)
+    private static bool _highlightActive;
+    private static long _highlightStartTick;
+    private static double _highlightStartScale;
+
+    // forceHidden 플래그 (FadingOut 완료 시 Hidden 강제)
+    private static bool _forceHidden;
+
+    // 윈도우 핸들
+    private static IntPtr _hwndMain;
+    private static IntPtr _hwndOverlay;
+
+    // ================================================================
+    // 초기화 / 해제
+    // ================================================================
+
+    public static void Initialize(IntPtr hwndMain, IntPtr hwndOverlay, AppConfig config)
+    {
+        _hwndMain = hwndMain;
+        _hwndOverlay = hwndOverlay;
+
+        // TOPMOST 재적용 타이머
+        User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_TOPMOST,
+            (uint)config.Advanced.ForceTopmostIntervalMs, IntPtr.Zero);
+    }
+
+    public static void Dispose()
+    {
+        User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_FADE);
+        User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_HOLD);
+        User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_HIGHLIGHT);
+        User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_TOPMOST);
+    }
+
+    // ================================================================
+    // TriggerShow
+    // ================================================================
+
+    public static void TriggerShow(int caretX, int caretY, int caretH,
+        ImeState state, AppConfig config, bool imeChanged)
+    {
+        // 0. NonKoreanIme "hide" 가드 (모드 무관 강제 숨김)
+        if (state == ImeState.NonKorean && config.NonKoreanIme == NonKoreanImeMode.Hide)
+        {
+            TriggerHide(config, forceHidden: true);
+            return;
+        }
+
+        // 1. hold 타이머 duration → 필드 저장
+        _holdDurationMs = config.DisplayMode == DisplayMode.Always
+            ? config.AlwaysIdleTimeoutMs
+            : config.EventDisplayDurationMs;
+
+        // 2. targetAlpha 계산
+        _targetAlpha = GetTargetAlpha(config, active: true);
+
+        // 3. 상태별 분기
+        if (_phase == AnimPhase.Holding || _phase == AnimPhase.FadingIn)
+        {
+            // 이미 표시 중 → Hold 리셋 + 위치 갱신
+            User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_HOLD);
+            User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_HOLD,
+                (uint)_holdDurationMs, IntPtr.Zero);
+
+            Overlay.Show(caretX, caretY, caretH, state, config);
+
+            if (imeChanged)
+            {
+                Overlay.UpdateColor(state, config);
+                if (config.ChangeHighlight)
+                    StartHighlight(config);
+            }
+        }
+        else if (_phase == AnimPhase.Idle)
+        {
+            // Always 모드 유휴 → 활성으로 복귀
+            StartFade(_currentAlpha, _targetAlpha, config.FadeInMs);
+            _phase = AnimPhase.FadingIn;
+            User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, 16, IntPtr.Zero);
+
+            Overlay.Show(caretX, caretY, caretH, state, config);
+
+            if (imeChanged)
+            {
+                Overlay.UpdateColor(state, config);
+                if (config.ChangeHighlight)
+                    StartHighlight(config);
+            }
+        }
+        else if (_phase == AnimPhase.FadingOut)
+        {
+            // 페이드아웃 중 새 이벤트 → 페이드인으로 전환
+            User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_FADE);
+            StartFade(_currentAlpha, _targetAlpha, config.FadeInMs);
+            _phase = AnimPhase.FadingIn;
+            User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, 16, IntPtr.Zero);
+
+            Overlay.Show(caretX, caretY, caretH, state, config);
+
+            if (imeChanged)
+            {
+                Overlay.UpdateColor(state, config);
+                if (config.ChangeHighlight)
+                    StartHighlight(config);
+            }
+        }
+        else // Hidden
+        {
+            Overlay.Show(caretX, caretY, caretH, state, config);
+            User32.ShowWindow(_hwndOverlay, Win32Constants.SW_SHOW);
+
+            if (config.AnimationEnabled)
+            {
+                StartFade(0, _targetAlpha, config.FadeInMs);
+                _phase = AnimPhase.FadingIn;
+                User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, 16, IntPtr.Zero);
+            }
+            else
+            {
+                _currentAlpha = _targetAlpha;
+                Overlay.UpdateAlpha(_targetAlpha);
+                _phase = AnimPhase.Holding;
+                User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_HOLD,
+                    (uint)_holdDurationMs, IntPtr.Zero);
+            }
+
+            if (imeChanged && config.ChangeHighlight)
+                StartHighlight(config);
+        }
+    }
+
+    // ================================================================
+    // HandleTimer
+    // ================================================================
+
+    public static void HandleTimer(nuint timerId, AppConfig config)
+    {
+        if (timerId == AppMessages.TIMER_ID_FADE)
+            HandleFadeTimer(config);
+        else if (timerId == AppMessages.TIMER_ID_HOLD)
+            HandleHoldTimer(config);
+        else if (timerId == AppMessages.TIMER_ID_HIGHLIGHT)
+            HandleHighlightTimer(config);
+        else if (timerId == AppMessages.TIMER_ID_TOPMOST)
+            Overlay.ForceTopmost();
+    }
+
+    private static void HandleFadeTimer(AppConfig config)
+    {
+        double elapsed = GetElapsedMs(_fadeStartTick);
+        double ratio = _fadeDurationMs > 0 ? Math.Clamp(elapsed / _fadeDurationMs, 0.0, 1.0) : 1.0;
+
+        byte alpha = (byte)(_fadeStartAlpha + (_fadeEndAlpha - _fadeStartAlpha) * ratio);
+        _currentAlpha = alpha;
+        Overlay.UpdateAlpha(alpha);
+
+        if (ratio >= 1.0)
+        {
+            User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_FADE);
+
+            if (_phase == AnimPhase.FadingIn)
+            {
+                _currentAlpha = _fadeEndAlpha;
+                _phase = AnimPhase.Holding;
+                User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_HOLD,
+                    (uint)_holdDurationMs, IntPtr.Zero);
+            }
+            else if (_phase == AnimPhase.FadingOut)
+            {
+                if (_forceHidden || config.DisplayMode != DisplayMode.Always)
+                {
+                    // OnEvent 모드 또는 forceHidden → 완전 숨김
+                    Overlay.Hide();
+                    _phase = AnimPhase.Hidden;
+                    _currentAlpha = 0;
+                    _forceHidden = false;
+                }
+                else
+                {
+                    // Always 모드 → Idle
+                    _currentAlpha = _fadeEndAlpha;
+                    _phase = AnimPhase.Idle;
+                }
+            }
+        }
+    }
+
+    private static void HandleHoldTimer(AppConfig config)
+    {
+        User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_HOLD);
+
+        byte endAlpha = config.DisplayMode == DisplayMode.Always
+            ? GetTargetAlpha(config, active: false)
+            : (byte)0;
+
+        StartFade(_currentAlpha, endAlpha, config.FadeOutMs);
+        _phase = AnimPhase.FadingOut;
+        User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, 16, IntPtr.Zero);
+    }
+
+    private static void HandleHighlightTimer(AppConfig config)
+    {
+        if (!_highlightActive) return;
+
+        double elapsed = GetElapsedMs(_highlightStartTick);
+        double ratio = config.HighlightDurationMs > 0
+            ? Math.Clamp(elapsed / config.HighlightDurationMs, 0.0, 1.0) : 1.0;
+
+        double scale = _highlightStartScale + (1.0 - _highlightStartScale) * ratio;
+
+        var (baseW, baseH) = Overlay.GetBaseSize();
+        var (lastX, lastY) = Overlay.GetLastPosition();
+
+        int newW = (int)Math.Round(baseW * scale);
+        int newH = (int)Math.Round(baseH * scale);
+        int newX = lastX - (newW - baseW) / 2;
+        int newY = lastY - (newH - baseH) / 2;
+
+        Overlay.UpdateScaledSize(newX, newY, newW, newH, _currentAlpha);
+
+        if (ratio >= 1.0)
+        {
+            User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_HIGHLIGHT);
+            _highlightActive = false;
+
+            // 원래 크기 복원
+            Overlay.UpdateScaledSize(lastX, lastY, baseW, baseH, _currentAlpha);
+        }
+    }
+
+    // ================================================================
+    // TriggerHide
+    // ================================================================
+
+    public static void TriggerHide(AppConfig config, bool forceHidden = false)
+    {
+        // 이미 숨김 상태면 무시
+        if (_phase == AnimPhase.Hidden) return;
+        if (_phase == AnimPhase.Idle && !forceHidden) return;
+
+        // 1. 모든 타이머 정리
+        User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_FADE);
+        User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_HOLD);
+        User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_HIGHLIGHT);
+        _highlightActive = false;
+
+        // 2. 모드별 분기
+        if (config.DisplayMode == DisplayMode.Always && !forceHidden)
+        {
+            byte endAlpha = GetTargetAlpha(config, active: false);
+            if (config.AnimationEnabled && _currentAlpha != endAlpha)
+            {
+                _forceHidden = false;
+                StartFade(_currentAlpha, endAlpha, config.FadeOutMs);
+                _phase = AnimPhase.FadingOut;
+                User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, 16, IntPtr.Zero);
+            }
+            else
+            {
+                _currentAlpha = endAlpha;
+                Overlay.UpdateAlpha(endAlpha);
+                _phase = AnimPhase.Idle;
+            }
+        }
+        else
+        {
+            // OnEvent 모드 또는 forceHidden
+            if (config.AnimationEnabled && _currentAlpha > 0)
+            {
+                _forceHidden = forceHidden;
+                StartFade(_currentAlpha, 0, config.FadeOutMs);
+                _phase = AnimPhase.FadingOut;
+                User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, 16, IntPtr.Zero);
+            }
+            else
+            {
+                Overlay.Hide();
+                _phase = AnimPhase.Hidden;
+                _currentAlpha = 0;
+            }
+        }
+    }
+
+    // ================================================================
+    // 헬퍼
+    // ================================================================
+
+    private static byte GetTargetAlpha(AppConfig config, bool active)
+    {
+        bool isCaretBox = config.IndicatorStyle != IndicatorStyle.Label;
+        double raw;
+
+        if (config.DisplayMode == DisplayMode.Always)
+        {
+            if (active)
+                raw = isCaretBox ? config.CaretBoxActiveOpacity : config.ActiveOpacity;
+            else
+                raw = isCaretBox ? config.CaretBoxIdleOpacity : config.IdleOpacity;
+        }
+        else
+        {
+            raw = isCaretBox ? config.CaretBoxOpacity : config.Opacity;
+        }
+
+        if (isCaretBox)
+            raw = Math.Max(config.CaretBoxMinOpacity, raw);
+
+        return (byte)(raw * 255);
+    }
+
+    private static void StartFade(byte from, byte to, int durationMs)
+    {
+        _fadeStartAlpha = from;
+        _fadeEndAlpha = to;
+        _fadeDurationMs = durationMs;
+        _fadeStartTick = Stopwatch.GetTimestamp();
+    }
+
+    private static void StartHighlight(AppConfig config)
+    {
+        _highlightActive = true;
+        _highlightStartScale = config.HighlightScale;
+        _highlightStartTick = Stopwatch.GetTimestamp();
+        User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_HIGHLIGHT, 16, IntPtr.Zero);
+    }
+
+    private static double GetElapsedMs(long startTick)
+    {
+        long now = Stopwatch.GetTimestamp();
+        return (now - startTick) * 1000.0 / Stopwatch.Frequency;
+    }
+}

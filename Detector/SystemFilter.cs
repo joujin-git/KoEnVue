@@ -6,23 +6,6 @@ using KoEnVue.Utils;
 
 namespace KoEnVue.Detector;
 
-// ================================================================
-// IVirtualDesktopManager COM 인터페이스
-// ================================================================
-
-[GeneratedComInterface]
-[Guid("a5cd92ff-29be-454c-8d04-d82879fb3f1b")]
-internal partial interface IVirtualDesktopManager
-{
-    [PreserveSig]
-    int IsWindowOnCurrentVirtualDesktop(IntPtr topLevelWindow,
-        [MarshalAs(UnmanagedType.Bool)] out bool onCurrentDesktop);
-}
-
-// ================================================================
-// SystemFilter
-// ================================================================
-
 /// <summary>
 /// 시스템 필터. 8-조건 단락 평가로 인디케이터 숨김 여부를 판정한다.
 /// </summary>
@@ -176,8 +159,8 @@ internal static class SystemFilter
 
         return config.AppFilterMode switch
         {
-            "blacklist" => !inList,
-            "whitelist" => inList,
+            AppFilterMode.Blacklist => !inList,
+            AppFilterMode.Whitelist => inList,
             _ => true,
         };
     }

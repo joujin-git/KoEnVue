@@ -57,6 +57,12 @@ internal static partial class Gdi32
     [LibraryImport("gdi32.dll")]
     internal static partial uint SetTextColor(IntPtr hdc, uint color);
 
+    [LibraryImport("gdi32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial int GetTextExtentPoint32W(IntPtr hdc, string lpString, int c, out SIZE psizl);
+
+    [LibraryImport("gdi32.dll")]
+    internal static partial IntPtr GetStockObject(int i);
+
     // 참고: DrawTextW는 user32.dll 소속 → User32.cs에 선언됨
     // 참고: MulDiv는 kernel32.dll 소속 → Kernel32.cs에 선언됨
 }

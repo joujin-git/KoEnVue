@@ -35,10 +35,10 @@ UIA 스레드 (BG):      COM STA + IUIAutomation 전용
 
 ```
 KoEnVue/
-├── Native/      P/Invoke (DLL별 1파일) + Win32Types.cs + SafeGdiHandles.cs + AppMessages.cs
-├── Models/      ImeState, IndicatorStyle, Placement, DisplayMode (enum), AppConfig (record)
+├── Native/      P/Invoke (DLL별 1파일) + Win32Types.cs + SafeGdiHandles.cs + AppMessages.cs + VirtualDesktop.cs
+├── Models/      AppConfig (record) + 13개 enum (ImeState, IndicatorStyle, Placement, DisplayMode, PositionMode, CaretPlacement, LabelShape, FontWeight, NonKoreanImeMode, DetectionMethod, CaretMethod, AppFilterMode, LogLevel)
 ├── Detector/    ImeStatus, CaretTracker, SystemFilter, UiaClient
-├── UI/          Overlay, Tray, TrayIcon, Animation
+├── UI/          Overlay (GDI 렌더링), Animation (WM_TIMER 상태 머신)
 ├── Config/      Settings, DefaultConfig
 ├── Utils/       DpiHelper, ColorHelper, Logger, Startup, I18n
 └── Program.cs   메인 루프 (3-스레드 관리)
@@ -64,7 +64,7 @@ phase-XX: 단계 설명
 - [x] Phase 01: Foundation (P/Invoke, Models, Utils, Config)
 - [x] Phase 02: Detection (IME 3-tier + Caret 4-tier + SystemFilter)
 - [x] Phase 03: Core Loop (Program.cs + 3-thread + event pipeline)
-- [ ] Phase 04: Rendering (Overlay + Animation)
+- [x] Phase 04: Rendering (Overlay + Animation)
 - [ ] Phase 05: System UI (Tray + Hotkey)
 - [ ] Phase 06: Config (Settings + I18n)
 - [ ] Phase 07: Final (UIA + Advanced + Build)

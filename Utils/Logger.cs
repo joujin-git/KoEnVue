@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using KoEnVue.Models;
 
 namespace KoEnVue.Utils;
 
@@ -9,49 +10,38 @@ namespace KoEnVue.Utils;
 /// </summary>
 internal static class Logger
 {
-    private static string _logLevel = "WARNING";
+    private static LogLevel _logLevel = LogLevel.Warning;
 
-    /// <summary>로그 레벨 설정. "DEBUG" | "INFO" | "WARNING" | "ERROR"</summary>
-    public static void SetLevel(string level) => _logLevel = level.ToUpperInvariant();
-
-    private static int LevelToInt(string level) => level switch
-    {
-        "DEBUG" => 0,
-        "INFO" => 1,
-        "WARNING" => 2,
-        "ERROR" => 3,
-        _ => 2
-    };
-
-    private static bool ShouldLog(string level) => LevelToInt(level) >= LevelToInt(_logLevel);
+    /// <summary>로그 레벨 설정.</summary>
+    public static void SetLevel(LogLevel level) => _logLevel = level;
 
     public static void Debug(string message)
     {
-        if (ShouldLog("DEBUG"))
+        if (LogLevel.Debug >= _logLevel)
             Trace.WriteLine($"[DEBUG] {DateTime.UtcNow:HH:mm:ss.fff} {message}");
     }
 
     public static void Info(string message)
     {
-        if (ShouldLog("INFO"))
+        if (LogLevel.Info >= _logLevel)
             Trace.WriteLine($"[INFO] {DateTime.UtcNow:HH:mm:ss.fff} {message}");
     }
 
     public static void Warning(string message)
     {
-        if (ShouldLog("WARNING"))
+        if (LogLevel.Warning >= _logLevel)
             Trace.WriteLine($"[WARN] {DateTime.UtcNow:HH:mm:ss.fff} {message}");
     }
 
     public static void Error(string message)
     {
-        if (ShouldLog("ERROR"))
+        if (LogLevel.Error >= _logLevel)
             Trace.WriteLine($"[ERROR] {DateTime.UtcNow:HH:mm:ss.fff} {message}");
     }
 
     public static void Error(string message, Exception ex)
     {
-        if (ShouldLog("ERROR"))
+        if (LogLevel.Error >= _logLevel)
             Trace.WriteLine($"[ERROR] {DateTime.UtcNow:HH:mm:ss.fff} {message}: {ex.Message}");
     }
 }

@@ -43,6 +43,13 @@ internal static class AppMessages
     /// </summary>
     public const uint WM_CONFIG_CHANGED = Win32Constants.WM_APP + 5;
 
+    // --- Timer IDs (WM_TIMER wParam) ---
+
+    public const nuint TIMER_ID_FADE      = 1;  // ~16ms, 페이드 애니메이션
+    public const nuint TIMER_ID_HOLD      = 2;  // one-shot, 유지 시간
+    public const nuint TIMER_ID_HIGHLIGHT = 3;  // ~16ms, 강조 스케일
+    public const nuint TIMER_ID_TOPMOST   = 4;  // 5000ms, TOPMOST 재적용
+
     // --- WM_USER 기반 ---
 
     /// <summary>

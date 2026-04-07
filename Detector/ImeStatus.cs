@@ -46,10 +46,10 @@ internal static class ImeStatus
     {
         return config.DetectionMethod switch
         {
-            "ime_default" => TryTier1(hwndFocus) ?? ImeState.English,
-            "ime_context" => TryTier2(hwndFocus) ?? ImeState.English,
-            "keyboard_layout" => TryTier3(threadId),
-            _ => Detect(hwndFocus, threadId),  // "auto"
+            DetectionMethod.ImeDefault => TryTier1(hwndFocus) ?? ImeState.English,
+            DetectionMethod.ImeContext => TryTier2(hwndFocus) ?? ImeState.English,
+            DetectionMethod.KeyboardLayout => TryTier3(threadId),
+            _ => Detect(hwndFocus, threadId),  // Auto
         };
     }
 

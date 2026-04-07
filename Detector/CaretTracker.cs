@@ -47,13 +47,13 @@ internal static class CaretTracker
         IntPtr hwndFocus, uint threadId, string processName, AppConfig config)
     {
         // 특정 방식 강제
-        if (config.CaretMethod != "auto")
+        if (config.CaretMethod != CaretMethod.Auto)
         {
             return config.CaretMethod switch
             {
-                "gui_thread" => TryTier1WithRetry(hwndFocus, threadId, config),
-                "uia" => TryTier2(hwndFocus, config),
-                "mouse" => TryTier4(),
+                CaretMethod.GuiThread => TryTier1WithRetry(hwndFocus, threadId, config),
+                CaretMethod.Uia => TryTier2(hwndFocus, config),
+                CaretMethod.Mouse => TryTier4(),
                 _ => RunFullFallback(hwndFocus, threadId, processName, config),
             };
         }
