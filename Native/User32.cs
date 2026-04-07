@@ -215,6 +215,14 @@ internal static partial class User32
     // WndProc 대리자 (NativeAOT에서는 [UnmanagedCallersOnly] + 함수 포인터 방식 권장)
     internal delegate IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
+    // === 윈도우 텍스트 ===
+
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial int GetWindowTextW(IntPtr hWnd, [Out] char[] lpString, int nMaxCount);
+
+    [LibraryImport("user32.dll")]
+    internal static partial int GetWindowTextLengthW(IntPtr hWnd);
+
     // === 아이콘 ===
 
     [LibraryImport("user32.dll")]

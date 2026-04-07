@@ -22,4 +22,9 @@ internal static partial class Kernel32
     // MulDiv는 kernel32.dll 소속 (gdi32.dll 아님!)
     [LibraryImport("kernel32.dll")]
     internal static partial int MulDiv(int nNumber, int nNumerator, int nDenominator);
+
+    // === 시스템 언어 ===
+
+    [LibraryImport("kernel32.dll")]
+    internal static partial ushort GetUserDefaultUILanguage();
 }

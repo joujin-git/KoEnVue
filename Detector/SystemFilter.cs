@@ -168,7 +168,7 @@ internal static class SystemFilter
     /// <summary>
     /// 윈도우 클래스명 조회.
     /// </summary>
-    private static string GetClassName(IntPtr hwnd)
+    internal static string GetClassName(IntPtr hwnd)
     {
         char[] buffer = new char[Win32Constants.MAX_CLASS_NAME];
         int len = User32.GetClassNameW(hwnd, buffer, Win32Constants.MAX_CLASS_NAME);
@@ -178,7 +178,7 @@ internal static class SystemFilter
     /// <summary>
     /// HWND로부터 프로세스 이름 조회.
     /// </summary>
-    private static string GetProcessName(IntPtr hwnd)
+    internal static string GetProcessName(IntPtr hwnd)
     {
         User32.GetWindowThreadProcessId(hwnd, out uint processId);
         if (processId == 0) return string.Empty;

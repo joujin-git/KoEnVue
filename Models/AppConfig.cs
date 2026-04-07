@@ -177,7 +177,9 @@ internal sealed record AdvancedConfig
 /// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
-    WriteIndented = true)]
+    WriteIndented = true,
+    ReadCommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+    AllowTrailingCommas = true)]
 [JsonSerializable(typeof(AppConfig))]
 [JsonSerializable(typeof(EventTriggersConfig))]
 [JsonSerializable(typeof(FixedPositionConfig))]

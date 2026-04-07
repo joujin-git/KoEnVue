@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.Json;
 using KoEnVue.Config;
 using KoEnVue.Models;
 using KoEnVue.Native;
@@ -40,11 +39,6 @@ internal static class Tray
 
     // schtasks 작업 이름
     private const string TaskName = "KoEnVue";
-
-    // 설정 파일 경로 → DefaultConfig에서 참조
-
-    // 투명도 프리셋 라벨 (P2: 한글)
-    private static readonly string[] OpacityLabels = ["진하게", "보통", "연하게"];
 
     // P3: 매직 넘버 금지
     private const double OpacityTolerance = 0.001;
@@ -156,11 +150,11 @@ internal static class Tray
 
         // --- 서브메뉴 1: 인디케이터 스타일 ---
         IntPtr hStyleMenu = User32.CreatePopupMenu();
-        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_DOT, "점");
-        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_SQUARE, "사각");
-        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_UNDERLINE, "밑줄");
-        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_VBAR, "세로바");
-        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_LABEL, "텍스트");
+        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_DOT, I18n.StyleDot);
+        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_SQUARE, I18n.StyleSquare);
+        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_UNDERLINE, I18n.StyleUnderline);
+        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_VBAR, I18n.StyleVbar);
+        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_LABEL, I18n.StyleLabel);
         uint currentStyleId = config.IndicatorStyle switch
         {
             IndicatorStyle.CaretDot => (uint)IDM_STYLE_DOT,
@@ -175,8 +169,8 @@ internal static class Tray
 
         // --- 서브메뉴 2: 표시 모드 ---
         IntPtr hDisplayMenu = User32.CreatePopupMenu();
-        User32.AppendMenuW(hDisplayMenu, Win32Constants.MF_STRING, (nuint)IDM_DISPLAY_EVENT, "이벤트 시만");
-        User32.AppendMenuW(hDisplayMenu, Win32Constants.MF_STRING, (nuint)IDM_DISPLAY_ALWAYS, "항상 표시");
+        User32.AppendMenuW(hDisplayMenu, Win32Constants.MF_STRING, (nuint)IDM_DISPLAY_EVENT, I18n.DisplayEvent);
+        User32.AppendMenuW(hDisplayMenu, Win32Constants.MF_STRING, (nuint)IDM_DISPLAY_ALWAYS, I18n.DisplayAlways);
         uint currentDisplayId = config.DisplayMode == DisplayMode.OnEvent
             ? (uint)IDM_DISPLAY_EVENT : (uint)IDM_DISPLAY_ALWAYS;
         User32.CheckMenuRadioItem(hDisplayMenu, (uint)IDM_DISPLAY_EVENT, (uint)IDM_DISPLAY_ALWAYS,
@@ -185,14 +179,14 @@ internal static class Tray
         // --- 서브메뉴 3: 투명도 ---
         IntPtr hOpacityMenu = User32.CreatePopupMenu();
         double[] presets = config.TrayQuickOpacityPresets;
-        if (presets.Length >= OpacityLabels.Length)
+        if (presets.Length >= 3)
         {
             User32.AppendMenuW(hOpacityMenu, Win32Constants.MF_STRING, (nuint)IDM_OPACITY_HIGH,
-                $"{OpacityLabels[0]} {presets[0]}");
+                $"{I18n.OpacityHigh} {presets[0]}");
             User32.AppendMenuW(hOpacityMenu, Win32Constants.MF_STRING, (nuint)IDM_OPACITY_NORMAL,
-                $"{OpacityLabels[1]} {presets[1]}");
+                $"{I18n.OpacityNormal} {presets[1]}");
             User32.AppendMenuW(hOpacityMenu, Win32Constants.MF_STRING, (nuint)IDM_OPACITY_LOW,
-                $"{OpacityLabels[2]} {presets[2]}");
+                $"{I18n.OpacityLow} {presets[2]}");
 
             // 현재 opacity와 매칭되는 프리셋에 라디오 체크
             uint opacityCheckId = 0;
@@ -207,17 +201,17 @@ internal static class Tray
 
         // --- 메인 메뉴 ---
         IntPtr hMenu = User32.CreatePopupMenu();
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hStyleMenu, "인디케이터 스타일");
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hDisplayMenu, "표시 모드");
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hOpacityMenu, "투명도");
+        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hStyleMenu, I18n.MenuIndicatorStyle);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hDisplayMenu, I18n.MenuDisplayMode);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hOpacityMenu, I18n.MenuOpacity);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
 
         bool isStartup = IsStartupRegistered();
         User32.AppendMenuW(hMenu, isStartup ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED,
-            (nuint)IDM_STARTUP, "시작 프로그램 등록");
-        User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_OPEN_SETTINGS, "설정 파일 열기...");
+            (nuint)IDM_STARTUP, I18n.MenuStartup);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_OPEN_SETTINGS, I18n.MenuOpenSettings);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_EXIT, "종료");
+        User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_EXIT, I18n.MenuExit);
 
         // --- 표시 (워크어라운드 적용) ---
         User32.GetCursorPos(out POINT pt);
@@ -235,7 +229,7 @@ internal static class Tray
     /// config 변경이 필요한 항목은 updateConfig 콜백으로 Program.cs에 위임.
     /// </summary>
     internal static void HandleMenuCommand(int commandId, AppConfig config, IntPtr hwndMain,
-        string? configFilePath, Action<AppConfig> updateConfig)
+        Action<AppConfig> updateConfig)
     {
         switch (commandId)
         {
@@ -285,7 +279,7 @@ internal static class Tray
 
             // --- 설정 파일 열기 ---
             case IDM_OPEN_SETTINGS:
-                OpenSettingsFile(configFilePath);
+                Settings.OpenSettingsFile();
                 break;
 
             // --- 종료 ---
@@ -295,71 +289,18 @@ internal static class Tray
         }
     }
 
-    /// <summary>
-    /// 설정 파일을 시스템 기본 편집기로 연다.
-    /// </summary>
-    internal static void OpenSettingsFile(string? configFilePath)
-    {
-        string path = configFilePath ?? GetDefaultConfigPath();
-
-        try
-        {
-            // 파일 미존재 시 기본 설정으로 생성
-            if (!File.Exists(path))
-            {
-                string? dir = Path.GetDirectoryName(path);
-                if (dir is not null)
-                    Directory.CreateDirectory(dir);
-
-                var defaultConfig = new AppConfig();
-                string json = JsonSerializer.Serialize(defaultConfig, AppConfigJsonContext.Default.AppConfig);
-                File.WriteAllText(path, json);
-            }
-
-            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            Logger.Warning($"Failed to open settings file: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// AppConfig를 config.json에 저장한다.
-    /// </summary>
-    internal static void SaveConfig(AppConfig config, string? configFilePath)
-    {
-        string path = configFilePath ?? GetDefaultConfigPath();
-
-        try
-        {
-            string? dir = Path.GetDirectoryName(path);
-            if (dir is not null)
-                Directory.CreateDirectory(dir);
-
-            string json = JsonSerializer.Serialize(config, AppConfigJsonContext.Default.AppConfig);
-            File.WriteAllText(path, json);
-            Logger.Debug($"Config saved to {path}");
-        }
-        catch (Exception ex)
-        {
-            Logger.Warning($"Failed to save config: {ex.Message}");
-        }
-    }
-
     // ================================================================
     // Private — 툴팁
     // ================================================================
 
     /// <summary>
     /// szTip fixed char 버퍼에 툴팁 텍스트를 복사한다.
-    /// I18n.cs 미존재 → Phase 06에서 I18n.GetTrayTooltip()으로 교체 예정.
     /// </summary>
     private static unsafe void CopyTooltip(ref NOTIFYICONDATAW nid, ImeState state, AppConfig config)
     {
         if (!config.TrayTooltip) return; // 빈 문자열 = 툴팁 숨김
 
-        string text = GetTooltipText(state);
+        string text = I18n.GetTrayTooltip(state);
         ReadOnlySpan<char> tip = text.AsSpan();
         int len = Math.Min(tip.Length, TooltipMaxLength);
         fixed (char* pTip = nid.szTip)
@@ -367,14 +308,6 @@ internal static class Tray
             tip[..len].CopyTo(new Span<char>(pTip, TooltipMaxLength + 1));
         }
     }
-
-    private static string GetTooltipText(ImeState state) => state switch
-    {
-        ImeState.Hangul => "한글 모드",
-        ImeState.English => "영문 모드",
-        ImeState.NonKorean => "영문 모드 (비한국어)",
-        _ => "KoEnVue",
-    };
 
     // ================================================================
     // Private — 시작 프로그램 등록 (schtasks)
@@ -438,10 +371,4 @@ internal static class Tray
         proc?.WaitForExit(SchtasksCommandTimeoutMs);
     }
 
-    // ================================================================
-    // Private — 유틸
-    // ================================================================
-
-    private static string GetDefaultConfigPath() =>
-        DefaultConfig.GetDefaultConfigPath();
 }

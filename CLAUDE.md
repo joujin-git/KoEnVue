@@ -39,8 +39,8 @@ KoEnVue/
 ├── Models/      AppConfig (record) + 13개 enum (ImeState, IndicatorStyle, Placement, DisplayMode, PositionMode, CaretPlacement, LabelShape, FontWeight, NonKoreanImeMode, DetectionMethod, CaretMethod, AppFilterMode, LogLevel)
 ├── Detector/    ImeStatus, CaretTracker, SystemFilter, UiaClient
 ├── UI/          Overlay (GDI 렌더링), Animation (WM_TIMER 상태 머신), Tray (시스템 트레이), TrayIcon (GDI 아이콘 생성)
-├── Config/      DefaultConfig
-├── Utils/       DpiHelper, ColorHelper, Logger
+├── Config/      DefaultConfig, Settings (로드/저장/검증/마이그레이션/핫리로드/앱프로필)
+├── Utils/       DpiHelper, ColorHelper, Logger, I18n (한/영 UI 텍스트)
 └── Program.cs   메인 루프 (3-스레드 관리)
 ```
 
@@ -66,7 +66,7 @@ phase-XX: 단계 설명
 - [x] Phase 03: Core Loop (Program.cs + 3-thread + event pipeline)
 - [x] Phase 04: Rendering (Overlay + Animation)
 - [x] Phase 05: System UI (Tray + Hotkey)
-- [ ] Phase 06: Config (Settings + I18n)
+- [x] Phase 06: Config (Settings + I18n)
 - [ ] Phase 07: Final (UIA + Advanced + Build)
 
 ## Spec Files

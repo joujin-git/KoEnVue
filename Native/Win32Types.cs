@@ -309,4 +309,5 @@ internal static class Win32Constants
 
     // --- 버퍼 크기 ---
     public const int MAX_CLASS_NAME     = 256;
+    public const int MAX_WINDOW_TEXT    = 256;
 }

@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 using KoEnVue.Config;
 using KoEnVue.Detector;
 using KoEnVue.Models;
@@ -38,7 +37,6 @@ internal static class Program
     // 라이프사이클
     private static Mutex? _mutex;
     private static bool _stopping;
-    private static string? _configFilePath;
 
     // 윈도우 클래스명 (P3: 매직 스트링 금지)
     private const string MainClassName = "KoEnVueMain";
@@ -70,10 +68,11 @@ internal static class Program
         if (!TryAcquireMutex()) return;
 
         // 3. 설정 로드
-        _config = LoadConfig();
+        _config = Settings.Load();
 
-        // 4. 로거 초기화
+        // 4. 로거 + I18n 초기화
         Logger.SetLevel(_config.LogLevel);
+        I18n.Load(_config.Language);
         Logger.Info("KoEnVue starting");
 
         // 5. 메인 스레드 COM STA 초기화 (메시지 루프 + WinEventHook + SystemFilter VDM)
@@ -148,46 +147,6 @@ internal static class Program
         nid.uFlags = Win32Constants.NIF_GUID;
         nid.guidItem = DefaultConfig.AppGuid;
         Shell32.Shell_NotifyIconW(Win32Constants.NIM_DELETE, ref nid);
-    }
-
-    // ================================================================
-    // 설정 로드 (Phase 06 Settings.cs 전까지 인라인)
-    // ================================================================
-
-    private static AppConfig LoadConfig()
-    {
-        // 탐색 순서: %APPDATA%\KoEnVue\config.json → exe dir → defaults
-        string[] candidates =
-        [
-            DefaultConfig.GetDefaultConfigPath(),
-            Path.Combine(AppContext.BaseDirectory, DefaultConfig.ConfigFileName),
-        ];
-
-        foreach (string path in candidates)
-        {
-            try
-            {
-                if (!File.Exists(path)) continue;
-
-                string json = File.ReadAllText(path);
-                AppConfig? config = JsonSerializer.Deserialize(
-                    json, AppConfigJsonContext.Default.AppConfig);
-
-                if (config is not null)
-                {
-                    _configFilePath = path;
-                    Logger.Info($"Config loaded from {path}");
-                    return config;
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Warning($"Failed to load config from {path}: {ex.Message}");
-            }
-        }
-
-        Logger.Info("Using default config");
-        return new AppConfig();
     }
 
     // ================================================================
@@ -399,9 +358,11 @@ internal static class Program
 
     private static void HandleConfigChanged()
     {
-        _config = LoadConfig();
+        _config = Settings.Load();
         Logger.SetLevel(_config.LogLevel);
+        I18n.Load(_config.Language);
         CaretTracker.ClearCache();
+        Settings.ClearProfileCache();
         Overlay.HandleConfigChanged(_config);
         Logger.Info("Config reloaded");
     }
@@ -435,7 +396,7 @@ internal static class Program
                         if (!_indicatorVisible) HideOverlay();
                         break;
                     case TrayClickSettings:
-                        Tray.OpenSettingsFile(_configFilePath);
+                        Settings.OpenSettingsFile();
                         break;
                 }
                 break;
@@ -471,21 +432,21 @@ internal static class Program
                 UpdateConfigAndNotify(c => c with { DisplayMode = nextDisplay });
                 break;
             case HOTKEY_OPEN_SETTINGS:
-                Tray.OpenSettingsFile(_configFilePath);
+                Settings.OpenSettingsFile();
                 break;
         }
     }
 
     private static void HandleMenuCommand(int commandId)
     {
-        Tray.HandleMenuCommand(commandId, _config, _hwndMain, _configFilePath,
+        Tray.HandleMenuCommand(commandId, _config, _hwndMain,
             updateConfig: newConfig =>
             {
                 _config = newConfig;
                 Overlay.HandleConfigChanged(_config);
                 if (_config.TrayEnabled)
                     Tray.UpdateState(_lastImeState, _config);
-                Tray.SaveConfig(_config, _configFilePath);
+                Settings.Save(_config);
             });
     }
 
@@ -495,7 +456,7 @@ internal static class Program
         Overlay.HandleConfigChanged(_config);
         if (_config.TrayEnabled)
             Tray.UpdateState(_lastImeState, _config);
-        Tray.SaveConfig(_config, _configFilePath);
+        Settings.Save(_config);
     }
 
     private static void HandlePowerResume()
@@ -546,8 +507,8 @@ internal static class Program
         IntPtr lastHwndFocus = IntPtr.Zero;
         IntPtr lastHwndForeground = IntPtr.Zero;
         ImeState lastImeState = ImeState.English;
+        AppConfig lastAppConfig = _config;
         int pollCount = 0;
-        DateTime lastConfigMtime = DateTime.MinValue;
 
         while (!_stopping)
         {
@@ -556,7 +517,7 @@ internal static class Program
 
             // 0. config.json 변경 감지 (~5초마다)
             if (pollCount % DefaultConfig.ConfigCheckIntervalPolls == 0)
-                CheckConfigFileChange(ref lastConfigMtime);
+                Settings.CheckConfigFileChange(_hwndMain);
 
             // 1. 포그라운드 윈도우 확인
             IntPtr hwndForeground = User32.GetForegroundWindow();
@@ -573,12 +534,26 @@ internal static class Program
             User32.GetGUIThreadInfo(threadId, ref gti);
             IntPtr hwndFocus = gti.hwndFocus;
 
-            // 2. 시스템 필터 (포그라운드 변경 시에만 실행 — 최적화)
+            // 2. 앱별 프로필 + 시스템 필터 (포그라운드 변경 시에만 — 최적화)
+            AppConfig appConfig = lastAppConfig;
             if (hwndForeground != lastHwndForeground)
             {
                 lastHwndForeground = hwndForeground;
 
-                if (SystemFilter.ShouldHide(hwndForeground, hwndFocus, _config))
+                // 앱별 프로필 적용 (LRU 캐싱됨)
+                AppConfig? resolved = Settings.ResolveForApp(_config, hwndForeground);
+                if (resolved is null)
+                {
+                    // enabled: false → 이 앱에서 인디케이터 비활성화
+                    if (_indicatorVisible)
+                        User32.PostMessage(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
+                            IntPtr.Zero, IntPtr.Zero);
+                    continue;
+                }
+                appConfig = resolved;
+                lastAppConfig = appConfig;
+
+                if (SystemFilter.ShouldHide(hwndForeground, hwndFocus, appConfig))
                 {
                     if (_indicatorVisible)
                         User32.PostMessage(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
@@ -595,8 +570,8 @@ internal static class Program
                     hwndFocus, IntPtr.Zero);
             }
 
-            // 4. IME 상태 감지
-            ImeState currentIme = ImeStatus.Detect(hwndFocus, threadId);
+            // 4. IME 상태 감지 (3-param: 앱 프로필 detection_method 반영)
+            ImeState currentIme = ImeStatus.Detect(hwndFocus, threadId, appConfig);
             if (currentIme != lastImeState)
             {
                 lastImeState = currentIme;
@@ -605,11 +580,11 @@ internal static class Program
             }
 
             // 5. 캐럿 위치 추적 (이벤트 발생 시 또는 Always 모드)
-            if (_needCaretUpdate || _config.DisplayMode == DisplayMode.Always)
+            if (_needCaretUpdate || appConfig.DisplayMode == DisplayMode.Always)
             {
                 string procName = GetProcessName(processId);
                 var result = CaretTracker.GetCaretPosition(
-                    hwndFocus, threadId, procName, _config);
+                    hwndFocus, threadId, procName, appConfig);
 
                 if (result is { } caret)
                 {
@@ -620,26 +595,6 @@ internal static class Program
 
                 _needCaretUpdate = false;
             }
-        }
-    }
-
-    private static void CheckConfigFileChange(ref DateTime lastMtime)
-    {
-        if (_configFilePath is null) return;
-
-        try
-        {
-            DateTime mtime = File.GetLastWriteTimeUtc(_configFilePath);
-            if (mtime != lastMtime)
-            {
-                lastMtime = mtime;
-                User32.PostMessage(_hwndMain, AppMessages.WM_CONFIG_CHANGED,
-                    IntPtr.Zero, IntPtr.Zero);
-            }
-        }
-        catch
-        {
-            // 파일 접근 실패 시 무시
         }
     }
 
