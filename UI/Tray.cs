@@ -69,6 +69,7 @@ internal static class Tray
         if (!config.TrayEnabled)
         {
             _initialized = false;
+            Logger.Debug("Tray disabled by config");
             return;
         }
 
@@ -218,7 +219,7 @@ internal static class Tray
         User32.SetForegroundWindow(hwndMain);
         User32.TrackPopupMenu(hMenu, Win32Constants.TPM_RIGHTBUTTON,
             pt.X, pt.Y, 0, hwndMain, IntPtr.Zero);
-        User32.PostMessage(hwndMain, Win32Constants.WM_NULL, IntPtr.Zero, IntPtr.Zero);
+        User32.PostMessageW(hwndMain, Win32Constants.WM_NULL, IntPtr.Zero, IntPtr.Zero);
 
         // --- 정리 (DestroyMenu은 서브메뉴도 자동 파괴) ---
         User32.DestroyMenu(hMenu);

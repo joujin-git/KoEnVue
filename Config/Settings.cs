@@ -86,24 +86,65 @@ internal static class Settings
     }
 
     /// <summary>
-    /// 파일에서 설정 로드. BOM 제거 → 역직렬화 → Migrate → Validate.
+    /// 파일에서 설정 로드. BOM 제거 → 기본값 병합 → 역직렬화 → Migrate → Validate.
     /// </summary>
     private static AppConfig LoadFromFile(string path)
     {
         string json = File.ReadAllText(path, Encoding.UTF8);
-
         // UTF-8 BOM 감지 → 제거
         if (json.Length > 0 && json[0] == '\uFEFF')
             json = json[1..];
 
-        AppConfig? config = JsonSerializer.Deserialize(json, AppConfigJsonContext.Default.AppConfig);
+        // .NET 10 STJ source gen workaround:
+        // record init 기본값이 역직렬화 시 보존되지 않음 (소스 생성기 제한).
+        // 해결: 기본 config를 JSON으로 직렬화 → 사용자 JSON 병합 → 역직렬화.
+        string mergedJson = MergeWithDefaults(json);
+
+        AppConfig? config = JsonSerializer.Deserialize(mergedJson, AppConfigJsonContext.Default.AppConfig);
         if (config is null)
             return new AppConfig();
 
+        config = EnsureSubObjects(config);
         config = Migrate(config);
         config = Validate(config);
         config = ThemePresets.Apply(config);
         return config;
+    }
+
+    /// <summary>
+    /// 기본 AppConfig JSON과 사용자 JSON을 병합한다.
+    /// 기본값을 기저로 깔고, 사용자 JSON의 키가 기본값을 덮어쓴다.
+    /// .NET 10 STJ 소스 생성기가 record init 기본값을 보존하지 않는 문제의 우회책.
+    /// </summary>
+    private static string MergeWithDefaults(string userJson)
+    {
+        // 기본 config → JSON (모든 init 기본값이 포함됨)
+        string defaultJson = JsonSerializer.Serialize(new AppConfig(), AppConfigJsonContext.Default.AppConfig);
+
+        using var defaultDoc = JsonDocument.Parse(defaultJson);
+        using var userDoc = JsonDocument.Parse(userJson);
+
+        // 사용자 JSON 키 수집
+        var userKeys = new HashSet<string>();
+        foreach (var prop in userDoc.RootElement.EnumerateObject())
+            userKeys.Add(prop.Name);
+
+        // 병합: 기본값(사용자 JSON에 없는 키만) + 사용자 JSON(전체)
+        using var ms = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(ms))
+        {
+            writer.WriteStartObject();
+            foreach (var prop in defaultDoc.RootElement.EnumerateObject())
+            {
+                if (!userKeys.Contains(prop.Name))
+                    prop.WriteTo(writer);
+            }
+            foreach (var prop in userDoc.RootElement.EnumerateObject())
+                prop.WriteTo(writer);
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(ms.ToArray());
     }
 
     // ================================================================
@@ -194,6 +235,49 @@ internal static class Settings
     }
 
     // ================================================================
+    // EnsureSubObjects — STJ 소스 생성기 null 보정
+    // ================================================================
+
+    /// <summary>
+    /// System.Text.Json 소스 생성기는 JSON에 없는 init 속성의 기본값을 보존하지 않을 수 있다.
+    /// 역직렬화 직후 모든 참조 타입 하위 객체를 null 체크하여 기본값으로 보정.
+    /// </summary>
+    private static AppConfig EnsureSubObjects(AppConfig config)
+    {
+        return config with
+        {
+            EventTriggers = config.EventTriggers ?? new(),
+            FixedPosition = config.FixedPosition ?? new(),
+            CaretOffset = config.CaretOffset ?? new() { X = -2, Y = 0 },
+            MouseOffset = config.MouseOffset ?? new() { X = 20, Y = 25 },
+            Advanced = config.Advanced ?? new(),
+            SystemHideClasses = config.SystemHideClasses ?? ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"],
+            SystemHideClassesUser = config.SystemHideClassesUser ?? [],
+            AppProfiles = config.AppProfiles ?? new(),
+            AppFilterList = config.AppFilterList ?? [],
+            TrayQuickOpacityPresets = config.TrayQuickOpacityPresets ?? [0.95, 0.85, 0.6],
+            BorderColor = config.BorderColor ?? "#000000",
+            HangulBg = config.HangulBg ?? "#16A34A",
+            HangulFg = config.HangulFg ?? "#FFFFFF",
+            EnglishBg = config.EnglishBg ?? "#D97706",
+            EnglishFg = config.EnglishFg ?? "#FFFFFF",
+            NonKoreanBg = config.NonKoreanBg ?? "#6B7280",
+            NonKoreanFg = config.NonKoreanFg ?? "#FFFFFF",
+            FontFamily = config.FontFamily ?? "맑은 고딕",
+            HangulLabel = config.HangulLabel ?? "한",
+            EnglishLabel = config.EnglishLabel ?? "En",
+            NonKoreanLabel = config.NonKoreanLabel ?? "EN",
+            HotkeyToggleVisibility = config.HotkeyToggleVisibility ?? "Ctrl+Alt+H",
+            HotkeyCycleStyle = config.HotkeyCycleStyle ?? "Ctrl+Alt+I",
+            HotkeyCyclePosition = config.HotkeyCyclePosition ?? "Ctrl+Alt+P",
+            HotkeyCycleDisplay = config.HotkeyCycleDisplay ?? "Ctrl+Alt+D",
+            HotkeyOpenSettings = config.HotkeyOpenSettings ?? "Ctrl+Alt+S",
+            Language = config.Language ?? "ko",
+            LogFilePath = config.LogFilePath ?? "",
+        };
+    }
+
+    // ================================================================
     // Migrate — config_version 체인
     // ================================================================
 
@@ -229,7 +313,7 @@ internal static class Settings
             if (mtime != _lastConfigMtime)
             {
                 _lastConfigMtime = mtime;
-                User32.PostMessage(hwndMain, AppMessages.WM_CONFIG_CHANGED,
+                User32.PostMessageW(hwndMain, AppMessages.WM_CONFIG_CHANGED,
                     IntPtr.Zero, IntPtr.Zero);
             }
         }
@@ -438,8 +522,8 @@ internal static class Settings
 
             // 3. 머지된 JSON → AppConfig
             string mergedJson = Encoding.UTF8.GetString(stream.ToArray());
-            return JsonSerializer.Deserialize(mergedJson, AppConfigJsonContext.Default.AppConfig)
-                   ?? global;
+            AppConfig? merged = JsonSerializer.Deserialize(mergedJson, AppConfigJsonContext.Default.AppConfig);
+            return merged is not null ? EnsureSubObjects(merged) : global;
         }
         catch
         {

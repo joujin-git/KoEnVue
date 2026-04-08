@@ -126,7 +126,7 @@ internal struct WNDCLASSEXW
     public IntPtr hIcon;
     public IntPtr hCursor;
     public IntPtr hbrBackground;
-    public string? lpszMenuName;
+    public IntPtr lpszMenuName;   // 항상 IntPtr.Zero (null 문자열 마샬링 NRE 방지)
     public string lpszClassName;
     public IntPtr hIconSm;
 }
@@ -195,8 +195,9 @@ internal static class Win32Constants
 
     // --- IME 메시지 ---
     public const uint WM_IME_CONTROL     = 0x0283;
-    public const uint IMC_GETOPENSTATUS  = 0x0005;
-    public const uint IME_CMODE_HANGUL   = 0x01;
+    public const uint IMC_GETOPENSTATUS      = 0x0005;
+    public const uint IMC_GETCONVERSIONMODE  = 0x0001;
+    public const uint IME_CMODE_HANGUL       = 0x01;
 
     // --- WinEvent 상수 ---
     public const uint WINEVENT_OUTOFCONTEXT = 0x0000;

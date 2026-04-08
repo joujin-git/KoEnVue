@@ -18,8 +18,8 @@ internal sealed record AppConfig
     // [위치]
     public PositionMode PositionMode { get; init; } = PositionMode.Caret;
     public FixedPositionConfig FixedPosition { get; init; } = new();
-    public OffsetConfig CaretOffset { get; init; } = new(-2, 0);
-    public OffsetConfig MouseOffset { get; init; } = new(20, 25);
+    public OffsetConfig CaretOffset { get; init; } = new() { X = -2, Y = 0 };
+    public OffsetConfig MouseOffset { get; init; } = new() { X = 20, Y = 25 };
     public CaretPlacement CaretPlacement { get; init; } = CaretPlacement.Left;
     public bool CaretPlacementAutoFlip { get; init; } = true;
     public int ScreenEdgeMargin { get; init; } = 8;
@@ -150,11 +150,10 @@ internal sealed record FixedPositionConfig
     public FixedMonitor Monitor { get; init; } = FixedMonitor.Primary;
 }
 
-internal sealed record OffsetConfig(int X, int Y)
+internal sealed record OffsetConfig
 {
-    public int X { get; init; } = X;
-    public int Y { get; init; } = Y;
-    public OffsetConfig() : this(0, 0) { }
+    public int X { get; init; }
+    public int Y { get; init; }
 }
 
 internal sealed record AdvancedConfig

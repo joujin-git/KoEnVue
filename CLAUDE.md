@@ -47,9 +47,11 @@ KoEnVue/
 ## Build & Run
 
 ```bash
-dotnet build                          # build
-dotnet publish -r win-x64 -c Release  # NativeAOT publish
+dotnet build                          # debug build
+dotnet publish -r win-x64 -c Release  # NativeAOT release publish
 ```
+
+**빌드 시 디버그 + 릴리스 모두 수행할 것.** 디버그만 빌드하면 릴리스 EXE가 구버전으로 남는다.
 
 csproj has `NoWarn: SYSLIB1051` (.NET 10 LibraryImport IntPtr diagnostic suppression).
 
@@ -63,6 +65,7 @@ csproj has `NoWarn: SYSLIB1051` (.NET 10 LibraryImport IntPtr diagnostic suppres
 | `uint → nint` cast | Explicit `(nint)` cast required for `uint` constants passed to `IntPtr` params |
 | `int & uint` mixed ops | `GetWindowLongW` (int) + `WS_CAPTION` (uint) → CS0034. Use `unchecked((int)WS_CAPTION)` local const |
 | NativeAOT COM | `Marshal.GetObjectForIUnknown` unavailable → use `StrategyBasedComWrappers.GetOrCreateObjectForComInstance` |
+| STJ record init defaults | Source gen loses `init` defaults for properties absent from JSON. `[JsonObjectCreationHandling(Populate)]` throws `NotSupportedException` on records (copy constructor). Workaround: `MergeWithDefaults()` in Settings.cs |
 
 ## Key Implementation Decisions
 
@@ -78,7 +81,7 @@ Corrections and deviations from the original spec (`prompts/`) applied during im
 - **Premultiplied alpha**: Post-processing needed for GDI output (non-premultiplied) with DrawTextW antialiasing edges
 - **DIB top-down**: Negative biHeight so (0,0) is top-left
 - **Tray callback routing**: Handled in Program.cs (not Tray.cs) because it needs `_indicatorVisible` access
-- **Settings.cs**: Static class, record `with` expressions (no builder). LoadFromFile pipeline: Deserialize → Migrate → Validate → ThemePresets.Apply
+- **Settings.cs**: Static class, record `with` expressions (no builder). LoadFromFile pipeline: MergeWithDefaults → Deserialize → EnsureSubObjects → Migrate → Validate → ThemePresets.Apply
 - **I18n.cs**: Bool flag + ternary pattern (NativeAOT-friendly, zero allocation). Uses `GetUserDefaultUILanguage()` P/Invoke since `InvariantGlobalization: true` disables CultureInfo
 - **UIA COM interfaces**: Vtable-layout placeholder methods instead of interface inheritance (Native/UiaInterfaces.cs)
 - **UiaClient.cs**: `ConcurrentQueue<UiaRequest>` + `ManualResetEventSlim` for STA thread communication. COM objects released in finally blocks
@@ -92,6 +95,10 @@ Corrections and deviations from the original spec (`prompts/`) applied during im
 - **NonKoreanImeMode Dim**: `GetTargetAlpha` applies `DefaultConfig.DimOpacityFactor` (0.5) for both active/idle states when `_currentState == NonKorean && Dim`
 - **F-key hotkeys**: `ParseHotkey` supports F1-F12 via pattern match → `VK_F1 + (fNum - 1)`. Modifier/F-key strings are `private const` (P3)
 - **String→Enum P3 completion**: 8 string config fields (LabelStyle, Theme, TrayClickAction, AppProfileMatch, MultiMonitor, TrayIconStyle, Anchor, Monitor) converted to `[JsonStringEnumConverter]` enums. All const-string comparisons replaced with enum pattern matching
+- **STJ source gen init-defaults workaround**: .NET 10 STJ source generator does not preserve `record` `init` property defaults for properties absent from JSON (both value types and reference types). `[JsonObjectCreationHandling(Populate)]` also fails — throws `NotSupportedException` due to record copy constructor being treated as parameterized constructor. Fix: `MergeWithDefaults()` serializes a default `AppConfig` to JSON, then overlays user JSON keys on top before deserialization. `EnsureSubObjects()` remains as safety net for null reference-type properties
+- **Label DIB flip-flop fix**: `EnsureResources` for Label style could oscillate between `baseWidth` and `fixedLabelWidth`, recreating the DIB each call and zeroing pixels while render cache skipped re-rendering. Fix: cache `_fixedLabelWidth` and invalidate `_lastRenderedState` when DIB is recreated
+- **Foreground change detection**: When switching through SystemFilter-hidden windows (desktop/Progman), `lastHwndFocus` was not updated, so returning to the same window skipped focus change detection. Fix: `foregroundChanged` flag triggers focus event + caret polling independently of `hwndFocus` comparison
+- **OffsetConfig non-positional record**: Changed from positional `record OffsetConfig(int X, int Y)` to non-positional to avoid parameterized constructor conflict with STJ source gen
 
 ## Spec Files
 

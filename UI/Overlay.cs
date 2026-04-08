@@ -153,6 +153,7 @@ internal static class Overlay
         _cachedFontDpiScale = 0;
         _currentWidth = 0;
         _currentHeight = 0;
+        _fixedLabelWidth = 0;
         EnsureResources(config);
     }
 
@@ -163,6 +164,7 @@ internal static class Overlay
         _cachedFontDpiScale = 0;
         _currentWidth = 0;
         _currentHeight = 0;
+        _fixedLabelWidth = 0;
         _lastRenderedState = null;
         EnsureResources(config);
     }
@@ -196,6 +198,11 @@ internal static class Overlay
         int targetH = DpiHelper.Scale(_baseHeight, _currentDpiScale);
 
         EnsureFont(config);
+
+        // Label: fixedLabelWidth 캐시가 있으면 사용 (DIB flip-flop 방지)
+        if (config.IndicatorStyle == IndicatorStyle.Label && _fixedLabelWidth > 0)
+            targetW = _fixedLabelWidth;
+
         EnsureDib(targetW, targetH);
 
         if (config.IndicatorStyle == IndicatorStyle.Label)
@@ -293,6 +300,9 @@ internal static class Overlay
 
         _currentWidth = width;
         _currentHeight = height;
+
+        // DIB 재생성 → 픽셀 0 클리어됨 → 렌더 캐시 무효화 필수
+        _lastRenderedState = null;
     }
 
     private static void CalculateFixedLabelWidth(AppConfig config)
@@ -525,9 +535,18 @@ internal static class Overlay
             byte r = ptr[offset + 2];
             byte a = ptr[offset + 3];
 
-            if (a == 0) continue;
+            // GDI는 32-bit DIB의 알파 채널을 쓰지 않음 → 렌더된 픽셀도 A=0.
+            // RGB가 non-zero인데 A=0이면 GDI가 그린 픽셀 → 불투명(A=255)으로 설정.
+            if (a == 0)
+            {
+                if ((r | g | b) != 0)
+                    ptr[offset + 3] = 255;
+                continue;
+            }
+
             if (a == 255) continue;  // 완전 불투명은 변환 불필요
 
+            // 부분 알파 (DrawTextW 안티앨리어싱 등) → premultiply
             ptr[offset] = (byte)(b * a / 255);
             ptr[offset + 1] = (byte)(g * a / 255);
             ptr[offset + 2] = (byte)(r * a / 255);

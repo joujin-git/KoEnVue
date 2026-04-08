@@ -102,6 +102,7 @@ internal static class ImeStatus
         IntPtr hIMEWnd = Imm32.ImmGetDefaultIMEWnd(hwndFocus);
         if (hIMEWnd == IntPtr.Zero) return null;
 
+        // 1. IME 오픈 여부 확인
         IntPtr ret = User32.SendMessageTimeoutW(
             hIMEWnd,
             Win32Constants.WM_IME_CONTROL,
@@ -109,11 +110,27 @@ internal static class ImeStatus
             IntPtr.Zero,
             Win32Constants.SMTO_ABORTIFHUNG,
             DefaultConfig.ImeMessageTimeoutMs,
-            out IntPtr result);
+            out IntPtr openResult);
 
         if (ret == IntPtr.Zero) return null;  // 타임아웃 또는 에러
+        if (openResult == IntPtr.Zero) return ImeState.English;  // IME 비활성 → 영문
 
-        return result != IntPtr.Zero ? ImeState.Hangul : ImeState.English;
+        // 2. IME 오픈 상태 → 변환 모드로 한/영 판별
+        //    (GETOPENSTATUS만으로는 한국어 IME 내 한/영 전환을 구분할 수 없음)
+        ret = User32.SendMessageTimeoutW(
+            hIMEWnd,
+            Win32Constants.WM_IME_CONTROL,
+            (nint)Win32Constants.IMC_GETCONVERSIONMODE,
+            IntPtr.Zero,
+            Win32Constants.SMTO_ABORTIFHUNG,
+            DefaultConfig.ImeMessageTimeoutMs,
+            out IntPtr convResult);
+
+        if (ret == IntPtr.Zero) return null;
+
+        return ((uint)(nint)convResult & Win32Constants.IME_CMODE_HANGUL) != 0
+            ? ImeState.Hangul
+            : ImeState.English;
     }
 
     /// <summary>
@@ -177,7 +194,7 @@ internal static class ImeStatus
         if (newState != _lastState)
         {
             _lastState = newState;
-            User32.PostMessage(_hwndMain, AppMessages.WM_IME_STATE_CHANGED,
+            User32.PostMessageW(_hwndMain, AppMessages.WM_IME_STATE_CHANGED,
                 (nint)(int)newState, IntPtr.Zero);
 
             Logger.Debug($"IME state changed: {newState} (via hook)");

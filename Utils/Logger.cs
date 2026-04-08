@@ -85,7 +85,7 @@ internal static class Logger
     {
         if (LogLevel.Debug >= _logLevel)
         {
-            string formatted = $"[DEBUG] {DateTime.UtcNow:HH:mm:ss.fff} {message}";
+            string formatted = $"[DEBUG] {DateTime.Now:HH:mm:ss.fff} {message}";
             Trace.WriteLine(formatted);
             EnqueueToFile(formatted);
         }
@@ -95,7 +95,7 @@ internal static class Logger
     {
         if (LogLevel.Info >= _logLevel)
         {
-            string formatted = $"[INFO] {DateTime.UtcNow:HH:mm:ss.fff} {message}";
+            string formatted = $"[INFO] {DateTime.Now:HH:mm:ss.fff} {message}";
             Trace.WriteLine(formatted);
             EnqueueToFile(formatted);
         }
@@ -105,7 +105,7 @@ internal static class Logger
     {
         if (LogLevel.Warning >= _logLevel)
         {
-            string formatted = $"[WARN] {DateTime.UtcNow:HH:mm:ss.fff} {message}";
+            string formatted = $"[WARN] {DateTime.Now:HH:mm:ss.fff} {message}";
             Trace.WriteLine(formatted);
             EnqueueToFile(formatted);
         }
@@ -115,7 +115,7 @@ internal static class Logger
     {
         if (LogLevel.Error >= _logLevel)
         {
-            string formatted = $"[ERROR] {DateTime.UtcNow:HH:mm:ss.fff} {message}";
+            string formatted = $"[ERROR] {DateTime.Now:HH:mm:ss.fff} {message}";
             Trace.WriteLine(formatted);
             EnqueueToFile(formatted);
         }
@@ -125,7 +125,7 @@ internal static class Logger
     {
         if (LogLevel.Error >= _logLevel)
         {
-            string formatted = $"[ERROR] {DateTime.UtcNow:HH:mm:ss.fff} {message}: {ex.Message}";
+            string formatted = $"[ERROR] {DateTime.Now:HH:mm:ss.fff} {message}: {ex.Message}";
             Trace.WriteLine(formatted);
             EnqueueToFile(formatted);
         }

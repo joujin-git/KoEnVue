@@ -95,7 +95,7 @@ internal static partial class User32
     // === 메시지 루프 ===
 
     [LibraryImport("user32.dll")]
-    internal static partial int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+    internal static partial int GetMessageW(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
     // 반환: >0 메시지 있음, 0 WM_QUIT, -1 에러. bool이 아닌 int로 선언해야 함.
 
     [LibraryImport("user32.dll")]
@@ -103,11 +103,11 @@ internal static partial class User32
     internal static partial bool TranslateMessage(ref MSG lpMsg);
 
     [LibraryImport("user32.dll")]
-    internal static partial IntPtr DispatchMessage(ref MSG lpMsg);
+    internal static partial IntPtr DispatchMessageW(ref MSG lpMsg);
 
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    internal static partial bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+    internal static partial bool PostMessageW(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
     [LibraryImport("user32.dll")]
     internal static partial void PostQuitMessage(int nExitCode);

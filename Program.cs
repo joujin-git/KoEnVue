@@ -56,6 +56,23 @@ internal static class Program
 
     static void Main()
     {
+        try
+        {
+            MainImpl();
+        }
+        catch (Exception ex)
+        {
+            // 비상 로깅 — Logger 초기화 전이면 파일에 직접 기록
+            try { File.AppendAllText(
+                Path.Combine(AppContext.BaseDirectory, "koenvue_crash.txt"),
+                $"[{DateTime.Now:HH:mm:ss.fff}] FATAL: {ex}\n"); } catch { }
+            Logger.Error($"Fatal: {ex}");
+            Logger.Shutdown();
+        }
+    }
+
+    static void MainImpl()
+    {
         // 1. 이전 트레이 찌꺼기 정리 (크래시 복구)
         CleanupPreviousTrayIcon();
 
@@ -68,6 +85,8 @@ internal static class Program
         // 4. 로거 + I18n 초기화
         Logger.SetLevel(_config.LogLevel);
         Logger.Initialize(_config);
+
+        Logger.Debug($"Config: TrayEnabled={_config.TrayEnabled}, DisplayMode={_config.DisplayMode}, EventDisplayDurationMs={_config.EventDisplayDurationMs}, IndicatorStyle={_config.IndicatorStyle}, PollIntervalMs={_config.PollIntervalMs}");
         I18n.Load(_config.Language);
         Logger.Info("KoEnVue starting");
 
@@ -78,16 +97,21 @@ internal static class Program
         _ = SystemFilter.ShouldHide(IntPtr.Zero, IntPtr.Zero, _config);
 
         // 7. 윈도우 클래스 등록
+        Logger.Debug("Registering window classes");
         RegisterWindowClasses();
 
         // 8. 메인 윈도우 생성 (메시지 전용, 화면 미표시)
+        Logger.Debug("Creating main window");
         _hwndMain = CreateMainWindow();
 
         // 9. 오버레이 윈도우 생성
+        Logger.Debug("Creating overlay window");
         _hwndOverlay = CreateOverlayWindow();
 
         // 9a. 렌더링 + 애니메이션 초기화
+        Logger.Debug("Initializing overlay rendering");
         Overlay.Initialize(_hwndOverlay, _config);
+        Logger.Debug("Initializing animation");
         Animation.Initialize(_hwndMain, _hwndOverlay, _config);
 
         // 9b. 트레이 아이콘 초기화
@@ -152,22 +176,26 @@ internal static class Program
     private static unsafe void RegisterWindowClasses()
     {
         // 메인 윈도우 클래스
+        Logger.Debug("Registering main window class");
         var mainClass = new WNDCLASSEXW
         {
             cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
             lpfnWndProc = (IntPtr)(delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&WndProc,
             lpszClassName = MainClassName,
         };
-        User32.RegisterClassExW(ref mainClass);
+        ushort mainAtom = User32.RegisterClassExW(ref mainClass);
+        Logger.Debug($"Main window class registered: atom={mainAtom}");
 
         // 오버레이 윈도우 클래스
+        Logger.Debug($"Registering overlay window class: {_config.Advanced.OverlayClassName}");
         var overlayClass = new WNDCLASSEXW
         {
             cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
             lpfnWndProc = (IntPtr)(delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&WndProc,
             lpszClassName = _config.Advanced.OverlayClassName,
         };
-        User32.RegisterClassExW(ref overlayClass);
+        ushort overlayAtom = User32.RegisterClassExW(ref overlayClass);
+        Logger.Debug($"Overlay window class registered: atom={overlayAtom}");
     }
 
     private static IntPtr CreateMainWindow()
@@ -206,10 +234,10 @@ internal static class Program
 
     private static void RunMessageLoop()
     {
-        while (User32.GetMessage(out MSG msg, IntPtr.Zero, 0, 0) > 0)
+        while (User32.GetMessageW(out MSG msg, IntPtr.Zero, 0, 0) > 0)
         {
             User32.TranslateMessage(ref msg);
-            User32.DispatchMessage(ref msg);
+            User32.DispatchMessageW(ref msg);
         }
     }
 
@@ -548,6 +576,7 @@ internal static class Program
 
             // 2. 앱별 프로필 + 시스템 필터 (포그라운드 변경 시에만 — 최적화)
             AppConfig appConfig = lastAppConfig;
+            bool foregroundChanged = false;
             if (hwndForeground != lastHwndForeground)
             {
                 lastHwndForeground = hwndForeground;
@@ -558,7 +587,7 @@ internal static class Program
                 {
                     // enabled: false → 이 앱에서 인디케이터 비활성화
                     if (_indicatorVisible)
-                        User32.PostMessage(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
+                        User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
                             IntPtr.Zero, IntPtr.Zero);
                     continue;
                 }
@@ -568,18 +597,24 @@ internal static class Program
                 if (SystemFilter.ShouldHide(hwndForeground, hwndFocus, appConfig))
                 {
                     if (_indicatorVisible)
-                        User32.PostMessage(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
+                        User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
                             IntPtr.Zero, IntPtr.Zero);
                     continue;
                 }
+
+                foregroundChanged = true;
             }
 
             // 3. 포커스 변경 감지
-            if (hwndFocus != lastHwndFocus)
+            // foregroundChanged: 숨김 창(데스크톱 등)을 거쳐 돌아오면
+            //   hwndFocus가 같아도 포커스 이벤트 + 캐럿 폴링 필요
+            bool focusChanged = false;
+            if (hwndFocus != lastHwndFocus || foregroundChanged)
             {
                 lastHwndFocus = hwndFocus;
-                User32.PostMessage(_hwndMain, AppMessages.WM_FOCUS_CHANGED,
+                User32.PostMessageW(_hwndMain, AppMessages.WM_FOCUS_CHANGED,
                     hwndFocus, IntPtr.Zero);
+                focusChanged = true;
             }
 
             // 4. IME 상태 감지 (3-param: 앱 프로필 detection_method 반영)
@@ -587,12 +622,13 @@ internal static class Program
             if (currentIme != lastImeState)
             {
                 lastImeState = currentIme;
-                User32.PostMessage(_hwndMain, AppMessages.WM_IME_STATE_CHANGED,
+                User32.PostMessageW(_hwndMain, AppMessages.WM_IME_STATE_CHANGED,
                     (IntPtr)(int)currentIme, IntPtr.Zero);
             }
 
             // 5. 캐럿 위치 추적 (이벤트 발생 시 또는 Always 모드)
-            if (_needCaretUpdate || appConfig.DisplayMode == DisplayMode.Always)
+            // focusChanged: 메인 스레드의 _needCaretUpdate 설정을 기다리지 않고 즉시 폴링
+            if (_needCaretUpdate || focusChanged || appConfig.DisplayMode == DisplayMode.Always)
             {
                 long pollStart = Environment.TickCount64;
                 string procName = SystemFilter.GetProcessName(processId);
@@ -602,7 +638,7 @@ internal static class Program
                 if (result is { } caret)
                 {
                     _lastCaretH = caret.h;  // volatile int 쓰기
-                    User32.PostMessage(_hwndMain, AppMessages.WM_CARET_UPDATED,
+                    User32.PostMessageW(_hwndMain, AppMessages.WM_CARET_UPDATED,
                         (IntPtr)caret.x, (IntPtr)caret.y);
 
                     // 디버그 오버레이 데이터 전달
@@ -766,8 +802,8 @@ internal static class Program
         // 6. 트레이 아이콘 제거
         Tray.Remove();
 
-        // 7. Mutex 해제
-        _mutex?.ReleaseMutex();
+        // 7. Mutex 해제 (Dispose만 — 프로세스 종료 시 OS가 자동 해제.
+        //    ReleaseMutex는 소유 스레드에서만 호출 가능하나 ProcessExit는 다른 스레드일 수 있음)
         _mutex?.Dispose();
 
         // 8. COM 해제

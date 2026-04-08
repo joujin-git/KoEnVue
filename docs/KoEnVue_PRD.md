@@ -1547,8 +1547,11 @@ Win32 `CreatePopupMenu` + `AppendMenuW`로 메뉴를 동적 생성하고, `Track
 
 **설정 로드 파이프라인 (Settings.LoadFromFile)**:
 ```
-Deserialize → Migrate(config_version 체인) → Validate(범위 클램핑) → ThemePresets.Apply(테마 색상 적용)
+MergeWithDefaults → Deserialize → EnsureSubObjects → Migrate(config_version 체인) → Validate(범위 클램핑) → ThemePresets.Apply(테마 색상 적용)
 ```
+> **MergeWithDefaults**: .NET 10 STJ 소스 생성기가 record의 init 기본값을 보존하지 않는 문제의 우회책.
+> 기본 AppConfig를 JSON으로 직렬화한 뒤, 사용자 JSON 키를 위에 덮어씌워 병합한다.
+> 이로써 사용자가 생략한 키에 코드 내 init 기본값이 적용된다.
 
 ### 6.5 기본 설정 예제
 
@@ -1627,9 +1630,10 @@ static readonly Dictionary<string, (double min, double max)> Validation = new()
 
 ```
 1. UTF-8 BOM 감지 → 제거
-2. System.Text.Json 역직렬화 (ReadCommentHandling=Skip, AllowTrailingCommas=true)
-3. Migrate(config_version 체인) → Validate(범위 클램핑) → ThemePresets.Apply
-4. 파싱 실패 시 → DEFAULT_CONFIG 사용 + 로그 경고
+2. MergeWithDefaults (기본 AppConfig JSON과 사용자 JSON 병합 — STJ 소스 생성기 init 기본값 우회책)
+3. System.Text.Json 역직렬화 (ReadCommentHandling=Skip, AllowTrailingCommas=true)
+4. EnsureSubObjects (null 참조 타입 보정) → Migrate(config_version 체인) → Validate(범위 클램핑) → ThemePresets.Apply
+5. 파싱 실패 시 → DEFAULT_CONFIG 사용 + 로그 경고
 ```
 
 > **JSON 주석/후행 쉼표 지원**: 사용자가 config.json을 직접 편집할 때
