@@ -51,7 +51,7 @@ dotnet build                          # debug build
 dotnet publish -r win-x64 -c Release  # NativeAOT release publish
 ```
 
-**빌드 시 디버그 + 릴리스 모두 수행할 것.** 디버그만 빌드하면 릴리스 EXE가 구버전으로 남는다.
+**Always run both debug and release builds.** A debug-only build leaves the release EXE outdated.
 
 csproj has `NoWarn: SYSLIB1051` (.NET 10 LibraryImport IntPtr diagnostic suppression).
 
