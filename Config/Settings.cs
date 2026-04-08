@@ -194,6 +194,7 @@ internal static class Settings
             // 감지
             PollIntervalMs = Math.Clamp(config.PollIntervalMs, 50, 500),
             CaretPollIntervalMs = Math.Clamp(config.CaretPollIntervalMs, 30, 500),
+            CaretMoveThresholdPx = Math.Clamp(config.CaretMoveThresholdPx, 5, 500),
 
             // 표시
             EventDisplayDurationMs = Math.Clamp(config.EventDisplayDurationMs, 500, 10000),

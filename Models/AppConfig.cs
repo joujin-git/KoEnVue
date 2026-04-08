@@ -14,6 +14,7 @@ internal sealed record AppConfig
     public int EventDisplayDurationMs { get; init; } = 1500;
     public int AlwaysIdleTimeoutMs { get; init; } = 3000;
     public EventTriggersConfig EventTriggers { get; init; } = new();
+    public int CaretMoveThresholdPx { get; init; } = 30;
 
     // [위치]
     public PositionMode PositionMode { get; init; } = PositionMode.Caret;
@@ -140,6 +141,7 @@ internal sealed record EventTriggersConfig
 {
     public bool OnFocusChange { get; init; } = true;
     public bool OnImeChange { get; init; } = true;
+    public bool OnCaretMove { get; init; } = false;
 }
 
 internal sealed record FixedPositionConfig

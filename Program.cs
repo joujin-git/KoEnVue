@@ -549,6 +549,8 @@ internal static class Program
         ImeState lastImeState = ImeState.English;
         AppConfig lastAppConfig = _config;
         int pollCount = 0;
+        int lastPostedCaretX = int.MinValue;
+        int lastPostedCaretY = int.MinValue;
 
         while (!_stopping)
         {
@@ -626,9 +628,16 @@ internal static class Program
                     (IntPtr)(int)currentIme, IntPtr.Zero);
             }
 
-            // 5. 캐럿 위치 추적 (이벤트 발생 시 또는 Always 모드)
-            // focusChanged: 메인 스레드의 _needCaretUpdate 설정을 기다리지 않고 즉시 폴링
-            if (_needCaretUpdate || focusChanged || appConfig.DisplayMode == DisplayMode.Always)
+            // 5. 캐럿 위치 추적
+            // - IME/포커스 이벤트 시: 즉시 폴링 + 무조건 전달
+            // - OnCaretMove 활성 시: 항상 폴링, 임계값 이상 이동 시에만 전달
+            // - Always 모드: 항상 폴링 + 무조건 전달
+            bool eventTriggered = _needCaretUpdate || focusChanged;
+            bool shouldPollCaret = eventTriggered
+                || appConfig.DisplayMode == DisplayMode.Always
+                || appConfig.EventTriggers.OnCaretMove;
+
+            if (shouldPollCaret)
             {
                 long pollStart = Environment.TickCount64;
                 string procName = SystemFilter.GetProcessName(processId);
@@ -637,9 +646,26 @@ internal static class Program
 
                 if (result is { } caret)
                 {
-                    _lastCaretH = caret.h;  // volatile int 쓰기
-                    User32.PostMessageW(_hwndMain, AppMessages.WM_CARET_UPDATED,
-                        (IntPtr)caret.x, (IntPtr)caret.y);
+                    // 이벤트/Always: 무조건 전달. OnCaretMove: 임계값 초과 시만 전달.
+                    bool shouldPost = eventTriggered
+                        || appConfig.DisplayMode == DisplayMode.Always;
+
+                    if (!shouldPost && appConfig.EventTriggers.OnCaretMove)
+                    {
+                        int dx = caret.x - lastPostedCaretX;
+                        int dy = caret.y - lastPostedCaretY;
+                        int threshold = appConfig.CaretMoveThresholdPx;
+                        shouldPost = (dx * dx + dy * dy) >= threshold * threshold;
+                    }
+
+                    if (shouldPost)
+                    {
+                        _lastCaretH = caret.h;  // volatile int 쓰기
+                        User32.PostMessageW(_hwndMain, AppMessages.WM_CARET_UPDATED,
+                            (IntPtr)caret.x, (IntPtr)caret.y);
+                        lastPostedCaretX = caret.x;
+                        lastPostedCaretY = caret.y;
+                    }
 
                     // 디버그 오버레이 데이터 전달
                     if (appConfig.Advanced.DebugOverlay)

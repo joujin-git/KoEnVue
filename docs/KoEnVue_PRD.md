@@ -1228,8 +1228,10 @@ Win32 `CreatePopupMenu` + `AppendMenuW`로 메뉴를 동적 생성하고, `Track
   "always_idle_timeout_ms": 3000,    // always 모드: 이벤트 없이 이 시간 경과 시 유휴 투명도로 복귀 (ms)
   "event_triggers": {                 // on_event 모드: 표시 트리거 개별 on/off
     "on_focus_change": true,          //   포커스 변경 시 표시 (앱 전환, 텍스트 필드 클릭 등)
-    "on_ime_change": true             //   한/영 전환 시 표시
+    "on_ime_change": true,            //   한/영 전환 시 표시
+    "on_caret_move": false            //   캐럿 위치 이동 시 표시 (마우스 클릭 등, 기본 꺼짐)
   },
+  "caret_move_threshold_px": 30,      // on_caret_move 임계값 (유클리드 거리, px). 타이핑 vs 마우스 클릭 구분용
 
   // ─────────────────────────────────────────────
   // [위치]
@@ -1592,6 +1594,7 @@ static readonly Dictionary<string, (double min, double max)> Validation = new()
 {
     ["poll_interval_ms"]          = (50, 500),
     ["caret_poll_interval_ms"]    = (30, 500),
+    ["caret_move_threshold_px"]   = (5, 500),
     ["event_display_duration_ms"] = (500, 10000),
     ["always_idle_timeout_ms"]    = (1000, 30000),
     ["opacity"]                   = (0.1, 1.0),
