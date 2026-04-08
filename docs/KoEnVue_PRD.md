@@ -1535,11 +1535,11 @@ Win32 `CreatePopupMenu` + `AppendMenuW`로 메뉴를 동적 생성하고, `Track
 ### 6.3 설정 파일 위치
 
 ```
-%APPDATA%\KoEnVue\config.json     ← 사용자 설정 (우선)
-<exe 실행 경로>\config.json       ← 포터블 모드 (위 파일이 없을 때)
+<exe 실행 경로>\config.json       ← 포터블 모드 (우선, F-46)
+%APPDATA%\KoEnVue\config.json     ← 사용자 설정 (포터블 config 없을 때)
 ```
 
-포터블 모드: exe와 같은 디렉토리에 config.json이 있으면 해당 파일 사용. USB 등 이동식 저장소에서 설정 유지 가능.
+포터블 모드: exe와 같은 디렉토리에 config.json이 있으면 %APPDATA% 대신 해당 파일 사용. USB 등 이동식 저장소에서 설정 유지 가능.
 
 ### 6.4 설정 마이그레이션
 

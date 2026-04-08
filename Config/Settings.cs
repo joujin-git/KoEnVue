@@ -51,15 +51,15 @@ internal static class Settings
     // ================================================================
 
     /// <summary>
-    /// 설정 파일 탐색: %APPDATA% → exe dir → 기본값.
-    /// BOM 제거 + Migrate + Validate 파이프라인 적용.
+    /// 설정 파일 탐색: exe dir (포터블) → %APPDATA% → 기본값.
+    /// exe dir에 config.json이 있으면 포터블 모드로 우선 사용 (F-46).
     /// </summary>
     public static AppConfig Load()
     {
         string[] candidates =
         [
-            DefaultConfig.GetDefaultConfigPath(),
             Path.Combine(AppContext.BaseDirectory, DefaultConfig.ConfigFileName),
+            DefaultConfig.GetDefaultConfigPath(),
         ];
 
         foreach (string path in candidates)
