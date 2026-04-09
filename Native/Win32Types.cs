@@ -161,6 +161,32 @@ internal struct HIGHCONTRAST
     public IntPtr lpszDefaultScheme;
 }
 
+/// <summary>
+/// WM_GETTITLEBARINFOEX 응답 구조체.
+/// rgstate[6] + rgrect[6]: [0]=타이틀바, [1]=예약, [2]=최소화, [3]=최대화, [4]=도움말, [5]=닫기
+/// rgrect는 스크린 좌표.
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct TITLEBARINFOEX
+{
+    public uint cbSize;
+    public RECT rcTitleBar;
+    // rgstate[CCHILDREN_TITLEBAR + 1] — 6개
+    public uint stateTitleBar;
+    public uint stateReserved;
+    public uint stateMinimize;
+    public uint stateMaximize;
+    public uint stateHelp;
+    public uint stateClose;
+    // rgrect[CCHILDREN_TITLEBAR + 1] — 6개 (스크린 좌표)
+    public RECT rectTitleBar;
+    public RECT rectReserved;
+    public RECT rectMinimize;
+    public RECT rectMaximize;
+    public RECT rectHelp;
+    public RECT rectClose;
+}
+
 // ================================================================
 // 상수
 // ================================================================
@@ -177,6 +203,8 @@ internal static class Win32Constants
     // --- 윈도우 스타일 ---
     public const uint WS_POPUP           = 0x80000000;
     public const uint WS_CAPTION         = 0x00C00000;  // WS_BORDER | WS_DLGFRAME
+    public const uint WS_MINIMIZEBOX    = 0x00020000;
+    public const uint WS_MAXIMIZEBOX    = 0x00010000;
 
     // --- GetWindowLongW 인덱스 ---
     public const int GWL_STYLE           = -16;
@@ -187,8 +215,23 @@ internal static class Win32Constants
     public const int SW_SHOW             = 5;
 
     // --- System Metrics ---
+    public const int SM_CXSIZE           = 30;   // caption button width
+    public const int SM_CYSIZE           = 31;   // caption button height
+    public const int SM_CYCAPTION        = 4;    // caption bar height
+    public const int SM_CXFRAME          = 32;   // window frame width (identical to SM_CXSIZEFRAME)
+    public const int SM_CYFRAME          = 33;   // window frame height
     public const int SM_CXSMICON         = 49;
     public const int SM_CYSMICON         = 50;
+
+    // --- Hit Test ---
+    public const uint WM_NCHITTEST       = 0x0084;
+    public const nint HTCAPTION          = 2;
+    public const nint HTTRANSPARENT      = -1;
+
+    // --- 윈도우 이동/리사이즈 ---
+    public const uint WM_MOVING          = 0x0216;
+    public const uint WM_ENTERSIZEMOVE   = 0x0231;
+    public const uint WM_EXITSIZEMOVE    = 0x0232;
 
     // --- SendMessageTimeout 플래그 ---
     public const uint SMTO_ABORTIFHUNG   = 0x0002;
@@ -257,15 +300,22 @@ internal static class Win32Constants
     public const uint WM_DESTROY         = 0x0002;
     public const uint WM_TIMER           = 0x0113;
     public const uint WM_COMMAND         = 0x0111;
+    public const uint WM_CONTEXTMENU     = 0x007B;
     public const uint WM_HOTKEY          = 0x0312;
     public const uint WM_POWERBROADCAST  = 0x0218;
     public const uint WM_DISPLAYCHANGE   = 0x007E;
     public const uint WM_SETTINGCHANGE   = 0x001A;
     public const uint WM_DPICHANGED     = 0x02E0;
+    public const uint WM_GETTITLEBARINFOEX = 0x033F;
     public const uint WM_RBUTTONUP       = 0x0205;
     public const uint WM_LBUTTONUP       = 0x0202;
     public const uint WM_APP             = 0x8000;
     public const uint WM_USER            = 0x0400;
+
+    // --- TITLEBARINFOEX 상태 플래그 ---
+    public const uint STATE_SYSTEM_INVISIBLE   = 0x8000;
+    public const uint STATE_SYSTEM_OFFSCREEN   = 0x10000;
+    public const uint STATE_SYSTEM_UNAVAILABLE = 0x0001;
 
     // --- 전원 관리 ---
     public const uint PBT_APMRESUMESUSPEND = 0x0007;
@@ -317,6 +367,11 @@ internal static class Win32Constants
     public const uint COINIT_APARTMENTTHREADED = 0x2;
     public const uint CLSCTX_INPROC_SERVER = 0x1;
 
+    // --- DWM ---
+    public const uint DWMWA_CAPTION_BUTTON_BOUNDS = 5;
+    public const uint DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+    public const int S_OK                = 0;
+
     // --- DPI ---
     public const uint MDT_EFFECTIVE_DPI  = 0;
 
@@ -343,4 +398,7 @@ internal static class Win32Constants
     // --- 버퍼 크기 ---
     public const int MAX_CLASS_NAME     = 256;
     public const int MAX_WINDOW_TEXT    = 256;
+
+    // --- 윈도우 클래스명 ---
+    public const string ConsoleWindowClass = "ConsoleWindowClass";
 }

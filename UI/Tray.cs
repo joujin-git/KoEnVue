@@ -16,17 +16,6 @@ internal static class Tray
     // 메뉴 항목 ID (P3: 매직 넘버 금지)
     // ================================================================
 
-    // 서브메뉴: 인디케이터 스타일
-    private const int IDM_STYLE_DOT       = 1001;
-    private const int IDM_STYLE_SQUARE    = 1002;
-    private const int IDM_STYLE_UNDERLINE = 1003;
-    private const int IDM_STYLE_VBAR      = 1004;
-    private const int IDM_STYLE_LABEL     = 1005;
-
-    // 서브메뉴: 표시 모드
-    private const int IDM_DISPLAY_EVENT   = 2001;
-    private const int IDM_DISPLAY_ALWAYS  = 2002;
-
     // 서브메뉴: 투명도
     private const int IDM_OPACITY_HIGH    = 3001;
     private const int IDM_OPACITY_NORMAL  = 3002;
@@ -34,8 +23,7 @@ internal static class Tray
 
     // 메인 메뉴
     private const int IDM_STARTUP         = 4001;
-    private const int IDM_OPEN_SETTINGS   = 4002;
-    private const int IDM_EXIT            = 4003;
+    private const int IDM_EXIT            = 4002;
 
     // schtasks 작업 이름
     private const string TaskName = "KoEnVue";
@@ -149,35 +137,7 @@ internal static class Tray
     {
         if (!_initialized) return;
 
-        // --- 서브메뉴 1: 인디케이터 스타일 ---
-        IntPtr hStyleMenu = User32.CreatePopupMenu();
-        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_DOT, I18n.StyleDot);
-        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_SQUARE, I18n.StyleSquare);
-        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_UNDERLINE, I18n.StyleUnderline);
-        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_VBAR, I18n.StyleVbar);
-        User32.AppendMenuW(hStyleMenu, Win32Constants.MF_STRING, (nuint)IDM_STYLE_LABEL, I18n.StyleLabel);
-        uint currentStyleId = config.IndicatorStyle switch
-        {
-            IndicatorStyle.CaretDot => (uint)IDM_STYLE_DOT,
-            IndicatorStyle.CaretSquare => (uint)IDM_STYLE_SQUARE,
-            IndicatorStyle.CaretUnderline => (uint)IDM_STYLE_UNDERLINE,
-            IndicatorStyle.CaretVbar => (uint)IDM_STYLE_VBAR,
-            IndicatorStyle.Label => (uint)IDM_STYLE_LABEL,
-            _ => (uint)IDM_STYLE_DOT,
-        };
-        User32.CheckMenuRadioItem(hStyleMenu, (uint)IDM_STYLE_DOT, (uint)IDM_STYLE_LABEL,
-            currentStyleId, Win32Constants.MF_BYCOMMAND);
-
-        // --- 서브메뉴 2: 표시 모드 ---
-        IntPtr hDisplayMenu = User32.CreatePopupMenu();
-        User32.AppendMenuW(hDisplayMenu, Win32Constants.MF_STRING, (nuint)IDM_DISPLAY_EVENT, I18n.DisplayEvent);
-        User32.AppendMenuW(hDisplayMenu, Win32Constants.MF_STRING, (nuint)IDM_DISPLAY_ALWAYS, I18n.DisplayAlways);
-        uint currentDisplayId = config.DisplayMode == DisplayMode.OnEvent
-            ? (uint)IDM_DISPLAY_EVENT : (uint)IDM_DISPLAY_ALWAYS;
-        User32.CheckMenuRadioItem(hDisplayMenu, (uint)IDM_DISPLAY_EVENT, (uint)IDM_DISPLAY_ALWAYS,
-            currentDisplayId, Win32Constants.MF_BYCOMMAND);
-
-        // --- 서브메뉴 3: 투명도 ---
+        // --- 서브메뉴: 투명도 ---
         IntPtr hOpacityMenu = User32.CreatePopupMenu();
         double[] presets = config.TrayQuickOpacityPresets;
         if (presets.Length >= 3)
@@ -202,15 +162,12 @@ internal static class Tray
 
         // --- 메인 메뉴 ---
         IntPtr hMenu = User32.CreatePopupMenu();
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hStyleMenu, I18n.MenuIndicatorStyle);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hDisplayMenu, I18n.MenuDisplayMode);
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hOpacityMenu, I18n.MenuOpacity);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
 
         bool isStartup = IsStartupRegistered();
         User32.AppendMenuW(hMenu, isStartup ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED,
             (nuint)IDM_STARTUP, I18n.MenuStartup);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_OPEN_SETTINGS, I18n.MenuOpenSettings);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
         User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_EXIT, I18n.MenuExit);
 
@@ -234,31 +191,6 @@ internal static class Tray
     {
         switch (commandId)
         {
-            // --- 인디케이터 스타일 ---
-            case IDM_STYLE_DOT:
-                updateConfig(config with { IndicatorStyle = IndicatorStyle.CaretDot });
-                break;
-            case IDM_STYLE_SQUARE:
-                updateConfig(config with { IndicatorStyle = IndicatorStyle.CaretSquare });
-                break;
-            case IDM_STYLE_UNDERLINE:
-                updateConfig(config with { IndicatorStyle = IndicatorStyle.CaretUnderline });
-                break;
-            case IDM_STYLE_VBAR:
-                updateConfig(config with { IndicatorStyle = IndicatorStyle.CaretVbar });
-                break;
-            case IDM_STYLE_LABEL:
-                updateConfig(config with { IndicatorStyle = IndicatorStyle.Label });
-                break;
-
-            // --- 표시 모드 ---
-            case IDM_DISPLAY_EVENT:
-                updateConfig(config with { DisplayMode = DisplayMode.OnEvent });
-                break;
-            case IDM_DISPLAY_ALWAYS:
-                updateConfig(config with { DisplayMode = DisplayMode.Always });
-                break;
-
             // --- 투명도 ---
             case IDM_OPACITY_HIGH:
                 if (config.TrayQuickOpacityPresets.Length >= 1)
@@ -276,11 +208,6 @@ internal static class Tray
             // --- 시작 프로그램 등록 ---
             case IDM_STARTUP:
                 ToggleStartupRegistration();
-                break;
-
-            // --- 설정 파일 열기 ---
-            case IDM_OPEN_SETTINGS:
-                Settings.OpenSettingsFile();
                 break;
 
             // --- 종료 ---

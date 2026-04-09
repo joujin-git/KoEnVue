@@ -80,17 +80,17 @@ internal static class Animation
     // TriggerShow
     // ================================================================
 
-    public static void TriggerShow(int caretX, int caretY, int caretH,
+    public static void TriggerShow(int x, int y,
         ImeState state, AppConfig config, bool imeChanged)
     {
-        // 0. NonKoreanIme "hide" 가드 (모드 무관 강제 숨김)
+        // 0. NonKoreanIme "hide" 가드
         if (state == ImeState.NonKorean && config.NonKoreanIme == NonKoreanImeMode.Hide)
         {
             TriggerHide(config, forceHidden: true);
             return;
         }
 
-        // 1. hold 타이머 duration → 필드 저장
+        // 1. hold 타이머 duration
         _holdDurationMs = config.DisplayMode == DisplayMode.Always
             ? config.AlwaysIdleTimeoutMs
             : config.EventDisplayDurationMs;
@@ -102,13 +102,12 @@ internal static class Animation
         // 3. 상태별 분기
         if (_phase == AnimPhase.Holding || _phase == AnimPhase.FadingIn)
         {
-            // 이미 표시 중 → Hold 리셋 + 위치 갱신
             User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_HOLD);
             User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_HOLD,
                 (uint)_holdDurationMs, IntPtr.Zero);
 
             var (prevX, prevY) = Overlay.GetLastPosition();
-            Overlay.Show(caretX, caretY, caretH, state, config);
+            Overlay.Show(x, y, state, config);
             TryStartSlide(prevX, prevY, config);
 
             if (imeChanged)
@@ -118,7 +117,6 @@ internal static class Animation
                     StartHighlight(config);
             }
 
-            // Dim↔Full 전환 즉시 반영
             if (_currentAlpha != _targetAlpha)
             {
                 _currentAlpha = _targetAlpha;
@@ -127,13 +125,12 @@ internal static class Animation
         }
         else if (_phase == AnimPhase.Idle)
         {
-            // Always 모드 유휴 → 활성으로 복귀
             StartFade(_currentAlpha, _targetAlpha, config.FadeInMs);
             _phase = AnimPhase.FadingIn;
             User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
 
             var (prevX, prevY) = Overlay.GetLastPosition();
-            Overlay.Show(caretX, caretY, caretH, state, config);
+            Overlay.Show(x, y, state, config);
             TryStartSlide(prevX, prevY, config);
 
             if (imeChanged)
@@ -143,7 +140,6 @@ internal static class Animation
                     StartHighlight(config);
             }
 
-            // Dim↔Full 전환 즉시 반영
             if (_currentAlpha != _targetAlpha)
             {
                 _currentAlpha = _targetAlpha;
@@ -152,14 +148,13 @@ internal static class Animation
         }
         else if (_phase == AnimPhase.FadingOut)
         {
-            // 페이드아웃 중 새 이벤트 → 페이드인으로 전환
             User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_FADE);
             StartFade(_currentAlpha, _targetAlpha, config.FadeInMs);
             _phase = AnimPhase.FadingIn;
             User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
 
             var (prevX, prevY) = Overlay.GetLastPosition();
-            Overlay.Show(caretX, caretY, caretH, state, config);
+            Overlay.Show(x, y, state, config);
             TryStartSlide(prevX, prevY, config);
 
             if (imeChanged)
@@ -171,7 +166,7 @@ internal static class Animation
         }
         else // Hidden
         {
-            Overlay.Show(caretX, caretY, caretH, state, config);
+            Overlay.Show(x, y, state, config);
             User32.ShowWindow(_hwndOverlay, Win32Constants.SW_SHOW);
 
             if (config.AnimationEnabled)
@@ -256,11 +251,15 @@ internal static class Animation
     {
         User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_HOLD);
 
-        byte endAlpha = config.DisplayMode == DisplayMode.Always
-            ? GetTargetAlpha(config, active: false)
-            : (byte)0;
+        if (config.DisplayMode == DisplayMode.Always)
+        {
+            // Always 모드: 페이드아웃 없이 현재 alpha 유지 → Idle
+            _phase = AnimPhase.Idle;
+            return;
+        }
 
-        StartFade(_currentAlpha, endAlpha, config.FadeOutMs);
+        // OnEvent 모드: 페이드아웃 → Hidden
+        StartFade(_currentAlpha, 0, config.FadeOutMs);
         _phase = AnimPhase.FadingOut;
         User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
     }
@@ -316,20 +315,8 @@ internal static class Animation
         // 2. 모드별 분기
         if (config.DisplayMode == DisplayMode.Always && !forceHidden)
         {
-            byte endAlpha = GetTargetAlpha(config, active: false);
-            if (config.AnimationEnabled && _currentAlpha != endAlpha)
-            {
-                _forceHidden = false;
-                StartFade(_currentAlpha, endAlpha, config.FadeOutMs);
-                _phase = AnimPhase.FadingOut;
-                User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
-            }
-            else
-            {
-                _currentAlpha = endAlpha;
-                Overlay.UpdateAlpha(endAlpha);
-                _phase = AnimPhase.Idle;
-            }
+            // Always 모드: 페이드아웃 없이 현재 alpha 유지 → Idle
+            _phase = AnimPhase.Idle;
         }
         else
         {
@@ -356,25 +343,14 @@ internal static class Animation
 
     private static byte GetTargetAlpha(AppConfig config, bool active)
     {
-        bool isCaretBox = config.IndicatorStyle != IndicatorStyle.Label;
         double raw;
 
         if (config.DisplayMode == DisplayMode.Always)
-        {
-            if (active)
-                raw = isCaretBox ? config.CaretBoxActiveOpacity : config.ActiveOpacity;
-            else
-                raw = isCaretBox ? config.CaretBoxIdleOpacity : config.IdleOpacity;
-        }
+            raw = active ? config.ActiveOpacity : config.IdleOpacity;
         else
-        {
-            raw = isCaretBox ? config.CaretBoxOpacity : config.Opacity;
-        }
+            raw = config.Opacity;
 
-        if (isCaretBox)
-            raw = Math.Max(config.CaretBoxMinOpacity, raw);
-
-        // Dim 모드: NonKorean + Dim이면 active/idle 모두 50% 감소
+        // Dim 모드: NonKorean + Dim이면 50% 감소
         if (_currentState == ImeState.NonKorean && config.NonKoreanIme == NonKoreanImeMode.Dim)
             raw *= DefaultConfig.DimOpacityFactor;
 

@@ -140,6 +140,11 @@ internal static partial class User32
         IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam,
         uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
 
+    [LibraryImport("user32.dll", EntryPoint = "SendMessageTimeoutW", SetLastError = true)]
+    internal static partial IntPtr SendMessageTimeoutTitleBarInfo(
+        IntPtr hWnd, uint Msg, IntPtr wParam, ref TITLEBARINFOEX lParam,
+        uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+
     [LibraryImport("user32.dll")]
     internal static partial IntPtr DefWindowProcW(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
@@ -200,6 +205,9 @@ internal static partial class User32
 
     [LibraryImport("user32.dll")]
     internal static partial int GetSystemMetrics(int nIndex);
+
+    [LibraryImport("user32.dll")]
+    internal static partial int GetSystemMetricsForDpi(int nIndex, uint dpi);
 
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

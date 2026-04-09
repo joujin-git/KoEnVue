@@ -9,7 +9,7 @@ using KoEnVue.Utils;
 namespace KoEnVue;
 
 /// <summary>
-/// 앱 진입점 + Win32 메시지 루프 + 3-스레드 모델 + 이벤트 파이프라인.
+/// 앱 진입점 + Win32 메시지 루프 + 2-스레드 모델 + 이벤트 파이프라인.
 /// </summary>
 internal static class Program
 {
@@ -24,14 +24,12 @@ internal static class Program
     // 스레드 간 공유 상태 (volatile — 원자적 참조/값 교체)
     private static volatile AppConfig _config = null!;
     private static volatile ImeState _lastImeState = ImeState.English;
-    private static volatile bool _needCaretUpdate;
     private static volatile bool _indicatorVisible;
-    private static volatile int _lastCaretH;  // 감지 스레드 → 메인 스레드
 
-    // 캐럿 위치 (메인 스레드 전용)
-    private static int _lastCaretX;
-    private static int _lastCaretY;
-    private static bool _caretPositionKnown;
+    // 포그라운드 윈도우 + 앱별 위치 (메인 스레드 전용)
+    private static IntPtr _lastForegroundHwnd;
+    private static string _currentProcessName = "";
+    private static readonly Dictionary<IntPtr, (int x, int y)> _hwndPositions = [];
 
     // 라이프사이클
     private static Mutex? _mutex;
@@ -42,11 +40,7 @@ internal static class Program
 
     // 핫키 ID (P3: 매직 넘버 금지)
     private const int HOTKEY_TOGGLE_VISIBILITY = 1;
-    private const int HOTKEY_CYCLE_STYLE = 2;
-    private const int HOTKEY_CYCLE_POSITION = 3;
-    private const int HOTKEY_CYCLE_DISPLAY = 4;
-    private const int HOTKEY_OPEN_SETTINGS = 5;
-    private const int HOTKEY_COUNT = 5;
+    private const int HOTKEY_COUNT = 1;
 
     // 설정 파일명 → DefaultConfig에서 참조
 
@@ -86,7 +80,7 @@ internal static class Program
         Logger.SetLevel(_config.LogLevel);
         Logger.Initialize(_config);
 
-        Logger.Debug($"Config: TrayEnabled={_config.TrayEnabled}, DisplayMode={_config.DisplayMode}, EventDisplayDurationMs={_config.EventDisplayDurationMs}, IndicatorStyle={_config.IndicatorStyle}, PollIntervalMs={_config.PollIntervalMs}");
+        Logger.Debug($"Config: TrayEnabled={_config.TrayEnabled}, DisplayMode={_config.DisplayMode}, EventDisplayDurationMs={_config.EventDisplayDurationMs}, PollIntervalMs={_config.PollIntervalMs}");
         I18n.Load(_config.Language);
         Logger.Info("KoEnVue starting");
 
@@ -120,10 +114,7 @@ internal static class Program
         // 10. 감지 스레드 시작
         StartDetectionThread();
 
-        // 11. UIA 스레드 시작 (Phase 07 스텁)
-        StartUiaThread();
-
-        // 12. IME 이벤트 훅 등록
+        // 11. IME 이벤트 훅 등록
         ImeStatus.RegisterHook(_hwndMain);
 
         // 13. 핫키 등록
@@ -214,7 +205,7 @@ internal static class Program
     private static IntPtr CreateOverlayWindow()
     {
         IntPtr hwnd = User32.CreateWindowExW(
-            Win32Constants.WS_EX_LAYERED | Win32Constants.WS_EX_TRANSPARENT
+            Win32Constants.WS_EX_LAYERED
                 | Win32Constants.WS_EX_TOPMOST | Win32Constants.WS_EX_TOOLWINDOW
                 | Win32Constants.WS_EX_NOACTIVATE,
             _config.Advanced.OverlayClassName, "",
@@ -260,8 +251,8 @@ internal static class Program
                 HandleFocusChanged(wParam);
                 return IntPtr.Zero;
 
-            case AppMessages.WM_CARET_UPDATED:
-                HandleCaretUpdated((int)wParam, (int)lParam);
+            case AppMessages.WM_POSITION_UPDATED:
+                HandlePositionUpdated(wParam);
                 return IntPtr.Zero;
 
             case AppMessages.WM_HIDE_INDICATOR:
@@ -318,6 +309,32 @@ internal static class Program
                     User32.PostQuitMessage(0);
                 return IntPtr.Zero;
 
+            // === 오버레이 드래그 ===
+
+            case Win32Constants.WM_NCHITTEST:
+                if (hwnd == _hwndOverlay)
+                    return Win32Constants.HTCAPTION;  // 본체 드래그 가능
+                return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
+
+            case Win32Constants.WM_MOVING:
+                if (hwnd == _hwndOverlay)
+                {
+                    RECT movingRect = Marshal.PtrToStructure<RECT>(lParam);
+                    Overlay.HandleDragDpiChange(movingRect.Left, movingRect.Top,
+                        _lastImeState, _config);
+                }
+                return IntPtr.Zero;
+
+            case Win32Constants.WM_ENTERSIZEMOVE:
+                if (hwnd == _hwndOverlay)
+                    Overlay.BeginDrag();
+                return IntPtr.Zero;
+
+            case Win32Constants.WM_EXITSIZEMOVE:
+                if (hwnd == _hwndOverlay)
+                    HandleOverlayDragEnd();
+                return IntPtr.Zero;
+
             default:
                 return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
         }
@@ -332,52 +349,95 @@ internal static class Program
         _lastImeState = newState;
         Logger.Debug($"IME state: {newState}");
 
-        // EventTriggers 가드: 트리거 비활성이면 캐럿 갱신 불필요
-        if (_config.EventTriggers.OnImeChange)
-            _needCaretUpdate = true;
+        // 트레이 아이콘은 항상 IME 상태 반영
+        if (_config.TrayEnabled)
+            Tray.UpdateState(newState, _config);
 
-        // 캐럿 위치 미수신 시 표시 건너뜀
-        if (!_caretPositionKnown) return;
+        if (_lastForegroundHwnd == IntPtr.Zero) return;
 
-        // Always 모드이거나 EventTrigger 활성 시 표시 트리거
         if (_config.DisplayMode == DisplayMode.Always || _config.EventTriggers.OnImeChange)
         {
             _indicatorVisible = true;
-            Animation.TriggerShow(_lastCaretX, _lastCaretY, _lastCaretH,
-                newState, _config, imeChanged: true);
+            var (x, y) = GetAppPosition();
+            Animation.TriggerShow(x, y, newState, _config, imeChanged: true);
         }
-
-        if (_config.TrayEnabled)
-            Tray.UpdateState(newState, _config);
     }
 
     private static void HandleFocusChanged(IntPtr newHwndFocus)
     {
         Logger.Debug($"Focus changed: 0x{newHwndFocus:X}");
 
-        // EventTriggers 가드
-        if (_config.EventTriggers.OnFocusChange)
-            _needCaretUpdate = true;
-
-        // 캐럿 위치 미수신 시 표시 건너뜀
-        if (!_caretPositionKnown) return;
+        if (_lastForegroundHwnd == IntPtr.Zero) return;
 
         if (_config.DisplayMode == DisplayMode.Always || _config.EventTriggers.OnFocusChange)
         {
             _indicatorVisible = true;
-            Animation.TriggerShow(_lastCaretX, _lastCaretY, _lastCaretH,
-                _lastImeState, _config, imeChanged: false);
+            var (x, y) = GetAppPosition();
+            Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
         }
     }
 
-    private static void HandleCaretUpdated(int x, int y)
+    private static void HandlePositionUpdated(IntPtr hwndForeground)
     {
-        Logger.Debug($"Caret position: ({x}, {y})");
-        _caretPositionKnown = true;
-        _lastCaretX = x;
-        _lastCaretY = y;
-        _indicatorVisible = true;
-        Animation.TriggerShow(x, y, _lastCaretH, _lastImeState, _config, imeChanged: false);
+        bool foregroundChanged = hwndForeground != _lastForegroundHwnd;
+        _lastForegroundHwnd = hwndForeground;
+
+        if (foregroundChanged)
+        {
+            // 앱별 프로세스 이름 갱신 + 저장 위치 조회
+            _currentProcessName = Detector.SystemFilter.GetProcessName(hwndForeground);
+            _indicatorVisible = true;
+            var (x, y) = GetAppPosition();
+            Logger.Info($"PositionUpdated: process={_currentProcessName}, pos=({x},{y}), saved={_config.IndicatorPositions.Count}");
+            Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
+        }
+        // 같은 앱 내 윈도우 이동 — 플로팅 인디케이터는 위치 고정이므로 무시
+    }
+
+    /// <summary>
+    /// 오버레이 드래그 종료 → 새 위치를 현재 앱에 저장.
+    /// </summary>
+    private static void HandleOverlayDragEnd()
+    {
+        var (x, y) = Overlay.EndDrag();
+        // 런타임 hwnd별 위치 저장
+        if (_lastForegroundHwnd != IntPtr.Zero)
+            _hwndPositions[_lastForegroundHwnd] = (x, y);
+        // config 프로세스명별 위치 저장 (영구)
+        if (_currentProcessName.Length > 0)
+        {
+            var positions = new Dictionary<string, int[]>(_config.IndicatorPositions)
+            {
+                [_currentProcessName] = [x, y]
+            };
+            _config = _config with { IndicatorPositions = positions };
+            Settings.Save(_config);
+            Logger.Debug($"Saved indicator position for {_currentProcessName}: ({x}, {y})");
+        }
+        // 새 위치의 모니터 DPI로 리소스 재생성
+        Overlay.Show(x, y, _lastImeState, _config);
+    }
+
+    /// <summary>
+    /// 현재 앱의 저장 위치 반환. 없으면 기본 위치.
+    /// </summary>
+    private static (int x, int y) GetAppPosition()
+    {
+        // 1. 런타임 hwnd별 위치 (세션 내 창별 구분)
+        if (_lastForegroundHwnd != IntPtr.Zero
+            && _hwndPositions.TryGetValue(_lastForegroundHwnd, out var hwndPos))
+        {
+            return hwndPos;
+        }
+        // 2. config 프로세스명별 위치 (영구 저장)
+        if (_currentProcessName.Length > 0
+            && _config.IndicatorPositions.TryGetValue(_currentProcessName, out int[]? pos)
+            && pos.Length >= 2)
+        {
+            return (pos[0], pos[1]);
+        }
+        // 3. 기본 위치 (포그라운드 창 모니터 기준)
+        return Overlay.GetDefaultPosition(_lastForegroundHwnd);
     }
 
     private static void HandleConfigChanged()
@@ -386,7 +446,6 @@ internal static class Program
         Logger.SetLevel(_config.LogLevel);
         Logger.Initialize(_config);
         I18n.Load(_config.Language);
-        CaretTracker.ClearCache();
         Settings.ClearProfileCache();
         Overlay.HandleConfigChanged(_config);
         Logger.Info("Config reloaded");
@@ -410,19 +469,14 @@ internal static class Program
         uint mouseEvent = (uint)(lParam.ToInt64() & Win32Constants.LOWORD_MASK);
         switch (mouseEvent)
         {
-            case Win32Constants.WM_RBUTTONUP:
+            case Win32Constants.WM_CONTEXTMENU:
                 Tray.ShowMenu(_hwndMain, _config);
                 break;
             case Win32Constants.WM_LBUTTONUP:
-                switch (_config.TrayClickAction)
+                if (_config.TrayClickAction == TrayClickAction.Toggle)
                 {
-                    case TrayClickAction.Toggle:
-                        _indicatorVisible = !_indicatorVisible;
-                        if (!_indicatorVisible) HideOverlay();
-                        break;
-                    case TrayClickAction.Settings:
-                        Settings.OpenSettingsFile();
-                        break;
+                    _indicatorVisible = !_indicatorVisible;
+                    if (!_indicatorVisible) HideOverlay();
                 }
                 break;
         }
@@ -431,34 +485,10 @@ internal static class Program
     private static void HandleHotkey(int hotkeyId)
     {
         Logger.Debug($"Hotkey pressed: {hotkeyId}");
-        switch (hotkeyId)
+        if (hotkeyId == HOTKEY_TOGGLE_VISIBILITY)
         {
-            case HOTKEY_TOGGLE_VISIBILITY:
-                _indicatorVisible = !_indicatorVisible;
-                if (!_indicatorVisible) HideOverlay();
-                break;
-            case HOTKEY_CYCLE_STYLE:
-                const int indicatorStyleCount = (int)IndicatorStyle.CaretVbar + 1;
-                var nextStyle = (IndicatorStyle)(((int)_config.IndicatorStyle + 1) % indicatorStyleCount);
-                UpdateConfigAndNotify(c => c with { IndicatorStyle = nextStyle });
-                break;
-            case HOTKEY_CYCLE_POSITION:
-                var nextPos = _config.PositionMode switch
-                {
-                    PositionMode.Caret => PositionMode.Mouse,
-                    PositionMode.Mouse => PositionMode.Fixed,
-                    _ => PositionMode.Caret,
-                };
-                UpdateConfigAndNotify(c => c with { PositionMode = nextPos });
-                break;
-            case HOTKEY_CYCLE_DISPLAY:
-                var nextDisplay = _config.DisplayMode == DisplayMode.OnEvent
-                    ? DisplayMode.Always : DisplayMode.OnEvent;
-                UpdateConfigAndNotify(c => c with { DisplayMode = nextDisplay });
-                break;
-            case HOTKEY_OPEN_SETTINGS:
-                Settings.OpenSettingsFile();
-                break;
+            _indicatorVisible = !_indicatorVisible;
+            if (!_indicatorVisible) HideOverlay();
         }
     }
 
@@ -487,9 +517,6 @@ internal static class Program
     private static void HandlePowerResume()
     {
         Logger.Info("Power resumed");
-        // IME 재감지 트리거
-        _needCaretUpdate = true;
-        // DPI/rcWork 재조회
         Overlay.HandleDpiChanged(_config);
     }
 
@@ -498,25 +525,26 @@ internal static class Program
         Logger.Info("Display changed");
         Overlay.HandleDpiChanged(_config);
 
-        // 표시 중이면 위치 재계산
-        if (_indicatorVisible)
-            Animation.TriggerShow(_lastCaretX, _lastCaretY, _lastCaretH,
-                _lastImeState, _config, imeChanged: false);
+        if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
+        {
+            var (x, y) = GetAppPosition();
+            Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
+        }
     }
 
     private static void HandleSettingChange()
     {
-        // 고대비 / 시스템 테마 변경 감지
         if (_config.Theme == Theme.System)
         {
             _config = ThemePresets.Apply(_config);
             Overlay.HandleConfigChanged(_config);
         }
 
-        // 작업표시줄 변경 시 표시 중이면 위치 재계산
-        if (_indicatorVisible)
-            Animation.TriggerShow(_lastCaretX, _lastCaretY, _lastCaretH,
-                _lastImeState, _config, imeChanged: false);
+        if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
+        {
+            var (x, y) = GetAppPosition();
+            Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
+        }
     }
 
     private static void HandleDpiChanged(IntPtr wParam, IntPtr lParam)
@@ -527,7 +555,7 @@ internal static class Program
     }
 
     // ================================================================
-    // 3-스레드 모델
+    // 2-스레드 모델
     // ================================================================
 
     // --- 감지 스레드 ---
@@ -549,8 +577,6 @@ internal static class Program
         ImeState lastImeState = ImeState.English;
         AppConfig lastAppConfig = _config;
         int pollCount = 0;
-        int lastPostedCaretX = int.MinValue;
-        int lastPostedCaretY = int.MinValue;
 
         while (!_stopping)
         {
@@ -568,7 +594,7 @@ internal static class Program
             if (hwndForeground == _hwndMain || hwndForeground == _hwndOverlay)
                 continue;
 
-            uint threadId = User32.GetWindowThreadProcessId(hwndForeground, out uint processId);
+            uint threadId = User32.GetWindowThreadProcessId(hwndForeground, out _);
 
             // GUITHREADINFO로 hwndFocus 획득
             GUITHREADINFO gti = default;
@@ -576,18 +602,23 @@ internal static class Program
             User32.GetGUIThreadInfo(threadId, ref gti);
             IntPtr hwndFocus = gti.hwndFocus;
 
+            // 콘솔 호스트(conhost) 앱은 hwndFocus가 0 — 포그라운드 윈도우로 대체
+            if (hwndFocus == IntPtr.Zero)
+            {
+                string fgClass = SystemFilter.GetClassName(hwndForeground);
+                if (fgClass.Equals(Win32Constants.ConsoleWindowClass, StringComparison.OrdinalIgnoreCase))
+                    hwndFocus = hwndForeground;
+            }
+
             // 2. 앱별 프로필 + 시스템 필터 (포그라운드 변경 시에만 — 최적화)
             AppConfig appConfig = lastAppConfig;
             bool foregroundChanged = false;
             if (hwndForeground != lastHwndForeground)
             {
-                lastHwndForeground = hwndForeground;
-
-                // 앱별 프로필 적용 (LRU 캐싱됨)
                 AppConfig? resolved = Settings.ResolveForApp(_config, hwndForeground);
                 if (resolved is null)
                 {
-                    // enabled: false → 이 앱에서 인디케이터 비활성화
+                    lastHwndForeground = hwndForeground;
                     if (_indicatorVisible)
                         User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
                             IntPtr.Zero, IntPtr.Zero);
@@ -598,113 +629,42 @@ internal static class Program
 
                 if (SystemFilter.ShouldHide(hwndForeground, hwndFocus, appConfig))
                 {
+                    // lastHwndForeground 미갱신 — 다음 폴링에서 재시도
+                    // (일시적 조건 해소 후 foreground 변경 처리)
                     if (_indicatorVisible)
                         User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
                             IntPtr.Zero, IntPtr.Zero);
                     continue;
                 }
 
+                lastHwndForeground = hwndForeground;
                 foregroundChanged = true;
             }
 
-            // 3. 포커스 변경 감지
-            // foregroundChanged: 숨김 창(데스크톱 등)을 거쳐 돌아오면
-            //   hwndFocus가 같아도 포커스 이벤트 + 캐럿 폴링 필요
-            bool focusChanged = false;
-            if (hwndFocus != lastHwndFocus || foregroundChanged)
+            // 3. 포그라운드 변경 시 위치 갱신 (플로팅 인디케이터 — 윈도우 이동 추적 불필요)
+            if (foregroundChanged)
             {
-                lastHwndFocus = hwndFocus;
-                User32.PostMessageW(_hwndMain, AppMessages.WM_FOCUS_CHANGED,
-                    hwndFocus, IntPtr.Zero);
-                focusChanged = true;
+                User32.PostMessageW(_hwndMain, AppMessages.WM_POSITION_UPDATED,
+                    hwndForeground, IntPtr.Zero);
             }
 
-            // 4. IME 상태 감지 (3-param: 앱 프로필 detection_method 반영)
+            // 4. IME 상태 감지
             ImeState currentIme = ImeStatus.Detect(hwndFocus, threadId, appConfig);
-            if (currentIme != lastImeState)
+            if (currentIme != lastImeState || foregroundChanged)
             {
                 lastImeState = currentIme;
                 User32.PostMessageW(_hwndMain, AppMessages.WM_IME_STATE_CHANGED,
                     (IntPtr)(int)currentIme, IntPtr.Zero);
             }
 
-            // 5. 캐럿 위치 추적
-            // - IME/포커스 이벤트 시: 즉시 폴링 + 무조건 전달
-            // - OnCaretMove 활성 시: 항상 폴링, 임계값 이상 이동 시에만 전달
-            // - Always 모드: 항상 폴링 + 무조건 전달
-            bool eventTriggered = _needCaretUpdate || focusChanged;
-            bool shouldPollCaret = eventTriggered
-                || appConfig.DisplayMode == DisplayMode.Always
-                || appConfig.EventTriggers.OnCaretMove;
-
-            if (shouldPollCaret)
+            // 5. 포커스 변경 감지
+            if (hwndFocus != lastHwndFocus || foregroundChanged)
             {
-                long pollStart = Environment.TickCount64;
-                string procName = SystemFilter.GetProcessName(processId);
-                var result = CaretTracker.GetCaretPosition(
-                    hwndFocus, threadId, procName, appConfig);
-
-                if (result is { } caret)
-                {
-                    // 이벤트/Always: 무조건 전달. OnCaretMove: 임계값 초과 시만 전달.
-                    bool shouldPost = eventTriggered
-                        || appConfig.DisplayMode == DisplayMode.Always;
-
-                    if (!shouldPost && appConfig.EventTriggers.OnCaretMove)
-                    {
-                        int dx = caret.x - lastPostedCaretX;
-                        int dy = caret.y - lastPostedCaretY;
-                        int threshold = appConfig.CaretMoveThresholdPx;
-                        shouldPost = (dx * dx + dy * dy) >= threshold * threshold;
-                    }
-
-                    if (shouldPost)
-                    {
-                        _lastCaretH = caret.h;  // volatile int 쓰기
-                        User32.PostMessageW(_hwndMain, AppMessages.WM_CARET_UPDATED,
-                            (IntPtr)caret.x, (IntPtr)caret.y);
-                        lastPostedCaretX = caret.x;
-                        lastPostedCaretY = caret.y;
-                    }
-
-                    // 디버그 오버레이 데이터 전달
-                    if (appConfig.Advanced.DebugOverlay)
-                    {
-                        long pollingMs = Environment.TickCount64 - pollStart;
-                        string className = SystemFilter.GetClassName(hwndFocus);
-                        IntPtr hMon = DpiHelper.GetMonitorFromPoint(caret.x, caret.y);
-                        (uint dpiX, _) = DpiHelper.GetRawDpi(hMon);
-                        Overlay.SetDebugInfo(new DebugInfo(
-                            caret.method, caret.x, caret.y, dpiX, pollingMs, className));
-                    }
-                }
-
-                _needCaretUpdate = false;
+                lastHwndFocus = hwndFocus;
+                User32.PostMessageW(_hwndMain, AppMessages.WM_FOCUS_CHANGED,
+                    hwndFocus, IntPtr.Zero);
             }
         }
-    }
-
-    // --- UIA 스레드 (Phase 07 스텁) ---
-
-    private static void StartUiaThread()
-    {
-        var thread = new Thread(UiaLoop)
-        {
-            IsBackground = true,
-            Name = "KoEnVue-UIA",
-        };
-        thread.Start();
-    }
-
-    private static void UiaLoop()
-    {
-        Ole32.CoInitializeEx(IntPtr.Zero, Win32Constants.COINIT_APARTMENTTHREADED);
-
-        UiaClient.Initialize();
-        UiaClient.ProcessRequests();
-
-        UiaClient.Shutdown();
-        Ole32.CoUninitialize();
     }
 
     // ================================================================
@@ -714,10 +674,6 @@ internal static class Program
     private static void RegisterHotkeys()
     {
         RegisterSingleHotkey(HOTKEY_TOGGLE_VISIBILITY, _config.HotkeyToggleVisibility);
-        RegisterSingleHotkey(HOTKEY_CYCLE_STYLE, _config.HotkeyCycleStyle);
-        RegisterSingleHotkey(HOTKEY_CYCLE_POSITION, _config.HotkeyCyclePosition);
-        RegisterSingleHotkey(HOTKEY_CYCLE_DISPLAY, _config.HotkeyCycleDisplay);
-        RegisterSingleHotkey(HOTKEY_OPEN_SETTINGS, _config.HotkeyOpenSettings);
     }
 
     private static void RegisterSingleHotkey(int id, string hotkeyString)
@@ -811,10 +767,7 @@ internal static class Program
         // 2. 핫키 해제
         UnregisterHotkeys();
 
-        // 3. UIA 클라이언트 종료
-        UiaClient.Shutdown();
-
-        // 3a. 파일 로거 종료
+        // 3. 파일 로거 종료
         Logger.Shutdown();
 
         // 4. 애니메이션 + 렌더링 리소스 해제 (윈도우 파괴 전)

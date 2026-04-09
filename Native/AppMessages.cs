@@ -23,11 +23,11 @@ internal static class AppMessages
     public const uint WM_FOCUS_CHANGED = Win32Constants.WM_APP + 2;
 
     /// <summary>
-    /// 캐럿 위치 갱신.
-    /// wParam: x 좌표 (signed int -> IntPtr). 스크린 좌표.
-    /// lParam: y 좌표 (signed int -> IntPtr). 스크린 좌표.
+    /// 포그라운드 윈도우 위치 갱신 (타이틀바 배치용).
+    /// wParam: hwndForeground (IntPtr)
+    /// lParam: 0
     /// </summary>
-    public const uint WM_CARET_UPDATED = Win32Constants.WM_APP + 3;
+    public const uint WM_POSITION_UPDATED = Win32Constants.WM_APP + 3;
 
     /// <summary>
     /// 인디케이터 즉시 숨기기.

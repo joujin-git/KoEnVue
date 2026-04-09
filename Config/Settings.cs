@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -20,7 +19,10 @@ internal static class Settings
     // ================================================================
 
     /// <summary>현재 config 스키마 버전.</summary>
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
+
+    /// <summary>앱 프로필 LRU 캐시 최대 크기.</summary>
+    private const int ProfileCacheMaxSize = 50;
 
     // ================================================================
     // 상태
@@ -105,9 +107,53 @@ internal static class Settings
             return new AppConfig();
 
         config = EnsureSubObjects(config);
+        config = EnsureIndicatorPositions(config, mergedJson);
         config = Migrate(config);
         config = Validate(config);
         config = ThemePresets.Apply(config);
+        return config;
+    }
+
+    /// <summary>
+    /// NativeAOT STJ source gen이 Dictionary&lt;string, int[]&gt; 역직렬화에 실패할 수 있음.
+    /// JSON에서 indicator_positions를 수동 파싱하여 보정.
+    /// </summary>
+    private static AppConfig EnsureIndicatorPositions(AppConfig config, string mergedJson)
+    {
+        // STJ가 정상 파싱했으면 건너뛰기
+        if (config.IndicatorPositions.Count > 0)
+            return config;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(mergedJson);
+            if (!doc.RootElement.TryGetProperty("indicator_positions", out JsonElement posElement))
+                return config;
+            if (posElement.ValueKind != JsonValueKind.Object)
+                return config;
+
+            var positions = new Dictionary<string, int[]>();
+            foreach (var prop in posElement.EnumerateObject())
+            {
+                if (prop.Value.ValueKind == JsonValueKind.Array && prop.Value.GetArrayLength() >= 2)
+                {
+                    int x = prop.Value[0].GetInt32();
+                    int y = prop.Value[1].GetInt32();
+                    positions[prop.Name] = [x, y];
+                }
+            }
+
+            if (positions.Count > 0)
+            {
+                Logger.Info($"Manual parse recovered {positions.Count} indicator position(s)");
+                return config with { IndicatorPositions = positions };
+            }
+        }
+        catch
+        {
+            // 수동 파싱 실패 시 무시
+        }
+
         return config;
     }
 
@@ -193,8 +239,6 @@ internal static class Settings
         {
             // 감지
             PollIntervalMs = Math.Clamp(config.PollIntervalMs, 50, 500),
-            CaretPollIntervalMs = Math.Clamp(config.CaretPollIntervalMs, 30, 500),
-            CaretMoveThresholdPx = Math.Clamp(config.CaretMoveThresholdPx, 5, 500),
 
             // 표시
             EventDisplayDurationMs = Math.Clamp(config.EventDisplayDurationMs, 500, 10000),
@@ -204,10 +248,6 @@ internal static class Settings
             Opacity = Math.Clamp(config.Opacity, 0.1, 1.0),
             IdleOpacity = Math.Clamp(config.IdleOpacity, 0.1, 1.0),
             ActiveOpacity = Math.Clamp(config.ActiveOpacity, 0.1, 1.0),
-            CaretBoxOpacity = Math.Clamp(config.CaretBoxOpacity, 0.1, 1.0),
-            CaretBoxIdleOpacity = Math.Clamp(config.CaretBoxIdleOpacity, 0.1, 1.0),
-            CaretBoxActiveOpacity = Math.Clamp(config.CaretBoxActiveOpacity, 0.1, 1.0),
-            CaretBoxMinOpacity = Math.Clamp(config.CaretBoxMinOpacity, 0.1, 1.0),
 
             // 애니메이션
             HighlightScale = Math.Clamp(config.HighlightScale, 1.0, 2.0),
@@ -218,17 +258,10 @@ internal static class Settings
 
             // 크기
             FontSize = Math.Clamp(config.FontSize, 8, 36),
-            CaretDotSize = Math.Clamp(config.CaretDotSize, 4, 32),
-            CaretSquareSize = Math.Clamp(config.CaretSquareSize, 4, 32),
-            CaretUnderlineWidth = Math.Clamp(config.CaretUnderlineWidth, 8, 64),
-            CaretUnderlineHeight = Math.Clamp(config.CaretUnderlineHeight, 1, 16),
-            CaretVbarWidth = Math.Clamp(config.CaretVbarWidth, 1, 16),
-            CaretVbarHeight = Math.Clamp(config.CaretVbarHeight, 4, 64),
             LabelWidth = Math.Clamp(config.LabelWidth, 16, 128),
             LabelHeight = Math.Clamp(config.LabelHeight, 12, 96),
             LabelBorderRadius = Math.Clamp(config.LabelBorderRadius, 0, 48),
             BorderWidth = Math.Clamp(config.BorderWidth, 0, 8),
-            ScreenEdgeMargin = Math.Clamp(config.ScreenEdgeMargin, 0, 50),
 
             // 시스템
             LogMaxSizeMb = Math.Clamp(config.LogMaxSizeMb, 1, 100),
@@ -248,13 +281,11 @@ internal static class Settings
         return config with
         {
             EventTriggers = config.EventTriggers ?? new(),
-            FixedPosition = config.FixedPosition ?? new(),
-            CaretOffset = config.CaretOffset ?? new() { X = -2, Y = 0 },
-            MouseOffset = config.MouseOffset ?? new() { X = 20, Y = 25 },
             Advanced = config.Advanced ?? new(),
             SystemHideClasses = config.SystemHideClasses ?? ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"],
             SystemHideClassesUser = config.SystemHideClassesUser ?? [],
             AppProfiles = config.AppProfiles ?? new(),
+            IndicatorPositions = config.IndicatorPositions ?? new(),
             AppFilterList = config.AppFilterList ?? [],
             TrayQuickOpacityPresets = config.TrayQuickOpacityPresets ?? [0.95, 0.85, 0.6],
             BorderColor = config.BorderColor ?? "#000000",
@@ -269,10 +300,6 @@ internal static class Settings
             EnglishLabel = config.EnglishLabel ?? "En",
             NonKoreanLabel = config.NonKoreanLabel ?? "EN",
             HotkeyToggleVisibility = config.HotkeyToggleVisibility ?? "Ctrl+Alt+H",
-            HotkeyCycleStyle = config.HotkeyCycleStyle ?? "Ctrl+Alt+I",
-            HotkeyCyclePosition = config.HotkeyCyclePosition ?? "Ctrl+Alt+P",
-            HotkeyCycleDisplay = config.HotkeyCycleDisplay ?? "Ctrl+Alt+D",
-            HotkeyOpenSettings = config.HotkeyOpenSettings ?? "Ctrl+Alt+S",
             Language = config.Language ?? "ko",
             LogFilePath = config.LogFilePath ?? "",
         };
@@ -325,39 +352,6 @@ internal static class Settings
     }
 
     // ================================================================
-    // OpenSettingsFile — 에디터에서 열기
-    // ================================================================
-
-    /// <summary>
-    /// config.json을 시스템 기본 편집기로 연다. 파일 미존재 시 기본 설정으로 생성.
-    /// </summary>
-    public static void OpenSettingsFile(string? overridePath = null)
-    {
-        string path = overridePath ?? _configFilePath ?? DefaultConfig.GetDefaultConfigPath();
-
-        try
-        {
-            if (!File.Exists(path))
-            {
-                string? dir = Path.GetDirectoryName(path);
-                if (dir is not null)
-                    Directory.CreateDirectory(dir);
-
-                var defaultConfig = new AppConfig();
-                string json = JsonSerializer.Serialize(defaultConfig, AppConfigJsonContext.Default.AppConfig);
-                File.WriteAllText(path, json, Encoding.UTF8);
-                _configFilePath ??= path;
-            }
-
-            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            Logger.Warning($"Failed to open settings file: {ex.Message}");
-        }
-    }
-
-    // ================================================================
     // ResolveForApp — 앱별 프로필 매칭 + LRU 캐시
     // ================================================================
 
@@ -390,7 +384,7 @@ internal static class Settings
         // 캐시 저장
         lock (_profileCacheLock)
         {
-            if (_profileCache.Count >= DefaultConfig.AppMethodCacheMaxSize)
+            if (_profileCache.Count >= ProfileCacheMaxSize)
             {
                 string oldest = _profileLruOrder.Last!.Value;
                 _profileLruOrder.RemoveLast();

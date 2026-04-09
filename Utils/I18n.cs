@@ -44,23 +44,6 @@ internal static class I18n
     }
 
     // ================================================================
-    // 트레이 메뉴 — 인디케이터 스타일
-    // ================================================================
-
-    public static string StyleDot => _isKorean ? "점" : "Dot";
-    public static string StyleSquare => _isKorean ? "사각" : "Square";
-    public static string StyleUnderline => _isKorean ? "밑줄" : "Underline";
-    public static string StyleVbar => _isKorean ? "세로바" : "Vertical Bar";
-    public static string StyleLabel => _isKorean ? "텍스트" : "Text";
-
-    // ================================================================
-    // 트레이 메뉴 — 표시 모드
-    // ================================================================
-
-    public static string DisplayEvent => _isKorean ? "이벤트 시만" : "On Event";
-    public static string DisplayAlways => _isKorean ? "항상 표시" : "Always";
-
-    // ================================================================
     // 트레이 메뉴 — 투명도
     // ================================================================
 
@@ -72,11 +55,8 @@ internal static class I18n
     // 트레이 메뉴 — 메인 메뉴
     // ================================================================
 
-    public static string MenuIndicatorStyle => _isKorean ? "인디케이터 스타일" : "Indicator Style";
-    public static string MenuDisplayMode => _isKorean ? "표시 모드" : "Display Mode";
     public static string MenuOpacity => _isKorean ? "투명도" : "Opacity";
     public static string MenuStartup => _isKorean ? "시작 프로그램 등록" : "Start with Windows";
-    public static string MenuOpenSettings => _isKorean ? "설정 파일 열기..." : "Open Settings...";
     public static string MenuExit => _isKorean ? "종료" : "Exit";
 
     // ================================================================

@@ -10,27 +10,9 @@ namespace KoEnVue.Config;
 /// </summary>
 internal static class DefaultConfig
 {
-    // === 배치 간격 (px, DPI 스케일링 전 기본값) ===
+    // === 배치 (px, DPI 스케일링 전 기본값) ===
 
-    /// <summary>캐럿-라벨 간격 (label 스타일)</summary>
-    public const int LabelGap = 2;
-
-    /// <summary>포커스 윈도우 fallback 시 윈도우 하단 간격</summary>
-    public const int FocusWindowGap = 4;
-
-    /// <summary>caret_dot/square X 오프셋 (캐럿 오른쪽 상단)</summary>
-    public const int CaretBoxGapX = 2;
-
-    /// <summary>caret_dot/square Y 오프셋 (캐럿 오른쪽 상단)</summary>
-    public const int CaretBoxGapY = 2;
-
-    /// <summary>caret_underline 캐럿 아래 간격</summary>
-    public const int UnderlineGap = 1;
-
-    /// <summary>caret_vbar X 오프셋 (캐럿 위치에 겹침)</summary>
-    public const int VbarOffsetX = 1;
-
-    /// <summary>label 텍스트 좌우 패딩 (F-S01 고정 너비 계산용)</summary>
+    /// <summary>label 텍스트 좌우 패딩</summary>
     public const int LABEL_PADDING_X = 4;
 
     // === 애니메이션 타이밍 (ms) ===
@@ -82,11 +64,6 @@ internal static class DefaultConfig
     /// <summary>오버레이 윈도우 클래스명</summary>
     public const string OverlayClassName = "KoEnVueOverlay";
 
-    // === 캐시 ===
-
-    /// <summary>앱별 캐럿 감지 방식 캐시 최대 크기 (LRU)</summary>
-    public const int AppMethodCacheMaxSize = 50;
-
     // === always 모드 ===
 
     /// <summary>always 모드 유휴 전환 타임아웃</summary>
@@ -119,11 +96,4 @@ internal static class DefaultConfig
     /// <summary>TOPMOST 재적용 간격 (다른 TOPMOST 앱과 충돌 시)</summary>
     public const int ForceTopmostIntervalMs = 5000;
 
-    // === UIA ===
-
-    /// <summary>UI Automation 호출 타임아웃</summary>
-    public const int UiaTimeoutMs = 200;
-
-    /// <summary>UIA 스레드 대기 루프 간격</summary>
-    public const int UiaLoopIntervalMs = 100;
 }

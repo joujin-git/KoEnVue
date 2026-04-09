@@ -85,10 +85,7 @@ internal static class SystemFilter
         // 6. 전체화면 독점
         if (config.HideInFullscreen && IsFullscreenExclusive(hwnd)) return true;
 
-        // 7. 드래그 중 (마우스 좌클릭 누름)
-        if (User32.GetAsyncKeyState(Win32Constants.VK_LBUTTON) < 0) return true;
-
-        // 8. 앱 필터 (블랙/화이트리스트)
+        // 7. 앱 필터 (블랙/화이트리스트)
         if (!PassesAppFilter(hwnd, config)) return true;
 
         return false;

@@ -2,14 +2,14 @@
 
 ## What is this?
 
-Windows Korean/English IME state indicator. Shows current input mode (한/En/EN) next to the caret.
-C# 14 / .NET 10 + NativeAOT single exe (~3MB). Zero external NuGet packages.
+Windows Korean/English IME state indicator. Shows current input mode (한/En/EN) as a draggable floating overlay.
+C# 14 / .NET 10 + NativeAOT single exe (~4.4MB). Zero external NuGet packages.
 
 ## Tech Stack
 
 - **Target**: `net10.0-windows`, PublishAot, AllowUnsafeBlocks
-- **Source Generators**: `[LibraryImport]`, `[GeneratedComInterface]`, `[JsonSerializable]`
-- **P/Invoke**: User32, Imm32, Shell32, Gdi32, Kernel32, Shcore, Ole32, OleAut32
+- **Source Generators**: `[LibraryImport]`, `[JsonSerializable]`
+- **P/Invoke**: User32, Imm32, Shell32, Gdi32, Kernel32, Shcore, Ole32, OleAut32, Dwmapi
 - **`[DllImport]` is banned** — always use `[LibraryImport]`
 
 ## Hard Constraints (P1-P5)
@@ -24,24 +24,40 @@ C# 14 / .NET 10 + NativeAOT single exe (~3MB). Zero external NuGet packages.
 
 ## Architecture
 
-3-thread model:
+2-thread model:
 ```
 Main thread (UI):       Message loop + rendering + tray + WM_TIMER animation
 Detection thread (BG):  80ms polling → PostMessage to main
-UIA thread (BG):        COM STA + IUIAutomation dedicated
 ```
+
+### Indicator Positioning
+
+**Draggable floating window** with two-tier position memory:
+1. Indicator is a separate TOPMOST window, not tied to any foreground window's geometry
+2. User drags the indicator to preferred position → saved to both runtime hwnd dict and `config.json` (`indicator_positions`)
+3. On foreground change → lookup order: runtime hwnd position → config process name position → default position
+4. Default position (no saved position): foreground window's monitor work area top-right (multi-monitor aware)
+5. Runtime hwnd positions enable per-window distinction (e.g., multiple Notepad/Chrome windows), lost on restart
+6. Config process name positions persist across sessions as fallback
+
+`WM_NCHITTEST → HTCAPTION` enables native drag. `WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE` tracks drag lifecycle. `WM_MOVING` handles cross-monitor DPI change during drag.
+
+### Indicator Rendering
+
+Hardcoded to: **Text label** ("한"/"En"/"EN") + **RoundedRect** shape. No style/shape selection.
+GDI-based: DIB section + RoundRect + DrawTextW + premultiplied alpha + UpdateLayeredWindow.
 
 ## Project Structure
 
 ```
 KoEnVue/
-├── Native/      P/Invoke (one file per DLL) + Win32Types.cs + SafeGdiHandles.cs + AppMessages.cs + VirtualDesktop.cs + UiaInterfaces.cs
-├── Models/      AppConfig (record) + DebugInfo (record) + 21 enums
-├── Detector/    ImeStatus, CaretTracker (4-tier), SystemFilter (8-condition), UiaClient (STA COM)
-├── UI/          Overlay (GDI rendering + LabelStyle + DebugOverlay), Animation (WM_TIMER state machine), Tray (system tray + schtasks), TrayIcon (GDI icon)
+├── Native/      P/Invoke (one file per DLL: User32, Imm32, Shell32, Gdi32, Kernel32, Shcore, Ole32, OleAut32, Dwmapi) + Win32Types.cs + SafeGdiHandles.cs + AppMessages.cs + VirtualDesktop.cs
+├── Models/      AppConfig (record) + enums (DisplayMode, DetectionMethod, ImeState, FontWeight, Theme, NonKoreanImeMode, AppProfileMatch, AppFilterMode, TrayIconStyle, TrayClickAction, LogLevel)
+├── Detector/    ImeStatus (IME state detection + WinEvent hook), SystemFilter (7-condition hide logic)
+├── UI/          Overlay (GDI rendering + title bar positioning), Animation (WM_TIMER state machine), Tray (system tray + schtasks), TrayIcon (GDI icon)
 ├── Config/      DefaultConfig, Settings (load/save/validate/migrate/hot-reload/app-profiles), ThemePresets (6 themes)
 ├── Utils/       DpiHelper, ColorHelper (Hex↔ColorRef↔RGB), Logger, I18n (Ko/En UI text)
-└── Program.cs   Main loop (3-thread management + lifecycle)
+└── Program.cs   Main loop (2-thread management + lifecycle)
 ```
 
 ## Build & Run
@@ -63,44 +79,42 @@ csproj has `NoWarn: SYSLIB1051` (.NET 10 LibraryImport IntPtr diagnostic suppres
 | `Nullable` | Explicit `enable` in csproj for nullable reference warnings |
 | `SYSLIB1051` | `IntPtr` promoted to error in `[LibraryImport]` source gen → `NoWarn` |
 | `uint → nint` cast | Explicit `(nint)` cast required for `uint` constants passed to `IntPtr` params |
-| `int & uint` mixed ops | `GetWindowLongW` (int) + `WS_CAPTION` (uint) → CS0034. Use `unchecked((int)WS_CAPTION)` local const |
-| NativeAOT COM | `Marshal.GetObjectForIUnknown` unavailable → use `StrategyBasedComWrappers.GetOrCreateObjectForComInstance` |
-| STJ record init defaults | Source gen loses `init` defaults for properties absent from JSON. `[JsonObjectCreationHandling(Populate)]` throws `NotSupportedException` on records (copy constructor). Workaround: `MergeWithDefaults()` in Settings.cs |
+| `int & uint` mixed ops | `GetWindowLongW` (int) + `WS_CAPTION` (uint) → CS0034. Use `unchecked((int)...)` |
+| STJ record init defaults | Source gen loses `init` defaults for properties absent from JSON. Workaround: `MergeWithDefaults()` in Settings.cs |
 
 ## Key Implementation Decisions
 
-Corrections and deviations from the original spec (`prompts/`) applied during implementation. These are already reflected in the code — listed here for context.
-
-- **NativeAOT COM pattern**: `[GeneratedComInterface]` + `StrategyBasedComWrappers` throughout (spec assumed `Marshal.GetObjectForIUnknown`)
+- **Floating indicator**: Draggable TOPMOST window. Two-tier position memory: runtime `Dictionary<IntPtr, (int,int)>` for per-window positions + persistent `config.json` `indicator_positions` for per-process positions. `WM_NCHITTEST → HTCAPTION` for drag. `WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE` for drag lifecycle
 - **Delegate GC prevention**: Static field retention for P/Invoke callbacks (e.g. `_imeChangeCallback` in ImeStatus.cs)
 - **COM init ordering**: Main thread pre-initializes COM STA + forces `SystemFilter` static constructor before detection thread starts
-- **Overlay window class**: Separately registered (spec only registered main window class)
-- **WM_DESTROY guard**: `hwnd == _hwndMain` check prevents app exit when overlay is destroyed (shared WndProc)
-- **CaretTracker tier-1 retry**: Up to 3 retries at 50ms intervals when `rcCaret == (0,0,0,0)`, immediate null on API failure
-- **GDI NULL_PEN**: Required for RoundRect/Ellipse to avoid 1px black border. GetStockObject handles are system-owned — never DeleteObject
+- **Overlay window class**: Separately registered (shared WndProc with main window)
+- **WM_DESTROY guard**: `hwnd == _hwndMain` check prevents app exit when overlay is destroyed
+- **GDI NULL_PEN**: Required for RoundRect to avoid 1px black border. GetStockObject handles are system-owned — never DeleteObject
 - **Premultiplied alpha**: Post-processing needed for GDI output (non-premultiplied) with DrawTextW antialiasing edges
 - **DIB top-down**: Negative biHeight so (0,0) is top-left
 - **Tray callback routing**: Handled in Program.cs (not Tray.cs) because it needs `_indicatorVisible` access
-- **Settings.cs**: Static class, record `with` expressions (no builder). LoadFromFile pipeline: MergeWithDefaults → Deserialize → EnsureSubObjects → Migrate → Validate → ThemePresets.Apply
-- **I18n.cs**: Bool flag + ternary pattern (NativeAOT-friendly, zero allocation). Uses `GetUserDefaultUILanguage()` P/Invoke since `InvariantGlobalization: true` disables CultureInfo
-- **UIA COM interfaces**: Vtable-layout placeholder methods instead of interface inheritance (Native/UiaInterfaces.cs)
-- **UiaClient.cs**: `ConcurrentQueue<UiaRequest>` + `ManualResetEventSlim` for STA thread communication. COM objects released in finally blocks
+- **Settings.cs**: Static class, record `with` expressions. LoadFromFile pipeline: MergeWithDefaults → Deserialize → EnsureSubObjects → Migrate → Validate → ThemePresets.Apply
+- **I18n.cs**: Bool flag + ternary pattern (NativeAOT-friendly, zero allocation). Uses `GetUserDefaultUILanguage()` P/Invoke
 - **Config hot-reload**: `_lastConfigMtime` updated after `Settings.Save()` to prevent self-triggered reload
 - **Volatile field workaround**: `Action<AppConfig>` callback pattern since `ref` cannot be used with volatile `_config`
-- **LabelStyle**: 3 modes — "text" (한/En/EN), "dot" (colored dot), "icon" (ㄱ/A)
-- **File logging**: Async queue (`ConcurrentQueue` + `ManualResetEventSlim` + dedicated `LogDrain` thread). Non-blocking enqueue from caller threads. Single rotation (.log → .log.old). `Logger.Initialize(config)` / `Logger.Shutdown()` lifecycle
+- **File logging**: Async queue (`ConcurrentQueue` + `ManualResetEventSlim` + dedicated `LogDrain` thread). Single rotation (.log → .log.old)
 - **Label border**: GDI `CreatePen(PS_SOLID)` + `NULL_BRUSH` overlay stroke. Pen-width inset (`borderW/2`) to keep border inside DIB
-- **Slide animation**: Ease-out cubic `1-(1-t)³` interpolation via `TIMER_ID_SLIDE`. All animation timers use `DefaultConfig.AnimationFrameMs` (16ms ≈ 60fps). DWM VSync ensures Show→UpdatePosition same-frame has no visual flash
-- **Fixed position anchor/monitor**: `MonitorFromWindow`/`MonitorFromPoint` to resolve `primary`/`mouse`/`active` monitor. 6 anchor types with offset from anchor point
-- **NonKoreanImeMode Dim**: `GetTargetAlpha` applies `DefaultConfig.DimOpacityFactor` (0.5) for both active/idle states when `_currentState == NonKorean && Dim`
-- **F-key hotkeys**: `ParseHotkey` supports F1-F12 via pattern match → `VK_F1 + (fNum - 1)`. Modifier/F-key strings are `private const` (P3)
-- **String→Enum P3 completion**: 8 string config fields (LabelStyle, Theme, TrayClickAction, AppProfileMatch, MultiMonitor, TrayIconStyle, Anchor, Monitor) converted to `[JsonStringEnumConverter]` enums. All const-string comparisons replaced with enum pattern matching
-- **STJ source gen init-defaults workaround**: .NET 10 STJ source generator does not preserve `record` `init` property defaults for properties absent from JSON (both value types and reference types). `[JsonObjectCreationHandling(Populate)]` also fails — throws `NotSupportedException` due to record copy constructor being treated as parameterized constructor. Fix: `MergeWithDefaults()` serializes a default `AppConfig` to JSON, then overlays user JSON keys on top before deserialization. `EnsureSubObjects()` remains as safety net for null reference-type properties
-- **Label DIB flip-flop fix**: `EnsureResources` for Label style could oscillate between `baseWidth` and `fixedLabelWidth`, recreating the DIB each call and zeroing pixels while render cache skipped re-rendering. Fix: cache `_fixedLabelWidth` and invalidate `_lastRenderedState` when DIB is recreated
-- **Foreground change detection**: When switching through SystemFilter-hidden windows (desktop/Progman), `lastHwndFocus` was not updated, so returning to the same window skipped focus change detection. Fix: `foregroundChanged` flag triggers focus event + caret polling independently of `hwndFocus` comparison
-- **OffsetConfig non-positional record**: Changed from positional `record OffsetConfig(int X, int Y)` to non-positional to avoid parameterized constructor conflict with STJ source gen
-- **Caret move detection**: `EventTriggers.OnCaretMove` (default true) enables continuous caret polling. Euclidean distance² compared against `CaretMoveThresholdPx²` (default 30px) to filter typing from mouse-click repositioning. IME/focus events bypass threshold (always post)
+- **Slide animation**: Ease-out cubic `1-(1-t)^3` interpolation via `TIMER_ID_SLIDE`. All animation timers use `DefaultConfig.AnimationFrameMs` (16ms ≈ 60fps)
+- **NonKoreanImeMode Dim**: `GetTargetAlpha` applies `DefaultConfig.DimOpacityFactor` (0.5) when `_currentState == NonKorean && Dim`
+- **F-key hotkeys**: `ParseHotkey` supports F1-F12 via pattern match → `VK_F1 + (fNum - 1)`
+- **STJ source gen init-defaults workaround**: `MergeWithDefaults()` serializes default `AppConfig` to JSON, overlays user keys, then deserializes. `EnsureSubObjects()` remains as null safety net
+- **Label DIB flip-flop fix**: Cache `_fixedLabelWidth` and invalidate `_lastRenderedState` when DIB is recreated
+- **Foreground change detection**: `foregroundChanged` flag triggers focus event independently of `hwndFocus` comparison, fixing return-to-same-window after desktop switch
+- **Console host fallback**: `hwndFocus == 0` + `ConsoleWindowClass` check → use foreground window as focus target
+- **Position update ordering**: Detection loop sends `WM_POSITION_UPDATED` before `WM_IME_STATE_CHANGED`/`WM_FOCUS_CHANGED` to ensure `_lastForegroundHwnd` is current when handlers run
+- **Tray WM_CONTEXTMENU**: `NOTIFYICON_VERSION_4` requires `WM_CONTEXTMENU` (not `WM_RBUTTONUP`) for right-click menu — shell grants foreground activation on `WM_CONTEXTMENU`
+- **Always mode default**: `DisplayMode.Always` — indicator always visible (bright on events, dim at idle). `OnEvent` available via config
+- **Multi-monitor default position**: `GetDefaultPosition(hwndForeground)` uses `MonitorFromWindow(hwndForeground)` to place default position on the foreground app's monitor, not the overlay's current monitor
+- **DPI change in Show()**: Compares new DPI with `_currentDpiScale` — on mismatch, resets `_fixedLabelWidth`, DIB size, and font cache before `EnsureResources`. Fixes first-render-small-then-normal issue (Initialize at 1.0x → first Show at 1.5x)
+- **WM_MOVING drag DPI**: `HandleDragDpiChange` detects monitor boundary crossing during drag, re-creates resources at new DPI, and calls `UpdateLayeredWindow` directly (bypassing `_isDragging` guard)
+- **Deferred lastHwndForeground**: Detection loop only updates `lastHwndForeground` after `ShouldHide` passes. If filtered (e.g., transient condition), next poll retries the foreground change
+- **Runtime hwnd positions**: `Dictionary<IntPtr, (int, int)>` in Program.cs. Per-window position memory within a session — enables distinction of multiple windows of the same process (e.g., multiple Notepad/Chrome windows). Lost on restart, falls back to config process name positions
 
 ## Spec Files
 
-- `docs/KoEnVue_PRD.md` — Product requirements document (full spec)
+- `docs/KoEnVue_PRD.md` — Product requirements document

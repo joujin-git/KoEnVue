@@ -10,30 +10,12 @@ namespace KoEnVue.Models;
 internal sealed record AppConfig
 {
     // [표시 모드]
-    public DisplayMode DisplayMode { get; init; } = DisplayMode.OnEvent;
+    public DisplayMode DisplayMode { get; init; } = DisplayMode.Always;
     public int EventDisplayDurationMs { get; init; } = 1500;
     public int AlwaysIdleTimeoutMs { get; init; } = 3000;
     public EventTriggersConfig EventTriggers { get; init; } = new();
-    public int CaretMoveThresholdPx { get; init; } = 30;
-
-    // [위치]
-    public PositionMode PositionMode { get; init; } = PositionMode.Caret;
-    public FixedPositionConfig FixedPosition { get; init; } = new();
-    public OffsetConfig CaretOffset { get; init; } = new() { X = -2, Y = 0 };
-    public OffsetConfig MouseOffset { get; init; } = new() { X = 20, Y = 25 };
-    public CaretPlacement CaretPlacement { get; init; } = CaretPlacement.Left;
-    public bool CaretPlacementAutoFlip { get; init; } = true;
-    public int ScreenEdgeMargin { get; init; } = 8;
 
     // [외관 -- 스타일]
-    public IndicatorStyle IndicatorStyle { get; init; } = IndicatorStyle.CaretDot;
-    public int CaretDotSize { get; init; } = 8;
-    public int CaretSquareSize { get; init; } = 8;
-    public int CaretUnderlineWidth { get; init; } = 24;
-    public int CaretUnderlineHeight { get; init; } = 3;
-    public int CaretVbarWidth { get; init; } = 3;
-    public int CaretVbarHeight { get; init; } = 16;
-    public LabelShape LabelShape { get; init; } = LabelShape.RoundedRect;
     public int LabelWidth { get; init; } = 28;
     public int LabelHeight { get; init; } = 24;
     public int LabelBorderRadius { get; init; } = 6;
@@ -50,11 +32,6 @@ internal sealed record AppConfig
     public double Opacity { get; init; } = 0.85;
     public double IdleOpacity { get; init; } = 0.4;
     public double ActiveOpacity { get; init; } = 0.95;
-    public double CaretBoxOpacity { get; init; } = 0.95;
-    public double CaretBoxIdleOpacity { get; init; } = 0.65;
-    public double CaretBoxActiveOpacity { get; init; } = 1.0;
-    public double CaretBoxMinOpacity { get; init; } = 0.5;
-
     // [외관 -- 텍스트]
     public string FontFamily { get; init; } = "맑은 고딕";
     public int FontSize { get; init; } = 12;
@@ -62,7 +39,6 @@ internal sealed record AppConfig
     public string HangulLabel { get; init; } = "한";
     public string EnglishLabel { get; init; } = "En";
     public string NonKoreanLabel { get; init; } = "EN";
-    public LabelStyle LabelStyle { get; init; } = LabelStyle.Text;
 
     // [외관 -- 테마]
     public Theme Theme { get; init; } = Theme.Custom;
@@ -79,16 +55,13 @@ internal sealed record AppConfig
 
     // [동작 -- 감지]
     public int PollIntervalMs { get; init; } = 80;
-    public int CaretPollIntervalMs { get; init; } = 50;
     public DetectionMethod DetectionMethod { get; init; } = DetectionMethod.Auto;
-    public CaretMethod CaretMethod { get; init; } = CaretMethod.Auto;
     public NonKoreanImeMode NonKoreanIme { get; init; } = NonKoreanImeMode.Hide;
     public bool HideInFullscreen { get; init; } = true;
     public bool HideWhenNoFocus { get; init; } = true;
     public bool HideOnLockScreen { get; init; } = true;
     public string[] SystemHideClasses { get; init; } = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"];
     public string[] SystemHideClassesUser { get; init; } = [];
-    public int AppMethodCacheSize { get; init; } = 50;
 
     // [앱별 프로필] -- Phase 06에서 구현
     public Dictionary<string, JsonElement> AppProfiles { get; init; } = new();
@@ -99,10 +72,6 @@ internal sealed record AppConfig
     // [핫키]
     public bool HotkeysEnabled { get; init; } = true;
     public string HotkeyToggleVisibility { get; init; } = "Ctrl+Alt+H";
-    public string HotkeyCycleStyle { get; init; } = "Ctrl+Alt+I";
-    public string HotkeyCyclePosition { get; init; } = "Ctrl+Alt+P";
-    public string HotkeyCycleDisplay { get; init; } = "Ctrl+Alt+D";
-    public string HotkeyOpenSettings { get; init; } = "Ctrl+Alt+S";
 
     // [시스템 트레이]
     public bool TrayEnabled { get; init; } = true;
@@ -123,16 +92,17 @@ internal sealed record AppConfig
     public int LogMaxSizeMb { get; init; } = 10;
 
     // [다중 모니터]
-    public MultiMonitorMode MultiMonitor { get; init; } = MultiMonitorMode.FollowCaret;
     public bool PerMonitorScale { get; init; } = true;
     public bool ClampToWorkArea { get; init; } = true;
-    public bool PreventCrossMonitor { get; init; } = true;
+
+    // [인디케이터 위치 -- 앱별 저장]
+    public Dictionary<string, int[]> IndicatorPositions { get; init; } = new();
 
     // [고급]
     public AdvancedConfig Advanced { get; init; } = new();
 
     // [버전]
-    public int ConfigVersion { get; init; } = 1;
+    public int ConfigVersion { get; init; } = 2;
 }
 
 // === 중첩 설정 레코드 ===
@@ -141,34 +111,14 @@ internal sealed record EventTriggersConfig
 {
     public bool OnFocusChange { get; init; } = true;
     public bool OnImeChange { get; init; } = true;
-    public bool OnCaretMove { get; init; } = true;
-}
-
-internal sealed record FixedPositionConfig
-{
-    public int X { get; init; } = 100;
-    public int Y { get; init; } = 100;
-    public FixedAnchor Anchor { get; init; } = FixedAnchor.TopRight;
-    public FixedMonitor Monitor { get; init; } = FixedMonitor.Primary;
-}
-
-internal sealed record OffsetConfig
-{
-    public int X { get; init; }
-    public int Y { get; init; }
 }
 
 internal sealed record AdvancedConfig
 {
     public int ForceTopmostIntervalMs { get; init; } = 5000;
-    public int UiaTimeoutMs { get; init; } = 200;
-    public int UiaCacheTtlMs { get; init; } = 500;
-    public string[] SkipUiaForProcesses { get; init; } = [];
     public string[] ImeFallbackChain { get; init; } = ["ime_default_wnd", "ime_context", "keyboard_layout"];
-    public string[] CaretFallbackChain { get; init; } = ["gui_thread_info", "uia_text_pattern", "focus_window_rect", "mouse_cursor"];
     public string OverlayClassName { get; init; } = "KoEnVueOverlay";
     public bool PreventSleep { get; init; } = false;
-    public bool DebugOverlay { get; init; } = false;
 }
 
 /// <summary>
@@ -182,10 +132,9 @@ internal sealed record AdvancedConfig
     AllowTrailingCommas = true)]
 [JsonSerializable(typeof(AppConfig))]
 [JsonSerializable(typeof(EventTriggersConfig))]
-[JsonSerializable(typeof(FixedPositionConfig))]
-[JsonSerializable(typeof(OffsetConfig))]
 [JsonSerializable(typeof(AdvancedConfig))]
 [JsonSerializable(typeof(Dictionary<string, JsonElement>))]
+[JsonSerializable(typeof(Dictionary<string, int[]>))]
 internal partial class AppConfigJsonContext : JsonSerializerContext { }
 // SnakeCaseLower: C# PascalCase 프로퍼티 ↔ JSON snake_case 키 자동 매핑
 // 예: FadeInMs ↔ "fade_in_ms", HangulBg ↔ "hangul_bg"
