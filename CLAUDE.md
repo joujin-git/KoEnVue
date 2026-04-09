@@ -99,7 +99,7 @@ Corrections and deviations from the original spec (`prompts/`) applied during im
 - **Label DIB flip-flop fix**: `EnsureResources` for Label style could oscillate between `baseWidth` and `fixedLabelWidth`, recreating the DIB each call and zeroing pixels while render cache skipped re-rendering. Fix: cache `_fixedLabelWidth` and invalidate `_lastRenderedState` when DIB is recreated
 - **Foreground change detection**: When switching through SystemFilter-hidden windows (desktop/Progman), `lastHwndFocus` was not updated, so returning to the same window skipped focus change detection. Fix: `foregroundChanged` flag triggers focus event + caret polling independently of `hwndFocus` comparison
 - **OffsetConfig non-positional record**: Changed from positional `record OffsetConfig(int X, int Y)` to non-positional to avoid parameterized constructor conflict with STJ source gen
-- **Caret move detection**: `EventTriggers.OnCaretMove` (default false) enables continuous caret polling. Euclidean distance² compared against `CaretMoveThresholdPx²` (default 30px) to filter typing from mouse-click repositioning. IME/focus events bypass threshold (always post)
+- **Caret move detection**: `EventTriggers.OnCaretMove` (default true) enables continuous caret polling. Euclidean distance² compared against `CaretMoveThresholdPx²` (default 30px) to filter typing from mouse-click repositioning. IME/focus events bypass threshold (always post)
 
 ## Spec Files
 

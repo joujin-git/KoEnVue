@@ -141,7 +141,7 @@ internal sealed record EventTriggersConfig
 {
     public bool OnFocusChange { get; init; } = true;
     public bool OnImeChange { get; init; } = true;
-    public bool OnCaretMove { get; init; } = false;
+    public bool OnCaretMove { get; init; } = true;
 }
 
 internal sealed record FixedPositionConfig
