@@ -234,6 +234,24 @@ internal static partial class User32
     [LibraryImport("user32.dll")]
     internal static partial int GetWindowTextLengthW(IntPtr hWnd);
 
+    // === 메시지 박스 ===
+
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial int MessageBoxW(IntPtr hWnd, string lpText, string lpCaption, uint uType);
+
+    // === 윈도우 활성화/메시지 ===
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool EnableWindow(IntPtr hWnd, [MarshalAs(UnmanagedType.Bool)] bool bEnable);
+
+    [LibraryImport("user32.dll")]
+    internal static partial IntPtr SendMessageW(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool IsWindow(IntPtr hWnd);
+
     // === 아이콘 ===
 
     [LibraryImport("user32.dll")]

@@ -203,6 +203,24 @@ internal static class Win32Constants
     // --- 윈도우 스타일 ---
     public const uint WS_POPUP           = 0x80000000;
     public const uint WS_CAPTION         = 0x00C00000;  // WS_BORDER | WS_DLGFRAME
+    public const uint WS_SYSMENU        = 0x00080000;
+    public const uint WS_CHILD          = 0x40000000;
+    public const uint WS_VISIBLE        = 0x10000000;
+    public const uint WS_TABSTOP        = 0x00010000;
+    public const uint WS_OVERLAPPEDWINDOW = 0x00CF0000;
+
+    // --- 버튼/체크박스 스타일 ---
+    public const uint BS_AUTOCHECKBOX   = 0x00000003;
+    public const uint BS_PUSHBUTTON     = 0x00000000;
+    public const uint BM_GETCHECK       = 0x00F0;
+    public const uint BM_SETCHECK       = 0x00F1;
+    public const nint BST_CHECKED       = 1;
+    public const nint BST_UNCHECKED     = 0;
+
+    // --- 다이얼로그 표준 ID ---
+    public const int IDOK               = 1;
+    public const int IDCANCEL           = 2;
+
     // --- GetWindowLongW 인덱스 ---
     public const int GWL_STYLE           = -16;
     public const int GWL_EXSTYLE         = -20;
@@ -289,6 +307,7 @@ internal static class Win32Constants
 
     // --- 표준 Win32 메시지 ---
     public const uint WM_NULL            = 0x0000;
+    public const uint WM_CLOSE           = 0x0010;
     public const uint WM_DESTROY         = 0x0002;
     public const uint WM_TIMER           = 0x0113;
     public const uint WM_COMMAND         = 0x0111;
@@ -354,6 +373,11 @@ internal static class Win32Constants
     public const uint MOD_SHIFT          = 0x0004;
     public const uint MOD_WIN            = 0x0008;
     public const uint MOD_NOREPEAT       = 0x4000;
+
+    // --- MessageBox ---
+    public const uint MB_YESNO           = 0x00000004;
+    public const uint MB_ICONQUESTION    = 0x00000020;
+    public const int IDYES               = 6;
 
     // --- COM ---
     public const uint COINIT_APARTMENTTHREADED = 0x2;

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using KoEnVue.Config;
 using KoEnVue.Models;
 using KoEnVue.Native;
@@ -23,6 +24,7 @@ internal static class Tray
 
     // 메인 메뉴
     private const int IDM_STARTUP         = 4001;
+    private const int IDM_CLEANUP         = 4003;
     private const int IDM_EXIT            = 4002;
 
     // schtasks 작업 이름
@@ -169,6 +171,8 @@ internal static class Tray
         User32.AppendMenuW(hMenu, isStartup ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED,
             (nuint)IDM_STARTUP, I18n.MenuStartup);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_CLEANUP, I18n.MenuCleanup);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
         User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_EXIT, I18n.MenuExit);
 
         // --- 표시 (워크어라운드 적용) ---
@@ -208,6 +212,11 @@ internal static class Tray
             // --- 시작 프로그램 등록 ---
             case IDM_STARTUP:
                 ToggleStartupRegistration();
+                break;
+
+            // --- 미사용 위치 데이터 정리 ---
+            case IDM_CLEANUP:
+                CleanupUnusedPositions(config, updateConfig);
                 break;
 
             // --- 종료 ---
@@ -284,6 +293,250 @@ internal static class Tray
         catch (Exception ex)
         {
             Logger.Warning($"Failed to toggle startup registration: {ex.Message}");
+        }
+    }
+
+    // ================================================================
+    // Private — 미사용 위치 데이터 정리
+    // ================================================================
+
+    /// <summary>
+    /// 현재 실행 중이 아닌 프로세스의 indicator_positions 항목을 체크박스 다이얼로그로 선택 삭제한다.
+    /// </summary>
+    private static void CleanupUnusedPositions(AppConfig config, Action<AppConfig> updateConfig)
+    {
+        if (config.IndicatorPositions.Count == 0) return;
+
+        // 실행 중인 프로세스 이름 수집
+        var running = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var proc in Process.GetProcesses())
+            {
+                try { running.Add(proc.ProcessName); }
+                catch { }
+                finally { proc.Dispose(); }
+            }
+        }
+        catch { return; }
+
+        // 실행 중이 아닌 항목 찾기
+        var unused = new List<string>();
+        foreach (string name in config.IndicatorPositions.Keys)
+        {
+            if (!running.Contains(name))
+                unused.Add(name);
+        }
+
+        if (unused.Count == 0)
+        {
+            User32.MessageBoxW(_hwndMain,
+                I18n.IsKorean ? "정리할 항목이 없습니다." : "Nothing to clean up.",
+                "KoEnVue", 0);
+            return;
+        }
+
+        // 체크박스 다이얼로그 표시
+        List<string>? selected = ShowCleanupDialog(unused);
+        if (selected is null || selected.Count == 0) return;
+
+        // 삭제
+        var cleaned = new Dictionary<string, int[]>(config.IndicatorPositions);
+        foreach (string name in selected)
+            cleaned.Remove(name);
+
+        updateConfig(config with { IndicatorPositions = cleaned });
+        Logger.Info($"Cleaned {selected.Count} position(s): {string.Join(", ", selected)}");
+    }
+
+    // ================================================================
+    // Private — 정리 다이얼로그 (체크박스 선택)
+    // ================================================================
+
+    // 다이얼로그 레이아웃 상수
+    private const int DlgPadding = 10;
+    private const int DlgCheckHeight = 22;
+    private const int DlgCheckGap = 4;
+    private const int DlgButtonWidth = 90;
+    private const int DlgButtonHeight = 28;
+    private const int DlgMinWidth = 300;
+    private const int DlgMaxVisibleItems = 15;
+
+    // 다이얼로그 컨트롤 ID
+    private const int IDC_CHECK_BASE = 5000;
+    private const int IDC_SELECT_ALL = 5500;
+    private const int IDC_BTN_OK = 5501;
+    private const int IDC_BTN_CANCEL = 5502;
+
+    // 다이얼로그 상태 (모달 루프용)
+    private static bool _dlgResult;
+    private static bool _dlgClosed;
+    private static IntPtr _hwndDialog;
+    private static readonly List<IntPtr> _checkboxHandles = [];
+    private static bool _selectAllState = true;
+
+    /// <summary>
+    /// 체크박스 선택 다이얼로그를 표시하고 선택된 항목을 반환한다. 취소 시 null.
+    /// </summary>
+    private static unsafe List<string>? ShowCleanupDialog(List<string> items)
+    {
+        _dlgResult = false;
+        _dlgClosed = false;
+        _checkboxHandles.Clear();
+        _selectAllState = true;
+
+        int visibleCount = Math.Min(items.Count, DlgMaxVisibleItems);
+        int checkAreaHeight = visibleCount * (DlgCheckHeight + DlgCheckGap);
+        int dlgWidth = DlgMinWidth;
+        int dlgHeight = DlgPadding + DlgCheckHeight + DlgCheckGap  // "전체 선택" 행
+            + checkAreaHeight + DlgPadding + DlgButtonHeight + DlgPadding * 2;
+
+        // 다이얼로그 윈도우 클래스 등록 (한 번만)
+        string dlgClassName = "KoEnVueCleanupDlg";
+        var wc = new WNDCLASSEXW
+        {
+            cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
+            lpfnWndProc = (IntPtr)(delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&CleanupDlgProc,
+            lpszClassName = dlgClassName,
+        };
+        User32.RegisterClassExW(ref wc); // 중복 등록은 무시됨
+
+        // 화면 중앙 좌표
+        User32.GetCursorPos(out POINT cursorPt);
+        IntPtr hMon = User32.MonitorFromPoint(cursorPt, Win32Constants.MONITOR_DEFAULTTOPRIMARY);
+        MONITORINFOEXW mi = default;
+        mi.cbSize = (uint)Marshal.SizeOf<MONITORINFOEXW>();
+        User32.GetMonitorInfoW(hMon, ref mi);
+        int cx = (mi.rcWork.Left + mi.rcWork.Right - dlgWidth) / 2;
+        int cy = (mi.rcWork.Top + mi.rcWork.Bottom - dlgHeight) / 2;
+
+        string title = I18n.IsKorean ? "미사용 위치 데이터 정리" : "Clean unused position data";
+        _hwndDialog = User32.CreateWindowExW(0, dlgClassName, title,
+            Win32Constants.WS_CAPTION | Win32Constants.WS_SYSMENU,
+            cx, cy, dlgWidth, dlgHeight,
+            _hwndMain, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+
+        if (_hwndDialog == IntPtr.Zero) return null;
+
+        // 컨트롤 생성
+        int y = DlgPadding;
+
+        // "전체 선택" 체크박스
+        string selectAllText = I18n.IsKorean ? "전체 선택" : "Select All";
+        IntPtr hwndSelectAll = User32.CreateWindowExW(0, "BUTTON", selectAllText,
+            Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.BS_AUTOCHECKBOX,
+            DlgPadding, y, dlgWidth - DlgPadding * 4, DlgCheckHeight,
+            _hwndDialog, (IntPtr)IDC_SELECT_ALL, IntPtr.Zero, IntPtr.Zero);
+        User32.SendMessageW(hwndSelectAll, Win32Constants.BM_SETCHECK,
+            (IntPtr)Win32Constants.BST_CHECKED, IntPtr.Zero);
+        y += DlgCheckHeight + DlgCheckGap * 2;
+
+        // 항목 체크박스
+        for (int i = 0; i < items.Count; i++)
+        {
+            IntPtr hwndCheck = User32.CreateWindowExW(0, "BUTTON", $"    {items[i]}",
+                Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.BS_AUTOCHECKBOX,
+                DlgPadding + 12, y, dlgWidth - DlgPadding * 4 - 12, DlgCheckHeight,
+                _hwndDialog, (IntPtr)(IDC_CHECK_BASE + i), IntPtr.Zero, IntPtr.Zero);
+            User32.SendMessageW(hwndCheck, Win32Constants.BM_SETCHECK,
+                (IntPtr)Win32Constants.BST_CHECKED, IntPtr.Zero);
+            _checkboxHandles.Add(hwndCheck);
+            y += DlgCheckHeight + DlgCheckGap;
+        }
+
+        // 버튼 영역
+        y += DlgPadding;
+        int btnAreaWidth = DlgButtonWidth * 2 + DlgPadding;
+        int btnX = (dlgWidth - btnAreaWidth) / 2;
+
+        string okText = I18n.IsKorean ? "삭제" : "Delete";
+        string cancelText = I18n.IsKorean ? "취소" : "Cancel";
+        User32.CreateWindowExW(0, "BUTTON", okText,
+            Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_TABSTOP,
+            btnX, y, DlgButtonWidth, DlgButtonHeight,
+            _hwndDialog, (IntPtr)IDC_BTN_OK, IntPtr.Zero, IntPtr.Zero);
+        User32.CreateWindowExW(0, "BUTTON", cancelText,
+            Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_TABSTOP,
+            btnX + DlgButtonWidth + DlgPadding, y, DlgButtonWidth, DlgButtonHeight,
+            _hwndDialog, (IntPtr)IDC_BTN_CANCEL, IntPtr.Zero, IntPtr.Zero);
+
+        // 모달 표시
+        User32.EnableWindow(_hwndMain, false);
+        User32.ShowWindow(_hwndDialog, Win32Constants.SW_SHOW);
+
+        // 모달 메시지 루프
+        while (!_dlgClosed)
+        {
+            int ret = User32.GetMessageW(out MSG msg, IntPtr.Zero, 0, 0);
+            if (ret <= 0) break;
+            User32.TranslateMessage(ref msg);
+            User32.DispatchMessageW(ref msg);
+        }
+
+        // 결과 수집
+        List<string>? result = null;
+        if (_dlgResult)
+        {
+            result = [];
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (i < _checkboxHandles.Count)
+                {
+                    IntPtr state = User32.SendMessageW(_checkboxHandles[i],
+                        Win32Constants.BM_GETCHECK, IntPtr.Zero, IntPtr.Zero);
+                    if (state == (IntPtr)Win32Constants.BST_CHECKED)
+                        result.Add(items[i]);
+                }
+            }
+        }
+
+        // 정리
+        User32.EnableWindow(_hwndMain, true);
+        User32.SetForegroundWindow(_hwndMain);
+        User32.DestroyWindow(_hwndDialog);
+        _hwndDialog = IntPtr.Zero;
+        _checkboxHandles.Clear();
+
+        return result;
+    }
+
+    [UnmanagedCallersOnly]
+    private static IntPtr CleanupDlgProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
+    {
+        switch (msg)
+        {
+            case Win32Constants.WM_COMMAND:
+                int id = (int)(wParam.ToInt64() & 0xFFFF);
+                if (id == IDC_BTN_OK)
+                {
+                    _dlgResult = true;
+                    _dlgClosed = true;
+                    return IntPtr.Zero;
+                }
+                if (id == IDC_BTN_CANCEL)
+                {
+                    _dlgResult = false;
+                    _dlgClosed = true;
+                    return IntPtr.Zero;
+                }
+                if (id == IDC_SELECT_ALL)
+                {
+                    // 전체 선택/해제 토글
+                    _selectAllState = !_selectAllState;
+                    IntPtr checkState = (IntPtr)(_selectAllState
+                        ? Win32Constants.BST_CHECKED : Win32Constants.BST_UNCHECKED);
+                    foreach (IntPtr h in _checkboxHandles)
+                        User32.SendMessageW(h, Win32Constants.BM_SETCHECK, checkState, IntPtr.Zero);
+                }
+                return IntPtr.Zero;
+
+            case Win32Constants.WM_CLOSE:
+                _dlgResult = false;
+                _dlgClosed = true;
+                return IntPtr.Zero;
+
+            default:
+                return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
         }
     }
 

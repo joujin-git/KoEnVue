@@ -57,6 +57,7 @@ internal static class I18n
 
     public static string MenuOpacity => _isKorean ? "투명도" : "Opacity";
     public static string MenuStartup => _isKorean ? "시작 프로그램 등록" : "Start with Windows";
+    public static string MenuCleanup => _isKorean ? "미사용 위치 데이터 정리" : "Clean unused position data";
     public static string MenuExit => _isKorean ? "종료" : "Exit";
 
     // ================================================================
