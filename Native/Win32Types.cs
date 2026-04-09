@@ -203,9 +203,6 @@ internal static class Win32Constants
     // --- 윈도우 스타일 ---
     public const uint WS_POPUP           = 0x80000000;
     public const uint WS_CAPTION         = 0x00C00000;  // WS_BORDER | WS_DLGFRAME
-    public const uint WS_MINIMIZEBOX    = 0x00020000;
-    public const uint WS_MAXIMIZEBOX    = 0x00010000;
-
     // --- GetWindowLongW 인덱스 ---
     public const int GWL_STYLE           = -16;
     public const int GWL_EXSTYLE         = -20;
@@ -215,11 +212,6 @@ internal static class Win32Constants
     public const int SW_SHOW             = 5;
 
     // --- System Metrics ---
-    public const int SM_CXSIZE           = 30;   // caption button width
-    public const int SM_CYSIZE           = 31;   // caption button height
-    public const int SM_CYCAPTION        = 4;    // caption bar height
-    public const int SM_CXFRAME          = 32;   // window frame width (identical to SM_CXSIZEFRAME)
-    public const int SM_CYFRAME          = 33;   // window frame height
     public const int SM_CXSMICON         = 49;
     public const int SM_CYSMICON         = 50;
 
@@ -367,10 +359,6 @@ internal static class Win32Constants
     public const uint COINIT_APARTMENTTHREADED = 0x2;
     public const uint CLSCTX_INPROC_SERVER = 0x1;
 
-    // --- DWM ---
-    public const uint DWMWA_CAPTION_BUTTON_BOUNDS = 5;
-    public const uint DWMWA_EXTENDED_FRAME_BOUNDS = 9;
-    public const int S_OK                = 0;
 
     // --- DPI ---
     public const uint MDT_EFFECTIVE_DPI  = 0;

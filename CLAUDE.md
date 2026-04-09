@@ -9,7 +9,7 @@ C# 14 / .NET 10 + NativeAOT single exe (~4.4MB). Zero external NuGet packages.
 
 - **Target**: `net10.0-windows`, PublishAot, AllowUnsafeBlocks
 - **Source Generators**: `[LibraryImport]`, `[JsonSerializable]`
-- **P/Invoke**: User32, Imm32, Shell32, Gdi32, Kernel32, Shcore, Ole32, OleAut32, Dwmapi
+- **P/Invoke**: User32, Imm32, Shell32, Gdi32, Kernel32, Shcore, Ole32, OleAut32
 - **`[DllImport]` is banned** — always use `[LibraryImport]`
 
 ## Hard Constraints (P1-P5)
