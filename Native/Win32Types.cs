@@ -230,8 +230,11 @@ internal static class Win32Constants
     public const int SW_SHOW             = 5;
 
     // --- System Metrics ---
+    public const int SM_CYCAPTION        = 4;
+    public const int SM_CYFIXEDFRAME     = 8;
     public const int SM_CXSMICON         = 49;
     public const int SM_CYSMICON         = 50;
+    public const int SM_CXPADDEDBORDER   = 92;
 
     // --- Hit Test ---
     public const uint WM_NCHITTEST       = 0x0084;
@@ -316,6 +319,7 @@ internal static class Win32Constants
     public const uint WM_POWERBROADCAST  = 0x0218;
     public const uint WM_DISPLAYCHANGE   = 0x007E;
     public const uint WM_SETTINGCHANGE   = 0x001A;
+    public const uint WM_SETFONT         = 0x0030;
     public const uint WM_DPICHANGED     = 0x02E0;
     public const uint WM_GETTITLEBARINFOEX = 0x033F;
     public const uint WM_RBUTTONUP       = 0x0205;
@@ -391,6 +395,10 @@ internal static class Win32Constants
     public const uint SPI_GETHIGHCONTRAST = 0x0042;
     public const uint HCF_HIGHCONTRASTON  = 0x00000001;
     public const int COLOR_HIGHLIGHT      = 13;
+    public const int COLOR_BTNFACE        = 15;
+
+    // --- 정적 컨트롤 스타일 ---
+    public const uint SS_ETCHEDHORZ       = 0x0010;
 
     // --- UIA ---
     public const int UIA_TextPattern2Id   = 10024;

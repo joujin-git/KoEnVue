@@ -353,14 +353,17 @@ internal static class Tray
     // Private — 정리 다이얼로그 (체크박스 선택)
     // ================================================================
 
-    // 다이얼로그 레이아웃 상수
-    private const int DlgPadding = 10;
+    // 다이얼로그 레이아웃 상수 (96 DPI 기준, DPI 스케일 적용)
+    private const int DlgPadding = 16;
     private const int DlgCheckHeight = 22;
     private const int DlgCheckGap = 4;
     private const int DlgButtonWidth = 90;
-    private const int DlgButtonHeight = 28;
-    private const int DlgMinWidth = 300;
+    private const int DlgButtonHeight = 30;
+    private const int DlgMinWidth = 340;
     private const int DlgMaxVisibleItems = 15;
+    private const int DlgDescHeight = 20;
+    private const int DlgSepGap = 12;
+    private const int DlgItemIndent = 20;
 
     // 다이얼로그 컨트롤 ID
     private const int IDC_CHECK_BASE = 5000;
@@ -385,11 +388,47 @@ internal static class Tray
         _checkboxHandles.Clear();
         _selectAllState = true;
 
+        // DPI 스케일링
+        User32.GetCursorPos(out POINT cursorPt);
+        IntPtr hMon = User32.MonitorFromPoint(cursorPt, Win32Constants.MONITOR_DEFAULTTOPRIMARY);
+        double dpiScale = DpiHelper.GetScale(hMon);
+        var (_, dpiY) = DpiHelper.GetRawDpi(hMon);
+
+        int pad = DpiHelper.Scale(DlgPadding, dpiScale);
+        int checkH = DpiHelper.Scale(DlgCheckHeight, dpiScale);
+        int checkGap = DpiHelper.Scale(DlgCheckGap, dpiScale);
+        int btnW = DpiHelper.Scale(DlgButtonWidth, dpiScale);
+        int btnH = DpiHelper.Scale(DlgButtonHeight, dpiScale);
+        int descH = DpiHelper.Scale(DlgDescHeight, dpiScale);
+        int sepGap = DpiHelper.Scale(DlgSepGap, dpiScale);
+        int itemIndent = DpiHelper.Scale(DlgItemIndent, dpiScale);
+
         int visibleCount = Math.Min(items.Count, DlgMaxVisibleItems);
-        int checkAreaHeight = visibleCount * (DlgCheckHeight + DlgCheckGap);
-        int dlgWidth = DlgMinWidth;
-        int dlgHeight = DlgPadding + DlgCheckHeight + DlgCheckGap  // "전체 선택" 행
-            + checkAreaHeight + DlgPadding + DlgButtonHeight + DlgPadding * 2;
+        int checkAreaHeight = visibleCount * (checkH + checkGap);
+        int dlgWidth = DpiHelper.Scale(DlgMinWidth, dpiScale);
+        // 비클라이언트 영역 높이 (타이틀바 + 프레임)
+        uint rawDpi = (uint)Math.Round(dpiScale * DpiHelper.BASE_DPI);
+        int nonClientH = User32.GetSystemMetricsForDpi(Win32Constants.SM_CYCAPTION, rawDpi)
+            + 2 * User32.GetSystemMetricsForDpi(Win32Constants.SM_CYFIXEDFRAME, rawDpi)
+            + 2 * User32.GetSystemMetricsForDpi(Win32Constants.SM_CXPADDEDBORDER, rawDpi);
+
+        int dlgHeight = nonClientH               // non-client (title bar + borders)
+            + pad                                // top padding
+            + descH + checkGap                   // description label
+            + checkH + checkGap                  // "전체 선택"
+            + sepGap                             // separator
+            + checkAreaHeight                    // items
+            + pad                                // gap before buttons
+            + btnH                               // buttons
+            + pad;                               // bottom padding
+
+        // UI 폰트 (맑은 고딕 9pt, DPI 스케일)
+        int fontHeight = -(int)Math.Round(9.0 * dpiY / 72.0);
+        IntPtr hFont = Gdi32.CreateFontW(fontHeight, 0, 0, 0, Win32Constants.FW_NORMAL,
+            0, 0, 0, Win32Constants.DEFAULT_CHARSET,
+            Win32Constants.OUT_TT_PRECIS, Win32Constants.CLIP_DEFAULT_PRECIS,
+            Win32Constants.CLEARTYPE_QUALITY, Win32Constants.DEFAULT_PITCH,
+            "맑은 고딕");
 
         // 다이얼로그 윈도우 클래스 등록 (한 번만)
         string dlgClassName = "KoEnVueCleanupDlg";
@@ -398,12 +437,11 @@ internal static class Tray
             cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
             lpfnWndProc = (IntPtr)(delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&CleanupDlgProc,
             lpszClassName = dlgClassName,
+            hbrBackground = (IntPtr)(Win32Constants.COLOR_BTNFACE + 1),
         };
         User32.RegisterClassExW(ref wc); // 중복 등록은 무시됨
 
         // 화면 중앙 좌표
-        User32.GetCursorPos(out POINT cursorPt);
-        IntPtr hMon = User32.MonitorFromPoint(cursorPt, Win32Constants.MONITOR_DEFAULTTOPRIMARY);
         MONITORINFOEXW mi = default;
         mi.cbSize = (uint)Marshal.SizeOf<MONITORINFOEXW>();
         User32.GetMonitorInfoW(hMon, ref mi);
@@ -416,49 +454,79 @@ internal static class Tray
             cx, cy, dlgWidth, dlgHeight,
             _hwndMain, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
 
-        if (_hwndDialog == IntPtr.Zero) return null;
+        if (_hwndDialog == IntPtr.Zero)
+        {
+            if (hFont != IntPtr.Zero) Gdi32.DeleteObject(hFont);
+            return null;
+        }
+
+        // 클라이언트 영역 너비 (비클라이언트 보더 제외)
+        int borderW = DpiHelper.Scale(16, dpiScale);
+        int contentW = dlgWidth - pad * 2 - borderW;
 
         // 컨트롤 생성
-        int y = DlgPadding;
+        int y = pad;
+
+        // 설명 라벨
+        string descText = I18n.IsKorean
+            ? "삭제할 위치 데이터를 선택하세요."
+            : "Select position data to delete.";
+        IntPtr hwndDesc = User32.CreateWindowExW(0, "STATIC", descText,
+            Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE,
+            pad, y, contentW, descH,
+            _hwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        ApplyFont(hwndDesc, hFont);
+        y += descH + checkGap;
 
         // "전체 선택" 체크박스
         string selectAllText = I18n.IsKorean ? "전체 선택" : "Select All";
         IntPtr hwndSelectAll = User32.CreateWindowExW(0, "BUTTON", selectAllText,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.BS_AUTOCHECKBOX,
-            DlgPadding, y, dlgWidth - DlgPadding * 4, DlgCheckHeight,
+            pad, y, contentW, checkH,
             _hwndDialog, (IntPtr)IDC_SELECT_ALL, IntPtr.Zero, IntPtr.Zero);
+        ApplyFont(hwndSelectAll, hFont);
         User32.SendMessageW(hwndSelectAll, Win32Constants.BM_SETCHECK,
             (IntPtr)Win32Constants.BST_CHECKED, IntPtr.Zero);
-        y += DlgCheckHeight + DlgCheckGap * 2;
+        y += checkH + checkGap;
+
+        // 구분선 (etched horizontal)
+        User32.CreateWindowExW(0, "STATIC", "",
+            Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.SS_ETCHEDHORZ,
+            pad, y + sepGap / 2 - 1, contentW, 2,
+            _hwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        y += sepGap;
 
         // 항목 체크박스
         for (int i = 0; i < items.Count; i++)
         {
-            IntPtr hwndCheck = User32.CreateWindowExW(0, "BUTTON", $"    {items[i]}",
+            IntPtr hwndCheck = User32.CreateWindowExW(0, "BUTTON", items[i],
                 Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.BS_AUTOCHECKBOX,
-                DlgPadding + 12, y, dlgWidth - DlgPadding * 4 - 12, DlgCheckHeight,
+                pad + itemIndent, y, contentW - itemIndent, checkH,
                 _hwndDialog, (IntPtr)(IDC_CHECK_BASE + i), IntPtr.Zero, IntPtr.Zero);
+            ApplyFont(hwndCheck, hFont);
             User32.SendMessageW(hwndCheck, Win32Constants.BM_SETCHECK,
                 (IntPtr)Win32Constants.BST_CHECKED, IntPtr.Zero);
             _checkboxHandles.Add(hwndCheck);
-            y += DlgCheckHeight + DlgCheckGap;
+            y += checkH + checkGap;
         }
 
         // 버튼 영역
-        y += DlgPadding;
-        int btnAreaWidth = DlgButtonWidth * 2 + DlgPadding;
+        y += pad;
+        int btnAreaWidth = btnW * 2 + pad;
         int btnX = (dlgWidth - btnAreaWidth) / 2;
 
         string okText = I18n.IsKorean ? "삭제" : "Delete";
         string cancelText = I18n.IsKorean ? "취소" : "Cancel";
-        User32.CreateWindowExW(0, "BUTTON", okText,
+        IntPtr hwndOk = User32.CreateWindowExW(0, "BUTTON", okText,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_TABSTOP,
-            btnX, y, DlgButtonWidth, DlgButtonHeight,
+            btnX, y, btnW, btnH,
             _hwndDialog, (IntPtr)IDC_BTN_OK, IntPtr.Zero, IntPtr.Zero);
-        User32.CreateWindowExW(0, "BUTTON", cancelText,
+        ApplyFont(hwndOk, hFont);
+        IntPtr hwndCancel = User32.CreateWindowExW(0, "BUTTON", cancelText,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_TABSTOP,
-            btnX + DlgButtonWidth + DlgPadding, y, DlgButtonWidth, DlgButtonHeight,
+            btnX + btnW + pad, y, btnW, btnH,
             _hwndDialog, (IntPtr)IDC_BTN_CANCEL, IntPtr.Zero, IntPtr.Zero);
+        ApplyFont(hwndCancel, hFont);
 
         // 모달 표시
         User32.EnableWindow(_hwndMain, false);
@@ -496,8 +564,14 @@ internal static class Tray
         User32.DestroyWindow(_hwndDialog);
         _hwndDialog = IntPtr.Zero;
         _checkboxHandles.Clear();
+        if (hFont != IntPtr.Zero) Gdi32.DeleteObject(hFont);
 
         return result;
+    }
+
+    private static void ApplyFont(IntPtr hwnd, IntPtr hFont)
+    {
+        User32.SendMessageW(hwnd, Win32Constants.WM_SETFONT, hFont, (IntPtr)1);
     }
 
     [UnmanagedCallersOnly]

@@ -114,7 +114,7 @@ csproj has `NoWarn: SYSLIB1051` (.NET 10 LibraryImport IntPtr diagnostic suppres
 - **WM_MOVING drag DPI**: `HandleDragDpiChange` detects monitor boundary crossing during drag, re-creates resources at new DPI, and calls `UpdateLayeredWindow` directly (bypassing `_isDragging` guard)
 - **Deferred lastHwndForeground**: Detection loop only updates `lastHwndForeground` after `ShouldHide` passes. If filtered (e.g., transient condition), next poll retries the foreground change
 - **Runtime hwnd positions**: `Dictionary<IntPtr, (int, int)>` in Program.cs. Per-window position memory within a session — enables distinction of multiple windows of the same process (e.g., multiple Notepad/Chrome windows). Lost on restart, falls back to config process name positions
-- **Cleanup dialog**: Win32 checkbox dialog in Tray.cs for selective cleanup of unused `indicator_positions` entries. Compares against running processes. Modal with `EnableWindow` + nested `GetMessageW` loop. `[UnmanagedCallersOnly]` WndProc for dialog class
+- **Cleanup dialog**: Win32 checkbox dialog in Tray.cs for selective cleanup of unused `indicator_positions` entries. Compares against running processes. Modal with `EnableWindow` + nested `GetMessageW` loop. `[UnmanagedCallersOnly]` WndProc for dialog class. DPI-scaled layout (`GetSystemMetricsForDpi` for non-client area sizing). System font (맑은 고딕 `CreateFontW` + `WM_SETFONT`), `COLOR_BTNFACE` background, description STATIC label + `SS_ETCHEDHORZ` separator
 
 ## Spec Files
 
