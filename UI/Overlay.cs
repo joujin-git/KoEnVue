@@ -229,12 +229,14 @@ internal static class Overlay
         return (_lastX, _lastY);
     }
 
+    /// <summary>시스템 입력 프로세스 기본 위치의 창 상단 여백(px). 라벨 아래쪽 끝과 창 위쪽 끝 사이 간격.</summary>
+    private const int SystemInputGapPx = 4;
+
     /// <summary>
     /// 앱별 저장 위치가 없을 때 기본 위치.
     /// - 일반 프로세스: 포그라운드 창이 있는 모니터 우상단.
-    /// - 시스템 입력 프로세스(시작 메뉴, 검색 창): 포그라운드 창 수평 중앙 + 모니터 상단.
-    ///   시작 메뉴/검색 창은 화면 중앙에 열리고 사용자 시선도 중앙에 있으므로
-    ///   우상단 기본값으로는 가시성이 떨어진다.
+    /// - 시스템 입력 프로세스(시작 메뉴, 검색 창): 포그라운드 창의 시각적 왼쪽 위 모서리 바로 위쪽.
+    ///   창 rect는 DWM extended frame bounds로 받아 invisible resize border를 배제한다.
     /// </summary>
     public static (int x, int y) GetDefaultPosition(IntPtr hwndForeground, string processName)
     {
@@ -245,12 +247,12 @@ internal static class Overlay
 
         if (DefaultConfig.IsSystemInputProcess(processName)
             && hwndForeground != IntPtr.Zero
-            && User32.GetWindowRect(hwndForeground, out RECT windowRect))
+            && Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT frame))
         {
-            int windowCenterX = (windowRect.Left + windowRect.Right) / 2;
-            int labelW = _currentWidth > 0 ? _currentWidth : DpiHelper.Scale(_baseWidth, _currentDpiScale);
-            int x = windowCenterX - labelW / 2;
-            int y = workArea.Top + 10;
+            int labelH = _currentHeight > 0 ? _currentHeight : DpiHelper.Scale(_baseHeight, _currentDpiScale);
+            int x = frame.Left;
+            int y = frame.Top - labelH - SystemInputGapPx;
+            if (y < workArea.Top) y = workArea.Top;
             return (x, y);
         }
 

@@ -386,10 +386,16 @@ internal static class Program
         bool wasHidden = !_indicatorVisible;
         _lastForegroundHwnd = hwndForeground;
 
-        if (foregroundChanged || wasHidden)
-        {
-            // 앱별 프로세스 이름 갱신 + 저장 위치 조회
+        if (foregroundChanged)
             _currentProcessName = Detector.SystemFilter.GetProcessName(hwndForeground);
+
+        // 시스템 입력 프로세스(시작 메뉴 ↔ 검색 창)는 하나의 HWND를 모드별로 재사용하면서
+        // 시각적 rect만 바꾼다. 감지 스레드가 rect 변화 기반으로 이 메시지를 다시 보낸 경우
+        // foregroundChanged가 false여도 위치를 재계산해 실제 시각 rect에 맞춰야 한다.
+        bool sysInput = DefaultConfig.IsSystemInputProcess(_currentProcessName);
+
+        if (foregroundChanged || wasHidden || sysInput)
+        {
             _indicatorVisible = true;
             var (x, y) = GetAppPosition();
             Logger.Info($"PositionUpdated: process={_currentProcessName}, pos=({x},{y}), saved={_config.IndicatorPositions.Count}");
@@ -597,6 +603,8 @@ internal static class Program
     {
         IntPtr lastHwndFocus = IntPtr.Zero;
         IntPtr lastHwndForeground = IntPtr.Zero;
+        string lastForegroundProcessName = string.Empty;
+        RECT lastSystemInputFrame = default;
         bool lastFiltered = false;
         ImeState lastImeState = ImeState.English;
         AppConfig lastAppConfig = _config;
@@ -649,15 +657,39 @@ internal static class Program
                 lastHwndForeground = hwndForeground;
                 lastHwndFocus = hwndFocus;
                 lastFiltered = true;
+                lastSystemInputFrame = default;
                 continue;
             }
 
             AppConfig appConfig = resolved!;
             lastAppConfig = appConfig;
 
+            // hwnd 변경 시에만 프로세스 이름 캐시 갱신 (폴링당 Process.GetProcessById 호출 회피)
+            if (hwndForeground != lastHwndForeground)
+            {
+                lastForegroundProcessName = SystemFilter.GetProcessName(hwndForeground);
+                lastSystemInputFrame = default;
+            }
+
             // 필터 해소 또는 포그라운드 변경 → 위치/포커스 갱신
             bool foregroundChanged = (hwndForeground != lastHwndForeground) || lastFiltered;
             lastFiltered = false;
+
+            // 시스템 입력 프로세스(시작 메뉴 ↔ 검색 창)는 하나의 HWND를 모드별로 재사용하면서
+            // rect만 바꾸기 때문에 hwnd 비교만으로는 전환을 감지할 수 없다. 같은 hwnd라도
+            // 시각적 프레임이 달라졌다면 포그라운드 변경으로 취급해 위치를 갱신한다.
+            if (DefaultConfig.IsSystemInputProcess(lastForegroundProcessName)
+                && Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT currentFrame))
+            {
+                if (currentFrame.Left != lastSystemInputFrame.Left
+                    || currentFrame.Top != lastSystemInputFrame.Top
+                    || currentFrame.Right != lastSystemInputFrame.Right
+                    || currentFrame.Bottom != lastSystemInputFrame.Bottom)
+                {
+                    foregroundChanged = true;
+                    lastSystemInputFrame = currentFrame;
+                }
+            }
 
             // 3. 포그라운드 변경 시 위치 갱신 (플로팅 인디케이터 — 윈도우 이동 추적 불필요)
             if (foregroundChanged)
