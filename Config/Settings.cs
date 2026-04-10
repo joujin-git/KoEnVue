@@ -40,51 +40,47 @@ internal static class Settings
     // Public 속성
     // ================================================================
 
-    /// <summary>현재 활성 config 파일 경로. null이면 기본값 사용 중.</summary>
+    /// <summary>현재 활성 config 파일 경로. Load 이후에는 항상 exe 디렉토리의 config.json 경로.</summary>
     public static string? ConfigFilePath => _configFilePath;
 
-    /// <summary>포터블 모드 여부. exe 디렉토리에 config.json이 있으면 true.</summary>
-    public static bool IsPortableMode =>
-        _configFilePath is not null &&
-        _configFilePath.StartsWith(AppContext.BaseDirectory, StringComparison.OrdinalIgnoreCase);
-
     // ================================================================
-    // Load — 3-tier 탐색
+    // Load — exe 디렉토리 단일 경로
     // ================================================================
 
     /// <summary>
-    /// 설정 파일 탐색: exe dir (포터블) → %APPDATA% → 기본값.
-    /// exe dir에 config.json이 있으면 포터블 모드로 우선 사용 (F-46).
+    /// exe 디렉토리의 config.json을 로드.
+    /// - 파일 존재 + 정상: 로드
+    /// - 파일 존재 + 파싱 실패: 덮어쓰지 않고 기본값 반환 (복구 가능성 보존). mtime 갱신으로 폴링 스팸 차단.
+    /// - 파일 없음: 기본값을 즉시 디스크에 생성 (포터블 UX: exe만 있어도 config.json이 바로 나타남).
     /// </summary>
     public static AppConfig Load()
     {
-        string[] candidates =
-        [
-            Path.Combine(AppContext.BaseDirectory, DefaultConfig.ConfigFileName),
-            DefaultConfig.GetDefaultConfigPath(),
-        ];
+        string path = Path.Combine(AppContext.BaseDirectory, DefaultConfig.ConfigFileName);
+        _configFilePath = path;
 
-        foreach (string path in candidates)
+        if (File.Exists(path))
         {
             try
             {
-                if (!File.Exists(path)) continue;
-
                 AppConfig config = LoadFromFile(path);
-                _configFilePath = path;
                 _lastConfigMtime = File.GetLastWriteTimeUtc(path);
                 Logger.Info($"Config loaded from {path}");
                 return config;
             }
             catch (Exception ex)
             {
-                Logger.Warning($"Failed to load config from {path}: {ex.Message}");
+                // 파일은 존재하지만 파싱 실패 — 사용자 복구 가능성을 위해 덮어쓰지 않음.
+                // mtime은 갱신해서 5초 폴링이 WM_CONFIG_CHANGED를 무한 재발송하는 스팸을 차단.
+                Logger.Warning($"Failed to load config from {path}: {ex.Message}. Using defaults without overwriting.");
+                try { _lastConfigMtime = File.GetLastWriteTimeUtc(path); } catch { }
+                return new AppConfig();
             }
         }
 
-        _configFilePath = null;
-        Logger.Info("Using default config");
-        return new AppConfig();
+        Logger.Info($"Config not found, creating defaults at {path}");
+        AppConfig defaults = new();
+        Save(defaults, path);
+        return defaults;
     }
 
     /// <summary>
@@ -202,7 +198,7 @@ internal static class Settings
     /// </summary>
     public static void Save(AppConfig config, string? path = null)
     {
-        path ??= _configFilePath ?? DefaultConfig.GetDefaultConfigPath();
+        path ??= _configFilePath ?? Path.Combine(AppContext.BaseDirectory, DefaultConfig.ConfigFileName);
 
         try
         {
@@ -335,6 +331,9 @@ internal static class Settings
     public static void CheckConfigFileChange(IntPtr hwndMain)
     {
         if (_configFilePath is null) return;
+        // 삭제된 파일은 GetLastWriteTimeUtc가 1601-01-01 센티널을 반환해 "변경됨"으로 오인되고,
+        // 뒤따르는 Load()가 기본값으로 리셋해버린다. 존재 확인으로 이 체인을 차단.
+        if (!File.Exists(_configFilePath)) return;
 
         try
         {

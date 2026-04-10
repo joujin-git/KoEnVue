@@ -375,8 +375,7 @@ internal static class Tray
     {
         if (!config.TrayTooltip) return; // 빈 문자열 = 툴팁 숨김
 
-        string modePrefix = Settings.IsPortableMode ? I18n.PortableLabel : I18n.InstalledLabel;
-        string text = $"KoEnVue {modePrefix} - {I18n.GetTrayTooltip(state)}";
+        string text = $"KoEnVue - {I18n.GetTrayTooltip(state)}";
         ReadOnlySpan<char> tip = text.AsSpan();
         int len = Math.Min(tip.Length, TooltipMaxLength);
         fixed (char* pTip = nid.szTip)
@@ -431,6 +430,117 @@ internal static class Tray
         catch (Exception ex)
         {
             Logger.Warning($"Failed to toggle startup registration: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 등록된 시작 프로그램 태스크의 exe 경로가 현재 실행 파일 경로와 다르면 재등록한다.
+    /// 포터블 모드에서 exe를 다른 폴더로 옮겼을 때 태스크 스케줄러가 오래된 절대 경로를 가리키는 문제를 해결.
+    /// schtasks 호출 지연(~100~300ms)을 main 스레드에서 분리하기 위해 백그라운드 스레드에서 실행.
+    /// </summary>
+    internal static void SyncStartupPathAsync()
+    {
+        var thread = new Thread(SyncStartupPathCore)
+        {
+            IsBackground = true,
+            Name = "StartupPathSync",
+        };
+        thread.Start();
+    }
+
+    private static void SyncStartupPathCore()
+    {
+        try
+        {
+            string? registeredPath = QueryRegisteredTaskCommand();
+            if (registeredPath is null)
+            {
+                // 등록 안 돼 있거나 쿼리 실패 — 정상 케이스 (대부분 사용자는 startup 안 씀)
+                return;
+            }
+
+            string? currentPath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
+            if (string.IsNullOrEmpty(currentPath)) return;
+
+            if (PathsEqual(registeredPath, currentPath))
+            {
+                Logger.Debug("Startup task path already in sync");
+                return;
+            }
+
+            Logger.Info($"Startup task path moved: '{registeredPath}' -> '{currentPath}', re-registering");
+            RunSchtasks($"/create /tn \"{TaskName}\" /tr \"\\\"{currentPath}\\\"\" /sc ONLOGON /rl HIGHEST /f");
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning($"Failed to sync startup task path: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 등록된 시작 프로그램 태스크의 실행 명령 경로를 반환. 미등록 또는 실패 시 null.
+    /// </summary>
+    private static string? QueryRegisteredTaskCommand()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("schtasks.exe", $"/query /tn \"{TaskName}\" /xml ONE")
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            using var proc = Process.Start(psi);
+            if (proc is null) return null;
+            string xml = proc.StandardOutput.ReadToEnd();
+            proc.WaitForExit(SchtasksQueryTimeoutMs);
+            if (proc.ExitCode != 0) return null;
+            return ExtractCommandFromXml(xml);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// schtasks XML 출력에서 &lt;Command&gt;...&lt;/Command&gt; 내용을 추출하고 XML 엔티티를 복원한다.
+    /// </summary>
+    private static string? ExtractCommandFromXml(string xml)
+    {
+        const string openTag = "<Command>";
+        const string closeTag = "</Command>";
+        int start = xml.IndexOf(openTag, StringComparison.Ordinal);
+        if (start < 0) return null;
+        start += openTag.Length;
+        int end = xml.IndexOf(closeTag, start, StringComparison.Ordinal);
+        if (end < 0) return null;
+
+        return xml[start..end]
+            .Replace("&amp;", "&")
+            .Replace("&quot;", "\"")
+            .Replace("&apos;", "'")
+            .Replace("&lt;", "<")
+            .Replace("&gt;", ">")
+            .Trim();
+    }
+
+    /// <summary>
+    /// Windows 경로 동일성 비교 (대소문자 무시 + 정규화).
+    /// </summary>
+    private static bool PathsEqual(string a, string b)
+    {
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(a),
+                Path.GetFullPath(b),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
         }
     }
 

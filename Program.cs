@@ -111,6 +111,9 @@ internal static class Program
         // 9b. 트레이 아이콘 초기화
         Tray.Initialize(_hwndMain, _lastImeState, _config);
 
+        // 9c. 시작 프로그램 태스크 경로 동기화 (exe 이동 감지 → 재등록, 백그라운드)
+        Tray.SyncStartupPathAsync();
+
         // 10. 감지 스레드 시작
         StartDetectionThread();
 

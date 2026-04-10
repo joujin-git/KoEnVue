@@ -122,17 +122,8 @@ internal static class DefaultConfig
 
     // === 설정 파일 ===
 
-    /// <summary>설정 파일명</summary>
+    /// <summary>설정 파일명 (exe 디렉토리에 생성됨 — 완전 포터블).</summary>
     public const string ConfigFileName = "config.json";
-
-    /// <summary>%APPDATA% 하위 폴더명</summary>
-    public const string AppDataFolderName = "KoEnVue";
-
-    /// <summary>기본 설정 파일 경로 (%APPDATA%\KoEnVue\config.json)</summary>
-    public static string GetDefaultConfigPath() =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            AppDataFolderName, ConfigFileName);
 
     /// <summary>설정 파일 변경 감지 간격 (약 5초 = 62폴링 x 80ms)</summary>
     public const int ConfigCheckIntervalPolls = 62;
