@@ -380,9 +380,13 @@ internal static class Program
     private static void HandlePositionUpdated(IntPtr hwndForeground)
     {
         bool foregroundChanged = hwndForeground != _lastForegroundHwnd;
+        // wasHidden: 같은 앱으로 복귀했으나 직전에 인디가 숨겨져 있던 경우
+        // (데스크톱 클릭 → 같은 앱 복귀 시나리오 — 감지 스레드는 변경을 인지하지만
+        //  메인 스레드 _lastForegroundHwnd는 같은 값이므로 추가 트리거 필요).
+        bool wasHidden = !_indicatorVisible;
         _lastForegroundHwnd = hwndForeground;
 
-        if (foregroundChanged)
+        if (foregroundChanged || wasHidden)
         {
             // 앱별 프로세스 이름 갱신 + 저장 위치 조회
             _currentProcessName = Detector.SystemFilter.GetProcessName(hwndForeground);
@@ -396,10 +400,21 @@ internal static class Program
 
     /// <summary>
     /// 오버레이 드래그 종료 → 새 위치를 현재 앱에 저장.
+    /// 시스템 입력 프로세스(시작 메뉴, 검색 창)는 z-band 한계로 창 위에 띄울 수 없어
+    /// 사용자가 드래그해 옮긴 위치가 가려지면 다시 잡을 수 없게 된다.
+    /// 저장하지 않고 항상 기본 위치를 사용한다.
     /// </summary>
     private static void HandleOverlayDragEnd()
     {
         var (x, y) = Overlay.EndDrag();
+
+        if (DefaultConfig.IsSystemInputProcess(_currentProcessName))
+        {
+            Logger.Debug($"Skip saving indicator position for system input process: {_currentProcessName}");
+            Overlay.Show(x, y, _lastImeState, _config);
+            return;
+        }
+
         // 런타임 hwnd별 위치 저장
         if (_lastForegroundHwnd != IntPtr.Zero)
             _hwndPositions[_lastForegroundHwnd] = (x, y);
@@ -420,9 +435,14 @@ internal static class Program
 
     /// <summary>
     /// 현재 앱의 저장 위치 반환. 없으면 기본 위치.
+    /// 시스템 입력 프로세스는 항상 기본 위치 — 저장 위치를 무시 (z-band 가시성 보장).
     /// </summary>
     private static (int x, int y) GetAppPosition()
     {
+        // 시스템 입력 프로세스: 저장 위치 우회
+        if (DefaultConfig.IsSystemInputProcess(_currentProcessName))
+            return Overlay.GetDefaultPosition(_lastForegroundHwnd, _currentProcessName);
+
         // 1. 런타임 hwnd별 위치 (세션 내 창별 구분)
         if (_lastForegroundHwnd != IntPtr.Zero
             && _hwndPositions.TryGetValue(_lastForegroundHwnd, out var hwndPos))
@@ -437,7 +457,7 @@ internal static class Program
             return (pos[0], pos[1]);
         }
         // 3. 기본 위치 (포그라운드 창 모니터 기준)
-        return Overlay.GetDefaultPosition(_lastForegroundHwnd);
+        return Overlay.GetDefaultPosition(_lastForegroundHwnd, _currentProcessName);
     }
 
     private static void HandleConfigChanged()
@@ -453,7 +473,10 @@ internal static class Program
 
     private static void HideOverlay()
     {
-        Animation.TriggerHide(_config);
+        // forceHidden: Always 모드에서도 Idle이 아닌 완전 숨김으로 전환.
+        // 시스템 필터(바탕화면/작업 표시줄), 핫키/트레이 토글 OFF 모두
+        // "실제로 사라져야 하는" 의도이므로 Always 모드의 dim-idle 유지를 우회.
+        Animation.TriggerHide(_config, forceHidden: true);
         _indicatorVisible = false;
     }
 
@@ -574,6 +597,7 @@ internal static class Program
     {
         IntPtr lastHwndFocus = IntPtr.Zero;
         IntPtr lastHwndForeground = IntPtr.Zero;
+        bool lastFiltered = false;
         ImeState lastImeState = ImeState.English;
         AppConfig lastAppConfig = _config;
         int pollCount = 0;
@@ -610,42 +634,37 @@ internal static class Program
                     hwndFocus = hwndForeground;
             }
 
-            // 2. 앱별 프로필 + 시스템 필터 (포그라운드 변경 시에만 — 최적화)
-            AppConfig appConfig = lastAppConfig;
-            bool foregroundChanged = false;
-            if (hwndForeground != lastHwndForeground)
+            // 2. 앱별 프로필 + 시스템 필터 (매 폴링 평가 — 단순함이 정확성을 보장)
+            //    - 같은 앱으로 복귀(데스크톱 → 같은 앱) 시 인디 표시
+            AppConfig? resolved = Settings.ResolveForApp(_config, hwndForeground);
+            bool currentlyFiltered = (resolved is null)
+                || SystemFilter.ShouldHide(hwndForeground, hwndFocus, resolved);
+
+            if (currentlyFiltered)
             {
-                AppConfig? resolved = Settings.ResolveForApp(_config, hwndForeground);
-                if (resolved is null)
-                {
-                    lastHwndForeground = hwndForeground;
-                    if (_indicatorVisible)
-                        User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
-                            IntPtr.Zero, IntPtr.Zero);
-                    continue;
-                }
-                appConfig = resolved;
-                lastAppConfig = appConfig;
-
-                if (SystemFilter.ShouldHide(hwndForeground, hwndFocus, appConfig))
-                {
-                    // lastHwndForeground 미갱신 — 다음 폴링에서 재시도
-                    // (일시적 조건 해소 후 foreground 변경 처리)
-                    if (_indicatorVisible)
-                        User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
-                            IntPtr.Zero, IntPtr.Zero);
-                    continue;
-                }
-
+                // 필터 진입 시에만 숨김 메시지 전송 (중복 메시지 억제)
+                if (!lastFiltered && _indicatorVisible)
+                    User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
+                        IntPtr.Zero, IntPtr.Zero);
                 lastHwndForeground = hwndForeground;
-                foregroundChanged = true;
+                lastHwndFocus = hwndFocus;
+                lastFiltered = true;
+                continue;
             }
+
+            AppConfig appConfig = resolved!;
+            lastAppConfig = appConfig;
+
+            // 필터 해소 또는 포그라운드 변경 → 위치/포커스 갱신
+            bool foregroundChanged = (hwndForeground != lastHwndForeground) || lastFiltered;
+            lastFiltered = false;
 
             // 3. 포그라운드 변경 시 위치 갱신 (플로팅 인디케이터 — 윈도우 이동 추적 불필요)
             if (foregroundChanged)
             {
                 User32.PostMessageW(_hwndMain, AppMessages.WM_POSITION_UPDATED,
                     hwndForeground, IntPtr.Zero);
+                lastHwndForeground = hwndForeground;
             }
 
             // 4. IME 상태 감지

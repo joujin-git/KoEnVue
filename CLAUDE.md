@@ -3,7 +3,7 @@
 ## What is this?
 
 Windows Korean/English IME state indicator. Shows current input mode (한/En/EN) as a draggable floating overlay.
-C# 14 / .NET 10 + NativeAOT single exe (~4.4MB). Zero external NuGet packages.
+C# 14 / .NET 10 + NativeAOT single exe (~4.7MB). Zero external NuGet packages.
 
 ## Tech Stack
 
@@ -41,6 +41,8 @@ Detection thread (BG):  80ms polling → PostMessage to main
 6. Config process name positions persist across sessions as fallback
 
 `WM_NCHITTEST → HTCAPTION` enables native drag. `WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE` tracks drag lifecycle. `WM_MOVING` handles cross-monitor DPI change during drag.
+
+**System input processes exception** (StartMenuExperienceHost, SearchHost, SearchApp): TOPMOST z-band cannot rise above these shell UI surfaces, so any saved position that ends up under them becomes unreachable. For these processes, drag is ignored (position never saved) and `GetDefaultPosition` places the indicator at the foreground window's horizontal center + monitor top to guarantee visibility.
 
 ### Indicator Rendering
 
@@ -115,6 +117,10 @@ csproj has `NoWarn: SYSLIB1051` (.NET 10 LibraryImport IntPtr diagnostic suppres
 - **Deferred lastHwndForeground**: Detection loop only updates `lastHwndForeground` after `ShouldHide` passes. If filtered (e.g., transient condition), next poll retries the foreground change
 - **Runtime hwnd positions**: `Dictionary<IntPtr, (int, int)>` in Program.cs. Per-window position memory within a session — enables distinction of multiple windows of the same process (e.g., multiple Notepad/Chrome windows). Lost on restart, falls back to config process name positions
 - **Cleanup dialog**: Win32 checkbox dialog in Tray.cs for selective cleanup of unused `indicator_positions` entries. Compares against running processes. Modal with `EnableWindow` + nested `GetMessageW` loop. `[UnmanagedCallersOnly]` WndProc for dialog class. DPI-scaled layout (`GetSystemMetricsForDpi` for non-client area sizing). System font (맑은 고딕 `CreateFontW` + `WM_SETFONT`), `COLOR_BTNFACE` background, description STATIC label + `SS_ETCHEDHORZ` separator
+- **System input process position bypass**: `DefaultConfig.IsSystemInputProcess` lists StartMenuExperienceHost/SearchHost/SearchApp. `HandleOverlayDragEnd` skips both runtime and config saves for these; `GetAppPosition` ignores any stored value and calls `Overlay.GetDefaultPosition(hwnd, processName)` which centers on the foreground window. Prevents the indicator from being dragged into an unrecoverable zone under shell chrome
+- **Per-poll filter evaluation**: `DetectionLoop` evaluates `ResolveForApp + SystemFilter.ShouldHide` every tick (not only on foreground change) and uses a `lastFiltered` flag to suppress duplicate `WM_HIDE_INDICATOR` messages. Fixes the "desktop click → same app return" case where nothing appeared to change but the indicator needed to reappear. Hide message is emitted only on `!lastFiltered → filtered` transitions
+- **`wasHidden` re-trigger**: `HandlePositionUpdated` treats `!_indicatorVisible` as a signal to re-resolve position and show, even when `hwndForeground == _lastForegroundHwnd`. Complements per-poll filter re-eval: detection thread posts `WM_POSITION_UPDATED` after filter clears, main thread sees the same hwnd but knows the indicator needs to come back
+- **`HideOverlay` forceHidden**: System filter, hotkey toggle off, and tray toggle off all pass `forceHidden: true` to `Animation.TriggerHide` so Always mode collapses fully instead of sliding into dim-idle. "Hide" from these sources means "actually disappear," distinct from Always-mode idle dimming
 
 ## Spec Files
 

@@ -64,6 +64,34 @@ internal static class DefaultConfig
     /// <summary>오버레이 윈도우 클래스명</summary>
     public const string OverlayClassName = "KoEnVueOverlay";
 
+    /// <summary>
+    /// 시스템 입력 프로세스 — 시작 메뉴, 작업 표시줄 검색 창.
+    /// 기본 위치를 포그라운드 창 중앙 상단으로 보정하여 가시성을 확보한다.
+    /// 프로세스명 (확장자 없음, 대소문자 무관).
+    /// </summary>
+    public static readonly string[] SystemInputProcesses =
+    [
+        "StartMenuExperienceHost",
+        "SearchHost",
+        "SearchApp",
+    ];
+
+    /// <summary>
+    /// 시스템 입력 프로세스 여부. 위치 저장/복원 시 우회하기 위해 사용.
+    /// 사용자가 인디를 시스템 창 위로 드래그해도 z-band 한계로 가려지므로
+    /// 저장된 위치 대신 항상 기본 위치(창 중앙 상단)를 사용해야 한다.
+    /// </summary>
+    public static bool IsSystemInputProcess(string processName)
+    {
+        if (string.IsNullOrEmpty(processName)) return false;
+        foreach (string p in SystemInputProcesses)
+        {
+            if (p.Equals(processName, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
     // === always 모드 ===
 
     /// <summary>always 모드 유휴 전환 타임아웃</summary>

@@ -102,7 +102,7 @@ internal sealed record AppConfig
     public AdvancedConfig Advanced { get; init; } = new();
 
     // [버전]
-    public int ConfigVersion { get; init; } = 2;
+    public int ConfigVersion { get; init; } = 3;
 }
 
 // === 중첩 설정 레코드 ===

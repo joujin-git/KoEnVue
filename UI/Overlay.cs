@@ -230,17 +230,33 @@ internal static class Overlay
     }
 
     /// <summary>
-    /// 앱별 저장 위치가 없을 때 기본 위치: 포그라운드 창이 있는 모니터 우상단.
+    /// 앱별 저장 위치가 없을 때 기본 위치.
+    /// - 일반 프로세스: 포그라운드 창이 있는 모니터 우상단.
+    /// - 시스템 입력 프로세스(시작 메뉴, 검색 창): 포그라운드 창 수평 중앙 + 모니터 상단.
+    ///   시작 메뉴/검색 창은 화면 중앙에 열리고 사용자 시선도 중앙에 있으므로
+    ///   우상단 기본값으로는 가시성이 떨어진다.
     /// </summary>
-    public static (int x, int y) GetDefaultPosition(IntPtr hwndForeground)
+    public static (int x, int y) GetDefaultPosition(IntPtr hwndForeground, string processName)
     {
         IntPtr hMonitor = (hwndForeground != IntPtr.Zero)
             ? User32.MonitorFromWindow(hwndForeground, Win32Constants.MONITOR_DEFAULTTOPRIMARY)
             : User32.MonitorFromWindow(_hwndOverlay, Win32Constants.MONITOR_DEFAULTTOPRIMARY);
         RECT workArea = DpiHelper.GetWorkArea(hMonitor);
-        int x = workArea.Right - 200;
-        int y = workArea.Top + 10;
-        return (x, y);
+
+        if (DefaultConfig.IsSystemInputProcess(processName)
+            && hwndForeground != IntPtr.Zero
+            && User32.GetWindowRect(hwndForeground, out RECT windowRect))
+        {
+            int windowCenterX = (windowRect.Left + windowRect.Right) / 2;
+            int labelW = _currentWidth > 0 ? _currentWidth : DpiHelper.Scale(_baseWidth, _currentDpiScale);
+            int x = windowCenterX - labelW / 2;
+            int y = workArea.Top + 10;
+            return (x, y);
+        }
+
+        int defaultX = workArea.Right - 200;
+        int defaultY = workArea.Top + 10;
+        return (defaultX, defaultY);
     }
 
     /// <summary>SetWindowPos HWND_TOPMOST 재적용.</summary>

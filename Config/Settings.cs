@@ -19,7 +19,7 @@ internal static class Settings
     // ================================================================
 
     /// <summary>현재 config 스키마 버전.</summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     /// <summary>앱 프로필 LRU 캐시 최대 크기.</summary>
     private const int ProfileCacheMaxSize = 50;
@@ -316,9 +316,9 @@ internal static class Settings
     {
         int version = config.ConfigVersion;
 
-        // 향후 확장:
-        // if (version < 2) config = MigrateV1ToV2(config);
-        // if (version < 3) config = MigrateV2ToV3(config);
+        // v2 → v3: system_edit_focus_classes 필드 제거 (바탕화면 리네임 escape hatch 폐기).
+        // 필드 자체가 AppConfig에서 삭제됐으므로 STJ가 JSON 키를 무시하고,
+        // 다음 Save에서 자동으로 파일에서 사라진다. 여기선 버전만 갱신.
 
         return config with { ConfigVersion = CurrentVersion };
     }

@@ -7,7 +7,7 @@ using KoEnVue.Utils;
 namespace KoEnVue.Detector;
 
 /// <summary>
-/// 시스템 필터. 8-조건 단락 평가로 인디케이터 숨김 여부를 판정한다.
+/// 시스템 필터. 7-조건 단락 평가로 인디케이터 숨김 여부를 판정한다.
 /// </summary>
 internal static class SystemFilter
 {
@@ -53,7 +53,7 @@ internal static class SystemFilter
     // ================================================================
 
     /// <summary>
-    /// 8-조건 단락 평가. 하나라도 true면 인디케이터를 숨긴다.
+    /// 7-조건 단락 평가. 하나라도 true면 인디케이터를 숨긴다.
     /// </summary>
     public static bool ShouldHide(IntPtr hwnd, IntPtr hwndFocus, AppConfig config)
     {
@@ -66,7 +66,7 @@ internal static class SystemFilter
         // 3. 현재 가상 데스크톱이 아님
         if (!IsOnCurrentVirtualDesktop(hwnd)) return true;
 
-        // 4. 클래스명 블랙리스트
+        // 4. 클래스명 블랙리스트 (기본: 바탕화면/작업 표시줄)
         string className = GetClassName(hwnd);
         foreach (string c in config.SystemHideClasses)
         {
