@@ -55,6 +55,16 @@ internal static class Overlay
     private static bool _isDragging;
     private static int _dragStartX;
     private static int _dragStartY;
+    // 드래그 시작 시 커서가 창 안에서 잡고 있는 상대 오프셋(hot point).
+    // HandleMoving에서 매 틱 (커서 - hot point)로 rect를 재동기화하기 위한 기준.
+    // WM_MOVING이 우리 수정값을 새 base로 삼아 다음 틱 proposed를 계산하는 탓에
+    // 스냅 델타가 누적되어 창과 커서가 벌어지는 현상을 방지한다.
+    private static int _dragHotPointX;
+    private static int _dragHotPointY;
+
+    // 드래그 스냅 후보 — BeginDrag에서 EnumWindows로 한 번만 캐싱,
+    // 드래그 중 매 WM_MOVING 틱에서 순회. EndDrag에서 Clear.
+    private static readonly List<RECT> _snapRects = new(64);
 
     // ================================================================
     // 초기화 / 해제
@@ -174,8 +184,11 @@ internal static class Overlay
         EnsureResources(config);
     }
 
-    /// <summary>드래그 시작 (WM_ENTERSIZEMOVE). UpdateOverlay 억제 + Shift 축 잠금용 시작 좌표 캐치.</summary>
-    public static void BeginDrag()
+    /// <summary>
+    /// 드래그 시작 (WM_ENTERSIZEMOVE). UpdateOverlay 억제 + Shift 축 잠금용 시작 좌표 캐치
+    /// + 커서 hot point 캐치 + SnapToWindows 유효 시 EnumWindows로 스냅 후보 rect 리스트 캐싱.
+    /// </summary>
+    public static void BeginDrag(AppConfig config)
     {
         _isDragging = true;
         if (_hwndOverlay != IntPtr.Zero)
@@ -183,45 +196,188 @@ internal static class Overlay
             User32.GetWindowRect(_hwndOverlay, out RECT rc);
             _dragStartX = rc.Left;
             _dragStartY = rc.Top;
+
+            if (User32.GetCursorPos(out POINT cursor))
+            {
+                _dragHotPointX = cursor.X - rc.Left;
+                _dragHotPointY = cursor.Y - rc.Top;
+            }
+        }
+
+        _snapRects.Clear();
+        if (config.SnapToWindows)
+        {
+            unsafe
+            {
+                User32.EnumWindows(&EnumWindowsCallback, IntPtr.Zero);
+            }
         }
     }
 
     /// <summary>
-    /// WM_MOVING 핸들러. Shift 키가 눌려 있으면 시작 좌표 기준 우세한 축으로 잠금,
-    /// 그 다음 제약된 좌표로 DPI 재계산. rect를 수정했으면 true를 리턴해
-    /// 호출자가 lParam에 되돌려쓰도록 한다. w/h는 드래그 루프 내부 상태 일관성을 위해 보존.
+    /// EnumWindows 콜백. BeginDrag에서 스냅 후보 rect를 _snapRects에 수집.
+    /// [UnmanagedCallersOnly] + 함수 포인터 방식 (NativeAOT 권장).
+    /// BOOL 리턴 (1 = 계속 열거, 0 = 중단).
+    /// </summary>
+    [UnmanagedCallersOnly]
+    private static int EnumWindowsCallback(IntPtr hwnd, IntPtr lParam)
+    {
+        if (hwnd == _hwndOverlay) return 1;
+        if (!User32.IsWindowVisible(hwnd)) return 1;
+        if (User32.IsIconic(hwnd)) return 1;
+        if (Dwmapi.IsCloaked(hwnd)) return 1;
+        if (!Dwmapi.TryGetVisibleFrame(hwnd, out RECT frame)) return 1;
+
+        int w = frame.Right - frame.Left;
+        int h = frame.Bottom - frame.Top;
+        if (w < DefaultConfig.SnapMinWindowSizePx || h < DefaultConfig.SnapMinWindowSizePx)
+            return 1;
+
+        _snapRects.Add(frame);
+        return 1;
+    }
+
+    /// <summary>
+    /// WM_MOVING 핸들러. 순서: 커서 기반 rect 재동기화 → Shift 축 잠금 → 창 엣지 스냅 → DPI 재계산.
+    ///
+    /// 커서 재동기화가 필수인 이유: WM_MOVING의 movingRect은 이전 틱에 우리가 수정한 값을
+    /// 새 base로 삼아 (base + cursor_delta)로 계산된다. 스냅으로 rect를 수정하면 그 델타가
+    /// 시스템 base에 누적되어, 슬로우 드래그 시 창이 스냅 위치에 영구히 잠기고 커서는
+    /// 계속 멀어진다. 매 틱 (cursor - hot_point)로 리셋하면 시스템의 누적 효과를 우회할 수 있다.
+    ///
+    /// rect를 항상 덮어쓰므로 리턴은 항상 true. w/h는 보존.
+    /// Shift 잠금이 걸린 축은 스냅에서 제외되어 시작 좌표가 유지된다.
     /// </summary>
     public static bool HandleMoving(ref RECT movingRect, ImeState state, AppConfig config)
     {
         if (!_isDragging) return false;
 
-        bool modified = false;
+        int w = movingRect.Right - movingRect.Left;
+        int h = movingRect.Bottom - movingRect.Top;
+
+        if (User32.GetCursorPos(out POINT cursor))
+        {
+            movingRect.Left   = cursor.X - _dragHotPointX;
+            movingRect.Top    = cursor.Y - _dragHotPointY;
+            movingRect.Right  = movingRect.Left + w;
+            movingRect.Bottom = movingRect.Top + h;
+        }
+
+        bool xLocked = false;
+        bool yLocked = false;
 
         if ((User32.GetAsyncKeyState(Win32Constants.VK_SHIFT) & 0x8000) != 0)
         {
             int dx = movingRect.Left - _dragStartX;
             int dy = movingRect.Top - _dragStartY;
-            int w = movingRect.Right - movingRect.Left;
-            int h = movingRect.Bottom - movingRect.Top;
 
             if (Math.Abs(dx) >= Math.Abs(dy))
             {
                 // 가로 축 우세 → Y 잠금
                 movingRect.Top = _dragStartY;
                 movingRect.Bottom = _dragStartY + h;
+                yLocked = true;
             }
             else
             {
                 // 세로 축 우세 → X 잠금
                 movingRect.Left = _dragStartX;
                 movingRect.Right = _dragStartX + w;
+                xLocked = true;
             }
-            modified = true;
         }
+
+        if (config.SnapToWindows)
+            ApplySnap(ref movingRect, xLocked, yLocked);
 
         HandleDragDpiChange(movingRect.Left, movingRect.Top, state, config);
 
+        return true;
+    }
+
+    /// <summary>
+    /// _snapRects와 현재 위치의 모니터 work area를 후보로 하여 인디케이터 엣지를
+    /// 가장 가까운 타겟 엣지에 스냅한다. X/Y 축 독립 처리, 잠긴 축은 건너뜀.
+    /// 타겟 rect와의 수직/수평 겹침을 요구해 "멀리 떨어진 창"에 끌려가는 현상을 방지.
+    /// work area는 인디가 항상 그 안에 있어 겹침 체크가 항상 통과 → 화면 엣지 스냅 성립.
+    /// </summary>
+    private static bool ApplySnap(ref RECT movingRect, bool xLocked, bool yLocked)
+    {
+        int threshold = DpiHelper.Scale(DefaultConfig.SnapThresholdPx, _currentDpiScale);
+        int w = movingRect.Right - movingRect.Left;
+        int h = movingRect.Bottom - movingRect.Top;
+
+        int bestDx = 0, bestDy = 0;
+        int bestDistX = threshold + 1;
+        int bestDistY = threshold + 1;
+
+        // 현재 위치의 모니터 work area 추가 (화면 엣지 스냅)
+        IntPtr hMonitor = DpiHelper.GetMonitorFromPoint(
+            movingRect.Left + w / 2, movingRect.Top + h / 2);
+        RECT workArea = DpiHelper.GetWorkArea(hMonitor);
+        ConsiderTarget(ref movingRect, workArea, xLocked, yLocked,
+            ref bestDx, ref bestDy, ref bestDistX, ref bestDistY);
+
+        foreach (RECT target in _snapRects)
+        {
+            ConsiderTarget(ref movingRect, target, xLocked, yLocked,
+                ref bestDx, ref bestDy, ref bestDistX, ref bestDistY);
+        }
+
+        bool modified = false;
+        if (bestDistX <= threshold)
+        {
+            movingRect.Left += bestDx;
+            movingRect.Right += bestDx;
+            modified = true;
+        }
+        if (bestDistY <= threshold)
+        {
+            movingRect.Top += bestDy;
+            movingRect.Bottom += bestDy;
+            modified = true;
+        }
         return modified;
+    }
+
+    /// <summary>
+    /// 단일 타겟 rect에 대해 4개 엣지 쌍(L↔L, L↔R, R↔L, R↔R)과
+    /// (T↔T, T↔B, B↔T, B↔B)을 검사해 최단 거리 스냅 후보를 갱신.
+    /// Y 겹침이 있는 경우에만 X 엣지 스냅, X 겹침이 있는 경우에만 Y 엣지 스냅.
+    /// </summary>
+    private static void ConsiderTarget(
+        ref RECT movingRect, RECT target,
+        bool xLocked, bool yLocked,
+        ref int bestDx, ref int bestDy,
+        ref int bestDistX, ref int bestDistY)
+    {
+        bool yOverlap = movingRect.Top < target.Bottom && movingRect.Bottom > target.Top;
+        if (!xLocked && yOverlap)
+        {
+            TryEdge(target.Left  - movingRect.Left,  ref bestDistX, ref bestDx);
+            TryEdge(target.Left  - movingRect.Right, ref bestDistX, ref bestDx);
+            TryEdge(target.Right - movingRect.Left,  ref bestDistX, ref bestDx);
+            TryEdge(target.Right - movingRect.Right, ref bestDistX, ref bestDx);
+        }
+
+        bool xOverlap = movingRect.Left < target.Right && movingRect.Right > target.Left;
+        if (!yLocked && xOverlap)
+        {
+            TryEdge(target.Top    - movingRect.Top,    ref bestDistY, ref bestDy);
+            TryEdge(target.Top    - movingRect.Bottom, ref bestDistY, ref bestDy);
+            TryEdge(target.Bottom - movingRect.Top,    ref bestDistY, ref bestDy);
+            TryEdge(target.Bottom - movingRect.Bottom, ref bestDistY, ref bestDy);
+        }
+    }
+
+    private static void TryEdge(int delta, ref int bestDist, ref int bestDelta)
+    {
+        int abs = Math.Abs(delta);
+        if (abs < bestDist)
+        {
+            bestDist = abs;
+            bestDelta = delta;
+        }
     }
 
     /// <summary>
@@ -265,10 +421,11 @@ internal static class Overlay
             _memDC, ref ptSrc, 0, ref blend, Win32Constants.ULW_ALPHA);
     }
 
-    /// <summary>드래그 종료 (WM_EXITSIZEMOVE). 새 위치를 _lastX/_lastY에 반영.</summary>
+    /// <summary>드래그 종료 (WM_EXITSIZEMOVE). 새 위치를 _lastX/_lastY에 반영 + 스냅 캐시 해제.</summary>
     public static (int x, int y) EndDrag()
     {
         _isDragging = false;
+        _snapRects.Clear();
         if (_hwndOverlay != IntPtr.Zero)
         {
             User32.GetWindowRect(_hwndOverlay, out RECT rc);

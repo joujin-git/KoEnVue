@@ -37,6 +37,13 @@ internal static partial class User32
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool IsIconic(IntPtr hWnd);
 
+    // EnumWindowsProc: BOOL CALLBACK (HWND, LPARAM). 4바이트 BOOL이므로 int 리턴.
+    // NativeAOT 권장 패턴: delegate* unmanaged + [UnmanagedCallersOnly] 콜백.
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static unsafe partial bool EnumWindows(
+        delegate* unmanaged<IntPtr, IntPtr, int> lpEnumFunc, IntPtr lParam);
+
     // === 좌표 변환 ===
 
     [LibraryImport("user32.dll")]

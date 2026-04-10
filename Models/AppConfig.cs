@@ -108,6 +108,10 @@ internal sealed record AppConfig
     // 값이 있으면 Corner anchor + delta로 포그라운드 모니터 work area 기준 위치 계산.
     public DefaultPositionConfig? DefaultIndicatorPosition { get; init; } = null;
 
+    // [인디케이터 위치 -- 드래그 중 창 엣지 스냅]
+    // true = 드래그 중 가시 창의 엣지와 모니터 work area 엣지에 자석처럼 붙음.
+    public bool SnapToWindows { get; init; } = true;
+
     // [고급]
     public AdvancedConfig Advanced { get; init; } = new();
 

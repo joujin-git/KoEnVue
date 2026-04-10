@@ -27,6 +27,17 @@ internal static class DefaultConfig
     /// </summary>
     public const int DefaultIndicatorOffsetY = 10;
 
+    /// <summary>
+    /// 드래그 중 창 엣지 스냅 임계값 (DPI 스케일링 전 px).
+    /// 인디케이터 엣지와 타겟 엣지의 거리가 이 값 이하면 스냅.
+    /// </summary>
+    public const int SnapThresholdPx = 10;
+
+    /// <summary>
+    /// 스냅 후보 창의 최소 크기 필터 (DPI 스케일링 전 px). 너무 작은 창(툴팁, 팝업 등) 제외.
+    /// </summary>
+    public const int SnapMinWindowSizePx = 80;
+
     // === 애니메이션 타이밍 (ms) ===
 
     /// <summary>페이드인 지속 시간</summary>

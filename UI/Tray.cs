@@ -41,6 +41,7 @@ internal static class Tray
     // 메인 메뉴
     private const int IDM_STARTUP         = 4001;
     private const int IDM_CLEANUP         = 4003;
+    private const int IDM_SNAP_TO_WINDOWS = 4004;
     private const int IDM_EXIT            = 4002;
 
     // schtasks 작업 이름
@@ -225,6 +226,8 @@ internal static class Tray
         IntPtr hMenu = User32.CreatePopupMenu();
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hOpacityMenu, I18n.MenuOpacity);
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hSizeMenu, I18n.MenuSize);
+        uint snapFlags = config.SnapToWindows ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
+        User32.AppendMenuW(hMenu, snapFlags, (nuint)IDM_SNAP_TO_WINDOWS, I18n.MenuSnapToWindows);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
 
         bool isStartup = IsStartupRegistered();
@@ -307,6 +310,12 @@ internal static class Tray
             case IDM_DEFAULT_POS_RESET:
                 updateConfig(config with { DefaultIndicatorPosition = null });
                 Logger.Info("Default indicator position reset to hardcoded fallback");
+                break;
+
+            // --- 창에 자석처럼 붙이기 토글 ---
+            case IDM_SNAP_TO_WINDOWS:
+                updateConfig(config with { SnapToWindows = !config.SnapToWindows });
+                Logger.Info($"SnapToWindows toggled: {!config.SnapToWindows}");
                 break;
 
             // --- 미사용 위치 데이터 정리 ---

@@ -61,6 +61,7 @@ internal static class I18n
     public static string MenuDefaultPosition => _isKorean ? "기본 위치" : "Default Position";
     public static string MenuDefaultPosSetCurrent => _isKorean ? "현재 위치로 설정" : "Set to Current Position";
     public static string MenuDefaultPosReset => _isKorean ? "초기화" : "Reset";
+    public static string MenuSnapToWindows => _isKorean ? "창에 자석처럼 붙이기" : "Snap to Windows";
     public static string MenuCleanup => _isKorean ? "미사용 위치 데이터 정리" : "Clean unused position data";
     public static string MenuExit => _isKorean ? "종료" : "Exit";
 

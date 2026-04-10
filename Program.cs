@@ -330,7 +330,7 @@ internal static class Program
 
             case Win32Constants.WM_ENTERSIZEMOVE:
                 if (hwnd == _hwndOverlay)
-                    Overlay.BeginDrag();
+                    Overlay.BeginDrag(_config);
                 return IntPtr.Zero;
 
             case Win32Constants.WM_EXITSIZEMOVE:
