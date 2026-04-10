@@ -87,7 +87,7 @@ internal static class Tray
         nid.cbSize = (uint)sizeof(NOTIFYICONDATAW);
         nid.hWnd = hwndMain;
         nid.uFlags = Win32Constants.NIF_MESSAGE | Win32Constants.NIF_ICON
-                   | Win32Constants.NIF_TIP | Win32Constants.NIF_GUID;
+                   | Win32Constants.NIF_TIP | Win32Constants.NIF_SHOWTIP | Win32Constants.NIF_GUID;
         nid.uCallbackMessage = AppMessages.WM_TRAY_CALLBACK;
         nid.hIcon = _currentIcon.DangerousGetHandle();
         nid.guidItem = DefaultConfig.AppGuid;
@@ -117,7 +117,8 @@ internal static class Tray
         NOTIFYICONDATAW nid = default;
         nid.cbSize = (uint)sizeof(NOTIFYICONDATAW);
         nid.hWnd = _hwndMain;
-        nid.uFlags = Win32Constants.NIF_ICON | Win32Constants.NIF_TIP | Win32Constants.NIF_GUID;
+        nid.uFlags = Win32Constants.NIF_ICON | Win32Constants.NIF_TIP
+                   | Win32Constants.NIF_SHOWTIP | Win32Constants.NIF_GUID;
         nid.hIcon = newIcon.DangerousGetHandle();
         nid.guidItem = DefaultConfig.AppGuid;
 

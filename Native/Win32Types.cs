@@ -325,6 +325,8 @@ internal static class Win32Constants
     public const uint NIF_ICON           = 0x00000002;
     public const uint NIF_TIP            = 0x00000004;
     public const uint NIF_GUID           = 0x00000020;
+    // NOTIFYICON_VERSION_4는 기본적으로 표준 툴팁을 억제한다. szTip을 계속 보이려면 NIF_SHOWTIP 필요.
+    public const uint NIF_SHOWTIP        = 0x00000080;
     public const uint NOTIFYICON_VERSION_4 = 4;
 
     // --- 표준 Win32 메시지 ---
