@@ -281,4 +281,19 @@ internal static partial class User32
     // DrawTextW는 user32.dll 소속 (gdi32.dll 아님!)
     [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
     internal static partial int DrawTextW(IntPtr hdc, string lpchText, int cchText, ref RECT lprc, uint format);
+
+    // === 스크롤바 ===
+
+    [LibraryImport("user32.dll")]
+    internal static partial int SetScrollInfo(IntPtr hwnd, int nBar, ref SCROLLINFO lpsi,
+        [MarshalAs(UnmanagedType.Bool)] bool redraw);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool GetScrollInfo(IntPtr hwnd, int nBar, ref SCROLLINFO lpsi);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool InvalidateRect(IntPtr hWnd, IntPtr lpRect,
+        [MarshalAs(UnmanagedType.Bool)] bool bErase);
 }

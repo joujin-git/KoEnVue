@@ -42,6 +42,7 @@ internal static class Tray
     private const int IDM_STARTUP         = 4001;
     private const int IDM_CLEANUP         = 4003;
     private const int IDM_SNAP_TO_WINDOWS = 4004;
+    private const int IDM_SETTINGS        = 4005;
     private const int IDM_EXIT            = 4002;
 
     // schtasks 작업 이름
@@ -238,6 +239,8 @@ internal static class Tray
             (nuint)(nint)hDefaultPosMenu, I18n.MenuDefaultPosition);
         User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_CLEANUP, I18n.MenuCleanup);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_SETTINGS, I18n.MenuSettings);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
         User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_EXIT, I18n.MenuExit);
 
         // --- 표시 (워크어라운드 적용) ---
@@ -321,6 +324,11 @@ internal static class Tray
             // --- 미사용 위치 데이터 정리 ---
             case IDM_CLEANUP:
                 CleanupUnusedPositions(config, updateConfig);
+                break;
+
+            // --- 상세 설정 ---
+            case IDM_SETTINGS:
+                SettingsDialog.Show(hwndMain, config, updateConfig);
                 break;
 
             // --- 종료 ---

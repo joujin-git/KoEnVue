@@ -161,6 +161,18 @@ internal struct HIGHCONTRAST
     public IntPtr lpszDefaultScheme;
 }
 
+[StructLayout(LayoutKind.Sequential)]
+internal struct SCROLLINFO
+{
+    public uint cbSize;
+    public uint fMask;
+    public int nMin;
+    public int nMax;
+    public uint nPage;
+    public int nPos;
+    public int nTrackPos;
+}
+
 /// <summary>
 /// WM_GETTITLEBARINFOEX 응답 구조체.
 /// rgstate[6] + rgrect[6]: [0]=타이틀바, [1]=예약, [2]=최소화, [3]=최대화, [4]=도움말, [5]=닫기
@@ -408,6 +420,40 @@ internal static class Win32Constants
 
     // --- 정적 컨트롤 스타일 ---
     public const uint SS_ETCHEDHORZ       = 0x0010;
+
+    // --- 스크롤바 ---
+    public const uint WS_VSCROLL          = 0x00200000;
+    public const int  SB_HORZ             = 0;
+    public const int  SB_VERT             = 1;
+    public const uint SIF_RANGE           = 0x0001;
+    public const uint SIF_PAGE            = 0x0002;
+    public const uint SIF_POS             = 0x0004;
+    public const uint SIF_TRACKPOS        = 0x0010;
+    public const uint SIF_ALL             = 0x0017;
+    public const uint WM_VSCROLL          = 0x0115;
+    public const uint WM_MOUSEWHEEL       = 0x020A;
+    public const int  SB_LINEUP           = 0;
+    public const int  SB_LINEDOWN         = 1;
+    public const int  SB_PAGEUP           = 2;
+    public const int  SB_PAGEDOWN         = 3;
+    public const int  SB_THUMBPOSITION    = 4;
+    public const int  SB_THUMBTRACK       = 5;
+    public const int  SB_TOP              = 6;
+    public const int  SB_BOTTOM           = 7;
+    public const int  SB_ENDSCROLL        = 8;
+    public const int  WHEEL_DELTA         = 120;
+
+    // --- 콤보박스 ---
+    public const uint CBS_DROPDOWNLIST    = 0x0003;
+    public const uint CBS_HASSTRINGS      = 0x0200;
+    public const uint CB_ADDSTRING        = 0x0143;
+    public const uint CB_GETCURSEL        = 0x0147;
+    public const uint CB_SETCURSEL        = 0x014E;
+    public const uint CB_RESETCONTENT     = 0x014B;
+
+    // --- SetWindowPos 추가 플래그 ---
+    public const uint SWP_NOZORDER        = 0x0004;
+    public const uint SWP_NOREDRAW        = 0x0008;
 
     // --- UIA ---
     public const int UIA_TextPattern2Id   = 10024;

@@ -63,7 +63,28 @@ internal static class I18n
     public static string MenuDefaultPosReset => _isKorean ? "초기화" : "Reset";
     public static string MenuSnapToWindows => _isKorean ? "창에 자석처럼 붙이기" : "Snap to Windows";
     public static string MenuCleanup => _isKorean ? "미사용 위치 데이터 정리" : "Clean unused position data";
+    public static string MenuSettings => _isKorean ? "상세 설정" : "Settings";
     public static string MenuExit => _isKorean ? "종료" : "Exit";
+
+    // ================================================================
+    // 상세 설정 대화상자
+    // ================================================================
+
+    public static string SettingsDialogTitle => _isKorean ? "상세 설정" : "Settings";
+    public static string SettingsDialogDescription =>
+        _isKorean
+            ? "설정을 변경한 후 '확인'을 눌러 적용하세요."
+            : "Change settings and click 'OK' to apply.";
+
+    /// <summary>필드 이름과 원본 텍스트를 받아 오류 메시지 형식 문자열을 반환.</summary>
+    public static string SettingsInvalidNumberFmt =>
+        _isKorean ? "{0}: 올바른 숫자가 아닙니다." : "{0}: Invalid number.";
+    public static string SettingsOutOfRangeFmt =>
+        _isKorean ? "{0}: {1}에서 {2} 사이 값이어야 합니다." : "{0}: Must be between {1} and {2}.";
+    public static string SettingsInvalidColorFmt =>
+        _isKorean ? "{0}: #RRGGBB 형식이어야 합니다." : "{0}: Must be in #RRGGBB format.";
+    public static string SettingsEmptyNotAllowedFmt =>
+        _isKorean ? "{0}: 비워둘 수 없습니다." : "{0}: Cannot be empty.";
 
     /// <summary>크기 배율 서브메뉴 항목 라벨 (1x~5x).</summary>
     public static string GetSizeLabel(int scale) => _isKorean ? $"{scale}배" : $"{scale}x";

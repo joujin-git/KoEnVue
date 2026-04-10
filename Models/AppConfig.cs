@@ -11,7 +11,7 @@ internal sealed record AppConfig
 {
     // [표시 모드]
     public DisplayMode DisplayMode { get; init; } = DisplayMode.Always;
-    public int EventDisplayDurationMs { get; init; } = 1500;
+    public int EventDisplayDurationMs { get; init; } = 2000;
     public int AlwaysIdleTimeoutMs { get; init; } = 3000;
     public EventTriggersConfig EventTriggers { get; init; } = new();
 
@@ -90,9 +90,9 @@ internal sealed record AppConfig
     public bool StartupWithWindows { get; init; } = false;
     public bool StartupMinimized { get; init; } = true;
     public bool SingleInstance { get; init; } = true;
-    public LogLevel LogLevel { get; init; } = LogLevel.Warning;
-    public string Language { get; init; } = "ko";
-    public bool LogToFile { get; init; } = false;
+    public LogLevel LogLevel { get; init; } = LogLevel.Info;
+    public string Language { get; init; } = "auto";
+    public bool LogToFile { get; init; } = true;
     public string LogFilePath { get; init; } = "";
     public int LogMaxSizeMb { get; init; } = 10;
 
