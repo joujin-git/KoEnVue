@@ -320,8 +320,11 @@ internal static class Program
                 if (hwnd == _hwndOverlay)
                 {
                     RECT movingRect = Marshal.PtrToStructure<RECT>(lParam);
-                    Overlay.HandleDragDpiChange(movingRect.Left, movingRect.Top,
-                        _lastImeState, _config);
+                    if (Overlay.HandleMoving(ref movingRect, _lastImeState, _config))
+                    {
+                        Marshal.StructureToPtr(movingRect, lParam, false);
+                        return (IntPtr)1;
+                    }
                 }
                 return IntPtr.Zero;
 

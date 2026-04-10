@@ -53,6 +53,8 @@ internal static class Overlay
 
     // 드래그 상태
     private static bool _isDragging;
+    private static int _dragStartX;
+    private static int _dragStartY;
 
     // ================================================================
     // 초기화 / 해제
@@ -172,14 +174,61 @@ internal static class Overlay
         EnsureResources(config);
     }
 
-    /// <summary>드래그 시작 (WM_ENTERSIZEMOVE). UpdateOverlay 억제.</summary>
-    public static void BeginDrag() => _isDragging = true;
+    /// <summary>드래그 시작 (WM_ENTERSIZEMOVE). UpdateOverlay 억제 + Shift 축 잠금용 시작 좌표 캐치.</summary>
+    public static void BeginDrag()
+    {
+        _isDragging = true;
+        if (_hwndOverlay != IntPtr.Zero)
+        {
+            User32.GetWindowRect(_hwndOverlay, out RECT rc);
+            _dragStartX = rc.Left;
+            _dragStartY = rc.Top;
+        }
+    }
+
+    /// <summary>
+    /// WM_MOVING 핸들러. Shift 키가 눌려 있으면 시작 좌표 기준 우세한 축으로 잠금,
+    /// 그 다음 제약된 좌표로 DPI 재계산. rect를 수정했으면 true를 리턴해
+    /// 호출자가 lParam에 되돌려쓰도록 한다. w/h는 드래그 루프 내부 상태 일관성을 위해 보존.
+    /// </summary>
+    public static bool HandleMoving(ref RECT movingRect, ImeState state, AppConfig config)
+    {
+        if (!_isDragging) return false;
+
+        bool modified = false;
+
+        if ((User32.GetAsyncKeyState(Win32Constants.VK_SHIFT) & 0x8000) != 0)
+        {
+            int dx = movingRect.Left - _dragStartX;
+            int dy = movingRect.Top - _dragStartY;
+            int w = movingRect.Right - movingRect.Left;
+            int h = movingRect.Bottom - movingRect.Top;
+
+            if (Math.Abs(dx) >= Math.Abs(dy))
+            {
+                // 가로 축 우세 → Y 잠금
+                movingRect.Top = _dragStartY;
+                movingRect.Bottom = _dragStartY + h;
+            }
+            else
+            {
+                // 세로 축 우세 → X 잠금
+                movingRect.Left = _dragStartX;
+                movingRect.Right = _dragStartX + w;
+            }
+            modified = true;
+        }
+
+        HandleDragDpiChange(movingRect.Left, movingRect.Top, state, config);
+
+        return modified;
+    }
 
     /// <summary>
     /// 드래그 중 모니터 변경 시 DPI 재계산 + 리렌더 (WM_MOVING).
     /// 시스템 이동 루프가 위치를 제어하므로 제안 위치 기준으로 모니터 판별.
     /// </summary>
-    public static void HandleDragDpiChange(int x, int y, ImeState state, AppConfig config)
+    private static void HandleDragDpiChange(int x, int y, ImeState state, AppConfig config)
     {
         if (!_isDragging) return;
 
