@@ -22,6 +22,10 @@ internal static class Tray
     private const int IDM_OPACITY_NORMAL  = 3002;
     private const int IDM_OPACITY_LOW     = 3003;
 
+    // 서브메뉴: 기본 위치
+    private const int IDM_DEFAULT_POS_SET_CURRENT = 3101;
+    private const int IDM_DEFAULT_POS_RESET       = 3102;
+
     // 메인 메뉴
     private const int IDM_STARTUP         = 4001;
     private const int IDM_CLEANUP         = 4003;
@@ -162,6 +166,15 @@ internal static class Tray
                     opacityCheckId, Win32Constants.MF_BYCOMMAND);
         }
 
+        // --- 서브메뉴: 기본 위치 ---
+        IntPtr hDefaultPosMenu = User32.CreatePopupMenu();
+        User32.AppendMenuW(hDefaultPosMenu, Win32Constants.MF_STRING,
+            (nuint)IDM_DEFAULT_POS_SET_CURRENT, I18n.MenuDefaultPosSetCurrent);
+        uint resetFlags = Win32Constants.MF_STRING
+            | (config.DefaultIndicatorPosition is null ? Win32Constants.MF_GRAYED : 0);
+        User32.AppendMenuW(hDefaultPosMenu, resetFlags,
+            (nuint)IDM_DEFAULT_POS_RESET, I18n.MenuDefaultPosReset);
+
         // --- 메인 메뉴 ---
         IntPtr hMenu = User32.CreatePopupMenu();
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hOpacityMenu, I18n.MenuOpacity);
@@ -171,6 +184,8 @@ internal static class Tray
         User32.AppendMenuW(hMenu, isStartup ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED,
             (nuint)IDM_STARTUP, I18n.MenuStartup);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
+            (nuint)(nint)hDefaultPosMenu, I18n.MenuDefaultPosition);
         User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_CLEANUP, I18n.MenuCleanup);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
         User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_EXIT, I18n.MenuExit);
@@ -214,6 +229,17 @@ internal static class Tray
                 ToggleStartupRegistration();
                 break;
 
+            // --- 기본 위치: 현재 위치로 설정 ---
+            case IDM_DEFAULT_POS_SET_CURRENT:
+                SetDefaultPositionToCurrent(config, updateConfig);
+                break;
+
+            // --- 기본 위치: 초기화 ---
+            case IDM_DEFAULT_POS_RESET:
+                updateConfig(config with { DefaultIndicatorPosition = null });
+                Logger.Info("Default indicator position reset to hardcoded fallback");
+                break;
+
             // --- 미사용 위치 데이터 정리 ---
             case IDM_CLEANUP:
                 CleanupUnusedPositions(config, updateConfig);
@@ -224,6 +250,32 @@ internal static class Tray
                 User32.PostQuitMessage(0);
                 break;
         }
+    }
+
+    // ================================================================
+    // Private — 기본 위치 설정
+    // ================================================================
+
+    /// <summary>
+    /// 현재 인디케이터 위치를 가장 가까운 work area 모서리 기준으로 환산하여
+    /// config.DefaultIndicatorPosition에 저장한다. 인디가 한 번도 표시된 적이 없으면 경고.
+    /// </summary>
+    private static void SetDefaultPositionToCurrent(AppConfig config, Action<AppConfig> updateConfig)
+    {
+        DefaultPositionConfig? anchor = Overlay.ComputeAnchorFromCurrentPosition();
+        if (anchor is null)
+        {
+            User32.MessageBoxW(_hwndMain,
+                I18n.IsKorean
+                    ? "인디케이터 위치를 확인할 수 없습니다. 잠시 후 다시 시도하세요."
+                    : "Cannot determine current indicator position. Please try again shortly.",
+                "KoEnVue", 0);
+            return;
+        }
+
+        updateConfig(config with { DefaultIndicatorPosition = anchor });
+        Logger.Info($"Default indicator position saved: corner={anchor.Corner}, "
+                  + $"delta=({anchor.DeltaX}, {anchor.DeltaY})");
     }
 
     // ================================================================

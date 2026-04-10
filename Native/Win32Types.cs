@@ -341,6 +341,7 @@ internal static class Win32Constants
     public const uint MF_POPUP           = 0x0010;
     public const uint MF_CHECKED         = 0x0008;
     public const uint MF_UNCHECKED       = 0x0000;
+    public const uint MF_GRAYED          = 0x0001;
     public const uint MF_BYCOMMAND       = 0x0000;
     public const uint MF_BYPOSITION      = 0x0400;
     public const uint TPM_BOTTOMALIGN    = 0x0020;

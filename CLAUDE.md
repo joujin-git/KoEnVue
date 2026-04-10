@@ -36,7 +36,7 @@ Detection thread (BG):  80ms polling → PostMessage to main
 1. Indicator is a separate TOPMOST window, not tied to any foreground window's geometry
 2. User drags the indicator to preferred position → saved to both runtime hwnd dict and `config.json` (`indicator_positions`)
 3. On foreground change → lookup order: runtime hwnd position → config process name position → default position
-4. Default position (no saved position): foreground window's monitor work area top-right (multi-monitor aware)
+4. Default position (no saved position): config `default_indicator_position` (Corner anchor + delta) if set, else hardcoded fallback `workArea.Right + DefaultIndicatorOffsetX (-200), workArea.Top + DefaultIndicatorOffsetY (10)`. Both compute from the foreground window's monitor work area (multi-monitor aware)
 5. Runtime hwnd positions enable per-window distinction (e.g., multiple Notepad/Chrome windows), lost on restart
 6. Config process name positions persist across sessions as fallback
 
@@ -54,7 +54,7 @@ GDI-based: DIB section + RoundRect + DrawTextW + premultiplied alpha + UpdateLay
 ```
 KoEnVue/
 ├── Native/      P/Invoke (one file per DLL: User32, Imm32, Shell32, Gdi32, Kernel32, Shcore, Ole32, OleAut32, Dwmapi) + Win32Types.cs + SafeGdiHandles.cs + AppMessages.cs + VirtualDesktop.cs
-├── Models/      AppConfig (record) + enums (DisplayMode, DetectionMethod, ImeState, FontWeight, Theme, NonKoreanImeMode, AppProfileMatch, AppFilterMode, TrayIconStyle, TrayClickAction, LogLevel)
+├── Models/      AppConfig (record) + enums (DisplayMode, DetectionMethod, ImeState, FontWeight, Theme, NonKoreanImeMode, AppProfileMatch, AppFilterMode, TrayIconStyle, TrayClickAction, LogLevel, Corner)
 ├── Detector/    ImeStatus (IME state detection + WinEvent hook), SystemFilter (7-condition hide logic)
 ├── UI/          Overlay (GDI rendering + floating positioning), Animation (WM_TIMER state machine), Tray (system tray + schtasks + cleanup dialog), TrayIcon (GDI icon)
 ├── Config/      DefaultConfig, Settings (load/save/validate/migrate/hot-reload/app-profiles), ThemePresets (6 themes)
@@ -111,7 +111,8 @@ csproj has `NoWarn: SYSLIB1051` (.NET 10 LibraryImport IntPtr diagnostic suppres
 - **Position update ordering**: Detection loop sends `WM_POSITION_UPDATED` before `WM_IME_STATE_CHANGED`/`WM_FOCUS_CHANGED` to ensure `_lastForegroundHwnd` is current when handlers run
 - **Tray WM_CONTEXTMENU**: `NOTIFYICON_VERSION_4` requires `WM_CONTEXTMENU` (not `WM_RBUTTONUP`) for right-click menu — shell grants foreground activation on `WM_CONTEXTMENU`
 - **Always mode default**: `DisplayMode.Always` — indicator always visible (bright on events, dim at idle). `OnEvent` available via config
-- **Multi-monitor default position**: `GetDefaultPosition(hwndForeground)` uses `MonitorFromWindow(hwndForeground)` to place default position on the foreground app's monitor, not the overlay's current monitor
+- **Multi-monitor default position**: `GetDefaultPosition(hwndForeground, processName, config)` uses `MonitorFromWindow(hwndForeground)` to place default position on the foreground app's monitor, not the overlay's current monitor
+- **Customizable default indicator position**: `config.DefaultIndicatorPosition` (nullable `DefaultPositionConfig` record with `Corner` + `DeltaX` + `DeltaY`) stores a user-customizable default for apps without a saved position. `GetDefaultPosition` resolves the anchor against the foreground monitor's work area via `ResolveAnchor`, falling back to `DefaultConfig.DefaultIndicatorOffset{X,Y}` (hardcoded top-right) when null. Multi-monitor/resolution-stable because offsets are stored relative to a Corner, not as absolute coordinates. Tray menu "기본 위치 → 현재 위치로 설정" calls `Overlay.ComputeAnchorFromCurrentPosition()` which picks the nearest corner by Manhattan distance from `_lastX, _lastY` and computes the offset — user never has to think about corner selection. "초기화" sets the field back to null (grayed when already null). System input processes bypass this entirely — their special rule (`frame.Top - labelH - gap`) remains unchanged. `Corner` enum uses `[JsonStringEnumMemberName]` for snake_case JSON (`top_left`, `top_right`, `bottom_left`, `bottom_right`)
 - **DPI change in Show()**: Compares new DPI with `_currentDpiScale` — on mismatch, resets `_fixedLabelWidth`, DIB size, and font cache before `EnsureResources`. Fixes first-render-small-then-normal issue (Initialize at 1.0x → first Show at 1.5x)
 - **WM_MOVING drag DPI**: `HandleDragDpiChange` detects monitor boundary crossing during drag, re-creates resources at new DPI, and calls `UpdateLayeredWindow` directly (bypassing `_isDragging` guard)
 - **Deferred lastHwndForeground**: Detection loop only updates `lastHwndForeground` after `ShouldHide` passes. If filtered (e.g., transient condition), next poll retries the foreground change

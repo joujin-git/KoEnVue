@@ -447,7 +447,7 @@ internal static class Program
     {
         // 시스템 입력 프로세스: 저장 위치 우회
         if (DefaultConfig.IsSystemInputProcess(_currentProcessName))
-            return Overlay.GetDefaultPosition(_lastForegroundHwnd, _currentProcessName);
+            return Overlay.GetDefaultPosition(_lastForegroundHwnd, _currentProcessName, _config);
 
         // 1. 런타임 hwnd별 위치 (세션 내 창별 구분)
         if (_lastForegroundHwnd != IntPtr.Zero
@@ -462,8 +462,8 @@ internal static class Program
         {
             return (pos[0], pos[1]);
         }
-        // 3. 기본 위치 (포그라운드 창 모니터 기준)
-        return Overlay.GetDefaultPosition(_lastForegroundHwnd, _currentProcessName);
+        // 3. 기본 위치 (포그라운드 창 모니터 기준, config 기본 위치 적용)
+        return Overlay.GetDefaultPosition(_lastForegroundHwnd, _currentProcessName, _config);
     }
 
     private static void HandleConfigChanged()

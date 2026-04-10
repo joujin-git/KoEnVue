@@ -15,6 +15,18 @@ internal static class DefaultConfig
     /// <summary>label 텍스트 좌우 패딩</summary>
     public const int LABEL_PADDING_X = 4;
 
+    /// <summary>
+    /// 저장 위치가 없는 앱의 기본 인디케이터 위치 — work area TopRight 모서리 기준 X 오프셋.
+    /// 음수 = 모서리에서 왼쪽으로. AppConfig.DefaultIndicatorPosition이 null일 때 폴백.
+    /// </summary>
+    public const int DefaultIndicatorOffsetX = -200;
+
+    /// <summary>
+    /// 저장 위치가 없는 앱의 기본 인디케이터 위치 — work area Top 모서리 기준 Y 오프셋.
+    /// 양수 = 모서리에서 아래로. AppConfig.DefaultIndicatorPosition이 null일 때 폴백.
+    /// </summary>
+    public const int DefaultIndicatorOffsetY = 10;
+
     // === 애니메이션 타이밍 (ms) ===
 
     /// <summary>페이드인 지속 시간</summary>

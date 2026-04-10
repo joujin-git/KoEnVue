@@ -234,11 +234,13 @@ internal static class Overlay
 
     /// <summary>
     /// 앱별 저장 위치가 없을 때 기본 위치.
-    /// - 일반 프로세스: 포그라운드 창이 있는 모니터 우상단.
     /// - 시스템 입력 프로세스(시작 메뉴, 검색 창): 포그라운드 창의 시각적 왼쪽 위 모서리 바로 위쪽.
     ///   창 rect는 DWM extended frame bounds로 받아 invisible resize border를 배제한다.
+    ///   config.DefaultIndicatorPosition은 이 분기에 적용되지 않음.
+    /// - 일반 프로세스: config.DefaultIndicatorPosition이 있으면 해당 모서리 anchor + delta로 계산,
+    ///   없으면 DefaultConfig.DefaultIndicatorOffset* 폴백(work area 우상단 근처).
     /// </summary>
-    public static (int x, int y) GetDefaultPosition(IntPtr hwndForeground, string processName)
+    public static (int x, int y) GetDefaultPosition(IntPtr hwndForeground, string processName, AppConfig config)
     {
         IntPtr hMonitor = (hwndForeground != IntPtr.Zero)
             ? User32.MonitorFromWindow(hwndForeground, Win32Constants.MONITOR_DEFAULTTOPRIMARY)
@@ -256,9 +258,70 @@ internal static class Overlay
             return (x, y);
         }
 
-        int defaultX = workArea.Right - 200;
-        int defaultY = workArea.Top + 10;
-        return (defaultX, defaultY);
+        if (config.DefaultIndicatorPosition is { } anchor)
+            return ResolveAnchor(workArea, anchor);
+
+        return (workArea.Right + DefaultConfig.DefaultIndicatorOffsetX,
+                workArea.Top   + DefaultConfig.DefaultIndicatorOffsetY);
+    }
+
+    /// <summary>
+    /// Corner anchor + delta를 work area 기준 절대 좌표로 변환.
+    /// </summary>
+    private static (int x, int y) ResolveAnchor(RECT workArea, DefaultPositionConfig anchor)
+    {
+        int x = anchor.Corner is Corner.TopLeft or Corner.BottomLeft
+            ? workArea.Left + anchor.DeltaX
+            : workArea.Right + anchor.DeltaX;
+        int y = anchor.Corner is Corner.TopLeft or Corner.TopRight
+            ? workArea.Top + anchor.DeltaY
+            : workArea.Bottom + anchor.DeltaY;
+        return (x, y);
+    }
+
+    /// <summary>
+    /// 현재 인디 위치(`_lastX, _lastY`)에서 가장 가까운 모서리를 찾아
+    /// DefaultPositionConfig로 환산. 트레이 "기본 위치 → 현재 위치로 설정"에서 호출.
+    /// 모니터는 현재 위치 기준으로 판정하므로 사용자가 멀티모니터 중 어느 화면에
+    /// 인디를 뒀든 해당 화면의 work area가 anchor 기준이 된다.
+    /// 인디가 한 번도 표시된 적이 없어 좌표가 (0,0)이면 null.
+    /// </summary>
+    public static DefaultPositionConfig? ComputeAnchorFromCurrentPosition()
+    {
+        if (_lastX == 0 && _lastY == 0)
+            return null;
+
+        POINT pt = new(_lastX, _lastY);
+        IntPtr hMonitor = User32.MonitorFromPoint(pt, Win32Constants.MONITOR_DEFAULTTONEAREST);
+        RECT workArea = DpiHelper.GetWorkArea(hMonitor);
+
+        // 4개 모서리까지의 맨해튼 거리를 각각 계산하여 최소값 선택.
+        (Corner corner, int dx, int dy) best = (Corner.TopRight, 0, 0);
+        long bestDist = long.MaxValue;
+
+        void Consider(Corner c, int ax, int ay)
+        {
+            int dx = _lastX - ax;
+            int dy = _lastY - ay;
+            long dist = Math.Abs((long)dx) + Math.Abs((long)dy);
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                best = (c, dx, dy);
+            }
+        }
+
+        Consider(Corner.TopLeft,     workArea.Left,  workArea.Top);
+        Consider(Corner.TopRight,    workArea.Right, workArea.Top);
+        Consider(Corner.BottomLeft,  workArea.Left,  workArea.Bottom);
+        Consider(Corner.BottomRight, workArea.Right, workArea.Bottom);
+
+        return new DefaultPositionConfig
+        {
+            Corner = best.corner,
+            DeltaX = best.dx,
+            DeltaY = best.dy,
+        };
     }
 
     /// <summary>SetWindowPos HWND_TOPMOST 재적용.</summary>
