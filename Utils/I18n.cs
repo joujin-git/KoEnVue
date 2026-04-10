@@ -56,12 +56,45 @@ internal static class I18n
     // ================================================================
 
     public static string MenuOpacity => _isKorean ? "투명도" : "Opacity";
+    public static string MenuSize => _isKorean ? "크기" : "Size";
     public static string MenuStartup => _isKorean ? "시작 프로그램 등록" : "Start with Windows";
     public static string MenuDefaultPosition => _isKorean ? "기본 위치" : "Default Position";
     public static string MenuDefaultPosSetCurrent => _isKorean ? "현재 위치로 설정" : "Set to Current Position";
     public static string MenuDefaultPosReset => _isKorean ? "초기화" : "Reset";
     public static string MenuCleanup => _isKorean ? "미사용 위치 데이터 정리" : "Clean unused position data";
     public static string MenuExit => _isKorean ? "종료" : "Exit";
+
+    /// <summary>크기 배율 서브메뉴 항목 라벨 (1x~5x).</summary>
+    public static string GetSizeLabel(int scale) => _isKorean ? $"{scale}배" : $"{scale}x";
+
+    /// <summary>"직접 지정" 메뉴 항목 기본 라벨.</summary>
+    public static string MenuSizeCustom => _isKorean ? "직접 지정" : "Custom";
+
+    /// <summary>
+    /// 현재 배율이 비정수일 때 "직접 지정 (2.3배)" 형태로 현재 값을 노출.
+    /// 정수 값(2.0, 3.0 등)은 해당 정수 프리셋으로 체크되므로 이 메서드를 거치지 않는다.
+    /// </summary>
+    public static string FormatCustomScaleLabel(double scale) =>
+        _isKorean ? $"{MenuSizeCustom} ({scale:0.#}배)" : $"{MenuSizeCustom} ({scale:0.#}x)";
+
+    // ================================================================
+    // 직접 지정 대화상자
+    // ================================================================
+
+    public static string ScaleDialogTitle => _isKorean ? "크기 배율 직접 지정" : "Custom Indicator Scale";
+    public static string ScaleDialogPrompt => _isKorean ? "배율 (1.0 ~ 5.0):" : "Scale (1.0 ~ 5.0):";
+    public static string ScaleDialogHint =>
+        _isKorean ? "소수점 첫째 자리까지 입력할 수 있습니다." : "Up to one decimal place.";
+    public static string ScaleDialogOk => _isKorean ? "확인" : "OK";
+    public static string ScaleDialogCancel => _isKorean ? "취소" : "Cancel";
+    public static string ScaleDialogInvalidInput =>
+        _isKorean
+            ? "올바른 숫자가 아닙니다. 1.0에서 5.0 사이 값을 입력하세요."
+            : "Invalid number. Enter a value between 1.0 and 5.0.";
+    public static string ScaleDialogOutOfRange =>
+        _isKorean
+            ? "1.0에서 5.0 사이 값만 입력할 수 있습니다."
+            : "Value must be between 1.0 and 5.0.";
 
     // ================================================================
     // 포터블/설치 모드

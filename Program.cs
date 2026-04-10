@@ -531,6 +531,10 @@ internal static class Program
             {
                 _config = newConfig;
                 Overlay.HandleConfigChanged(_config);
+                // HandleConfigChanged는 리소스만 재생성하고 UpdateLayeredWindow를 호출하지 않으므로
+                // 인디가 가시 상태라면 새 크기/색상이 즉시 화면에 반영되도록 명시적 재렌더.
+                if (_indicatorVisible)
+                    Overlay.UpdateColor(_lastImeState, _config);
                 if (_config.TrayEnabled)
                     Tray.UpdateState(_lastImeState, _config);
                 Settings.Save(_config);

@@ -262,6 +262,7 @@ internal static class Settings
             LabelHeight = Math.Clamp(config.LabelHeight, 12, 96),
             LabelBorderRadius = Math.Clamp(config.LabelBorderRadius, 0, 48),
             BorderWidth = Math.Clamp(config.BorderWidth, 0, 8),
+            IndicatorScale = Math.Round(Math.Clamp(config.IndicatorScale, 1.0, 5.0), 1),
 
             // 시스템
             LogMaxSizeMb = Math.Clamp(config.LogMaxSizeMb, 1, 100),

@@ -22,6 +22,11 @@ internal sealed record AppConfig
     public int BorderWidth { get; init; } = 0;
     public string BorderColor { get; init; } = "#000000";
 
+    // [외관 -- 크기 배율] — LabelWidth/Height/FontSize/BorderRadius/BorderWidth + LABEL_PADDING_X에
+    // 곱해지는 배율. 트레이 메뉴에서 1.0~5.0 범위, 소수점 1자리까지 조절.
+    // DPI 스케일링과 독립적으로 적용된다.
+    public double IndicatorScale { get; init; } = 1.0;
+
     // [외관 -- 색상]
     public string HangulBg { get; init; } = "#16A34A";
     public string HangulFg { get; init; } = "#FFFFFF";

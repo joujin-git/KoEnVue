@@ -397,8 +397,10 @@ internal static class Overlay
 
     private static void EnsureResources(AppConfig config)
     {
-        _baseWidth = config.LabelWidth;
-        _baseHeight = config.LabelHeight;
+        // IndicatorScale은 DPI 스케일링 전 base 픽셀에 곱해지는 배율 (1.0~5.0, 0.1 단위).
+        double scale = config.IndicatorScale;
+        _baseWidth = (int)Math.Round(config.LabelWidth * scale);
+        _baseHeight = (int)Math.Round(config.LabelHeight * scale);
 
         int targetW = DpiHelper.Scale(_baseWidth, _currentDpiScale);
         int targetH = DpiHelper.Scale(_baseHeight, _currentDpiScale);
@@ -414,15 +416,18 @@ internal static class Overlay
 
     private static void EnsureFont(AppConfig config)
     {
+        // 캐시 키는 scale이 곱해진 최종 폰트 크기로 저장 — scale 변경 시 캐시 미스 유도.
+        int scaledFontSize = (int)Math.Round(config.FontSize * config.IndicatorScale);
+
         if (config.FontFamily == _cachedFontFamily
-            && config.FontSize == _cachedFontSize
+            && scaledFontSize == _cachedFontSize
             && config.FontWeight == _cachedFontWeight
             && Math.Abs(_currentDpiScale - _cachedFontDpiScale) < 0.001)
             return;
 
         _currentFont?.Dispose();
 
-        int fontHeight = -Kernel32.MulDiv(config.FontSize, (int)_currentDpiY, 72);
+        int fontHeight = -Kernel32.MulDiv(scaledFontSize, (int)_currentDpiY, 72);
         IntPtr hFont = Gdi32.CreateFontW(
             fontHeight, 0, 0, 0,
             config.FontWeight == FontWeight.Bold ? Win32Constants.FW_BOLD : Win32Constants.FW_NORMAL,
@@ -436,7 +441,7 @@ internal static class Overlay
 
         _currentFont = new SafeFontHandle(hFont, true);
         _cachedFontFamily = config.FontFamily;
-        _cachedFontSize = config.FontSize;
+        _cachedFontSize = scaledFontSize;
         _cachedFontWeight = config.FontWeight;
         _cachedFontDpiScale = _currentDpiScale;
     }
@@ -487,14 +492,15 @@ internal static class Overlay
 
         Gdi32.SelectObject(_memDC, oldFont);
 
-        int padding = 2 * DpiHelper.Scale(DefaultConfig.LABEL_PADDING_X, _currentDpiScale);
+        double scale = config.IndicatorScale;
+        int padding = 2 * DpiHelper.Scale((int)Math.Round(DefaultConfig.LABEL_PADDING_X * scale), _currentDpiScale);
         int calculated = maxTextWidth + padding;
-        int minWidth = DpiHelper.Scale(config.LabelWidth, _currentDpiScale);
+        int minWidth = DpiHelper.Scale((int)Math.Round(config.LabelWidth * scale), _currentDpiScale);
         _fixedLabelWidth = Math.Max(calculated, minWidth);
 
         if (_fixedLabelWidth != _currentWidth)
         {
-            int labelH = DpiHelper.Scale(config.LabelHeight, _currentDpiScale);
+            int labelH = DpiHelper.Scale((int)Math.Round(config.LabelHeight * scale), _currentDpiScale);
             EnsureDib(_fixedLabelWidth, labelH);
         }
     }
@@ -527,12 +533,13 @@ internal static class Overlay
 
         // 4. RoundedRect 배경
         IntPtr oldBrush = Gdi32.SelectObject(_memDC, hBrush);
-        int radius = DpiHelper.Scale(config.LabelBorderRadius, _currentDpiScale);
+        double scale = config.IndicatorScale;
+        int radius = DpiHelper.Scale((int)Math.Round(config.LabelBorderRadius * scale), _currentDpiScale);
         Gdi32.RoundRect(_memDC, 0, 0, w, h, radius, radius);
         Gdi32.SelectObject(_memDC, oldBrush);
 
         // 5. 테두리 (border_width > 0)
-        int borderW = DpiHelper.Scale(config.BorderWidth, _currentDpiScale);
+        int borderW = DpiHelper.Scale((int)Math.Round(config.BorderWidth * scale), _currentDpiScale);
         if (borderW > 0)
         {
             uint borderColor = ColorHelper.HexToColorRef(config.BorderColor);
@@ -543,7 +550,7 @@ internal static class Overlay
             IntPtr oldBorderBrush = Gdi32.SelectObject(_memDC, hNullBrush);
 
             int halfBorder = borderW / 2;
-            int borderRadius = DpiHelper.Scale(config.LabelBorderRadius, _currentDpiScale);
+            int borderRadius = DpiHelper.Scale((int)Math.Round(config.LabelBorderRadius * scale), _currentDpiScale);
             Gdi32.RoundRect(_memDC, halfBorder, halfBorder, w - halfBorder, h - halfBorder, borderRadius, borderRadius);
 
             Gdi32.SelectObject(_memDC, oldBorderBrush);

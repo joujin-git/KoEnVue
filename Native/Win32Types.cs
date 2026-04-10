@@ -212,10 +212,17 @@ internal static class Win32Constants
     // --- 버튼/체크박스 스타일 ---
     public const uint BS_AUTOCHECKBOX   = 0x00000003;
     public const uint BS_PUSHBUTTON     = 0x00000000;
+    public const uint BS_DEFPUSHBUTTON  = 0x00000001;
     public const uint BM_GETCHECK       = 0x00F0;
     public const uint BM_SETCHECK       = 0x00F1;
     public const nint BST_CHECKED       = 1;
     public const nint BST_UNCHECKED     = 0;
+
+    // --- Edit 컨트롤 ---
+    public const uint WS_BORDER         = 0x00800000;
+    public const uint ES_LEFT           = 0x0000;
+    public const uint ES_AUTOHSCROLL    = 0x0080;
+    public const uint EM_SETSEL         = 0x00B1;
 
     // --- 다이얼로그 표준 ID ---
     public const int IDOK               = 1;

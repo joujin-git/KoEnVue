@@ -252,6 +252,13 @@ internal static partial class User32
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool IsWindow(IntPtr hWnd);
 
+    [LibraryImport("user32.dll")]
+    internal static partial IntPtr SetFocus(IntPtr hWnd);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool IsDialogMessageW(IntPtr hDlg, ref MSG lpMsg);
+
     // === 아이콘 ===
 
     [LibraryImport("user32.dll")]
