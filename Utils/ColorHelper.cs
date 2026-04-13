@@ -65,4 +65,26 @@ internal static class ColorHelper
     /// </summary>
     public static string RgbToHex(byte r, byte g, byte b)
         => $"#{r:X2}{g:X2}{b:X2}";
+
+    /// <summary>
+    /// 입력된 16진 색상 문자열을 "#RRGGBB" 형식으로 정규화한다.
+    /// "#RRGGBB", "RRGGBB" 모두 허용, 결과는 대문자 + # 프리픽스.
+    /// </summary>
+    public static bool TryNormalizeHex(string input, out string normalized)
+    {
+        normalized = "";
+        if (string.IsNullOrWhiteSpace(input)) return false;
+        string s = input.Trim();
+        if (s.Length == 7 && s[0] == '#') s = s[1..];
+        else if (s.Length != 6) return false;
+        foreach (char c in s)
+        {
+            bool isHex = (c >= '0' && c <= '9')
+                || (c >= 'a' && c <= 'f')
+                || (c >= 'A' && c <= 'F');
+            if (!isHex) return false;
+        }
+        normalized = "#" + s.ToUpperInvariant();
+        return true;
+    }
 }
