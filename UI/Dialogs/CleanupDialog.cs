@@ -194,12 +194,13 @@ internal static class CleanupDialog
         User32.ShowWindow(_hwndDialog, Win32Constants.SW_SHOW);
 
         // 모달 메시지 루프
-        while (!_dlgClosed)
+        while (!_dlgClosed && User32.GetMessageW(out var msg, IntPtr.Zero, 0, 0) > 0)
         {
-            int ret = User32.GetMessageW(out MSG msg, IntPtr.Zero, 0, 0);
-            if (ret <= 0) break;
-            User32.TranslateMessage(ref msg);
-            User32.DispatchMessageW(ref msg);
+            if (!User32.IsDialogMessageW(_hwndDialog, ref msg))
+            {
+                User32.TranslateMessage(ref msg);
+                User32.DispatchMessageW(ref msg);
+            }
         }
 
         // 결과 수집
