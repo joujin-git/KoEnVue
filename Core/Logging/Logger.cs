@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
-using KoEnVue.App.Models;
 
 namespace KoEnVue.Core.Logging;
 
@@ -35,19 +34,21 @@ internal static class Logger
 
     /// <summary>
     /// 파일 로깅 초기화. 재초기화 안전 (기존 drain 스레드 종료 후 재시작).
-    /// config.LogToFile이 true이면 drain 스레드 시작, false이면 종료.
+    /// <paramref name="enabled"/>이 true이면 drain 스레드 시작, false이면 종료.
+    /// <paramref name="logFilePath"/>가 null 또는 빈 문자열이면
+    /// <c>AppContext.BaseDirectory\koenvue.log</c>로 폴백.
     /// </summary>
-    public static void Initialize(AppConfig config)
+    public static void Initialize(bool enabled, string? logFilePath, int maxSizeMb)
     {
         // 기존 drain 스레드 종료
         StopDrainThread();
 
-        if (!config.LogToFile) return;
+        if (!enabled) return;
 
-        _filePath = string.IsNullOrEmpty(config.LogFilePath)
+        _filePath = string.IsNullOrEmpty(logFilePath)
             ? Path.Combine(AppContext.BaseDirectory, "koenvue.log")
-            : config.LogFilePath;
-        _maxSizeBytes = config.LogMaxSizeMb * BytesPerMb;
+            : logFilePath;
+        _maxSizeBytes = maxSizeMb * BytesPerMb;
 
         try
         {

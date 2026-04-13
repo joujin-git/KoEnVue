@@ -82,7 +82,7 @@ internal static class Program
 
         // 4. 로거 + I18n 초기화
         Logger.SetLevel(_config.LogLevel);
-        Logger.Initialize(_config);
+        Logger.Initialize(_config.LogToFile, _config.LogFilePath, _config.LogMaxSizeMb);
 
         Logger.Debug($"Config: TrayEnabled={_config.TrayEnabled}, DisplayMode={_config.DisplayMode}, EventDisplayDurationMs={_config.EventDisplayDurationMs}, PollIntervalMs={_config.PollIntervalMs}");
         I18n.Load(_config.Language);
@@ -327,7 +327,8 @@ internal static class Program
                 if (hwnd == _hwndOverlay)
                 {
                     RECT movingRect = Marshal.PtrToStructure<RECT>(lParam);
-                    if (Overlay.HandleMoving(ref movingRect, _lastImeState, _config))
+                    if (Overlay.HandleMoving(ref movingRect, _lastImeState,
+                            _config.SnapToWindows, DefaultConfig.SnapThresholdPx))
                     {
                         Marshal.StructureToPtr(movingRect, lParam, false);
                         return (IntPtr)1;
@@ -337,7 +338,7 @@ internal static class Program
 
             case Win32Constants.WM_ENTERSIZEMOVE:
                 if (hwnd == _hwndOverlay)
-                    Overlay.BeginDrag(_config);
+                    Overlay.BeginDrag(_config.SnapToWindows);
                 return IntPtr.Zero;
 
             case Win32Constants.WM_EXITSIZEMOVE:
@@ -427,7 +428,7 @@ internal static class Program
         if (DefaultConfig.IsSystemInputProcess(_currentProcessName))
         {
             Logger.Debug($"Skip saving indicator position for system input process: {_currentProcessName}");
-            Overlay.Show(x, y, _lastImeState, _config);
+            Overlay.Show(x, y, _lastImeState);
             return;
         }
 
@@ -446,7 +447,7 @@ internal static class Program
             Logger.Debug($"Saved indicator position for {_currentProcessName}: ({x}, {y})");
         }
         // 새 위치의 모니터 DPI로 리소스 재생성
-        Overlay.Show(x, y, _lastImeState, _config);
+        Overlay.Show(x, y, _lastImeState);
     }
 
     /// <summary>
@@ -457,7 +458,7 @@ internal static class Program
     {
         // 시스템 입력 프로세스: 저장 위치 우회
         if (DefaultConfig.IsSystemInputProcess(_currentProcessName))
-            return Overlay.GetDefaultPosition(_lastForegroundHwnd, _currentProcessName, _config);
+            return Overlay.GetDefaultPosition(_lastForegroundHwnd, _currentProcessName);
 
         // 1. 런타임 hwnd별 위치 (세션 내 창별 구분)
         if (_lastForegroundHwnd != IntPtr.Zero
@@ -473,14 +474,14 @@ internal static class Program
             return (pos[0], pos[1]);
         }
         // 3. 기본 위치 (포그라운드 창 모니터 기준, config 기본 위치 적용)
-        return Overlay.GetDefaultPosition(_lastForegroundHwnd, _currentProcessName, _config);
+        return Overlay.GetDefaultPosition(_lastForegroundHwnd, _currentProcessName);
     }
 
     private static void HandleConfigChanged()
     {
         _config = Settings.Load();
         Logger.SetLevel(_config.LogLevel);
-        Logger.Initialize(_config);
+        Logger.Initialize(_config.LogToFile, _config.LogFilePath, _config.LogMaxSizeMb);
         I18n.Load(_config.Language);
         Settings.ClearProfileCache();
         Overlay.HandleConfigChanged(_config);
@@ -541,7 +542,7 @@ internal static class Program
                 // HandleConfigChanged는 리소스만 재생성하고 UpdateLayeredWindow를 호출하지 않으므로
                 // 인디가 가시 상태라면 새 크기/색상이 즉시 화면에 반영되도록 명시적 재렌더.
                 if (_indicatorVisible)
-                    Overlay.UpdateColor(_lastImeState, _config);
+                    Overlay.UpdateColor(_lastImeState);
                 if (_config.TrayEnabled)
                     Tray.UpdateState(_lastImeState, _config);
                 Settings.Save(_config);
@@ -560,13 +561,13 @@ internal static class Program
     private static void HandlePowerResume()
     {
         Logger.Info("Power resumed");
-        Overlay.HandleDpiChanged(_config);
+        Overlay.HandleDpiChanged();
     }
 
     private static void HandleDisplayChange()
     {
         Logger.Info("Display changed");
-        Overlay.HandleDpiChanged(_config);
+        Overlay.HandleDpiChanged();
 
         if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
         {
@@ -594,7 +595,7 @@ internal static class Program
     {
         // wParam: HIWORD=newDpiY, LOWORD=newDpiX
         // lParam: RECT* (새 DPI에 맞는 권장 크기/위치)
-        Overlay.HandleDpiChanged(_config);
+        Overlay.HandleDpiChanged();
     }
 
     // ================================================================

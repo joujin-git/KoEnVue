@@ -111,12 +111,12 @@ internal static class Animation
                 (uint)_holdDurationMs, IntPtr.Zero);
 
             var (prevX, prevY) = Overlay.GetLastPosition();
-            Overlay.Show(x, y, state, config);
+            Overlay.Show(x, y, state);
             TryStartSlide(prevX, prevY, config);
 
             if (imeChanged)
             {
-                Overlay.UpdateColor(state, config);
+                Overlay.UpdateColor(state);
                 if (config.ChangeHighlight)
                     StartHighlight(config);
             }
@@ -134,12 +134,12 @@ internal static class Animation
             User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
 
             var (prevX, prevY) = Overlay.GetLastPosition();
-            Overlay.Show(x, y, state, config);
+            Overlay.Show(x, y, state);
             TryStartSlide(prevX, prevY, config);
 
             if (imeChanged)
             {
-                Overlay.UpdateColor(state, config);
+                Overlay.UpdateColor(state);
                 if (config.ChangeHighlight)
                     StartHighlight(config);
             }
@@ -158,19 +158,19 @@ internal static class Animation
             User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_FADE, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
 
             var (prevX, prevY) = Overlay.GetLastPosition();
-            Overlay.Show(x, y, state, config);
+            Overlay.Show(x, y, state);
             TryStartSlide(prevX, prevY, config);
 
             if (imeChanged)
             {
-                Overlay.UpdateColor(state, config);
+                Overlay.UpdateColor(state);
                 if (config.ChangeHighlight)
                     StartHighlight(config);
             }
         }
         else // Hidden
         {
-            Overlay.Show(x, y, state, config);
+            Overlay.Show(x, y, state);
             User32.ShowWindow(_hwndOverlay, Win32Constants.SW_SHOW);
 
             if (config.AnimationEnabled)

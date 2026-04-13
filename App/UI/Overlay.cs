@@ -70,6 +70,12 @@ internal static class Overlay
     // 드래그 중 매 WM_MOVING 틱에서 순회. EndDrag에서 Clear.
     private static readonly List<RECT> _snapRects = new(64);
 
+    // Stage 3-A: 현재 AppConfig 캐시.
+    // Initialize/HandleConfigChanged 시점에 주입되며, public 메서드 내부에서 읽는다.
+    // Stage 4 A에서 LayeredOverlayBase/OverlayStyle 도입 시 private 렌더러와 함께
+    // 구조 리팩토링 예정.
+    private static AppConfig _config = null!;
+
     // ================================================================
     // 초기화 / 해제
     // ================================================================
@@ -77,6 +83,7 @@ internal static class Overlay
     public static void Initialize(IntPtr hwndOverlay, AppConfig config)
     {
         _hwndOverlay = hwndOverlay;
+        _config = config;
         _memDC = Gdi32.CreateCompatibleDC(IntPtr.Zero);
         _nullPen = Gdi32.GetStockObject(Win32Constants.NULL_PEN);
         EnsureResources(config);
@@ -103,7 +110,7 @@ internal static class Overlay
     /// 지정 좌표에 인디케이터 렌더 + UpdateLayeredWindow.
     /// 좌표가 속한 모니터 DPI로 리소스 갱신.
     /// </summary>
-    public static void Show(int x, int y, ImeState state, AppConfig config)
+    public static void Show(int x, int y, ImeState state)
     {
         // 위치 기준 모니터 DPI 갱신
         IntPtr hMonitor = DpiHelper.GetMonitorFromPoint(x, y);
@@ -122,8 +129,8 @@ internal static class Overlay
         _currentDpiScale = dpiScale;
         _currentDpiY = dpiY;
 
-        EnsureResources(config);
-        RenderIndicator(state, config);
+        EnsureResources(_config);
+        RenderIndicator(state, _config);
         UpdateOverlay(x, y, _currentWidth, _currentHeight, _lastAlpha);
         _lastX = x;
         _lastY = y;
@@ -131,10 +138,10 @@ internal static class Overlay
     }
 
     /// <summary>즉시 색상 변경 (비트맵 갱신 + premultiply).</summary>
-    public static void UpdateColor(ImeState state, AppConfig config)
+    public static void UpdateColor(ImeState state)
     {
         _lastRenderedState = null;
-        RenderIndicator(state, config);
+        RenderIndicator(state, _config);
         UpdateOverlay(_lastX, _lastY, _currentWidth, _currentHeight, _lastAlpha);
     }
 
@@ -167,18 +174,19 @@ internal static class Overlay
     }
 
     /// <summary>DPI 변경 시 HFONT/DIB 재생성.</summary>
-    public static void HandleDpiChanged(AppConfig config)
+    public static void HandleDpiChanged()
     {
         _cachedFontDpiScale = 0;
         _currentWidth = 0;
         _currentHeight = 0;
         _fixedLabelWidth = 0;
-        EnsureResources(config);
+        EnsureResources(_config);
     }
 
     /// <summary>설정 변경 시 전체 리소스 리빌드.</summary>
     public static void HandleConfigChanged(AppConfig config)
     {
+        _config = config;
         _cachedFontFamily = "";
         _cachedFontDpiScale = 0;
         _currentWidth = 0;
@@ -190,9 +198,10 @@ internal static class Overlay
 
     /// <summary>
     /// 드래그 시작 (WM_ENTERSIZEMOVE). UpdateOverlay 억제 + Shift 축 잠금용 시작 좌표 캐치
-    /// + 커서 hot point 캐치 + SnapToWindows 유효 시 EnumWindows로 스냅 후보 rect 리스트 캐싱.
+    /// + 커서 hot point 캐치 + snapToWindows 유효 시 EnumWindows로 스냅 후보 rect 리스트 캐싱.
+    /// Stage 3-A: config 레코드 대신 primitive bool을 받는다.
     /// </summary>
-    public static void BeginDrag(AppConfig config)
+    public static void BeginDrag(bool snapToWindows)
     {
         _isDragging = true;
         if (_hwndOverlay != IntPtr.Zero)
@@ -209,7 +218,7 @@ internal static class Overlay
         }
 
         _snapRects.Clear();
-        if (config.SnapToWindows)
+        if (snapToWindows)
         {
             unsafe
             {
@@ -251,8 +260,11 @@ internal static class Overlay
     ///
     /// rect를 항상 덮어쓰므로 리턴은 항상 true. w/h는 보존.
     /// Shift 잠금이 걸린 축은 스냅에서 제외되어 시작 좌표가 유지된다.
+    ///
+    /// Stage 3-A: config 레코드 대신 primitive 두 개(snapToWindows, snapThresholdPx)를 받는다.
+    /// 내부 렌더러(HandleDragDpiChange)는 Stage 4 A까지 _config를 읽는다.
     /// </summary>
-    public static bool HandleMoving(ref RECT movingRect, ImeState state, AppConfig config)
+    public static bool HandleMoving(ref RECT movingRect, ImeState state, bool snapToWindows, int snapThresholdPx)
     {
         if (!_isDragging) return false;
 
@@ -291,10 +303,10 @@ internal static class Overlay
             }
         }
 
-        if (config.SnapToWindows)
-            ApplySnap(ref movingRect, xLocked, yLocked);
+        if (snapToWindows)
+            ApplySnap(ref movingRect, xLocked, yLocked, snapThresholdPx);
 
-        HandleDragDpiChange(movingRect.Left, movingRect.Top, state, config);
+        HandleDragDpiChange(movingRect.Left, movingRect.Top, state, _config);
 
         return true;
     }
@@ -304,10 +316,11 @@ internal static class Overlay
     /// 가장 가까운 타겟 엣지에 스냅한다. X/Y 축 독립 처리, 잠긴 축은 건너뜀.
     /// 타겟 rect와의 수직/수평 겹침을 요구해 "멀리 떨어진 창"에 끌려가는 현상을 방지.
     /// work area는 인디가 항상 그 안에 있어 겹침 체크가 항상 통과 → 화면 엣지 스냅 성립.
+    /// <paramref name="snapThresholdPx"/>는 pre-DPI 값이며 내부에서 DpiHelper.Scale로 변환.
     /// </summary>
-    private static bool ApplySnap(ref RECT movingRect, bool xLocked, bool yLocked)
+    private static bool ApplySnap(ref RECT movingRect, bool xLocked, bool yLocked, int snapThresholdPx)
     {
-        int threshold = DpiHelper.Scale(DefaultConfig.SnapThresholdPx, _currentDpiScale);
+        int threshold = DpiHelper.Scale(snapThresholdPx, _currentDpiScale);
         int w = movingRect.Right - movingRect.Left;
         int h = movingRect.Bottom - movingRect.Top;
 
@@ -450,7 +463,7 @@ internal static class Overlay
     /// - 일반 프로세스: config.DefaultIndicatorPosition이 있으면 해당 모서리 anchor + delta로 계산,
     ///   없으면 DefaultConfig.DefaultIndicatorOffset* 폴백(work area 우상단 근처).
     /// </summary>
-    public static (int x, int y) GetDefaultPosition(IntPtr hwndForeground, string processName, AppConfig config)
+    public static (int x, int y) GetDefaultPosition(IntPtr hwndForeground, string processName)
     {
         IntPtr hMonitor = (hwndForeground != IntPtr.Zero)
             ? User32.MonitorFromWindow(hwndForeground, Win32Constants.MONITOR_DEFAULTTOPRIMARY)
@@ -468,7 +481,7 @@ internal static class Overlay
             return (x, y);
         }
 
-        if (config.DefaultIndicatorPosition is { } anchor)
+        if (_config.DefaultIndicatorPosition is { } anchor)
             return ResolveAnchor(workArea, anchor);
 
         return (workArea.Right + DefaultConfig.DefaultIndicatorOffsetX,
