@@ -171,13 +171,16 @@ internal static class SettingsDialog
         int nonClientH = Win32DialogHelper.CalculateNonClientHeight(rawDpi);
         int nonClientW = Win32DialogHelper.CalculateNonClientWidth(rawDpi);
 
-        // UI 폰트 (맑은 고딕 9pt, DPI 스케일)
+        // UI 폰트 (맑은 고딕 9pt, DPI 스케일) — using 스코프 종료 시 자동 DeleteObject
         int fontHeight = Win32DialogHelper.CalculateFontHeightPx(dpiY);
-        IntPtr hFont = Gdi32.CreateFontW(fontHeight, 0, 0, 0, Win32Constants.FW_NORMAL,
-            0, 0, 0, Win32Constants.DEFAULT_CHARSET,
-            Win32Constants.OUT_TT_PRECIS, Win32Constants.CLIP_DEFAULT_PRECIS,
-            Win32Constants.CLEARTYPE_QUALITY, Win32Constants.DEFAULT_PITCH,
-            "맑은 고딕");
+        using var hFont = new SafeFontHandle(
+            Gdi32.CreateFontW(fontHeight, 0, 0, 0, Win32Constants.FW_NORMAL,
+                0, 0, 0, Win32Constants.DEFAULT_CHARSET,
+                Win32Constants.OUT_TT_PRECIS, Win32Constants.CLIP_DEFAULT_PRECIS,
+                Win32Constants.CLEARTYPE_QUALITY, Win32Constants.DEFAULT_PITCH,
+                "맑은 고딕"),
+            ownsHandle: true);
+        IntPtr hFontRaw = hFont.DangerousGetHandle();
 
         // 대화상자 클래스 등록 (중복 호출은 무시됨)
         string dlgClassName = "KoEnVueSettingsDlg";
@@ -214,7 +217,6 @@ internal static class SettingsDialog
 
         if (_hwndDialog == IntPtr.Zero)
         {
-            if (hFont != IntPtr.Zero) Gdi32.DeleteObject(hFont);
             return;
         }
 
@@ -227,7 +229,7 @@ internal static class SettingsDialog
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE,
             pad, pad, clientW - pad * 2, descH,
             _hwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-        ApplyFont(hwndDesc, hFont);
+        Win32DialogHelper.ApplyFont(hwndDesc, hFontRaw);
 
         // --- 뷰포트 ---
         int vpX = pad;
@@ -265,7 +267,7 @@ internal static class SettingsDialog
                     Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE,
                     labelX, y, sectionContentW, sectionHeadH,
                     _hwndViewport, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-                ApplyFont(hwndSec, hFont);
+                Win32DialogHelper.ApplyFont(hwndSec, hFontRaw);
                 _scrollChildren.Add((hwndSec, labelX, y));
                 y += sectionHeadH + sectionHeadGap;
 
@@ -285,7 +287,7 @@ internal static class SettingsDialog
                 Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE,
                 labelX, y + 3, labelColW, rowH - 4,
                 _hwndViewport, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-            ApplyFont(hwndLabel, hFont);
+            Win32DialogHelper.ApplyFont(hwndLabel, hFontRaw);
             _scrollChildren.Add((hwndLabel, labelX, y + 3));
 
             // 컨트롤
@@ -338,7 +340,7 @@ internal static class SettingsDialog
                     break;
                 }
             }
-            ApplyFont(hwndInput, hFont);
+            Win32DialogHelper.ApplyFont(hwndInput, hFontRaw);
             _fieldInputs.Add(hwndInput);
 
             y += rowH + rowGap;
@@ -360,13 +362,13 @@ internal static class SettingsDialog
                 | Win32Constants.BS_DEFPUSHBUTTON,
             btnX, btnY, btnW, btnH,
             _hwndDialog, (IntPtr)IDC_BTN_OK, IntPtr.Zero, IntPtr.Zero);
-        ApplyFont(hwndOk, hFont);
+        Win32DialogHelper.ApplyFont(hwndOk, hFontRaw);
 
         IntPtr hwndCancel = User32.CreateWindowExW(0, "BUTTON", I18n.ScaleDialogCancel,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_TABSTOP,
             btnX + btnW + pad, btnY, btnW, btnH,
             _hwndDialog, (IntPtr)IDC_BTN_CANCEL, IntPtr.Zero, IntPtr.Zero);
-        ApplyFont(hwndCancel, hFont);
+        Win32DialogHelper.ApplyFont(hwndCancel, hFontRaw);
 
         // 모달 표시
         User32.EnableWindow(_hwndMain, false);
@@ -394,15 +396,10 @@ internal static class SettingsDialog
         _fields.Clear();
         _fieldInputs.Clear();
         _scrollChildren.Clear();
-        if (hFont != IntPtr.Zero) Gdi32.DeleteObject(hFont);
+        // hFont는 using 스코프 종료 시 자동 해제 (SafeFontHandle → DeleteObject)
 
         if (_dlgResult && _updateCallback != null)
             _updateCallback(_workingConfig);
-    }
-
-    private static void ApplyFont(IntPtr hwnd, IntPtr hFont)
-    {
-        User32.SendMessageW(hwnd, Win32Constants.WM_SETFONT, hFont, (IntPtr)1);
     }
 
     // ================================================================

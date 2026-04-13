@@ -84,13 +84,16 @@ internal static class CleanupDialog
             + btnH                               // buttons
             + pad;                               // bottom padding
 
-        // UI 폰트 (맑은 고딕 9pt, DPI 스케일)
+        // UI 폰트 (맑은 고딕 9pt, DPI 스케일) — using 스코프 종료 시 자동 DeleteObject
         int fontHeight = Win32DialogHelper.CalculateFontHeightPx(dpiY);
-        IntPtr hFont = Gdi32.CreateFontW(fontHeight, 0, 0, 0, Win32Constants.FW_NORMAL,
-            0, 0, 0, Win32Constants.DEFAULT_CHARSET,
-            Win32Constants.OUT_TT_PRECIS, Win32Constants.CLIP_DEFAULT_PRECIS,
-            Win32Constants.CLEARTYPE_QUALITY, Win32Constants.DEFAULT_PITCH,
-            "맑은 고딕");
+        using var hFont = new SafeFontHandle(
+            Gdi32.CreateFontW(fontHeight, 0, 0, 0, Win32Constants.FW_NORMAL,
+                0, 0, 0, Win32Constants.DEFAULT_CHARSET,
+                Win32Constants.OUT_TT_PRECIS, Win32Constants.CLIP_DEFAULT_PRECIS,
+                Win32Constants.CLEARTYPE_QUALITY, Win32Constants.DEFAULT_PITCH,
+                "맑은 고딕"),
+            ownsHandle: true);
+        IntPtr hFontRaw = hFont.DangerousGetHandle();
 
         // 다이얼로그 윈도우 클래스 등록 (한 번만)
         var wc = new WNDCLASSEXW
@@ -117,7 +120,6 @@ internal static class CleanupDialog
 
         if (_hwndDialog == IntPtr.Zero)
         {
-            if (hFont != IntPtr.Zero) Gdi32.DeleteObject(hFont);
             return null;
         }
 
@@ -136,7 +138,7 @@ internal static class CleanupDialog
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE,
             pad, y, contentW, descH,
             _hwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndDesc, hFont);
+        Win32DialogHelper.ApplyFont(hwndDesc, hFontRaw);
         y += descH + checkGap;
 
         // "전체 선택" 체크박스
@@ -145,7 +147,7 @@ internal static class CleanupDialog
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.BS_AUTOCHECKBOX,
             pad, y, contentW, checkH,
             _hwndDialog, (IntPtr)IDC_SELECT_ALL, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndSelectAll, hFont);
+        Win32DialogHelper.ApplyFont(hwndSelectAll, hFontRaw);
         User32.SendMessageW(hwndSelectAll, Win32Constants.BM_SETCHECK,
             (IntPtr)Win32Constants.BST_CHECKED, IntPtr.Zero);
         y += checkH + checkGap;
@@ -164,7 +166,7 @@ internal static class CleanupDialog
                 Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.BS_AUTOCHECKBOX,
                 pad + itemIndent, y, contentW - itemIndent, checkH,
                 _hwndDialog, (IntPtr)(IDC_CHECK_BASE + i), IntPtr.Zero, IntPtr.Zero);
-            Win32DialogHelper.ApplyFont(hwndCheck, hFont);
+            Win32DialogHelper.ApplyFont(hwndCheck, hFontRaw);
             User32.SendMessageW(hwndCheck, Win32Constants.BM_SETCHECK,
                 (IntPtr)Win32Constants.BST_CHECKED, IntPtr.Zero);
             _checkboxHandles.Add(hwndCheck);
@@ -182,12 +184,12 @@ internal static class CleanupDialog
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_TABSTOP,
             btnX, y, btnW, btnH,
             _hwndDialog, (IntPtr)IDC_BTN_OK, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndOk, hFont);
+        Win32DialogHelper.ApplyFont(hwndOk, hFontRaw);
         IntPtr hwndCancel = User32.CreateWindowExW(0, "BUTTON", cancelText,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_TABSTOP,
             btnX + btnW + pad, y, btnW, btnH,
             _hwndDialog, (IntPtr)IDC_BTN_CANCEL, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndCancel, hFont);
+        Win32DialogHelper.ApplyFont(hwndCancel, hFontRaw);
 
         // 모달 표시
         User32.EnableWindow(hwndMain, false);
@@ -226,7 +228,7 @@ internal static class CleanupDialog
         User32.DestroyWindow(_hwndDialog);
         _hwndDialog = IntPtr.Zero;
         _checkboxHandles.Clear();
-        if (hFont != IntPtr.Zero) Gdi32.DeleteObject(hFont);
+        // hFont는 using 스코프 종료 시 자동 해제 (SafeFontHandle → DeleteObject)
 
         return result;
     }

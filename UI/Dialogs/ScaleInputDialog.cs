@@ -86,13 +86,16 @@ internal static class ScaleInputDialog
             + btnH
             + pad;
 
-        // UI 폰트 (맑은 고딕 9pt, DPI 스케일)
+        // UI 폰트 (맑은 고딕 9pt, DPI 스케일) — using 스코프 종료 시 자동 DeleteObject
         int fontHeight = Win32DialogHelper.CalculateFontHeightPx(dpiY);
-        IntPtr hFont = Gdi32.CreateFontW(fontHeight, 0, 0, 0, Win32Constants.FW_NORMAL,
-            0, 0, 0, Win32Constants.DEFAULT_CHARSET,
-            Win32Constants.OUT_TT_PRECIS, Win32Constants.CLIP_DEFAULT_PRECIS,
-            Win32Constants.CLEARTYPE_QUALITY, Win32Constants.DEFAULT_PITCH,
-            "맑은 고딕");
+        using var hFont = new SafeFontHandle(
+            Gdi32.CreateFontW(fontHeight, 0, 0, 0, Win32Constants.FW_NORMAL,
+                0, 0, 0, Win32Constants.DEFAULT_CHARSET,
+                Win32Constants.OUT_TT_PRECIS, Win32Constants.CLIP_DEFAULT_PRECIS,
+                Win32Constants.CLEARTYPE_QUALITY, Win32Constants.DEFAULT_PITCH,
+                "맑은 고딕"),
+            ownsHandle: true);
+        IntPtr hFontRaw = hFont.DangerousGetHandle();
 
         // 다이얼로그 클래스 등록 (중복 호출은 무시됨)
         var wc = new WNDCLASSEXW
@@ -123,7 +126,6 @@ internal static class ScaleInputDialog
 
         if (_hwndScaleDlg == IntPtr.Zero)
         {
-            if (hFont != IntPtr.Zero) Gdi32.DeleteObject(hFont);
             return null;
         }
 
@@ -137,7 +139,7 @@ internal static class ScaleInputDialog
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE,
             pad, y, contentW, labelH,
             _hwndScaleDlg, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndLabel, hFont);
+        Win32DialogHelper.ApplyFont(hwndLabel, hFontRaw);
         y += labelH + gap;
 
         // EDIT 박스 — 현재 값으로 미리 채움
@@ -147,7 +149,7 @@ internal static class ScaleInputDialog
                 | Win32Constants.WS_TABSTOP | Win32Constants.ES_LEFT | Win32Constants.ES_AUTOHSCROLL,
             pad, y, contentW, editH,
             _hwndScaleDlg, (IntPtr)IDC_SCALE_EDIT, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(_hwndScaleEdit, hFont);
+        Win32DialogHelper.ApplyFont(_hwndScaleEdit, hFontRaw);
         y += editH + gap;
 
         // 힌트 레이블
@@ -155,7 +157,7 @@ internal static class ScaleInputDialog
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE,
             pad, y, contentW, hintH,
             _hwndScaleDlg, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndHint, hFont);
+        Win32DialogHelper.ApplyFont(hwndHint, hFontRaw);
         y += hintH + pad;
 
         // 버튼 — 오른쪽 정렬
@@ -167,13 +169,13 @@ internal static class ScaleInputDialog
                 | Win32Constants.BS_DEFPUSHBUTTON,
             btnX, y, btnW, btnH,
             _hwndScaleDlg, (IntPtr)IDC_SCALE_OK, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndOk, hFont);
+        Win32DialogHelper.ApplyFont(hwndOk, hFontRaw);
 
         IntPtr hwndCancel = User32.CreateWindowExW(0, "BUTTON", I18n.ScaleDialogCancel,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_TABSTOP,
             btnX + btnW + gap, y, btnW, btnH,
             _hwndScaleDlg, (IntPtr)IDC_SCALE_CANCEL, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndCancel, hFont);
+        Win32DialogHelper.ApplyFont(hwndCancel, hFontRaw);
 
         // 모달 표시 + EDIT 포커스 + 텍스트 전체 선택
         User32.EnableWindow(hwndMain, false);
@@ -201,7 +203,7 @@ internal static class ScaleInputDialog
         User32.DestroyWindow(_hwndScaleDlg);
         _hwndScaleDlg = IntPtr.Zero;
         _hwndScaleEdit = IntPtr.Zero;
-        if (hFont != IntPtr.Zero) Gdi32.DeleteObject(hFont);
+        // hFont는 using 스코프 종료 시 자동 해제 (SafeFontHandle → DeleteObject)
 
         return result;
     }
