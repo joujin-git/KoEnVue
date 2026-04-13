@@ -108,8 +108,14 @@ internal static class SystemFilter
             int hr = _vdm.IsWindowOnCurrentVirtualDesktop(hwnd, out bool onCurrent);
             return hr == 0 ? onCurrent : true;
         }
-        catch
+        catch (Exception ex)
         {
+            // IVirtualDesktopManager.IsWindowOnCurrentVirtualDesktop은 [PreserveSig]로 HRESULT를
+            // int로 반환하므로 .NET 런타임이 COMException을 던지지 않는다. 실제로 발생할 수 있는
+            // 예외는 RCW 상태(InvalidComObjectException), 마샬링, 드물게 NullReferenceException
+            // 등으로 일관되게 좁히기 어렵다. 본문이 단일 COM 호출 1줄이라 과대 포획 리스크가 낮으므로
+            // wide catch 유지. 기본값은 "숨기지 않음"으로 안전 폴백.
+            Logger.Debug($"IVirtualDesktopManager.IsWindowOnCurrentVirtualDesktop failed: {ex.Message}");
             return true;
         }
     }
@@ -193,8 +199,15 @@ internal static class SystemFilter
             using var proc = System.Diagnostics.Process.GetProcessById((int)processId);
             return proc.ProcessName;
         }
-        catch
+        catch (Exception ex) when (ex is ArgumentException
+                                     or InvalidOperationException
+                                     or System.ComponentModel.Win32Exception)
         {
+            // ArgumentException: PID 누락/만료 (가장 흔한 경로)
+            // InvalidOperationException: ProcessName 게터가 프로세스 상태 재평가 시 사라진 edge case
+            // Win32Exception: 권한 없음 (서비스/시스템 프로세스 접근)
+            // 80ms 폴링 핫패스이므로 Debug 레벨 유지 (Info/Warning이면 스팸 위험)
+            Logger.Debug($"GetProcessName failed: {ex.Message}");
             return string.Empty;
         }
     }

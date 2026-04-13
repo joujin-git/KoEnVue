@@ -8,7 +8,7 @@ namespace KoEnVue.UI;
 
 /// <summary>
 /// 트레이 메뉴 → "상세 설정" 대화상자.
-/// 트레이 메뉴와 겹치지 않는 61개 설정 필드를 스크롤 가능한 테이블 형태로 노출한다.
+/// 트레이 메뉴와 겹치지 않는 59개 설정 필드를 스크롤 가능한 테이블 형태로 노출한다.
 /// 룩앤필은 Tray.cs의 CleanupDialog/ScaleDialog와 맞춘다.
 /// </summary>
 internal static class SettingsDialog
@@ -168,14 +168,11 @@ internal static class SettingsDialog
         _lineHeight = rowH + rowGap;
 
         uint rawDpi = (uint)Math.Round(dpiScale * DpiHelper.BASE_DPI);
-        int nonClientH = User32.GetSystemMetricsForDpi(Win32Constants.SM_CYCAPTION, rawDpi)
-            + 2 * User32.GetSystemMetricsForDpi(Win32Constants.SM_CYFIXEDFRAME, rawDpi)
-            + 2 * User32.GetSystemMetricsForDpi(Win32Constants.SM_CXPADDEDBORDER, rawDpi);
-        int nonClientW = 2 * User32.GetSystemMetricsForDpi(Win32Constants.SM_CYFIXEDFRAME, rawDpi)
-            + 2 * User32.GetSystemMetricsForDpi(Win32Constants.SM_CXPADDEDBORDER, rawDpi);
+        int nonClientH = Win32DialogHelper.CalculateNonClientHeight(rawDpi);
+        int nonClientW = Win32DialogHelper.CalculateNonClientWidth(rawDpi);
 
         // UI 폰트 (맑은 고딕 9pt, DPI 스케일)
-        int fontHeight = -(int)Math.Round(9.0 * dpiY / 72.0);
+        int fontHeight = Win32DialogHelper.CalculateFontHeightPx(dpiY);
         IntPtr hFont = Gdi32.CreateFontW(fontHeight, 0, 0, 0, Win32Constants.FW_NORMAL,
             0, 0, 0, Win32Constants.DEFAULT_CHARSET,
             Win32Constants.OUT_TT_PRECIS, Win32Constants.CLIP_DEFAULT_PRECIS,
@@ -611,7 +608,7 @@ internal static class SettingsDialog
     // ================================================================
 
     /// <summary>
-    /// 13개 섹션 × 61개 필드의 RowDef 리스트를 빌드하며 _fields를 채운다.
+    /// 13개 섹션 × 59개 필드의 RowDef 리스트를 빌드하며 _fields를 채운다.
     /// 각 섹션 제목, 라벨, 검증 범위는 언어(I18n.IsKorean)에 따라 결정된다.
     /// </summary>
     private static List<RowDef> BuildRowDefs()
@@ -718,15 +715,12 @@ internal static class SettingsDialog
         // ================================================================
         // 6. 애니메이션
         // ================================================================
+        // AnimationEnabled / ChangeHighlight는 트레이 메뉴에서 토글 가능하므로 여기서 제외.
         Sec("애니메이션", "Animation");
-        Add(Bool("애니메이션 사용", "Animations enabled",
-            c => c.AnimationEnabled, (c, v) => c with { AnimationEnabled = v }));
         Add(Int("페이드 인 (ms)", "Fade in (ms)", 0, 2000,
             c => c.FadeInMs, (c, v) => c with { FadeInMs = v }));
         Add(Int("페이드 아웃 (ms)", "Fade out (ms)", 0, 2000,
             c => c.FadeOutMs, (c, v) => c with { FadeOutMs = v }));
-        Add(Bool("변경 시 강조", "Highlight on change",
-            c => c.ChangeHighlight, (c, v) => c with { ChangeHighlight = v }));
         Add(Dbl("강조 배율", "Highlight scale", 1.0, 2.0,
             c => c.HighlightScale, (c, v) => c with { HighlightScale = v }));
         Add(Int("강조 지속 시간 (ms)", "Highlight duration (ms)", 0, 2000,

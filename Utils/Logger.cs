@@ -58,8 +58,12 @@ internal static class Logger
             _fileWriter = new StreamWriter(_filePath, append: true, Encoding.UTF8)
                 { AutoFlush = true };
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            // 파일 로깅 초기화 실패가 앱 부팅을 죽이면 안 되므로 흡수. 다만 Trace.WriteLine으로
+            // 한 번은 흔적을 남겨야 디버거에서 "왜 파일 로깅이 안 찍히는가"를 답할 수 있음.
+            // 로직 버그(NullRef 등)는 전파해 부팅 초기에 드러냄.
+            Trace.WriteLine($"Logger file init failed (falling back to Trace only): {ex.Message}");
             _fileWriter = null;
             return;
         }
@@ -184,7 +188,12 @@ internal static class Logger
                     { AutoFlush = true };
             }
         }
-        catch { /* NF-25: file write/rotate failure — silent */ }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // NF-25: file write/rotate failure — silent (드레인 자체라 Logger 재귀 금지).
+            // 로직 버그(NullRef, IndexOutOfRange 등)는 전파되어 드레인 스레드 크래시로 드러남.
+            _ = ex;
+        }
     }
 
     /// <summary>drain 스레드 종료 + 잔여 flush + writer dispose.</summary>
@@ -194,8 +203,26 @@ internal static class Logger
         {
             _shutdownRequested = true;
             _drainSignal.Set();
-            _drainThread.Join(ShutdownJoinTimeoutMs);
+            bool joined = _drainThread.Join(ShutdownJoinTimeoutMs);
             _drainThread = null;
+
+            // Join 타임아웃 흔적: Logger 큐 경로는 이미 닫혔으므로 _fileWriter에 직접 기록.
+            // 정상적으로는 Join이 즉시 복귀하지만, 타임아웃은 프로세스 종료 지연을 유발하므로
+            // 흔적이 중요하다. Console.Error 병행 폴백.
+            if (!joined)
+            {
+                try
+                {
+                    _fileWriter?.WriteLine(
+                        $"[WARN] {DateTime.Now:HH:mm:ss.fff} Logger drain thread join timed out after {ShutdownJoinTimeoutMs}ms");
+                }
+                catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+                {
+                    _ = ex;
+                }
+                Console.Error.WriteLine(
+                    $"[WARN] {DateTime.Now:HH:mm:ss.fff} Logger drain thread join timed out after {ShutdownJoinTimeoutMs}ms");
+            }
         }
 
         // 잔여 메시지 동기 flush

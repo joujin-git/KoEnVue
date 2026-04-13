@@ -39,11 +39,13 @@ internal static class Tray
     private const double ScaleStep = 0.1;
 
     // 메인 메뉴
-    private const int IDM_STARTUP         = 4001;
-    private const int IDM_CLEANUP         = 4003;
-    private const int IDM_SNAP_TO_WINDOWS = 4004;
-    private const int IDM_SETTINGS        = 4005;
-    private const int IDM_EXIT            = 4002;
+    private const int IDM_STARTUP            = 4001;
+    private const int IDM_CLEANUP            = 4003;
+    private const int IDM_SNAP_TO_WINDOWS    = 4004;
+    private const int IDM_SETTINGS           = 4005;
+    private const int IDM_ANIMATION_ENABLED  = 4006;
+    private const int IDM_CHANGE_HIGHLIGHT   = 4007;
+    private const int IDM_EXIT               = 4002;
 
     // schtasks 작업 이름
     private const string TaskName = "KoEnVue";
@@ -142,7 +144,9 @@ internal static class Tray
         nid.cbSize = (uint)sizeof(NOTIFYICONDATAW);
         nid.uFlags = Win32Constants.NIF_GUID;
         nid.guidItem = DefaultConfig.AppGuid;
-        Shell32.Shell_NotifyIconW(Win32Constants.NIM_DELETE, ref nid);
+        bool removed = Shell32.Shell_NotifyIconW(Win32Constants.NIM_DELETE, ref nid);
+        if (!removed)
+            Logger.Warning("Failed to remove tray icon on shutdown");
 
         _currentIcon?.Dispose();
         _currentIcon = null;
@@ -230,6 +234,10 @@ internal static class Tray
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hSizeMenu, I18n.MenuSize);
         uint snapFlags = config.SnapToWindows ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
         User32.AppendMenuW(hMenu, snapFlags, (nuint)IDM_SNAP_TO_WINDOWS, I18n.MenuSnapToWindows);
+        uint animationFlags = config.AnimationEnabled ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
+        User32.AppendMenuW(hMenu, animationFlags, (nuint)IDM_ANIMATION_ENABLED, I18n.MenuAnimation);
+        uint highlightFlags = config.ChangeHighlight ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
+        User32.AppendMenuW(hMenu, highlightFlags, (nuint)IDM_CHANGE_HIGHLIGHT, I18n.MenuChangeHighlight);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
 
         bool isStartup = IsStartupRegistered();
@@ -320,6 +328,18 @@ internal static class Tray
             case IDM_SNAP_TO_WINDOWS:
                 updateConfig(config with { SnapToWindows = !config.SnapToWindows });
                 Logger.Info($"SnapToWindows toggled: {!config.SnapToWindows}");
+                break;
+
+            // --- 애니메이션 사용 토글 ---
+            case IDM_ANIMATION_ENABLED:
+                updateConfig(config with { AnimationEnabled = !config.AnimationEnabled });
+                Logger.Info($"AnimationEnabled toggled: {!config.AnimationEnabled}");
+                break;
+
+            // --- 변경 시 강조 토글 ---
+            case IDM_CHANGE_HIGHLIGHT:
+                updateConfig(config with { ChangeHighlight = !config.ChangeHighlight });
+                Logger.Info($"ChangeHighlight toggled: {!config.ChangeHighlight}");
                 break;
 
             // --- 미사용 위치 데이터 정리 ---
@@ -563,11 +583,23 @@ internal static class Tray
             foreach (var proc in Process.GetProcesses())
             {
                 try { running.Add(proc.ProcessName); }
-                catch { }
+                catch (Exception ex) when (ex is InvalidOperationException
+                                             or System.ComponentModel.Win32Exception)
+                {
+                    // InvalidOperationException: ProcessName 게터가 이미 종료된 프로세스를 참조
+                    // Win32Exception: 시스템/서비스 프로세스 접근 권한 부족
+                    Logger.Debug($"CleanupDialog: failed to read process name: {ex.Message}");
+                }
                 finally { proc.Dispose(); }
             }
         }
-        catch { return; }
+        catch (Exception ex)
+        {
+            // 외부 루프 전체가 실패하면 "실행 중 프로세스 0개"로 오인되어 unused 목록이 과도 확장될
+            // 위험이 있는 드문 치명 경로. 내부에서 던질 예외 타입을 특정하기 어려워 wide catch 유지.
+            Logger.Warning($"CleanupDialog: Process.GetProcesses enumeration failed: {ex.Message}");
+            return;
+        }
 
         // 실행 중이 아닌 항목 찾기
         var unused = new List<string>();
@@ -655,11 +687,9 @@ internal static class Tray
         int visibleCount = Math.Min(items.Count, DlgMaxVisibleItems);
         int checkAreaHeight = visibleCount * (checkH + checkGap);
         int dlgWidth = DpiHelper.Scale(DlgMinWidth, dpiScale);
-        // 비클라이언트 영역 높이 (타이틀바 + 프레임)
+        // 비클라이언트 영역 높이 (타이틀바 + 프레임) — 공통 헬퍼 사용
         uint rawDpi = (uint)Math.Round(dpiScale * DpiHelper.BASE_DPI);
-        int nonClientH = User32.GetSystemMetricsForDpi(Win32Constants.SM_CYCAPTION, rawDpi)
-            + 2 * User32.GetSystemMetricsForDpi(Win32Constants.SM_CYFIXEDFRAME, rawDpi)
-            + 2 * User32.GetSystemMetricsForDpi(Win32Constants.SM_CXPADDEDBORDER, rawDpi);
+        int nonClientH = Win32DialogHelper.CalculateNonClientHeight(rawDpi);
 
         int dlgHeight = nonClientH               // non-client (title bar + borders)
             + pad                                // top padding
@@ -672,7 +702,7 @@ internal static class Tray
             + pad;                               // bottom padding
 
         // UI 폰트 (맑은 고딕 9pt, DPI 스케일)
-        int fontHeight = -(int)Math.Round(9.0 * dpiY / 72.0);
+        int fontHeight = Win32DialogHelper.CalculateFontHeightPx(dpiY);
         IntPtr hFont = Gdi32.CreateFontW(fontHeight, 0, 0, 0, Win32Constants.FW_NORMAL,
             0, 0, 0, Win32Constants.DEFAULT_CHARSET,
             Win32Constants.OUT_TT_PRECIS, Win32Constants.CLIP_DEFAULT_PRECIS,
@@ -920,9 +950,7 @@ internal static class Tray
         int dlgWidth = DpiHelper.Scale(ScaleDlgWidth, dpiScale);
 
         uint rawDpi = (uint)Math.Round(dpiScale * DpiHelper.BASE_DPI);
-        int nonClientH = User32.GetSystemMetricsForDpi(Win32Constants.SM_CYCAPTION, rawDpi)
-            + 2 * User32.GetSystemMetricsForDpi(Win32Constants.SM_CYFIXEDFRAME, rawDpi)
-            + 2 * User32.GetSystemMetricsForDpi(Win32Constants.SM_CXPADDEDBORDER, rawDpi);
+        int nonClientH = Win32DialogHelper.CalculateNonClientHeight(rawDpi);
 
         int dlgHeight = nonClientH
             + pad
@@ -933,7 +961,7 @@ internal static class Tray
             + pad;
 
         // UI 폰트 (맑은 고딕 9pt, DPI 스케일)
-        int fontHeight = -(int)Math.Round(9.0 * dpiY / 72.0);
+        int fontHeight = Win32DialogHelper.CalculateFontHeightPx(dpiY);
         IntPtr hFont = Gdi32.CreateFontW(fontHeight, 0, 0, 0, Win32Constants.FW_NORMAL,
             0, 0, 0, Win32Constants.DEFAULT_CHARSET,
             Win32Constants.OUT_TT_PRECIS, Win32Constants.CLIP_DEFAULT_PRECIS,

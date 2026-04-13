@@ -4,12 +4,6 @@ namespace KoEnVue.Native;
 
 internal static partial class Dwmapi
 {
-    /// <summary>DWM이 실제로 합성하는 "보이는" 프레임 경계. GetWindowRect는 invisible resize border를 포함하므로 시각적 정렬에는 이 값을 써야 한다.</summary>
-    public const uint DWMWA_EXTENDED_FRAME_BOUNDS = 9;
-
-    /// <summary>창의 cloaked 상태(가상 데스크톱 숨김, UWP suspend 등). 0이 아니면 화면에 표시되지 않음.</summary>
-    public const uint DWMWA_CLOAKED = 14;
-
     [LibraryImport("dwmapi.dll")]
     internal static partial int DwmGetWindowAttribute(
         IntPtr hwnd,
@@ -30,7 +24,7 @@ internal static partial class Dwmapi
         frame = default;
         int hr = DwmGetWindowAttribute(
             hwnd,
-            DWMWA_EXTENDED_FRAME_BOUNDS,
+            Win32Constants.DWMWA_EXTENDED_FRAME_BOUNDS,
             out frame,
             (uint)Marshal.SizeOf<RECT>());
         if (hr == 0) return true;
@@ -45,7 +39,7 @@ internal static partial class Dwmapi
     {
         int hr = DwmGetWindowAttribute(
             hwnd,
-            DWMWA_CLOAKED,
+            Win32Constants.DWMWA_CLOAKED,
             out uint cloaked,
             sizeof(uint));
         return hr == 0 && cloaked != 0;

@@ -250,6 +250,7 @@ internal static class Win32Constants
 
     // --- System Metrics ---
     public const int SM_CYCAPTION        = 4;
+    public const int SM_CXFIXEDFRAME     = 7;
     public const int SM_CYFIXEDFRAME     = 8;
     public const int SM_CXSMICON         = 49;
     public const int SM_CYSMICON         = 50;
@@ -413,6 +414,12 @@ internal static class Win32Constants
 
     // --- DPI ---
     public const uint MDT_EFFECTIVE_DPI  = 0;
+
+    // --- DWM Window Attributes ---
+    /// <summary>DWM이 실제로 합성하는 "보이는" 프레임 경계. GetWindowRect는 invisible resize border를 포함하므로 시각적 정렬에는 이 값을 써야 한다.</summary>
+    public const uint DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+    /// <summary>창의 cloaked 상태(가상 데스크톱 숨김, UWP suspend 등). 0이 아니면 화면에 표시되지 않음.</summary>
+    public const uint DWMWA_CLOAKED      = 14;
 
     // --- 고대비 ---
     public const uint SPI_GETHIGHCONTRAST = 0x0042;

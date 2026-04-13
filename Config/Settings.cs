@@ -345,9 +345,11 @@ internal static class Settings
                     IntPtr.Zero, IntPtr.Zero);
             }
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // 파일 접근 실패 시 무시
+            // 파일 잠금(아토믹 replace 에디터의 delete→rename 중간 상태) 또는 권한 오류는 흡수.
+            // 그 외 타입은 경로 계산 버그를 의미하므로 전파.
+            Logger.Debug($"CheckConfigFileChange mtime probe failed: {ex.Message}");
         }
     }
 
