@@ -1,10 +1,14 @@
 using System.Runtime.InteropServices;
-using KoEnVue.Config;
-using KoEnVue.Detector;
-using KoEnVue.Models;
-using KoEnVue.Native;
-using KoEnVue.UI;
-using KoEnVue.Utils;
+using KoEnVue.App.Config;
+using KoEnVue.App.Detector;
+using KoEnVue.App.Models;
+using KoEnVue.App.UI;
+using KoEnVue.Core.Native;
+using KoEnVue.Core.Color;
+using KoEnVue.Core.Dpi;
+using KoEnVue.Core.Logging;
+using KoEnVue.Core.Windowing;
+using KoEnVue.App.Localization;
 
 namespace KoEnVue;
 
