@@ -393,7 +393,7 @@ internal static class Program
         _lastForegroundHwnd = hwndForeground;
 
         if (foregroundChanged)
-            _currentProcessName = Detector.SystemFilter.GetProcessName(hwndForeground);
+            _currentProcessName = WindowProcessInfo.GetProcessName(hwndForeground);
 
         // 시스템 입력 프로세스(시작 메뉴 ↔ 검색 창)는 하나의 HWND를 모드별로 재사용하면서
         // 시각적 rect만 바꾼다. 감지 스레드가 rect 변화 기반으로 이 메시지를 다시 보낸 경우
@@ -647,7 +647,7 @@ internal static class Program
             // 콘솔 호스트(conhost) 앱은 hwndFocus가 0 — 포그라운드 윈도우로 대체
             if (hwndFocus == IntPtr.Zero)
             {
-                string fgClass = SystemFilter.GetClassName(hwndForeground);
+                string fgClass = WindowProcessInfo.GetClassName(hwndForeground);
                 if (fgClass.Equals(Win32Constants.ConsoleWindowClass, StringComparison.OrdinalIgnoreCase))
                     hwndFocus = hwndForeground;
             }
@@ -677,7 +677,7 @@ internal static class Program
             // hwnd 변경 시에만 프로세스 이름 캐시 갱신 (폴링당 Process.GetProcessById 호출 회피)
             if (hwndForeground != lastHwndForeground)
             {
-                lastForegroundProcessName = SystemFilter.GetProcessName(hwndForeground);
+                lastForegroundProcessName = WindowProcessInfo.GetProcessName(hwndForeground);
                 lastSystemInputFrame = default;
             }
 

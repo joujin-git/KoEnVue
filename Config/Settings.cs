@@ -1,7 +1,6 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using KoEnVue.Detector;
 using KoEnVue.Models;
 using KoEnVue.Native;
 using KoEnVue.Utils;
@@ -422,10 +421,10 @@ internal static class Settings
     {
         return config.AppProfileMatch switch
         {
-            AppProfileMatch.Process => SystemFilter.GetProcessName(hwnd).ToLowerInvariant(),
-            AppProfileMatch.Class => SystemFilter.GetClassName(hwnd),
+            AppProfileMatch.Process => WindowProcessInfo.GetProcessName(hwnd).ToLowerInvariant(),
+            AppProfileMatch.Class => WindowProcessInfo.GetClassName(hwnd),
             AppProfileMatch.Title => GetWindowTitle(hwnd),
-            _ => SystemFilter.GetProcessName(hwnd).ToLowerInvariant(),
+            _ => WindowProcessInfo.GetProcessName(hwnd).ToLowerInvariant(),
         };
     }
 

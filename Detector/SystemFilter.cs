@@ -67,7 +67,7 @@ internal static class SystemFilter
         if (!IsOnCurrentVirtualDesktop(hwnd)) return true;
 
         // 4. 클래스명 블랙리스트 (기본: 바탕화면/작업 표시줄)
-        string className = GetClassName(hwnd);
+        string className = WindowProcessInfo.GetClassName(hwnd);
         foreach (string c in config.SystemHideClasses)
         {
             if (c.Equals(className, StringComparison.OrdinalIgnoreCase))
@@ -157,7 +157,7 @@ internal static class SystemFilter
     {
         if (config.AppFilterList.Length == 0) return true;
 
-        string processName = GetProcessName(hwnd);
+        string processName = WindowProcessInfo.GetProcessName(hwnd);
         bool inList = config.AppFilterList.Contains(processName, StringComparer.OrdinalIgnoreCase);
 
         return config.AppFilterMode switch
@@ -168,47 +168,4 @@ internal static class SystemFilter
         };
     }
 
-    /// <summary>
-    /// 윈도우 클래스명 조회.
-    /// </summary>
-    internal static string GetClassName(IntPtr hwnd)
-    {
-        char[] buffer = new char[Win32Constants.MAX_CLASS_NAME];
-        int len = User32.GetClassNameW(hwnd, buffer, Win32Constants.MAX_CLASS_NAME);
-        return len > 0 ? new string(buffer, 0, len) : string.Empty;
-    }
-
-    /// <summary>
-    /// HWND로부터 프로세스 이름 조회.
-    /// </summary>
-    internal static string GetProcessName(IntPtr hwnd)
-    {
-        User32.GetWindowThreadProcessId(hwnd, out uint processId);
-        return GetProcessName(processId);
-    }
-
-    /// <summary>
-    /// 프로세스 ID로부터 프로세스 이름 조회.
-    /// </summary>
-    internal static string GetProcessName(uint processId)
-    {
-        if (processId == 0) return string.Empty;
-
-        try
-        {
-            using var proc = System.Diagnostics.Process.GetProcessById((int)processId);
-            return proc.ProcessName;
-        }
-        catch (Exception ex) when (ex is ArgumentException
-                                     or InvalidOperationException
-                                     or System.ComponentModel.Win32Exception)
-        {
-            // ArgumentException: PID 누락/만료 (가장 흔한 경로)
-            // InvalidOperationException: ProcessName 게터가 프로세스 상태 재평가 시 사라진 edge case
-            // Win32Exception: 권한 없음 (서비스/시스템 프로세스 접근)
-            // 80ms 폴링 핫패스이므로 Debug 레벨 유지 (Info/Warning이면 스팸 위험)
-            Logger.Debug($"GetProcessName failed: {ex.Message}");
-            return string.Empty;
-        }
-    }
 }
