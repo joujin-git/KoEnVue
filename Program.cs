@@ -715,7 +715,7 @@ internal static class Program
             }
 
             // 4. IME 상태 감지
-            ImeState currentIme = ImeStatus.Detect(hwndFocus, threadId, appConfig);
+            ImeState currentIme = ImeStatus.Detect(hwndFocus, threadId, appConfig.DetectionMethod);
             if (currentIme != lastImeState || foregroundChanged)
             {
                 lastImeState = currentIme;

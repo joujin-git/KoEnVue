@@ -45,11 +45,11 @@ internal static class ImeStatus
     }
 
     /// <summary>
-    /// config.DetectionMethod에 따라 분기하여 IME 상태를 감지한다.
+    /// DetectionMethod에 따라 분기하여 IME 상태를 감지한다.
     /// </summary>
-    public static ImeState Detect(IntPtr hwndFocus, uint threadId, AppConfig config)
+    public static ImeState Detect(IntPtr hwndFocus, uint threadId, DetectionMethod method)
     {
-        return config.DetectionMethod switch
+        return method switch
         {
             DetectionMethod.ImeDefault => TryTier1(hwndFocus) ?? ImeState.English,
             DetectionMethod.ImeContext => TryTier2(hwndFocus) ?? ImeState.English,
