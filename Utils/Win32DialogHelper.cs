@@ -49,4 +49,14 @@ internal static class Win32DialogHelper
     {
         return -(int)Math.Round(pointSize * dpiY / PointsPerInch);
     }
+
+    /// <summary>
+    /// 지정 윈도우에 WM_SETFONT 메시지를 보내 시스템 폰트를 적용한다.
+    /// wParam = hFont, lParam = TRUE (다시 그리기 요청).
+    /// CleanupDialog/ScaleInputDialog/SettingsDialog 공용 단일 라인 헬퍼.
+    /// </summary>
+    public static void ApplyFont(IntPtr hwnd, IntPtr hFont)
+    {
+        User32.SendMessageW(hwnd, Win32Constants.WM_SETFONT, hFont, (IntPtr)1);
+    }
 }
