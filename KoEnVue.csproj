@@ -11,5 +11,6 @@
     <Nullable>enable</Nullable>
     <NoWarn>SYSLIB1051</NoWarn>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>koenvue.ico</ApplicationIcon>
   </PropertyGroup>
 </Project>
