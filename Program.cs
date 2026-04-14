@@ -35,6 +35,9 @@ internal static class Program
     private static string _currentProcessName = "";
     private static readonly Dictionary<IntPtr, (int x, int y)> _hwndPositions = [];
 
+    // CAPS LOCK 토글 캐시 (메인 스레드 전용 — TIMER_ID_CAPS 폴러가 200ms마다 GetKeyState 비교)
+    private static bool _lastCapsLockState;
+
     // 라이프사이클
     private static Mutex? _mutex;
     private static bool _stopping;
@@ -117,6 +120,13 @@ internal static class Program
 
         // 9c. 시작 프로그램 태스크 경로 동기화 (exe 이동 감지 → 재등록, 백그라운드)
         Tray.SyncStartupPathAsync();
+
+        // 9d. CAPS LOCK 폴링 타이머 시작 (200ms, 메인 스레드)
+        //     GetKeyState는 calling thread 입력 상태를 읽기 때문에 메시지 큐가 있는 메인 스레드에서만
+        //     신뢰할 수 있다 → 감지 스레드(80ms 폴러) 대신 WM_TIMER로 분리. Overlay.Initialize가
+        //     동일한 초기값을 _capsLockOn에 주입하므로 첫 틱에 중복 UpdateColor가 발생하지 않는다.
+        _lastCapsLockState = (User32.GetKeyState(Win32Constants.VK_CAPITAL) & 1) != 0;
+        User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_CAPS, DefaultConfig.CapsLockPollMs, IntPtr.Zero);
 
         // 10. 감지 스레드 시작
         StartDetectionThread();
@@ -282,10 +292,13 @@ internal static class Program
                 HandleTrayCallback(lParam);
                 return IntPtr.Zero;
 
-            // === 타이머 (애니메이션) ===
+            // === 타이머 (애니메이션 + CAPS LOCK 폴러) ===
 
             case Win32Constants.WM_TIMER:
-                HandleTimer(wParam);
+                if ((nuint)(nint)wParam == AppMessages.TIMER_ID_CAPS)
+                    HandleCapsLockTimer();
+                else
+                    HandleTimer(wParam);
                 return IntPtr.Zero;
 
             // === 핫키 ===
@@ -537,6 +550,23 @@ internal static class Program
     private static void HandleTimer(IntPtr timerId)
     {
         Animation.HandleTimer((nuint)(nint)timerId, _config);
+    }
+
+    /// <summary>
+    /// 메인 스레드 WM_TIMER(TIMER_ID_CAPS) 핸들러 — CAPS LOCK 토글 상태 폴링.
+    /// 토글 비트만 변경됐을 때 Overlay._capsLockOn 필드를 갱신하고 인디가 가시 상태면 즉시 재렌더.
+    /// 인디가 숨겨져 있으면 필드만 갱신하고 재렌더는 다음 표시 시점으로 지연된다.
+    /// </summary>
+    private static void HandleCapsLockTimer()
+    {
+        bool current = (User32.GetKeyState(Win32Constants.VK_CAPITAL) & 1) != 0;
+        if (current == _lastCapsLockState) return;
+
+        _lastCapsLockState = current;
+        Logger.Debug($"CapsLock: {(current ? "ON" : "OFF")}");
+        Overlay.SetCapsLock(current);
+        if (_indicatorVisible)
+            Overlay.UpdateColor(_lastImeState);
     }
 
     private static void HandleTrayCallback(IntPtr lParam)

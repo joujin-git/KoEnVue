@@ -52,6 +52,7 @@ internal static class AppMessages
     public const nuint TIMER_ID_HIGHLIGHT = 3;  // ~16ms, 강조 스케일
     public const nuint TIMER_ID_TOPMOST   = 4;  // 5000ms, TOPMOST 재적용
     public const nuint TIMER_ID_SLIDE     = 5;  // ~16ms, 슬라이드 위치 보간
+    public const nuint TIMER_ID_CAPS      = 6;  // 200ms, CAPS LOCK 토글 폴링 (메인 스레드)
 
     // --- WM_USER 기반 ---
 

@@ -188,6 +188,9 @@ internal static partial class User32
     [LibraryImport("user32.dll")]
     internal static partial short GetAsyncKeyState(int vKey);
 
+    [LibraryImport("user32.dll")]
+    internal static partial short GetKeyState(int vKey);
+
     // === 키보드 레이아웃 ===
 
     [LibraryImport("user32.dll")]

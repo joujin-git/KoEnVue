@@ -31,6 +31,11 @@ internal static class Overlay
     // public 메서드 내부에서 BuildStyle을 통해 OverlayStyle로 합성된다.
     private static AppConfig _config = null!;
 
+    // CAPS LOCK 토글 상태. Program.cs의 메인 스레드 WM_TIMER 폴러가 SetCapsLock으로 주입한다.
+    // BuildStyle이 매 렌더마다 읽어 OverlayStyle.CapsLockOn 필드에 반영 — record 값 동등성
+    // 비교를 통해 상태 전환 시 DIB 재렌더가 자동으로 일어난다.
+    private static bool _capsLockOn;
+
     // ================================================================
     // 초기화 / 해제
     // ================================================================
@@ -38,6 +43,10 @@ internal static class Overlay
     public static void Initialize(IntPtr hwndOverlay, AppConfig config)
     {
         _config = config;
+        // 사용자가 CAPS LOCK을 이미 켠 상태로 앱을 시작해도 첫 렌더가 정확하도록 초기값 주입.
+        // Program.cs의 WM_TIMER 폴러도 같은 초기값을 읽어 첫 틱에서 중복 WM_TIMER 콜백이
+        // Overlay.UpdateColor를 발생시키지 않는다.
+        _capsLockOn = (User32.GetKeyState(Win32Constants.VK_CAPITAL) & 1) != 0;
         _engine = new LayeredOverlayBase(hwndOverlay, OnRenderToDib);
         // DIB/HFONT 사전 생성 — 첫 Show 이전에 호출되는 GetDefaultPosition 경로가
         // _currentHeight > 0을 가정하므로 초기화 시점에 리소스를 warming한다. 그리기는 생략.
@@ -148,12 +157,38 @@ internal static class Overlay
     /// <summary>현재 가시성.</summary>
     public static bool IsVisible => _engine.IsVisible;
 
+    /// <summary>
+    /// CAPS LOCK 토글 상태 주입. Program.cs의 메인 스레드 WM_TIMER 폴러가 호출.
+    /// 실제 재렌더는 호출자가 이후 <see cref="UpdateColor"/>로 트리거한다 — 이 메서드는
+    /// 필드 갱신만 담당하므로 인디가 숨겨진 상태에서도 다음 표시 시점에 정확히 반영된다.
+    /// </summary>
+    public static void SetCapsLock(bool capsLockOn)
+    {
+        _capsLockOn = capsLockOn;
+    }
+
     // ================================================================
     // GetDefaultPosition + ComputeAnchorFromCurrentPosition (system input 특수 로직 포함)
     // ================================================================
 
     /// <summary>시스템 입력 프로세스 기본 위치의 창 상단 여백(px).</summary>
     private const int SystemInputGapPx = 4;
+
+    /// <summary>CAPS LOCK 막대 두께 (logical px, DPI 스케일링 전).</summary>
+    private const int CapsLockBarWidthLogicalPx = 2;
+
+    /// <summary>
+    /// CAPS LOCK 막대 수평 인셋 최소값 (logical px). 보더가 있으면 borderWidth와 max.
+    /// 1 logical px은 시각적으로 너무 작아 대칭이 흐려지므로 2로 설정.
+    /// </summary>
+    private const int CapsLockBarInsetLogicalPx = 2;
+
+    /// <summary>
+    /// CAPS LOCK 막대 우측 시각 보정 (physical px).
+    /// 수학적으론 대칭이지만 RoundRect의 우/하단 exclusive 규칙 + DrawTextW AA 가중치 +
+    /// premultiplied alpha 합성이 겹치며 시각적으로 우측 gap이 1px 좁아 보이는 현상을 보정.
+    /// </summary>
+    private const int CapsLockRightCompensationPx = 1;
 
     /// <summary>
     /// 앱별 저장 위치가 없을 때 기본 위치.
@@ -296,6 +331,7 @@ internal static class Overlay
             FgHex: fgHex,
             BorderHex: config.BorderColor,
             LabelText: labelText,
+            CapsLockOn: _capsLockOn,
             MeasureLabels: (config.HangulLabel, config.EnglishLabel, config.NonKoreanLabel)
         );
     }
@@ -361,6 +397,36 @@ internal static class Overlay
 
             Gdi32.SetTextColor(hdc, oldTextColor);
             Gdi32.SetBkMode(hdc, oldBkMode);
+
+            // 5. CAPS LOCK 막대 (좌우 세로 띠, fg 색상 재사용) — 상수는 클래스 헤드의 Caps* 참조
+            //    - topY/bottomY: borderRadius만큼 수직 인셋 → 모서리 라운드와 겹치지 않음
+            //    - leftX:  max(borderWidth, CapsLockBarInsetLogicalPx) 수평 인셋 (보더가 있으면 보더 안쪽)
+            //    - rightX: leftX 대칭 위치에 +CapsLockRightCompensationPx 추가 시각 보정
+            //    - 병리 설정(LabelHeight < 2*BorderRadius) 또는 w가 너무 좁은 경우 silent skip
+            if (style.CapsLockOn)
+            {
+                IntPtr hCapsBrush = Gdi32.CreateSolidBrush(fgColor);
+                try
+                {
+                    int barW = Math.Max(1, DpiHelper.Scale(CapsLockBarWidthLogicalPx, metrics.DpiScale));
+                    int inset = Math.Max(metrics.ScaledBorderWidth, DpiHelper.Scale(CapsLockBarInsetLogicalPx, metrics.DpiScale));
+                    int leftX = inset;
+                    int rightX = w - inset - barW - CapsLockRightCompensationPx;
+                    int topY = metrics.ScaledBorderRadius;
+                    int bottomY = h - metrics.ScaledBorderRadius;
+                    if (bottomY > topY && rightX >= leftX + barW)
+                    {
+                        var leftRect = new RECT { Left = leftX, Top = topY, Right = leftX + barW, Bottom = bottomY };
+                        var rightRect = new RECT { Left = rightX, Top = topY, Right = rightX + barW, Bottom = bottomY };
+                        User32.FillRect(hdc, ref leftRect, hCapsBrush);
+                        User32.FillRect(hdc, ref rightRect, hCapsBrush);
+                    }
+                }
+                finally
+                {
+                    Gdi32.DeleteObject(hCapsBrush);
+                }
+            }
         }
         finally
         {

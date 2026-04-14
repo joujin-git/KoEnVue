@@ -58,6 +58,9 @@ internal static class DefaultConfig
     /// <summary>애니메이션 프레임 간격 (~60fps)</summary>
     public const uint AnimationFrameMs = 16;
 
+    /// <summary>CAPS LOCK 폴링 간격 (메인 스레드 WM_TIMER 주기)</summary>
+    public const uint CapsLockPollMs = 200;
+
     /// <summary>Dim 모드 투명도 감소 계수 (50%)</summary>
     public const double DimOpacityFactor = 0.5;
 

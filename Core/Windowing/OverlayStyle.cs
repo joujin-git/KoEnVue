@@ -38,6 +38,11 @@ internal readonly record struct OverlayStyle(
     // === 라벨 텍스트 (state-routed) ===
     string LabelText,           // 현재 상태의 라벨 (그리기용)
 
+    // === CAPS LOCK 표시 (state-independent — 파사드가 시스템 토글 상태를 주입) ===
+    // true면 라벨 좌우 세로 막대(fg 색상)가 그려진다. 토글은 BuildStyle이 static 필드에서 읽어와
+    // 매 렌더마다 반영하므로 record 동등성 비교 시 state-transition 트리거로도 작동한다.
+    bool CapsLockOn,
+
     // === 라벨 측정용 3종 (flip-flop fix 필수 — state-independent) ===
     // CalculateFixedLabelWidth는 상태와 무관하게 3종 라벨 모두를 측정해 최대 폭으로
     // _fixedLabelWidth를 고정한다. 단일 LabelText만 사용하면 state 전환 시마다 라벨 폭이
