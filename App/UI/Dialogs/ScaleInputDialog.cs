@@ -182,28 +182,17 @@ internal static class ScaleInputDialog
         Win32DialogHelper.ApplyFont(hwndCancel, hFontRaw);
 
         // 모달 표시 + EDIT 포커스 + 텍스트 전체 선택
-        User32.EnableWindow(hwndMain, false);
+        // (EnableWindow/모달 루프/포그라운드 복원은 ModalDialogLoop.Run 이 담당,
+        //  다이얼로그-특이 초기화만 여기에 남는다)
         User32.ShowWindow(_hwndScaleDlg, Win32Constants.SW_SHOW);
         User32.SetForegroundWindow(_hwndScaleDlg);
         User32.SetFocus(_hwndScaleEdit);
         User32.SendMessageW(_hwndScaleEdit, Win32Constants.EM_SETSEL, IntPtr.Zero, (IntPtr)(-1));
 
-        // 모달 루프 — IsDialogMessageW로 Tab/Enter/ESC 기본 처리
-        while (!_scaleDlgClosed)
-        {
-            int ret = User32.GetMessageW(out MSG msg, IntPtr.Zero, 0, 0);
-            if (ret <= 0) break;
-            if (!User32.IsDialogMessageW(_hwndScaleDlg, ref msg))
-            {
-                User32.TranslateMessage(ref msg);
-                User32.DispatchMessageW(ref msg);
-            }
-        }
+        ModalDialogLoop.Run(_hwndScaleDlg, hwndMain, ref _scaleDlgClosed);
 
         double? result = _scaleDlgResult ? _scaleDlgParsedValue : null;
 
-        User32.EnableWindow(hwndMain, true);
-        User32.SetForegroundWindow(hwndMain);
         User32.DestroyWindow(_hwndScaleDlg);
         _hwndScaleDlg = IntPtr.Zero;
         _hwndScaleEdit = IntPtr.Zero;

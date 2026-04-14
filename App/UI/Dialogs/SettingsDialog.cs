@@ -374,26 +374,13 @@ internal static class SettingsDialog
             _hwndDialog, (IntPtr)IDC_BTN_CANCEL, IntPtr.Zero, IntPtr.Zero);
         Win32DialogHelper.ApplyFont(hwndCancel, hFontRaw);
 
-        // 모달 표시
-        User32.EnableWindow(_hwndMain, false);
+        // 모달 표시 — EnableWindow/메시지 루프/포그라운드 복원은 공용 헬퍼에 위임
         User32.ShowWindow(_hwndDialog, Win32Constants.SW_SHOW);
         User32.SetForegroundWindow(_hwndDialog);
 
-        // 모달 루프 (IsDialogMessageW로 Tab/Enter/ESC 처리)
-        while (!_dlgClosed)
-        {
-            int ret = User32.GetMessageW(out MSG msg, IntPtr.Zero, 0, 0);
-            if (ret <= 0) break;
-            if (!User32.IsDialogMessageW(_hwndDialog, ref msg))
-            {
-                User32.TranslateMessage(ref msg);
-                User32.DispatchMessageW(ref msg);
-            }
-        }
+        ModalDialogLoop.Run(_hwndDialog, _hwndMain, ref _dlgClosed);
 
         // 정리
-        User32.EnableWindow(_hwndMain, true);
-        User32.SetForegroundWindow(_hwndMain);
         User32.DestroyWindow(_hwndDialog);
         _hwndDialog = IntPtr.Zero;
         _hwndViewport = IntPtr.Zero;

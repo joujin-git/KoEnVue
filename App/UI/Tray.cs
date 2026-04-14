@@ -6,6 +6,7 @@ using KoEnVue.Core.Native;
 using KoEnVue.Core.Color;
 using KoEnVue.Core.Dpi;
 using KoEnVue.Core.Logging;
+using KoEnVue.Core.Tray;
 using KoEnVue.Core.Windowing;
 using KoEnVue.App.Localization;
 
@@ -52,7 +53,6 @@ internal static class Tray
 
     // P3: 매직 넘버 금지
     private const double OpacityTolerance = 0.001;
-    private const int TooltipMaxLength = 127; // szTip[128], null 종료 고려
     private const int SchtasksQueryTimeoutMs = 3000;
     private const int SchtasksCommandTimeoutMs = 5000;
 
@@ -63,6 +63,7 @@ internal static class Tray
     private static bool _initialized;
     private static IntPtr _hwndMain;
     private static SafeIconHandle? _currentIcon;
+    private static NotifyIconManager? _notifyIcon;
 
     // ================================================================
     // Public API
@@ -72,7 +73,7 @@ internal static class Tray
     /// 트레이 아이콘 등록 (NIM_ADD + NIM_SETVERSION).
     /// config.TrayEnabled == false 이면 건너뛴다.
     /// </summary>
-    internal static unsafe void Initialize(IntPtr hwndMain, ImeState initialState, AppConfig config)
+    internal static void Initialize(IntPtr hwndMain, ImeState initialState, AppConfig config)
     {
         _hwndMain = hwndMain;
 
@@ -85,23 +86,8 @@ internal static class Tray
 
         _currentIcon = TrayIcon.CreateIcon(initialState, config);
 
-        NOTIFYICONDATAW nid = default;
-        nid.cbSize = (uint)sizeof(NOTIFYICONDATAW);
-        nid.hWnd = hwndMain;
-        nid.uFlags = Win32Constants.NIF_MESSAGE | Win32Constants.NIF_ICON
-                   | Win32Constants.NIF_TIP | Win32Constants.NIF_SHOWTIP | Win32Constants.NIF_GUID;
-        nid.uCallbackMessage = AppMessages.WM_TRAY_CALLBACK;
-        nid.hIcon = _currentIcon.DangerousGetHandle();
-        nid.guidItem = DefaultConfig.AppGuid;
-
-        // szTip 복사 (unsafe fixed char 버퍼)
-        CopyTooltip(ref nid, initialState, config);
-
-        Shell32.Shell_NotifyIconW(Win32Constants.NIM_ADD, ref nid);
-
-        // NOTIFYICON_VERSION_4 활성화
-        nid.uVersion = Win32Constants.NOTIFYICON_VERSION_4;
-        Shell32.Shell_NotifyIconW(Win32Constants.NIM_SETVERSION, ref nid);
+        _notifyIcon = new NotifyIconManager(hwndMain, AppMessages.WM_TRAY_CALLBACK, DefaultConfig.AppGuid);
+        _notifyIcon.Add(_currentIcon.DangerousGetHandle(), BuildTooltip(initialState, config));
 
         _initialized = true;
         Logger.Info("Tray icon initialized");
@@ -110,25 +96,14 @@ internal static class Tray
     /// <summary>
     /// IME 상태 변경 시 아이콘 + 툴팁 갱신 (NIM_MODIFY).
     /// </summary>
-    internal static unsafe void UpdateState(ImeState state, AppConfig config)
+    internal static void UpdateState(ImeState state, AppConfig config)
     {
         if (!_initialized) return;
 
         var newIcon = TrayIcon.CreateIcon(state, config);
+        _notifyIcon?.UpdateIconAndTooltip(newIcon.DangerousGetHandle(), BuildTooltip(state, config));
 
-        NOTIFYICONDATAW nid = default;
-        nid.cbSize = (uint)sizeof(NOTIFYICONDATAW);
-        nid.hWnd = _hwndMain;
-        nid.uFlags = Win32Constants.NIF_ICON | Win32Constants.NIF_TIP
-                   | Win32Constants.NIF_SHOWTIP | Win32Constants.NIF_GUID;
-        nid.hIcon = newIcon.DangerousGetHandle();
-        nid.guidItem = DefaultConfig.AppGuid;
-
-        CopyTooltip(ref nid, state, config);
-
-        Shell32.Shell_NotifyIconW(Win32Constants.NIM_MODIFY, ref nid);
-
-        // 이전 아이콘 해제 후 교체
+        // 이전 아이콘 해제 후 교체 — 소유권은 Tray.cs 측에 남는다 (NotifyIconManager 는 해제 금지).
         _currentIcon?.Dispose();
         _currentIcon = newIcon;
     }
@@ -136,20 +111,17 @@ internal static class Tray
     /// <summary>
     /// 트레이 아이콘 제거 (NIM_DELETE). 앱 종료 시 호출.
     /// </summary>
-    internal static unsafe void Remove()
+    internal static void Remove()
     {
         if (!_initialized) return;
 
-        NOTIFYICONDATAW nid = default;
-        nid.cbSize = (uint)sizeof(NOTIFYICONDATAW);
-        nid.uFlags = Win32Constants.NIF_GUID;
-        nid.guidItem = DefaultConfig.AppGuid;
-        bool removed = Shell32.Shell_NotifyIconW(Win32Constants.NIM_DELETE, ref nid);
+        bool removed = _notifyIcon?.Remove() ?? true;
         if (!removed)
             Logger.Warning("Failed to remove tray icon on shutdown");
 
         _currentIcon?.Dispose();
         _currentIcon = null;
+        _notifyIcon = null;
         _initialized = false;
 
         Logger.Info("Tray icon removed");
@@ -391,19 +363,13 @@ internal static class Tray
     // ================================================================
 
     /// <summary>
-    /// szTip fixed char 버퍼에 툴팁 텍스트를 복사한다.
+    /// 현재 IME 상태 기반 툴팁 문자열을 반환한다. <c>config.TrayTooltip</c> 이 false 이면 null
+    /// (shell 은 빈 툴팁으로 취급하여 호버 표시를 생략).
     /// </summary>
-    private static unsafe void CopyTooltip(ref NOTIFYICONDATAW nid, ImeState state, AppConfig config)
+    private static string? BuildTooltip(ImeState state, AppConfig config)
     {
-        if (!config.TrayTooltip) return; // 빈 문자열 = 툴팁 숨김
-
-        string text = $"KoEnVue - {I18n.GetTrayTooltip(state)}";
-        ReadOnlySpan<char> tip = text.AsSpan();
-        int len = Math.Min(tip.Length, TooltipMaxLength);
-        fixed (char* pTip = nid.szTip)
-        {
-            tip[..len].CopyTo(new Span<char>(pTip, TooltipMaxLength + 1));
-        }
+        if (!config.TrayTooltip) return null;
+        return $"KoEnVue - {I18n.GetTrayTooltip(state)}";
     }
 
     // ================================================================

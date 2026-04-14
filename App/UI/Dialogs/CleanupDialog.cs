@@ -195,19 +195,9 @@ internal static class CleanupDialog
             _hwndDialog, (IntPtr)IDC_BTN_CANCEL, IntPtr.Zero, IntPtr.Zero);
         Win32DialogHelper.ApplyFont(hwndCancel, hFontRaw);
 
-        // 모달 표시
-        User32.EnableWindow(hwndMain, false);
+        // 모달 표시 — 루프/EnableWindow/포그라운드 복원은 공용 헬퍼에 위임
         User32.ShowWindow(_hwndDialog, Win32Constants.SW_SHOW);
-
-        // 모달 메시지 루프
-        while (!_dlgClosed && User32.GetMessageW(out var msg, IntPtr.Zero, 0, 0) > 0)
-        {
-            if (!User32.IsDialogMessageW(_hwndDialog, ref msg))
-            {
-                User32.TranslateMessage(ref msg);
-                User32.DispatchMessageW(ref msg);
-            }
-        }
+        ModalDialogLoop.Run(_hwndDialog, hwndMain, ref _dlgClosed);
 
         // 결과 수집
         List<string>? result = null;
@@ -227,8 +217,6 @@ internal static class CleanupDialog
         }
 
         // 정리
-        User32.EnableWindow(hwndMain, true);
-        User32.SetForegroundWindow(hwndMain);
         User32.DestroyWindow(_hwndDialog);
         _hwndDialog = IntPtr.Zero;
         _checkboxHandles.Clear();
