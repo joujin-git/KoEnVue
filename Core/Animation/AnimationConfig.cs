@@ -6,8 +6,8 @@ namespace KoEnVue.Core.Animation;
 /// Core는 App의 레코드를 모른다 (P6).
 /// </summary>
 /// <remarks>
-/// ImeState/NonKoreanImeMode는 의도적으로 포함되지 않는다.
-/// Dim 모드는 파사드가 <see cref="OverlayAnimator.SetDimMode(bool)"/>로 주입한다.
+/// IME 상태 enum과 비한국어 IME 모드 enum은 의도적으로 포함되지 않는다.
+/// Dim 여부는 파사드가 <see cref="OverlayAnimator.SetDimMode(bool)"/>로 주입한다.
 /// </remarks>
 public readonly record struct AnimationConfig(
     bool AnimationEnabled,

@@ -11,7 +11,7 @@ namespace KoEnVue.Core.Tray;
 /// - 본 클래스는 <c>IntPtr hIcon</c> 을 파라미터로 받지만 <b>소유권을 가지지 않는다</b>.
 ///   호출자(예: Tray.cs 의 <see cref="SafeIconHandle"/>)가 HICON 의 생명주기를 관리하며,
 ///   본 클래스에서 DestroyIcon 류 정리를 수행하면 이중 해제가 발생하므로 절대 금지한다.
-/// - 메뉴 구성 / TrackPopupMenu / I18n 문자열 생성 / 아이콘 렌더링(ImeState 의존) 등은
+/// - 메뉴 구성 / TrackPopupMenu / I18n 문자열 생성 / 아이콘 렌더링(앱별 상태 의존) 등은
 ///   호출자 측에 남고, 본 클래스는 순수하게 shell32 프로토콜만 다룬다.
 /// - NOTIFYICON_VERSION_4 는 기본적으로 표준 툴팁(szTip) 호버 표시를 억제하므로,
 ///   NIM_ADD / NIM_MODIFY 양쪽 모두 uFlags 에 NIF_SHOWTIP 를 포함해야 한다 (Win7+).

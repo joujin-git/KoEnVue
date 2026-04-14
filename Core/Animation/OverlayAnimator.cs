@@ -14,8 +14,9 @@ namespace KoEnVue.Core.Animation;
 /// </para>
 ///
 /// <para>
-/// Stage 4-B 추출: 기존 App/UI/Animation.cs static 상태 머신에서 분리. ImeState/NonKoreanImeMode는
-/// 엔진에 누출되지 않으며 Dim 여부는 <see cref="SetDimMode(bool)"/>로만 전달된다.
+/// Stage 4-B 추출: 기존 App/UI/Animation.cs static 상태 머신에서 분리. IME 상태 enum과
+/// 비한국어 IME 모드 enum은 엔진에 누출되지 않으며 Dim 여부는
+/// <see cref="SetDimMode(bool)"/>로만 전달된다.
 /// </para>
 ///
 /// <para>
@@ -57,7 +58,7 @@ public sealed class OverlayAnimator : IDisposable
     // forceHidden 플래그 (FadingOut 완료 시 Hidden 강제)
     private bool _forceHidden;
 
-    // Dim 모드 (NonKoreanImeMode.Dim 판정은 파사드에서 수행 후 이 플래그로만 전달)
+    // Dim 모드 (비한국어 IME Dim 판정은 파사드에서 수행 후 이 플래그로만 전달)
     private bool _dimmed;
 
     // ================================================================
@@ -149,8 +150,8 @@ public sealed class OverlayAnimator : IDisposable
     }
 
     /// <summary>
-    /// Dim 모드 (투명도 50% 감소) 플래그 설정. 파사드가 <c>state == NonKorean &amp;&amp; mode == Dim</c>을
-    /// 판정해 이 메서드로만 전달한다. 엔진은 ImeState/NonKoreanImeMode를 모른다.
+    /// Dim 모드 (투명도 50% 감소) 플래그 설정. 파사드가 "비한국어 IME + Dim 모드" 조합을
+    /// 판정해 이 메서드로만 전달한다. 엔진은 IME 상태 enum과 비한국어 IME 모드 enum을 모른다.
     /// </summary>
     public void SetDimMode(bool dimmed)
     {
