@@ -556,7 +556,7 @@ internal sealed class LayeredOverlayBase : IDisposable
 
     /// <summary>
     /// 스냅 후보 최소 크기 (DPI 미적용 px). [UnmanagedCallersOnly] 콜백에서 파사드 상수에
-    /// 접근할 수 없으므로 Core 레이어에 복사 유지. 원본: App/Config/DefaultConfig.cs
+    /// 접근할 수 없으므로 Core 레이어에 동일 값을 복사 유지한다.
     /// </summary>
     private const int SnapMinWindowSizePx = 80;
 

@@ -2,8 +2,8 @@ namespace KoEnVue.Core.Animation;
 
 /// <summary>
 /// OverlayAnimator 엔진의 불변 설정 스냅샷.
-/// AppConfig → AnimationConfig 변환은 App 레이어 파사드(Animation.cs)가 담당.
-/// Core는 App의 레코드를 모른다 (P6).
+/// 앱 레코드 → AnimationConfig 변환은 상위 레이어 파사드가 담당한다.
+/// Core는 상위 레이어의 레코드를 모른다 (P6).
 /// </summary>
 /// <remarks>
 /// IME 상태 enum과 비한국어 IME 모드 enum은 의도적으로 포함되지 않는다.

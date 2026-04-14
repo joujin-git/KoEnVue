@@ -28,7 +28,7 @@ internal readonly record struct OverlayStyle(
     int LabelHeightLogicalPx,   // config.LabelHeight * IndicatorScale
     int BorderRadiusLogicalPx,  // config.LabelBorderRadius * IndicatorScale
     int BorderWidthLogicalPx,   // config.BorderWidth * IndicatorScale (0이면 보더 패스 스킵)
-    int PaddingXLogicalPx,      // DefaultConfig.LABEL_PADDING_X * IndicatorScale (상수 기반)
+    int PaddingXLogicalPx,      // 라벨 가로 패딩 상수 * IndicatorScale (파사드가 합성)
 
     // === 색상 (state-routed — 파사드가 합성) ===
     string BgHex,               // Hangul/English/NonKoreanBg 중 현재 상태에 해당

@@ -169,7 +169,7 @@ internal class JsonSettingsManager<T>
 
     /// <summary>
     /// 역직렬화 완료 후, 원본 병합 JSON 문자열을 다시 검사하여 T 에 수동 복구가 필요한
-    /// 필드를 재구성하는 훅 (예: AppConfig 의 <c>indicator_positions</c>).
+    /// 필드를 재구성하는 훅 (예: 사전형 하위 필드의 수동 재조립).
     /// 기본 구현은 identity.
     /// </summary>
     /// <param name="config">역직렬화 직후의 T.</param>
