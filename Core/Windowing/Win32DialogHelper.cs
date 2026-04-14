@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using KoEnVue.Core.Native;
 
 namespace KoEnVue.Core.Windowing;
@@ -58,5 +59,64 @@ internal static class Win32DialogHelper
     public static void ApplyFont(IntPtr hwnd, IntPtr hFont)
     {
         User32.SendMessageW(hwnd, Win32Constants.WM_SETFONT, hFont, (IntPtr)1);
+    }
+
+    /// <summary>
+    /// 다이얼로그용 맑은 고딕 9pt SafeFontHandle을 생성한다.
+    /// CleanupDialog/ScaleInputDialog/SettingsDialog 세 곳이 동일하게 사용하던
+    /// 9줄짜리 CreateFontW 호출 + SafeFontHandle 래핑 보일러플레이트를 흡수한다.
+    /// 호출자는 `using var hFont = Win32DialogHelper.CreateDialogFont(dpiY);` 스코프로
+    /// 폰트 수명을 모달 루프 + DestroyWindow 구간에 고정해야 한다 (Risk 3 — early release는 DrawTextW crash).
+    /// </summary>
+    public static SafeFontHandle CreateDialogFont(uint dpiY)
+    {
+        int fontHeight = CalculateFontHeightPx(dpiY);
+        return new SafeFontHandle(
+            Gdi32.CreateFontW(fontHeight, 0, 0, 0, Win32Constants.FW_NORMAL,
+                0, 0, 0, Win32Constants.DEFAULT_CHARSET,
+                Win32Constants.OUT_TT_PRECIS, Win32Constants.CLIP_DEFAULT_PRECIS,
+                Win32Constants.CLEARTYPE_QUALITY, Win32Constants.DEFAULT_PITCH,
+                "맑은 고딕"),
+            ownsHandle: true);
+    }
+
+    /// <summary>
+    /// 다이얼로그 좌측-상단 스크린 좌표를 계산한다. 세 다이얼로그가 공통으로 하던
+    /// `GetMonitorInfoW(rcWork) → center 또는 cursor 기준 + 모니터 경계 클램프` 계산을 흡수한다.
+    ///
+    /// <paramref name="anchor"/>:
+    ///   null  → 모니터 작업 영역 정중앙 (CleanupDialog, SettingsDialog 패턴)
+    ///   not null → 해당 스크린 좌표에 좌측-상단을 두고 작업 영역 경계 안으로 클램프
+    ///              (ScaleInputDialog 의 "커서 위치 근처" 패턴)
+    ///
+    /// <paramref name="hMonitor"/> 는 호출자가 이미 조회한 모니터 핸들을 재사용한다 —
+    /// 헬퍼가 내부적으로 MonitorFromPoint 를 다시 부르면 드래그-다이얼로그 or 다중-모니터
+    /// 시나리오에서 호출자의 모니터 선택 의도와 달라질 수 있기 때문.
+    /// </summary>
+    public static (int cx, int cy) CalculateDialogPosition(
+        IntPtr hMonitor, int dlgWidth, int dlgHeight, POINT? anchor = null)
+    {
+        MONITORINFOEXW mi = default;
+        mi.cbSize = (uint)Marshal.SizeOf<MONITORINFOEXW>();
+        User32.GetMonitorInfoW(hMonitor, ref mi);
+
+        int cx, cy;
+        if (anchor is POINT pt)
+        {
+            cx = pt.X;
+            cy = pt.Y;
+        }
+        else
+        {
+            cx = (mi.rcWork.Left + mi.rcWork.Right - dlgWidth) / 2;
+            cy = (mi.rcWork.Top + mi.rcWork.Bottom - dlgHeight) / 2;
+        }
+
+        if (cx + dlgWidth > mi.rcWork.Right) cx = mi.rcWork.Right - dlgWidth;
+        if (cy + dlgHeight > mi.rcWork.Bottom) cy = mi.rcWork.Bottom - dlgHeight;
+        if (cx < mi.rcWork.Left) cx = mi.rcWork.Left;
+        if (cy < mi.rcWork.Top) cy = mi.rcWork.Top;
+
+        return (cx, cy);
     }
 }

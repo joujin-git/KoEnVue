@@ -91,14 +91,7 @@ internal static class ScaleInputDialog
             + pad;
 
         // UI 폰트 (맑은 고딕 9pt, DPI 스케일) — using 스코프 종료 시 자동 DeleteObject
-        int fontHeight = Win32DialogHelper.CalculateFontHeightPx(dpiY);
-        using var hFont = new SafeFontHandle(
-            Gdi32.CreateFontW(fontHeight, 0, 0, 0, Win32Constants.FW_NORMAL,
-                0, 0, 0, Win32Constants.DEFAULT_CHARSET,
-                Win32Constants.OUT_TT_PRECIS, Win32Constants.CLIP_DEFAULT_PRECIS,
-                Win32Constants.CLEARTYPE_QUALITY, Win32Constants.DEFAULT_PITCH,
-                "맑은 고딕"),
-            ownsHandle: true);
+        using var hFont = Win32DialogHelper.CreateDialogFont(dpiY);
         IntPtr hFontRaw = hFont.DangerousGetHandle();
 
         // 다이얼로그 클래스 등록 (중복 호출은 무시됨)
@@ -112,16 +105,9 @@ internal static class ScaleInputDialog
         User32.RegisterClassExW(ref wc);
 
         // 대화상자 좌표: 커서 위치 기준, 모니터 work area 안으로 클램프
-        MONITORINFOEXW mi = default;
-        mi.cbSize = (uint)Marshal.SizeOf<MONITORINFOEXW>();
-        User32.GetMonitorInfoW(hMon, ref mi);
-
-        int cx = cursorPt.X;
-        int cy = cursorPt.Y;
-        if (cx + dlgWidth > mi.rcWork.Right) cx = mi.rcWork.Right - dlgWidth;
-        if (cy + dlgHeight > mi.rcWork.Bottom) cy = mi.rcWork.Bottom - dlgHeight;
-        if (cx < mi.rcWork.Left) cx = mi.rcWork.Left;
-        if (cy < mi.rcWork.Top) cy = mi.rcWork.Top;
+        // 공통 헬퍼 (anchor=cursorPt → 좌측-상단을 커서에 두고 rcWork 경계 클램프)
+        var (cx, cy) = Win32DialogHelper.CalculateDialogPosition(
+            hMon, dlgWidth, dlgHeight, cursorPt);
 
         _hwndScaleDlg = User32.CreateWindowExW(0, DlgClassName, I18n.ScaleDialogTitle,
             Win32Constants.WS_CAPTION | Win32Constants.WS_SYSMENU,

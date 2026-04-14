@@ -89,14 +89,7 @@ internal static class CleanupDialog
             + pad;                               // bottom padding
 
         // UI 폰트 (맑은 고딕 9pt, DPI 스케일) — using 스코프 종료 시 자동 DeleteObject
-        int fontHeight = Win32DialogHelper.CalculateFontHeightPx(dpiY);
-        using var hFont = new SafeFontHandle(
-            Gdi32.CreateFontW(fontHeight, 0, 0, 0, Win32Constants.FW_NORMAL,
-                0, 0, 0, Win32Constants.DEFAULT_CHARSET,
-                Win32Constants.OUT_TT_PRECIS, Win32Constants.CLIP_DEFAULT_PRECIS,
-                Win32Constants.CLEARTYPE_QUALITY, Win32Constants.DEFAULT_PITCH,
-                "맑은 고딕"),
-            ownsHandle: true);
+        using var hFont = Win32DialogHelper.CreateDialogFont(dpiY);
         IntPtr hFontRaw = hFont.DangerousGetHandle();
 
         // 다이얼로그 윈도우 클래스 등록 (한 번만)
@@ -109,12 +102,8 @@ internal static class CleanupDialog
         };
         User32.RegisterClassExW(ref wc); // 중복 등록은 무시됨
 
-        // 화면 중앙 좌표
-        MONITORINFOEXW mi = default;
-        mi.cbSize = (uint)Marshal.SizeOf<MONITORINFOEXW>();
-        User32.GetMonitorInfoW(hMon, ref mi);
-        int cx = (mi.rcWork.Left + mi.rcWork.Right - dlgWidth) / 2;
-        int cy = (mi.rcWork.Top + mi.rcWork.Bottom - dlgHeight) / 2;
+        // 화면 중앙 좌표 — 공통 헬퍼 (anchor=null → rcWork 정중앙)
+        var (cx, cy) = Win32DialogHelper.CalculateDialogPosition(hMon, dlgWidth, dlgHeight);
 
         string title = I18n.IsKorean ? "미사용 위치 데이터 정리" : "Clean unused position data";
         _hwndDialog = User32.CreateWindowExW(0, DlgClassName, title,
