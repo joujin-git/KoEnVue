@@ -1,79 +1,34 @@
 using System.Runtime.InteropServices;
 using KoEnVue.App.Config;
 using KoEnVue.App.Models;
-using KoEnVue.Core.Native;
 using KoEnVue.Core.Color;
 using KoEnVue.Core.Dpi;
-using KoEnVue.Core.Logging;
+using KoEnVue.Core.Native;
 using KoEnVue.Core.Windowing;
-using KoEnVue.App.Localization;
 
 namespace KoEnVue.App.UI;
 
 /// <summary>
-/// GDI 기반 오버레이 렌더링 + 드래그 가능한 플로팅 인디케이터.
-/// 앱별 위치 기억. 모든 호출은 메인 스레드에서만 수행.
+/// 정적 파사드 — LayeredOverlayBase 엔진에 AppConfig + ImeState를 합성해 위임.
+/// 모든 호출은 메인 스레드에서만 수행. Program.cs / Animation.cs / Tray.cs의 기존 호출
+/// 표현식(<c>Overlay.X(...)</c>)은 변경되지 않는다.
+/// <para>
+/// 파사드에 남는 상태는 <c>_config</c>(AppConfig 캐시) + <c>_engine</c>(LayeredOverlayBase
+/// 인스턴스) 단 2개 필드. 리소스 생명주기·드래그·DPI 처리·premultiplied alpha·블리트는 전부
+/// 엔진이 소유하며, 파사드는 ImeState + AppConfig → OverlayStyle 변환과 실제 GDI 그리기
+/// 콜백(<see cref="OnRenderToDib"/>)만 담당한다.
+/// </para>
 /// </summary>
 internal static class Overlay
 {
     // ================================================================
-    // GDI 리소스 상태
+    // 상태 (Stage 4-A: 2개 필드만 유지)
     // ================================================================
 
-    private static IntPtr _hwndOverlay;
-    private static IntPtr _memDC;
-    private static SafeBitmapHandle? _currentBitmap;
-    private static SafeFontHandle? _currentFont;
-    private static IntPtr _ppvBits;
-    private static IntPtr _nullPen;
+    private static LayeredOverlayBase _engine = null!;
 
-    // DPI 캐시
-    private static double _currentDpiScale = 1.0;
-    private static uint _currentDpiY = DpiHelper.BASE_DPI;
-
-    // DIB 크기 캐시
-    private static int _currentWidth;
-    private static int _currentHeight;
-
-    // 기본 크기 (DPI 미적용)
-    private static int _baseWidth;
-    private static int _baseHeight;
-
-    // F-S01: 라벨 고정 너비
-    private static int _fixedLabelWidth;
-
-    // 폰트 캐시 키
-    private static string _cachedFontFamily = "";
-    private static int _cachedFontSize;
-    private static FontWeight _cachedFontWeight;
-    private static double _cachedFontDpiScale;
-
-    // 위치/상태 추적
-    private static bool _isVisible;
-    private static ImeState? _lastRenderedState;
-    private static int _lastX;
-    private static int _lastY;
-    private static byte _lastAlpha;
-
-    // 드래그 상태
-    private static bool _isDragging;
-    private static int _dragStartX;
-    private static int _dragStartY;
-    // 드래그 시작 시 커서가 창 안에서 잡고 있는 상대 오프셋(hot point).
-    // HandleMoving에서 매 틱 (커서 - hot point)로 rect를 재동기화하기 위한 기준.
-    // WM_MOVING이 우리 수정값을 새 base로 삼아 다음 틱 proposed를 계산하는 탓에
-    // 스냅 델타가 누적되어 창과 커서가 벌어지는 현상을 방지한다.
-    private static int _dragHotPointX;
-    private static int _dragHotPointY;
-
-    // 드래그 스냅 후보 — BeginDrag에서 EnumWindows로 한 번만 캐싱,
-    // 드래그 중 매 WM_MOVING 틱에서 순회. EndDrag에서 Clear.
-    private static readonly List<RECT> _snapRects = new(64);
-
-    // Stage 3-A: 현재 AppConfig 캐시.
-    // Initialize/HandleConfigChanged 시점에 주입되며, public 메서드 내부에서 읽는다.
-    // Stage 4 A에서 LayeredOverlayBase/OverlayStyle 도입 시 private 렌더러와 함께
-    // 구조 리팩토링 예정.
+    // Stage 3-A: 현재 AppConfig 캐시. Initialize/HandleConfigChanged 시점에 주입되며
+    // public 메서드 내부에서 BuildStyle을 통해 OverlayStyle로 합성된다.
     private static AppConfig _config = null!;
 
     // ================================================================
@@ -82,28 +37,20 @@ internal static class Overlay
 
     public static void Initialize(IntPtr hwndOverlay, AppConfig config)
     {
-        _hwndOverlay = hwndOverlay;
         _config = config;
-        _memDC = Gdi32.CreateCompatibleDC(IntPtr.Zero);
-        _nullPen = Gdi32.GetStockObject(Win32Constants.NULL_PEN);
-        EnsureResources(config);
+        _engine = new LayeredOverlayBase(hwndOverlay, OnRenderToDib);
+        // DIB/HFONT 사전 생성 — 첫 Show 이전에 호출되는 GetDefaultPosition 경로가
+        // _currentHeight > 0을 가정하므로 초기화 시점에 리소스를 warming한다. 그리기는 생략.
+        _engine.PrepareResources(BuildStyle(config, ImeState.Hangul));
     }
 
     public static void Dispose()
     {
-        _currentBitmap?.Dispose();
-        _currentBitmap = null;
-        _currentFont?.Dispose();
-        _currentFont = null;
-        if (_memDC != IntPtr.Zero)
-        {
-            Gdi32.DeleteDC(_memDC);
-            _memDC = IntPtr.Zero;
-        }
+        _engine?.Dispose();
     }
 
     // ================================================================
-    // Public API
+    // Public API (Program.cs / Animation.cs / Tray.cs에서 호출)
     // ================================================================
 
     /// <summary>
@@ -112,347 +59,100 @@ internal static class Overlay
     /// </summary>
     public static void Show(int x, int y, ImeState state)
     {
-        // 위치 기준 모니터 DPI 갱신
-        IntPtr hMonitor = DpiHelper.GetMonitorFromPoint(x, y);
-        (uint dpiX, uint dpiY) = DpiHelper.GetRawDpi(hMonitor);
-        double dpiScale = dpiX / (double)DpiHelper.BASE_DPI;
-
-        // DPI 변경 시 캐시 리셋 (모니터 이동 또는 초기화 후 첫 Show)
-        if (Math.Abs(dpiScale - _currentDpiScale) > 0.001)
-        {
-            _fixedLabelWidth = 0;
-            _currentWidth = 0;
-            _currentHeight = 0;
-            _cachedFontDpiScale = 0;
-        }
-
-        _currentDpiScale = dpiScale;
-        _currentDpiY = dpiY;
-
-        EnsureResources(_config);
-        RenderIndicator(state, _config);
-        UpdateOverlay(x, y, _currentWidth, _currentHeight, _lastAlpha);
-        _lastX = x;
-        _lastY = y;
-        _isVisible = true;
+        _engine.Show(x, y);
+        _engine.Render(BuildStyle(_config, state));
     }
 
     /// <summary>즉시 색상 변경 (비트맵 갱신 + premultiply).</summary>
     public static void UpdateColor(ImeState state)
     {
-        _lastRenderedState = null;
-        RenderIndicator(state, _config);
-        UpdateOverlay(_lastX, _lastY, _currentWidth, _currentHeight, _lastAlpha);
+        _engine.Render(BuildStyle(_config, state));
     }
 
     /// <summary>페이드 프레임: SourceConstantAlpha만 변경.</summary>
     public static void UpdateAlpha(byte alpha)
     {
-        UpdateOverlay(_lastX, _lastY, _currentWidth, _currentHeight, alpha);
+        _engine.UpdateAlpha(alpha);
     }
 
     /// <summary>슬라이드 프레임: 위치만 변경 (비트맵 불변).</summary>
     public static void UpdatePosition(int x, int y)
     {
-        _lastX = x;
-        _lastY = y;
-        UpdateOverlay(x, y, _currentWidth, _currentHeight, _lastAlpha);
+        _engine.UpdatePosition(x, y);
     }
 
     /// <summary>강조 프레임: 중심 기준 확대.</summary>
     public static void UpdateScaledSize(int x, int y, int w, int h, byte alpha)
     {
-        UpdateOverlay(x, y, w, h, alpha);
+        _engine.UpdateScaledSize(x, y, w, h, alpha);
     }
 
     /// <summary>ShowWindow(SW_HIDE) + 상태 리셋.</summary>
     public static void Hide()
     {
-        if (_hwndOverlay != IntPtr.Zero)
-            User32.ShowWindow(_hwndOverlay, Win32Constants.SW_HIDE);
-        _isVisible = false;
+        _engine.Hide();
     }
 
     /// <summary>DPI 변경 시 HFONT/DIB 재생성.</summary>
     public static void HandleDpiChanged()
     {
-        _cachedFontDpiScale = 0;
-        _currentWidth = 0;
-        _currentHeight = 0;
-        _fixedLabelWidth = 0;
-        EnsureResources(_config);
+        _engine.HandleDpiChanged();
+        // 즉시 재생성 — 이후 UpdateAlpha/Show가 유효한 _currentWidth/Height를 기대.
+        // 상태 필드는 DIB 치수에 영향이 없으므로 임의 상태 OK.
+        _engine.PrepareResources(BuildStyle(_config, ImeState.Hangul));
     }
 
     /// <summary>설정 변경 시 전체 리소스 리빌드.</summary>
     public static void HandleConfigChanged(AppConfig config)
     {
         _config = config;
-        _cachedFontFamily = "";
-        _cachedFontDpiScale = 0;
-        _currentWidth = 0;
-        _currentHeight = 0;
-        _fixedLabelWidth = 0;
-        _lastRenderedState = null;
-        EnsureResources(config);
+        _engine.HandleDpiChanged();  // 캐시 무효화 (DPI뿐 아니라 폰트/라벨 모두)
+        _engine.PrepareResources(BuildStyle(config, ImeState.Hangul));
     }
 
     /// <summary>
-    /// 드래그 시작 (WM_ENTERSIZEMOVE). UpdateOverlay 억제 + Shift 축 잠금용 시작 좌표 캐치
-    /// + 커서 hot point 캐치 + snapToWindows 유효 시 EnumWindows로 스냅 후보 rect 리스트 캐싱.
-    /// Stage 3-A: config 레코드 대신 primitive bool을 받는다.
+    /// 드래그 시작 (WM_ENTERSIZEMOVE). Stage 3-A: config 레코드 대신 primitive bool.
     /// </summary>
     public static void BeginDrag(bool snapToWindows)
     {
-        _isDragging = true;
-        if (_hwndOverlay != IntPtr.Zero)
-        {
-            User32.GetWindowRect(_hwndOverlay, out RECT rc);
-            _dragStartX = rc.Left;
-            _dragStartY = rc.Top;
-
-            if (User32.GetCursorPos(out POINT cursor))
-            {
-                _dragHotPointX = cursor.X - rc.Left;
-                _dragHotPointY = cursor.Y - rc.Top;
-            }
-        }
-
-        _snapRects.Clear();
-        if (snapToWindows)
-        {
-            unsafe
-            {
-                User32.EnumWindows(&EnumWindowsCallback, IntPtr.Zero);
-            }
-        }
+        _engine.BeginDrag(snapToWindows);
     }
 
     /// <summary>
-    /// EnumWindows 콜백. BeginDrag에서 스냅 후보 rect를 _snapRects에 수집.
-    /// [UnmanagedCallersOnly] + 함수 포인터 방식 (NativeAOT 권장).
-    /// BOOL 리턴 (1 = 계속 열거, 0 = 중단).
-    /// </summary>
-    [UnmanagedCallersOnly]
-    private static int EnumWindowsCallback(IntPtr hwnd, IntPtr lParam)
-    {
-        if (hwnd == _hwndOverlay) return 1;
-        if (!User32.IsWindowVisible(hwnd)) return 1;
-        if (User32.IsIconic(hwnd)) return 1;
-        if (Dwmapi.IsCloaked(hwnd)) return 1;
-        if (!Dwmapi.TryGetVisibleFrame(hwnd, out RECT frame)) return 1;
-
-        int w = frame.Right - frame.Left;
-        int h = frame.Bottom - frame.Top;
-        if (w < DefaultConfig.SnapMinWindowSizePx || h < DefaultConfig.SnapMinWindowSizePx)
-            return 1;
-
-        _snapRects.Add(frame);
-        return 1;
-    }
-
-    /// <summary>
-    /// WM_MOVING 핸들러. 순서: 커서 기반 rect 재동기화 → Shift 축 잠금 → 창 엣지 스냅 → DPI 재계산.
-    ///
-    /// 커서 재동기화가 필수인 이유: WM_MOVING의 movingRect은 이전 틱에 우리가 수정한 값을
-    /// 새 base로 삼아 (base + cursor_delta)로 계산된다. 스냅으로 rect를 수정하면 그 델타가
-    /// 시스템 base에 누적되어, 슬로우 드래그 시 창이 스냅 위치에 영구히 잠기고 커서는
-    /// 계속 멀어진다. 매 틱 (cursor - hot_point)로 리셋하면 시스템의 누적 효과를 우회할 수 있다.
-    ///
-    /// rect를 항상 덮어쓰므로 리턴은 항상 true. w/h는 보존.
-    /// Shift 잠금이 걸린 축은 스냅에서 제외되어 시작 좌표가 유지된다.
-    ///
-    /// Stage 3-A: config 레코드 대신 primitive 두 개(snapToWindows, snapThresholdPx)를 받는다.
-    /// 내부 렌더러(HandleDragDpiChange)는 Stage 4 A까지 _config를 읽는다.
+    /// WM_MOVING 핸들러. Stage 3-A: config 레코드 대신 primitive 두 개.
+    /// 드래그 중 DPI 전환 시 리렌더용 OverlayStyle을 매 틱 합성해 엔진에 전달.
     /// </summary>
     public static bool HandleMoving(ref RECT movingRect, ImeState state, bool snapToWindows, int snapThresholdPx)
     {
-        if (!_isDragging) return false;
-
-        int w = movingRect.Right - movingRect.Left;
-        int h = movingRect.Bottom - movingRect.Top;
-
-        if (User32.GetCursorPos(out POINT cursor))
-        {
-            movingRect.Left   = cursor.X - _dragHotPointX;
-            movingRect.Top    = cursor.Y - _dragHotPointY;
-            movingRect.Right  = movingRect.Left + w;
-            movingRect.Bottom = movingRect.Top + h;
-        }
-
-        bool xLocked = false;
-        bool yLocked = false;
-
-        if ((User32.GetAsyncKeyState(Win32Constants.VK_SHIFT) & 0x8000) != 0)
-        {
-            int dx = movingRect.Left - _dragStartX;
-            int dy = movingRect.Top - _dragStartY;
-
-            if (Math.Abs(dx) >= Math.Abs(dy))
-            {
-                // 가로 축 우세 → Y 잠금
-                movingRect.Top = _dragStartY;
-                movingRect.Bottom = _dragStartY + h;
-                yLocked = true;
-            }
-            else
-            {
-                // 세로 축 우세 → X 잠금
-                movingRect.Left = _dragStartX;
-                movingRect.Right = _dragStartX + w;
-                xLocked = true;
-            }
-        }
-
-        if (snapToWindows)
-            ApplySnap(ref movingRect, xLocked, yLocked, snapThresholdPx);
-
-        HandleDragDpiChange(movingRect.Left, movingRect.Top, state, _config);
-
-        return true;
+        return _engine.HandleMoving(ref movingRect, BuildStyle(_config, state), snapToWindows, snapThresholdPx);
     }
 
-    /// <summary>
-    /// _snapRects와 현재 위치의 모니터 work area를 후보로 하여 인디케이터 엣지를
-    /// 가장 가까운 타겟 엣지에 스냅한다. X/Y 축 독립 처리, 잠긴 축은 건너뜀.
-    /// 타겟 rect와의 수직/수평 겹침을 요구해 "멀리 떨어진 창"에 끌려가는 현상을 방지.
-    /// work area는 인디가 항상 그 안에 있어 겹침 체크가 항상 통과 → 화면 엣지 스냅 성립.
-    /// <paramref name="snapThresholdPx"/>는 pre-DPI 값이며 내부에서 DpiHelper.Scale로 변환.
-    /// </summary>
-    private static bool ApplySnap(ref RECT movingRect, bool xLocked, bool yLocked, int snapThresholdPx)
-    {
-        int threshold = DpiHelper.Scale(snapThresholdPx, _currentDpiScale);
-        int w = movingRect.Right - movingRect.Left;
-        int h = movingRect.Bottom - movingRect.Top;
-
-        int bestDx = 0, bestDy = 0;
-        int bestDistX = threshold + 1;
-        int bestDistY = threshold + 1;
-
-        // 현재 위치의 모니터 work area 추가 (화면 엣지 스냅)
-        IntPtr hMonitor = DpiHelper.GetMonitorFromPoint(
-            movingRect.Left + w / 2, movingRect.Top + h / 2);
-        RECT workArea = DpiHelper.GetWorkArea(hMonitor);
-        ConsiderTarget(ref movingRect, workArea, xLocked, yLocked,
-            ref bestDx, ref bestDy, ref bestDistX, ref bestDistY);
-
-        foreach (RECT target in _snapRects)
-        {
-            ConsiderTarget(ref movingRect, target, xLocked, yLocked,
-                ref bestDx, ref bestDy, ref bestDistX, ref bestDistY);
-        }
-
-        bool modified = false;
-        if (bestDistX <= threshold)
-        {
-            movingRect.Left += bestDx;
-            movingRect.Right += bestDx;
-            modified = true;
-        }
-        if (bestDistY <= threshold)
-        {
-            movingRect.Top += bestDy;
-            movingRect.Bottom += bestDy;
-            modified = true;
-        }
-        return modified;
-    }
-
-    /// <summary>
-    /// 단일 타겟 rect에 대해 4개 엣지 쌍(L↔L, L↔R, R↔L, R↔R)과
-    /// (T↔T, T↔B, B↔T, B↔B)을 검사해 최단 거리 스냅 후보를 갱신.
-    /// Y 겹침이 있는 경우에만 X 엣지 스냅, X 겹침이 있는 경우에만 Y 엣지 스냅.
-    /// </summary>
-    private static void ConsiderTarget(
-        ref RECT movingRect, RECT target,
-        bool xLocked, bool yLocked,
-        ref int bestDx, ref int bestDy,
-        ref int bestDistX, ref int bestDistY)
-    {
-        bool yOverlap = movingRect.Top < target.Bottom && movingRect.Bottom > target.Top;
-        if (!xLocked && yOverlap)
-        {
-            TryEdge(target.Left  - movingRect.Left,  ref bestDistX, ref bestDx);
-            TryEdge(target.Left  - movingRect.Right, ref bestDistX, ref bestDx);
-            TryEdge(target.Right - movingRect.Left,  ref bestDistX, ref bestDx);
-            TryEdge(target.Right - movingRect.Right, ref bestDistX, ref bestDx);
-        }
-
-        bool xOverlap = movingRect.Left < target.Right && movingRect.Right > target.Left;
-        if (!yLocked && xOverlap)
-        {
-            TryEdge(target.Top    - movingRect.Top,    ref bestDistY, ref bestDy);
-            TryEdge(target.Top    - movingRect.Bottom, ref bestDistY, ref bestDy);
-            TryEdge(target.Bottom - movingRect.Top,    ref bestDistY, ref bestDy);
-            TryEdge(target.Bottom - movingRect.Bottom, ref bestDistY, ref bestDy);
-        }
-    }
-
-    private static void TryEdge(int delta, ref int bestDist, ref int bestDelta)
-    {
-        int abs = Math.Abs(delta);
-        if (abs < bestDist)
-        {
-            bestDist = abs;
-            bestDelta = delta;
-        }
-    }
-
-    /// <summary>
-    /// 드래그 중 모니터 변경 시 DPI 재계산 + 리렌더 (WM_MOVING).
-    /// 시스템 이동 루프가 위치를 제어하므로 제안 위치 기준으로 모니터 판별.
-    /// </summary>
-    private static void HandleDragDpiChange(int x, int y, ImeState state, AppConfig config)
-    {
-        if (!_isDragging) return;
-
-        IntPtr hMonitor = DpiHelper.GetMonitorFromPoint(x, y);
-        (uint dpiX, uint dpiY) = DpiHelper.GetRawDpi(hMonitor);
-        double dpiScale = dpiX / (double)DpiHelper.BASE_DPI;
-
-        if (Math.Abs(dpiScale - _currentDpiScale) < 0.001) return;
-
-        // DPI 캐시 리셋 + 리소스 재생성
-        _fixedLabelWidth = 0;
-        _currentWidth = 0;
-        _currentHeight = 0;
-        _cachedFontDpiScale = 0;
-        _currentDpiScale = dpiScale;
-        _currentDpiY = dpiY;
-
-        EnsureResources(config);
-        RenderIndicator(state, config);
-
-        // _isDragging 가드를 우회하여 UpdateLayeredWindow 직접 호출
-        var ptDst = new POINT(x, y);
-        var size = new SIZE(_currentWidth, _currentHeight);
-        var ptSrc = new POINT(0, 0);
-        var blend = new BLENDFUNCTION
-        {
-            BlendOp = Win32Constants.AC_SRC_OVER,
-            BlendFlags = 0,
-            SourceConstantAlpha = _lastAlpha,
-            AlphaFormat = Win32Constants.AC_SRC_ALPHA
-        };
-
-        User32.UpdateLayeredWindow(_hwndOverlay, IntPtr.Zero, ref ptDst, ref size,
-            _memDC, ref ptSrc, 0, ref blend, Win32Constants.ULW_ALPHA);
-    }
-
-    /// <summary>드래그 종료 (WM_EXITSIZEMOVE). 새 위치를 _lastX/_lastY에 반영 + 스냅 캐시 해제.</summary>
+    /// <summary>드래그 종료 (WM_EXITSIZEMOVE).</summary>
     public static (int x, int y) EndDrag()
     {
-        _isDragging = false;
-        _snapRects.Clear();
-        if (_hwndOverlay != IntPtr.Zero)
-        {
-            User32.GetWindowRect(_hwndOverlay, out RECT rc);
-            _lastX = rc.Left;
-            _lastY = rc.Top;
-        }
-        return (_lastX, _lastY);
+        return _engine.EndDrag();
     }
 
-    /// <summary>시스템 입력 프로세스 기본 위치의 창 상단 여백(px). 라벨 아래쪽 끝과 창 위쪽 끝 사이 간격.</summary>
+    /// <summary>SetWindowPos HWND_TOPMOST 재적용.</summary>
+    public static void ForceTopmost()
+    {
+        _engine.ForceTopmost();
+    }
+
+    /// <summary>강조 스케일 계산용.</summary>
+    public static (int w, int h) GetBaseSize() => _engine.GetBaseSize();
+
+    /// <summary>강조 중심점 계산용.</summary>
+    public static (int x, int y) GetLastPosition() => _engine.GetLastPosition();
+
+    /// <summary>현재 가시성.</summary>
+    public static bool IsVisible => _engine.IsVisible;
+
+    // ================================================================
+    // GetDefaultPosition + ComputeAnchorFromCurrentPosition (system input 특수 로직 포함)
+    // ================================================================
+
+    /// <summary>시스템 입력 프로세스 기본 위치의 창 상단 여백(px).</summary>
     private const int SystemInputGapPx = 4;
 
     /// <summary>
@@ -467,14 +167,22 @@ internal static class Overlay
     {
         IntPtr hMonitor = (hwndForeground != IntPtr.Zero)
             ? User32.MonitorFromWindow(hwndForeground, Win32Constants.MONITOR_DEFAULTTOPRIMARY)
-            : User32.MonitorFromWindow(_hwndOverlay, Win32Constants.MONITOR_DEFAULTTOPRIMARY);
+            : User32.MonitorFromWindow(_engine.Hwnd, Win32Constants.MONITOR_DEFAULTTOPRIMARY);
         RECT workArea = DpiHelper.GetWorkArea(hMonitor);
 
         if (DefaultConfig.IsSystemInputProcess(processName)
             && hwndForeground != IntPtr.Zero
             && Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT frame))
         {
-            int labelH = _currentHeight > 0 ? _currentHeight : DpiHelper.Scale(_baseHeight, _currentDpiScale);
+            (int _, int labelH) = _engine.GetBaseSize();
+            if (labelH <= 0)
+            {
+                // 폴백: IndicatorScale 적용 logical 높이를 현재 DPI로 스케일링.
+                double scale = _config.IndicatorScale;
+                labelH = DpiHelper.Scale(
+                    (int)Math.Round(_config.LabelHeight * scale),
+                    DpiHelper.GetScale(hMonitor));
+            }
             int x = frame.Left;
             int y = frame.Top - labelH - SystemInputGapPx;
             if (y < workArea.Top) y = workArea.Top;
@@ -485,7 +193,7 @@ internal static class Overlay
             return ResolveAnchor(workArea, anchor);
 
         return (workArea.Right + DefaultConfig.DefaultIndicatorOffsetX,
-                workArea.Top   + DefaultConfig.DefaultIndicatorOffsetY);
+                workArea.Top + DefaultConfig.DefaultIndicatorOffsetY);
     }
 
     /// <summary>
@@ -511,10 +219,11 @@ internal static class Overlay
     /// </summary>
     public static DefaultPositionConfig? ComputeAnchorFromCurrentPosition()
     {
-        if (_lastX == 0 && _lastY == 0)
+        (int lastX, int lastY) = _engine.GetLastPosition();
+        if (lastX == 0 && lastY == 0)
             return null;
 
-        POINT pt = new(_lastX, _lastY);
+        POINT pt = new(lastX, lastY);
         IntPtr hMonitor = User32.MonitorFromPoint(pt, Win32Constants.MONITOR_DEFAULTTONEAREST);
         RECT workArea = DpiHelper.GetWorkArea(hMonitor);
 
@@ -524,8 +233,8 @@ internal static class Overlay
 
         void Consider(Corner c, int ax, int ay)
         {
-            int dx = _lastX - ax;
-            int dy = _lastY - ay;
+            int dx = lastX - ax;
+            int dy = lastY - ay;
             long dist = Math.Abs((long)dx) + Math.Abs((long)dy);
             if (dist < bestDist)
             {
@@ -534,9 +243,9 @@ internal static class Overlay
             }
         }
 
-        Consider(Corner.TopLeft,     workArea.Left,  workArea.Top);
-        Consider(Corner.TopRight,    workArea.Right, workArea.Top);
-        Consider(Corner.BottomLeft,  workArea.Left,  workArea.Bottom);
+        Consider(Corner.TopLeft, workArea.Left, workArea.Top);
+        Consider(Corner.TopRight, workArea.Right, workArea.Top);
+        Consider(Corner.BottomLeft, workArea.Left, workArea.Bottom);
         Consider(Corner.BottomRight, workArea.Right, workArea.Bottom);
 
         return new DefaultPositionConfig
@@ -547,296 +256,109 @@ internal static class Overlay
         };
     }
 
-    /// <summary>SetWindowPos HWND_TOPMOST 재적용.</summary>
-    public static void ForceTopmost()
-    {
-        if (_hwndOverlay != IntPtr.Zero)
-            User32.SetWindowPos(_hwndOverlay, Win32Constants.HWND_TOPMOST,
-                0, 0, 0, 0,
-                Win32Constants.SWP_NOMOVE | Win32Constants.SWP_NOSIZE | Win32Constants.SWP_NOACTIVATE);
-    }
-
-    /// <summary>강조 스케일 계산용.</summary>
-    public static (int w, int h) GetBaseSize() => (_currentWidth, _currentHeight);
-
-    /// <summary>강조 중심점 계산용.</summary>
-    public static (int x, int y) GetLastPosition() => (_lastX, _lastY);
-
-    /// <summary>현재 가시성.</summary>
-    public static bool IsVisible => _isVisible;
-
     // ================================================================
-    // 리소스 관리
+    // BuildStyle — ImeState + AppConfig → OverlayStyle
+    //
+    // ImeState 누출 금지 조건 충족: 이 메서드는 파사드 내부 유일한 state→string 변환 지점이며
+    // Core 레이어(LayeredOverlayBase / OverlayStyle)는 ImeState를 전혀 참조하지 않는다.
     // ================================================================
 
-    private static void EnsureResources(AppConfig config)
+    private static OverlayStyle BuildStyle(AppConfig config, ImeState state)
     {
-        // IndicatorScale은 DPI 스케일링 전 base 픽셀에 곱해지는 배율 (1.0~5.0, 0.1 단위).
         double scale = config.IndicatorScale;
-        _baseWidth = (int)Math.Round(config.LabelWidth * scale);
-        _baseHeight = (int)Math.Round(config.LabelHeight * scale);
 
-        int targetW = DpiHelper.Scale(_baseWidth, _currentDpiScale);
-        int targetH = DpiHelper.Scale(_baseHeight, _currentDpiScale);
-
-        EnsureFont(config);
-
-        if (_fixedLabelWidth > 0)
-            targetW = _fixedLabelWidth;
-
-        EnsureDib(targetW, targetH);
-        CalculateFixedLabelWidth(config);
-    }
-
-    private static void EnsureFont(AppConfig config)
-    {
-        // 캐시 키는 scale이 곱해진 최종 폰트 크기로 저장 — scale 변경 시 캐시 미스 유도.
-        int scaledFontSize = (int)Math.Round(config.FontSize * config.IndicatorScale);
-
-        if (config.FontFamily == _cachedFontFamily
-            && scaledFontSize == _cachedFontSize
-            && config.FontWeight == _cachedFontWeight
-            && Math.Abs(_currentDpiScale - _cachedFontDpiScale) < 0.001)
-            return;
-
-        _currentFont?.Dispose();
-
-        int fontHeight = -Kernel32.MulDiv(scaledFontSize, (int)_currentDpiY, 72);
-        IntPtr hFont = Gdi32.CreateFontW(
-            fontHeight, 0, 0, 0,
-            config.FontWeight == FontWeight.Bold ? Win32Constants.FW_BOLD : Win32Constants.FW_NORMAL,
-            0, 0, 0,
-            Win32Constants.DEFAULT_CHARSET,
-            Win32Constants.OUT_TT_PRECIS,
-            Win32Constants.CLIP_DEFAULT_PRECIS,
-            Win32Constants.CLEARTYPE_QUALITY,
-            Win32Constants.DEFAULT_PITCH,
-            config.FontFamily);
-
-        _currentFont = new SafeFontHandle(hFont, true);
-        _cachedFontFamily = config.FontFamily;
-        _cachedFontSize = scaledFontSize;
-        _cachedFontWeight = config.FontWeight;
-        _cachedFontDpiScale = _currentDpiScale;
-    }
-
-    private static void EnsureDib(int width, int height)
-    {
-        if (width == _currentWidth && height == _currentHeight && _currentBitmap is not null)
-            return;
-
-        var bmi = new BITMAPINFOHEADER
+        // 상태-라우팅된 색상/텍스트 합성
+        (string bgHex, string fgHex, string labelText) = state switch
         {
-            biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>(),
-            biWidth = width,
-            biHeight = -height,  // top-down DIB
-            biPlanes = 1,
-            biBitCount = 32,
-            biCompression = Win32Constants.BI_RGB
+            ImeState.Hangul => (config.HangulBg, config.HangulFg, config.HangulLabel),
+            ImeState.English => (config.EnglishBg, config.EnglishFg, config.EnglishLabel),
+            _ => (config.NonKoreanBg, config.NonKoreanFg, config.NonKoreanLabel),
         };
 
-        IntPtr hBitmap = Gdi32.CreateDIBSection(
-            IntPtr.Zero, ref bmi, Win32Constants.DIB_RGB_COLORS,
-            out _ppvBits, IntPtr.Zero, 0);
+        // IndicatorScale 사전 곱셈 (DPI 미적용 logical px) — DPI는 엔진이 MulDiv로 곱함
+        int labelWidthPx = (int)Math.Round(config.LabelWidth * scale);
+        int labelHeightPx = (int)Math.Round(config.LabelHeight * scale);
+        int borderRadiusPx = (int)Math.Round(config.LabelBorderRadius * scale);
+        int borderWidthPx = (int)Math.Round(config.BorderWidth * scale);
+        int paddingXPx = (int)Math.Round(DefaultConfig.LABEL_PADDING_X * scale);
+        int fontSizePx = (int)Math.Round(config.FontSize * scale);
 
-        if (hBitmap == IntPtr.Zero) return;
-
-        Gdi32.SelectObject(_memDC, hBitmap);
-        _currentBitmap?.Dispose();
-        _currentBitmap = new SafeBitmapHandle(hBitmap, true);
-
-        _currentWidth = width;
-        _currentHeight = height;
-        _lastRenderedState = null;
-    }
-
-    private static void CalculateFixedLabelWidth(AppConfig config)
-    {
-        if (_currentFont is null) return;
-
-        IntPtr oldFont = Gdi32.SelectObject(_memDC, _currentFont.DangerousGetHandle());
-
-        int maxTextWidth = 0;
-        string[] labels = [config.HangulLabel, config.EnglishLabel, config.NonKoreanLabel];
-        foreach (string label in labels)
-        {
-            Gdi32.GetTextExtentPoint32W(_memDC, label, label.Length, out SIZE sz);
-            if (sz.cx > maxTextWidth) maxTextWidth = sz.cx;
-        }
-
-        Gdi32.SelectObject(_memDC, oldFont);
-
-        double scale = config.IndicatorScale;
-        int padding = 2 * DpiHelper.Scale((int)Math.Round(DefaultConfig.LABEL_PADDING_X * scale), _currentDpiScale);
-        int calculated = maxTextWidth + padding;
-        int minWidth = DpiHelper.Scale((int)Math.Round(config.LabelWidth * scale), _currentDpiScale);
-        _fixedLabelWidth = Math.Max(calculated, minWidth);
-
-        if (_fixedLabelWidth != _currentWidth)
-        {
-            int labelH = DpiHelper.Scale((int)Math.Round(config.LabelHeight * scale), _currentDpiScale);
-            EnsureDib(_fixedLabelWidth, labelH);
-        }
+        return new OverlayStyle(
+            FontFamily: config.FontFamily,
+            FontSizeLogicalPx: fontSizePx,
+            IsBold: config.FontWeight == FontWeight.Bold,
+            LabelWidthLogicalPx: labelWidthPx,
+            LabelHeightLogicalPx: labelHeightPx,
+            BorderRadiusLogicalPx: borderRadiusPx,
+            BorderWidthLogicalPx: borderWidthPx,
+            PaddingXLogicalPx: paddingXPx,
+            BgHex: bgHex,
+            FgHex: fgHex,
+            BorderHex: config.BorderColor,
+            LabelText: labelText,
+            MeasureLabels: (config.HangulLabel, config.EnglishLabel, config.NonKoreanLabel)
+        );
     }
 
     // ================================================================
-    // 렌더링
+    // OnRenderToDib — 실제 GDI 그리기 (LayeredOverlayBase 콜백)
+    //
+    // 엔진이 DIB 픽셀을 0-클리어하고 _currentFont를 HDC에 SelectObject한 상태로 호출한다.
+    // 콜백은 배경 RoundRect → (옵션) 보더 RoundRect → DrawTextW 순서로 그리면 된다.
+    // Premultiplied alpha 후처리와 UpdateLayeredWindow는 콜백 반환 후 엔진이 수행.
     // ================================================================
 
-    private static void RenderIndicator(ImeState state, AppConfig config)
+    private static (int w, int h) OnRenderToDib(IntPtr hdc, OverlayStyle style, OverlayMetrics metrics)
     {
-        if (_lastRenderedState == state) return;
-        _lastRenderedState = state;
+        int w = metrics.ScaledWidth;
+        int h = metrics.ScaledHeight;
 
-        int w = _currentWidth;
-        int h = _currentHeight;
-        if (w == 0 || h == 0) return;
+        // 1. NULL_PEN 선택 (RoundRect 1px 검은색 테두리 제거)
+        IntPtr oldPen = Gdi32.SelectObject(hdc, Gdi32.GetStockObject(Win32Constants.NULL_PEN));
 
-        // 1. 픽셀 버퍼 0 클리어
-        unsafe
-        {
-            new Span<byte>((void*)_ppvBits, w * h * 4).Clear();
-        }
-
-        // 2. NULL_PEN 선택
-        IntPtr oldPen = Gdi32.SelectObject(_memDC, _nullPen);
-
-        // 3. 배경색 브러시
-        uint bgColor = ColorHelper.HexToColorRef(GetBgHex(state, config));
+        // 2. 배경 RoundRect
+        uint bgColor = ColorHelper.HexToColorRef(style.BgHex);
         IntPtr hBrush = Gdi32.CreateSolidBrush(bgColor);
+        IntPtr oldBrush = Gdi32.SelectObject(hdc, hBrush);
+        int radius = metrics.ScaledBorderRadius;
+        Gdi32.RoundRect(hdc, 0, 0, w, h, radius, radius);
+        Gdi32.SelectObject(hdc, oldBrush);
 
-        // 4. RoundedRect 배경
-        IntPtr oldBrush = Gdi32.SelectObject(_memDC, hBrush);
-        double scale = config.IndicatorScale;
-        int radius = DpiHelper.Scale((int)Math.Round(config.LabelBorderRadius * scale), _currentDpiScale);
-        Gdi32.RoundRect(_memDC, 0, 0, w, h, radius, radius);
-        Gdi32.SelectObject(_memDC, oldBrush);
-
-        // 5. 테두리 (border_width > 0)
-        int borderW = DpiHelper.Scale((int)Math.Round(config.BorderWidth * scale), _currentDpiScale);
+        // 3. 보더 (borderWidth > 0)
+        int borderW = metrics.ScaledBorderWidth;
         if (borderW > 0)
         {
-            uint borderColor = ColorHelper.HexToColorRef(config.BorderColor);
+            uint borderColor = ColorHelper.HexToColorRef(style.BorderHex);
             IntPtr hBorderPen = Gdi32.CreatePen(Win32Constants.PS_SOLID, borderW, borderColor);
             IntPtr hNullBrush = Gdi32.GetStockObject(Win32Constants.NULL_BRUSH);
 
-            IntPtr oldBorderPen = Gdi32.SelectObject(_memDC, hBorderPen);
-            IntPtr oldBorderBrush = Gdi32.SelectObject(_memDC, hNullBrush);
+            IntPtr oldBorderPen = Gdi32.SelectObject(hdc, hBorderPen);
+            IntPtr oldBorderBrush = Gdi32.SelectObject(hdc, hNullBrush);
 
             int halfBorder = borderW / 2;
-            int borderRadius = DpiHelper.Scale((int)Math.Round(config.LabelBorderRadius * scale), _currentDpiScale);
-            Gdi32.RoundRect(_memDC, halfBorder, halfBorder, w - halfBorder, h - halfBorder, borderRadius, borderRadius);
+            Gdi32.RoundRect(hdc, halfBorder, halfBorder, w - halfBorder, h - halfBorder, radius, radius);
 
-            Gdi32.SelectObject(_memDC, oldBorderBrush);
-            Gdi32.SelectObject(_memDC, oldBorderPen);
+            Gdi32.SelectObject(hdc, oldBorderBrush);
+            Gdi32.SelectObject(hdc, oldBorderPen);
             Gdi32.DeleteObject(hBorderPen);
         }
 
-        // 6. 텍스트 렌더링
-        RenderLabelText(state, config, w, h);
+        // 4. 텍스트 (폰트는 엔진이 사전 SelectObject)
+        int oldBkMode = Gdi32.SetBkMode(hdc, Win32Constants.TRANSPARENT);
+        uint fgColor = ColorHelper.HexToColorRef(style.FgHex);
+        uint oldTextColor = Gdi32.SetTextColor(hdc, fgColor);
 
-        // 7. 정리
-        Gdi32.DeleteObject(hBrush);
-        Gdi32.SelectObject(_memDC, oldPen);
-
-        // 8. Premultiplied alpha 후처리
-        ApplyPremultipliedAlpha(w, h);
-    }
-
-    private static void RenderLabelText(ImeState state, AppConfig config, int w, int h)
-    {
-        if (_currentFont is null) return;
-
-        IntPtr oldFont = Gdi32.SelectObject(_memDC, _currentFont.DangerousGetHandle());
-        int oldBkMode = Gdi32.SetBkMode(_memDC, Win32Constants.TRANSPARENT);
-        uint fgColor = ColorHelper.HexToColorRef(GetFgHex(state, config));
-        uint oldTextColor = Gdi32.SetTextColor(_memDC, fgColor);
-
-        string labelText = GetLabelText(state, config);
         var textRect = new RECT { Left = 0, Top = 0, Right = w, Bottom = h };
-        User32.DrawTextW(_memDC, labelText, labelText.Length, ref textRect,
+        User32.DrawTextW(hdc, style.LabelText, style.LabelText.Length, ref textRect,
             Win32Constants.DT_CENTER | Win32Constants.DT_VCENTER | Win32Constants.DT_SINGLELINE);
 
-        Gdi32.SetTextColor(_memDC, oldTextColor);
-        Gdi32.SetBkMode(_memDC, oldBkMode);
-        Gdi32.SelectObject(_memDC, oldFont);
+        Gdi32.SetTextColor(hdc, oldTextColor);
+        Gdi32.SetBkMode(hdc, oldBkMode);
+
+        // 5. 정리
+        Gdi32.DeleteObject(hBrush);
+        Gdi32.SelectObject(hdc, oldPen);
+
+        return (w, h);
     }
-
-    private static unsafe void ApplyPremultipliedAlpha(int w, int h)
-    {
-        int pixelCount = w * h;
-        byte* ptr = (byte*)_ppvBits;
-
-        for (int i = 0; i < pixelCount; i++)
-        {
-            int offset = i * 4;
-            byte b = ptr[offset];
-            byte g = ptr[offset + 1];
-            byte r = ptr[offset + 2];
-            byte a = ptr[offset + 3];
-
-            if (a == 0)
-            {
-                if ((r | g | b) != 0)
-                    ptr[offset + 3] = 255;
-                continue;
-            }
-
-            if (a == 255) continue;
-
-            ptr[offset] = (byte)(b * a / 255);
-            ptr[offset + 1] = (byte)(g * a / 255);
-            ptr[offset + 2] = (byte)(r * a / 255);
-        }
-    }
-
-    // ================================================================
-    // UpdateLayeredWindow 래퍼
-    // ================================================================
-
-    private static void UpdateOverlay(int x, int y, int displayW, int displayH, byte alpha)
-    {
-        _lastAlpha = alpha;
-        if (_hwndOverlay == IntPtr.Zero || _memDC == IntPtr.Zero) return;
-        if (_isDragging) return;  // 드래그 중 위치 충돌 방지
-
-        var ptDst = new POINT(x, y);
-        var size = new SIZE(displayW, displayH);
-        var ptSrc = new POINT(0, 0);
-        var blend = new BLENDFUNCTION
-        {
-            BlendOp = Win32Constants.AC_SRC_OVER,
-            BlendFlags = 0,
-            SourceConstantAlpha = alpha,
-            AlphaFormat = Win32Constants.AC_SRC_ALPHA
-        };
-
-        User32.UpdateLayeredWindow(_hwndOverlay, IntPtr.Zero, ref ptDst, ref size,
-            _memDC, ref ptSrc, 0, ref blend, Win32Constants.ULW_ALPHA);
-    }
-
-    // ================================================================
-    // 색상/텍스트 헬퍼
-    // ================================================================
-
-    private static string GetBgHex(ImeState state, AppConfig config) => state switch
-    {
-        ImeState.Hangul => config.HangulBg,
-        ImeState.English => config.EnglishBg,
-        _ => config.NonKoreanBg,
-    };
-
-    private static string GetFgHex(ImeState state, AppConfig config) => state switch
-    {
-        ImeState.Hangul => config.HangulFg,
-        ImeState.English => config.EnglishFg,
-        _ => config.NonKoreanFg,
-    };
-
-    private static string GetLabelText(ImeState state, AppConfig config) => state switch
-    {
-        ImeState.Hangul => config.HangulLabel,
-        ImeState.English => config.EnglishLabel,
-        _ => config.NonKoreanLabel,
-    };
 }
