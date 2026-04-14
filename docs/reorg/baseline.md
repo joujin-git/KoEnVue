@@ -111,15 +111,21 @@ Stage 5 is verification-only; the publish exe runs under P5 `requireAdministrato
 | h | 5-second hot-reload | `Settings.CheckConfigFileChange()` → `JsonSettingsManager.CheckReload()` lines 137-156 — `File.Exists` pre-check guards against delete-as-rename pattern, mtime mismatch posts `WM_CONFIG_CHANGED`. ✅ |
 | i | Corrupted config spam suppression | `JsonSettingsManager.Load()` lines 83-91 catch — single `Logger.Warning(...)` then `_lastMtime` updated to broken-file mtime, blocking re-trigger from the 5-second polling loop. Inner mtime catch is type-narrowed to `IOException or UnauthorizedAccessException` (silent-catch policy 6.4 compliant). ✅ |
 
-## Smoke matrix — GUI items (manual verification deferred)
+## Smoke matrix — GUI items (manual verification — all PASS, 2026-04-14)
 
-The remaining 7 items (b/c/d/e/f/g/j) require interactive UI execution under elevated context and were not exercised in this verification pass. They remain gated by:
+The 7 GUI items were exercised interactively against `bin/Release/net10.0-windows/win-x64/publish/KoEnVue.exe` running under elevated context (P5 `requireAdministrator`). All passed.
 
-- The static layer guards above (P6 / Risk 4 / Risk 5) prove engine boundaries are intact at the source level
-- Stage 4 commit body documented end-to-end runtime smoke (boot, foreground resolve, IME hook, tray init, config auto-create, first PositionUpdated) on the same publish artifact (4,911,104 bytes — **byte-identical** to this Stage 5 build)
-- Byte-identical exe vs Stage 4 means no behavioral drift since the last interactive smoke pass
+| # | item | result |
+|---|---|---|
+| b | Hangul/En/EN state transition (Right Alt or Hangul/Eng key) | PASS |
+| c | Drag + edge snap + Shift axis lock + DPI transition (cross-monitor) | PASS |
+| d | Tray menu (opacity / size / snap / animation / highlight / settings entry) | PASS |
+| e | CleanupDialog (open / Tab cycle / ESC / save) | PASS |
+| f | ScaleInputDialog (open / value entry / Enter / ESC) | PASS |
+| g | SettingsDialog (scroll / hex validation `XYZ123` reject / save) | PASS |
+| j | System input process focus transition (Win / Win+S — StartMenu / Search) | PASS |
 
-These items can be exercised at any time before Stage 6 commit by elevated execution of `bin/Release/net10.0-windows/win-x64/publish/KoEnVue.exe`. The static + automated gates above are sufficient to confirm that the 12 accumulated Stage 0~4 commits did not introduce regressions in build, layer separation, or NativeAOT serialization.
+Combined with the static layer guards, the Risk 2 STJ source-gen verification, and the automated code-flow smoke (a/h/i) above, **all 10 items of the Stage 5 smoke matrix pass**. The Stage 0~4 reorg (12 commits) is verified regression-free across build, layer separation, NativeAOT serialization, and end-to-end runtime behavior. Stage 6 (CLAUDE.md / PRD docs sync) may proceed.
 
 ## Notes
 
