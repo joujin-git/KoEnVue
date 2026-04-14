@@ -1,20 +1,22 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
 using KoEnVue.App.Models;
 using KoEnVue.App.UI;
-using KoEnVue.Core.Native;
-using KoEnVue.Core.Color;
-using KoEnVue.Core.Dpi;
+using KoEnVue.Core.Config;
 using KoEnVue.Core.Logging;
+using KoEnVue.Core.Native;
 using KoEnVue.Core.Windowing;
-using KoEnVue.App.Localization;
 
 namespace KoEnVue.App.Config;
 
 /// <summary>
 /// config.json 로드/저장/핫 리로드/마이그레이션/검증 + 앱별 프로필.
-/// volatile AppConfig 참조 교체 패턴으로 스레드 안전.
+/// 파이프라인 본체(MergeWithDefaults → Deserialize → EnsureSubObjects →
+/// EnsureIndicatorPositions → Migrate → Validate → ApplyTheme)는
+/// <see cref="JsonSettingsManager{T}"/> 가 Core 레벨에서 수행하고,
+/// 본 정적 파사드는 AppConfig 특화 훅 바인딩과 앱 프로필 LRU 캐시만 담당한다.
 /// </summary>
 internal static class Settings
 {
@@ -32,8 +34,7 @@ internal static class Settings
     // 상태
     // ================================================================
 
-    private static string? _configFilePath;
-    private static DateTime _lastConfigMtime = DateTime.MinValue;
+    private static AppSettingsManager? _manager;
 
     // 앱 프로필 LRU 캐시 (감지 스레드 읽기 + 메인 스레드 클리어)
     private static readonly Dictionary<string, AppConfig?> _profileCache = new();
@@ -45,7 +46,7 @@ internal static class Settings
     // ================================================================
 
     /// <summary>현재 활성 config 파일 경로. Load 이후에는 항상 exe 디렉토리의 config.json 경로.</summary>
-    public static string? ConfigFilePath => _configFilePath;
+    public static string? ConfigFilePath => _manager?.FilePath;
 
     // ================================================================
     // Load — exe 디렉토리 단일 경로
@@ -60,137 +61,8 @@ internal static class Settings
     public static AppConfig Load()
     {
         string path = Path.Combine(AppContext.BaseDirectory, DefaultConfig.ConfigFileName);
-        _configFilePath = path;
-
-        if (File.Exists(path))
-        {
-            try
-            {
-                AppConfig config = LoadFromFile(path);
-                _lastConfigMtime = File.GetLastWriteTimeUtc(path);
-                Logger.Info($"Config loaded from {path}");
-                return config;
-            }
-            catch (Exception ex)
-            {
-                // 파일은 존재하지만 파싱 실패 — 사용자 복구 가능성을 위해 덮어쓰지 않음.
-                // mtime은 갱신해서 5초 폴링이 WM_CONFIG_CHANGED를 무한 재발송하는 스팸을 차단.
-                Logger.Warning($"Failed to load config from {path}: {ex.Message}. Using defaults without overwriting.");
-                try { _lastConfigMtime = File.GetLastWriteTimeUtc(path); } catch { }
-                return new AppConfig();
-            }
-        }
-
-        Logger.Info($"Config not found, creating defaults at {path}");
-        AppConfig defaults = new();
-        Save(defaults, path);
-        return defaults;
-    }
-
-    /// <summary>
-    /// 파일에서 설정 로드. BOM 제거 → 기본값 병합 → 역직렬화 → Migrate → Validate.
-    /// </summary>
-    private static AppConfig LoadFromFile(string path)
-    {
-        string json = File.ReadAllText(path, Encoding.UTF8);
-        // UTF-8 BOM 감지 → 제거
-        if (json.Length > 0 && json[0] == '\uFEFF')
-            json = json[1..];
-
-        // .NET 10 STJ source gen workaround:
-        // record init 기본값이 역직렬화 시 보존되지 않음 (소스 생성기 제한).
-        // 해결: 기본 config를 JSON으로 직렬화 → 사용자 JSON 병합 → 역직렬화.
-        string mergedJson = MergeWithDefaults(json);
-
-        AppConfig? config = JsonSerializer.Deserialize(mergedJson, AppConfigJsonContext.Default.AppConfig);
-        if (config is null)
-            return new AppConfig();
-
-        config = EnsureSubObjects(config);
-        config = EnsureIndicatorPositions(config, mergedJson);
-        config = Migrate(config);
-        config = Validate(config);
-        config = ThemePresets.Apply(config);
-        return config;
-    }
-
-    /// <summary>
-    /// NativeAOT STJ source gen이 Dictionary&lt;string, int[]&gt; 역직렬화에 실패할 수 있음.
-    /// JSON에서 indicator_positions를 수동 파싱하여 보정.
-    /// </summary>
-    private static AppConfig EnsureIndicatorPositions(AppConfig config, string mergedJson)
-    {
-        // STJ가 정상 파싱했으면 건너뛰기
-        if (config.IndicatorPositions.Count > 0)
-            return config;
-
-        try
-        {
-            using var doc = JsonDocument.Parse(mergedJson);
-            if (!doc.RootElement.TryGetProperty("indicator_positions", out JsonElement posElement))
-                return config;
-            if (posElement.ValueKind != JsonValueKind.Object)
-                return config;
-
-            var positions = new Dictionary<string, int[]>();
-            foreach (var prop in posElement.EnumerateObject())
-            {
-                if (prop.Value.ValueKind == JsonValueKind.Array && prop.Value.GetArrayLength() >= 2)
-                {
-                    int x = prop.Value[0].GetInt32();
-                    int y = prop.Value[1].GetInt32();
-                    positions[prop.Name] = [x, y];
-                }
-            }
-
-            if (positions.Count > 0)
-            {
-                Logger.Info($"Manual parse recovered {positions.Count} indicator position(s)");
-                return config with { IndicatorPositions = positions };
-            }
-        }
-        catch
-        {
-            // 수동 파싱 실패 시 무시
-        }
-
-        return config;
-    }
-
-    /// <summary>
-    /// 기본 AppConfig JSON과 사용자 JSON을 병합한다.
-    /// 기본값을 기저로 깔고, 사용자 JSON의 키가 기본값을 덮어쓴다.
-    /// .NET 10 STJ 소스 생성기가 record init 기본값을 보존하지 않는 문제의 우회책.
-    /// </summary>
-    private static string MergeWithDefaults(string userJson)
-    {
-        // 기본 config → JSON (모든 init 기본값이 포함됨)
-        string defaultJson = JsonSerializer.Serialize(new AppConfig(), AppConfigJsonContext.Default.AppConfig);
-
-        using var defaultDoc = JsonDocument.Parse(defaultJson);
-        using var userDoc = JsonDocument.Parse(userJson);
-
-        // 사용자 JSON 키 수집
-        var userKeys = new HashSet<string>();
-        foreach (var prop in userDoc.RootElement.EnumerateObject())
-            userKeys.Add(prop.Name);
-
-        // 병합: 기본값(사용자 JSON에 없는 키만) + 사용자 JSON(전체)
-        using var ms = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(ms))
-        {
-            writer.WriteStartObject();
-            foreach (var prop in defaultDoc.RootElement.EnumerateObject())
-            {
-                if (!userKeys.Contains(prop.Name))
-                    prop.WriteTo(writer);
-            }
-            foreach (var prop in userDoc.RootElement.EnumerateObject())
-                prop.WriteTo(writer);
-            writer.WriteEndObject();
-        }
-
-        return Encoding.UTF8.GetString(ms.ToArray());
+        _manager ??= new AppSettingsManager(path, AppConfigJsonContext.Default.AppConfig);
+        return _manager.Load();
     }
 
     // ================================================================
@@ -202,32 +74,16 @@ internal static class Settings
     /// </summary>
     public static void Save(AppConfig config, string? path = null)
     {
-        path ??= _configFilePath ?? Path.Combine(AppContext.BaseDirectory, DefaultConfig.ConfigFileName);
-
-        try
+        if (_manager is null || (path is not null && path != _manager.FilePath))
         {
-            string? dir = Path.GetDirectoryName(path);
-            if (dir is not null && !Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
-
-            string json = JsonSerializer.Serialize(config, AppConfigJsonContext.Default.AppConfig);
-            File.WriteAllText(path, json, Encoding.UTF8);
-
-            // 저장 후 mtime 갱신 (핫 리로드 중복 감지 방지)
-            _lastConfigMtime = File.GetLastWriteTimeUtc(path);
-            _configFilePath ??= path;
-
-            Logger.Debug($"Config saved to {path}");
+            string targetPath = path ?? Path.Combine(AppContext.BaseDirectory, DefaultConfig.ConfigFileName);
+            _manager = new AppSettingsManager(targetPath, AppConfigJsonContext.Default.AppConfig);
         }
-        catch (Exception ex)
-        {
-            // NF-25: 저장 실패 시 로그 경고 + 인메모리 유지
-            Logger.Warning($"Failed to save config: {ex.Message}");
-        }
+        _manager.Save(config);
     }
 
     // ================================================================
-    // Validate — 범위 클램핑
+    // Validate — 범위 클램핑 (앱 프로필 머지 등에서 직접 호출됨)
     // ================================================================
 
     /// <summary>
@@ -270,44 +126,7 @@ internal static class Settings
     }
 
     // ================================================================
-    // EnsureSubObjects — STJ 소스 생성기 null 보정
-    // ================================================================
-
-    /// <summary>
-    /// System.Text.Json 소스 생성기는 JSON에 없는 init 속성의 기본값을 보존하지 않을 수 있다.
-    /// 역직렬화 직후 모든 참조 타입 하위 객체를 null 체크하여 기본값으로 보정.
-    /// </summary>
-    private static AppConfig EnsureSubObjects(AppConfig config)
-    {
-        return config with
-        {
-            EventTriggers = config.EventTriggers ?? new(),
-            Advanced = config.Advanced ?? new(),
-            SystemHideClasses = config.SystemHideClasses ?? ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"],
-            SystemHideClassesUser = config.SystemHideClassesUser ?? [],
-            AppProfiles = config.AppProfiles ?? new(),
-            IndicatorPositions = config.IndicatorPositions ?? new(),
-            AppFilterList = config.AppFilterList ?? [],
-            TrayQuickOpacityPresets = config.TrayQuickOpacityPresets ?? [0.95, 0.85, 0.6],
-            BorderColor = config.BorderColor ?? "#000000",
-            HangulBg = config.HangulBg ?? "#16A34A",
-            HangulFg = config.HangulFg ?? "#FFFFFF",
-            EnglishBg = config.EnglishBg ?? "#D97706",
-            EnglishFg = config.EnglishFg ?? "#FFFFFF",
-            NonKoreanBg = config.NonKoreanBg ?? "#6B7280",
-            NonKoreanFg = config.NonKoreanFg ?? "#FFFFFF",
-            FontFamily = config.FontFamily ?? "맑은 고딕",
-            HangulLabel = config.HangulLabel ?? "한",
-            EnglishLabel = config.EnglishLabel ?? "En",
-            NonKoreanLabel = config.NonKoreanLabel ?? "EN",
-            HotkeyToggleVisibility = config.HotkeyToggleVisibility ?? "Ctrl+Alt+H",
-            Language = config.Language ?? "ko",
-            LogFilePath = config.LogFilePath ?? "",
-        };
-    }
-
-    // ================================================================
-    // Migrate — config_version 체인
+    // Migrate — config_version 체인 (앱 프로필 머지 등에서 직접 호출됨)
     // ================================================================
 
     /// <summary>
@@ -334,26 +153,11 @@ internal static class Settings
     /// </summary>
     public static void CheckConfigFileChange(IntPtr hwndMain)
     {
-        if (_configFilePath is null) return;
-        // 삭제된 파일은 GetLastWriteTimeUtc가 1601-01-01 센티널을 반환해 "변경됨"으로 오인되고,
-        // 뒤따르는 Load()가 기본값으로 리셋해버린다. 존재 확인으로 이 체인을 차단.
-        if (!File.Exists(_configFilePath)) return;
-
-        try
+        if (_manager is null) return;
+        if (_manager.CheckReload())
         {
-            DateTime mtime = File.GetLastWriteTimeUtc(_configFilePath);
-            if (mtime != _lastConfigMtime)
-            {
-                _lastConfigMtime = mtime;
-                User32.PostMessageW(hwndMain, AppMessages.WM_CONFIG_CHANGED,
-                    IntPtr.Zero, IntPtr.Zero);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // 파일 잠금(아토믹 replace 에디터의 delete→rename 중간 상태) 또는 권한 오류는 흡수.
-            // 그 외 타입은 경로 계산 버그를 의미하므로 전파.
-            Logger.Debug($"CheckConfigFileChange mtime probe failed: {ex.Message}");
+            User32.PostMessageW(hwndMain, AppMessages.WM_CONFIG_CHANGED,
+                IntPtr.Zero, IntPtr.Zero);
         }
     }
 
@@ -524,12 +328,127 @@ internal static class Settings
             // 3. 머지된 JSON → AppConfig
             string mergedJson = Encoding.UTF8.GetString(stream.ToArray());
             AppConfig? merged = JsonSerializer.Deserialize(mergedJson, AppConfigJsonContext.Default.AppConfig);
-            return merged is not null ? EnsureSubObjects(merged) : global;
+            return merged is not null ? AppSettingsManager.EnsureSubObjectsPublic(merged) : global;
         }
         catch
         {
             Logger.Warning("Failed to merge app profile, using global config");
             return global;
         }
+    }
+}
+
+// ================================================================
+// AppSettingsManager — JsonSettingsManager<AppConfig> 하위 클래스
+// ================================================================
+
+/// <summary>
+/// AppConfig 전용 <see cref="JsonSettingsManager{T}"/> 서브클래스.
+/// 5 개의 파이프라인 훅을 AppConfig-specific 로 구현한다.
+/// Core 레이어는 AppConfig 스키마를 몰라야 하므로 이 클래스는 App/Config/ 에 위치.
+/// </summary>
+internal sealed class AppSettingsManager : JsonSettingsManager<AppConfig>
+{
+    public AppSettingsManager(string filePath, JsonTypeInfo<AppConfig> typeInfo)
+        : base(filePath, typeInfo)
+    {
+    }
+
+    /// <summary>
+    /// STJ 소스 생성기는 JSON에 없는 init 속성의 기본값을 보존하지 않을 수 있다.
+    /// 역직렬화 직후 모든 참조 타입 하위 객체를 null 체크하여 기본값으로 보정.
+    /// </summary>
+    protected override AppConfig ApplyNullSafetyNet(AppConfig config) => EnsureSubObjects(config);
+
+    /// <summary>
+    /// NativeAOT STJ source gen이 Dictionary&lt;string, int[]&gt; 역직렬화에 실패할 수 있음.
+    /// JSON에서 indicator_positions를 수동 파싱하여 보정.
+    /// </summary>
+    protected override AppConfig PostDeserializeFixup(AppConfig config, string mergedJson)
+    {
+        // STJ가 정상 파싱했으면 건너뛰기
+        if (config.IndicatorPositions.Count > 0)
+            return config;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(mergedJson);
+            if (!doc.RootElement.TryGetProperty("indicator_positions", out JsonElement posElement))
+                return config;
+            if (posElement.ValueKind != JsonValueKind.Object)
+                return config;
+
+            var positions = new Dictionary<string, int[]>();
+            foreach (var prop in posElement.EnumerateObject())
+            {
+                if (prop.Value.ValueKind == JsonValueKind.Array && prop.Value.GetArrayLength() >= 2)
+                {
+                    int x = prop.Value[0].GetInt32();
+                    int y = prop.Value[1].GetInt32();
+                    positions[prop.Name] = [x, y];
+                }
+            }
+
+            if (positions.Count > 0)
+            {
+                Logger.Info($"Manual parse recovered {positions.Count} indicator position(s)");
+                return config with { IndicatorPositions = positions };
+            }
+        }
+        catch
+        {
+            // 수동 파싱 실패 시 무시
+        }
+
+        return config;
+    }
+
+    protected override AppConfig Migrate(AppConfig config) => Settings.Migrate(config);
+
+    protected override AppConfig Validate(AppConfig config) => Settings.Validate(config);
+
+    protected override AppConfig ApplyTheme(AppConfig config) => ThemePresets.Apply(config);
+
+    // ================================================================
+    // EnsureSubObjects — AppConfig null 보정 로직 (MergeProfile 경로에서도 재사용)
+    // ================================================================
+
+    /// <summary>
+    /// <c>Settings.MergeProfile</c> 경로에서도 동일한 null 보정이 필요해서
+    /// 정적 경유 접근점을 제공한다.
+    /// </summary>
+    public static AppConfig EnsureSubObjectsPublic(AppConfig config) => EnsureSubObjects(config);
+
+    /// <summary>
+    /// System.Text.Json 소스 생성기는 JSON에 없는 init 속성의 기본값을 보존하지 않을 수 있다.
+    /// 역직렬화 직후 모든 참조 타입 하위 객체를 null 체크하여 기본값으로 보정.
+    /// </summary>
+    private static AppConfig EnsureSubObjects(AppConfig config)
+    {
+        return config with
+        {
+            EventTriggers = config.EventTriggers ?? new(),
+            Advanced = config.Advanced ?? new(),
+            SystemHideClasses = config.SystemHideClasses ?? ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"],
+            SystemHideClassesUser = config.SystemHideClassesUser ?? [],
+            AppProfiles = config.AppProfiles ?? new(),
+            IndicatorPositions = config.IndicatorPositions ?? new(),
+            AppFilterList = config.AppFilterList ?? [],
+            TrayQuickOpacityPresets = config.TrayQuickOpacityPresets ?? [0.95, 0.85, 0.6],
+            BorderColor = config.BorderColor ?? "#000000",
+            HangulBg = config.HangulBg ?? "#16A34A",
+            HangulFg = config.HangulFg ?? "#FFFFFF",
+            EnglishBg = config.EnglishBg ?? "#D97706",
+            EnglishFg = config.EnglishFg ?? "#FFFFFF",
+            NonKoreanBg = config.NonKoreanBg ?? "#6B7280",
+            NonKoreanFg = config.NonKoreanFg ?? "#FFFFFF",
+            FontFamily = config.FontFamily ?? "맑은 고딕",
+            HangulLabel = config.HangulLabel ?? "한",
+            EnglishLabel = config.EnglishLabel ?? "En",
+            NonKoreanLabel = config.NonKoreanLabel ?? "EN",
+            HotkeyToggleVisibility = config.HotkeyToggleVisibility ?? "Ctrl+Alt+H",
+            Language = config.Language ?? "ko",
+            LogFilePath = config.LogFilePath ?? "",
+        };
     }
 }
