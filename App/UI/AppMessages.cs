@@ -45,6 +45,14 @@ internal static class AppMessages
     /// </summary>
     public const uint WM_CONFIG_CHANGED = Win32Constants.WM_APP + 5;
 
+    /// <summary>
+    /// UpdateChecker 백그라운드 스레드가 새 버전을 발견했을 때 메인 스레드로 통지.
+    /// 페이로드(<see cref="Update.UpdateInfo"/>)는 Program 내부 volatile 필드로 전달.
+    /// wParam: 0
+    /// lParam: 0
+    /// </summary>
+    public const uint WM_APP_UPDATE_FOUND = Win32Constants.WM_APP + 6;
+
     // --- Timer IDs (WM_TIMER wParam) ---
 
     public const nuint TIMER_ID_FADE      = 1;  // ~16ms, 페이드 애니메이션

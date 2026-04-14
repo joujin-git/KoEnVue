@@ -4,7 +4,7 @@ Windows 한/영 IME 상태 인디케이터 — 드래그 가능한 플로팅 오
 
 > **한글** 모드면 "한", **영문** 모드면 "En", **비한국어 IME**면 "EN" 라벨이 화면 위에 떠 있어 타이핑 중 시선 이동 없이 입력 상태를 파악할 수 있습니다. CAPS LOCK이 켜지면 라벨 좌우에 세로 막대가 함께 표시됩니다.
 
-**완전 포터블** — NativeAOT 단일 exe (~4.7 MB), .NET 런타임 설치 불필요.
+**완전 포터블** — NativeAOT 단일 exe (~4.9 MB), .NET 런타임 설치 불필요.
 
 ---
 
@@ -54,6 +54,7 @@ exe 폴더의 `config.json` 을 직접 편집하거나 트레이 **상세 설정
 | `hide_in_fullscreen` | `true` | 전체화면 앱에서 숨김 |
 | `hide_when_no_focus` | `true` | 포커스 없는 창에서 숨김 |
 | `tray_tooltip` | `true` | 트레이 아이콘 호버 툴팁 표시 |
+| `update_check_enabled` | `true` | 부팅 시 GitHub Releases 에서 새 버전 1회 확인 (발견 시 트레이 메뉴 최상단에 "새 버전 있음" 항목 표시) |
 
 전체 59개 설정 필드는 트레이 "상세 설정" 다이얼로그에서 13개 섹션으로 편집할 수 있습니다.
 
@@ -63,7 +64,7 @@ exe 폴더의 `config.json` 을 직접 편집하거나 트레이 **상세 설정
 
 - **언어/런타임**: C# 14 / .NET 10, NativeAOT
 - **외부 패키지**: 없음 (.NET 10 BCL + Windows API P/Invoke 전용)
-- **P/Invoke**: User32, Imm32, Shell32, Gdi32, Kernel32, Shcore, Ole32, OleAut32, Dwmapi
+- **P/Invoke**: User32, Imm32, Shell32, Gdi32, Kernel32, Shcore, Ole32, OleAut32, Dwmapi, WinHttp
 - **렌더링**: GDI DIB section + UpdateLayeredWindow (premultiplied alpha)
 - **설정**: System.Text.Json source generation
 

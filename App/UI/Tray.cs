@@ -2,6 +2,7 @@ using System.Diagnostics;
 using KoEnVue.App.Config;
 using KoEnVue.App.Models;
 using KoEnVue.App.UI.Dialogs;
+using KoEnVue.App.Update;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Color;
 using KoEnVue.Core.Dpi;
@@ -46,6 +47,7 @@ internal static class Tray
     private const int IDM_SETTINGS           = 4005;
     private const int IDM_ANIMATION_ENABLED  = 4006;
     private const int IDM_CHANGE_HIGHLIGHT   = 4007;
+    private const int IDM_UPDATE_DOWNLOAD    = 4008;
     private const int IDM_EXIT               = 4002;
 
     // schtasks 작업 이름
@@ -64,6 +66,10 @@ internal static class Tray
     private static IntPtr _hwndMain;
     private static SafeIconHandle? _currentIcon;
     private static NotifyIconManager? _notifyIcon;
+
+    // UpdateChecker 가 발견한 새 버전 정보. null 이면 메뉴에 업데이트 항목 미표시.
+    // 메인 스레드 전용 (Program.HandleUpdateFound → OnUpdateFound 경로) 이라 volatile 불필요.
+    private static UpdateInfo? _pendingUpdate;
 
     // ================================================================
     // Public API
@@ -106,6 +112,16 @@ internal static class Tray
         // 이전 아이콘 해제 후 교체 — 소유권은 Tray.cs 측에 남는다 (NotifyIconManager 는 해제 금지).
         _currentIcon?.Dispose();
         _currentIcon = newIcon;
+    }
+
+    /// <summary>
+    /// UpdateChecker 가 새 버전을 발견했을 때 Program.HandleUpdateFound 가 호출.
+    /// 페이로드를 보관만 하고, 다음 메뉴 빌드 시점에 ShowMenu 가 자동으로 항목을 노출한다.
+    /// </summary>
+    internal static void OnUpdateFound(UpdateInfo info)
+    {
+        _pendingUpdate = info;
+        Logger.Info($"Tray: update available — {info.Version} ({info.HtmlUrl})");
     }
 
     /// <summary>
@@ -203,6 +219,17 @@ internal static class Tray
 
         // --- 메인 메뉴 ---
         IntPtr hMenu = User32.CreatePopupMenu();
+
+        // 업데이트 알림 항목 — UpdateChecker 가 새 버전을 발견했을 때만 메뉴 최상단에 표시.
+        // 클릭 시 GitHub 릴리스 페이지가 기본 브라우저에서 열린다.
+        if (_pendingUpdate is not null)
+        {
+            User32.AppendMenuW(hMenu, Win32Constants.MF_STRING,
+                (nuint)IDM_UPDATE_DOWNLOAD,
+                I18n.FormatMenuUpdateAvailable(_pendingUpdate.Version));
+            User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
+        }
+
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hOpacityMenu, I18n.MenuOpacity);
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hSizeMenu, I18n.MenuSize);
         uint snapFlags = config.SnapToWindows ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
@@ -325,11 +352,44 @@ internal static class Tray
                 SettingsDialog.Show(hwndMain, config, updateConfig);
                 break;
 
+            // --- 업데이트 다운로드 — GitHub 릴리스 페이지 오픈 ---
+            case IDM_UPDATE_DOWNLOAD:
+                OpenUpdatePage();
+                break;
+
             // --- 종료 ---
             case IDM_EXIT:
                 User32.PostQuitMessage(0);
                 break;
         }
+    }
+
+    /// <summary>
+    /// 펜딩된 업데이트의 GitHub 릴리스 페이지를 기본 브라우저로 연다.
+    /// ShellExecuteW 반환값이 32 이하면 실패지만 사용자에게 알려도 할 일이 없으므로 silent log.
+    /// </summary>
+    private static void OpenUpdatePage()
+    {
+        var info = _pendingUpdate;
+        if (info is null)
+        {
+            Logger.Debug("OpenUpdatePage called with no pending update");
+            return;
+        }
+
+        IntPtr result = Shell32.ShellExecuteW(
+            IntPtr.Zero,
+            "open",
+            info.HtmlUrl,
+            null,
+            null,
+            Win32Constants.SW_SHOWNORMAL);
+
+        // ShellExecuteW 의 반환값은 HINSTANCE 이지만 의미상 정수: <= 32 이면 실패.
+        if ((long)result <= 32)
+            Logger.Warning($"ShellExecuteW failed for update URL (rc={(long)result})");
+        else
+            Logger.Info($"Opened update page: {info.HtmlUrl}");
     }
 
     // ================================================================

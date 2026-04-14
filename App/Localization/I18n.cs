@@ -68,6 +68,15 @@ internal static class I18n
     public static string MenuSettings => _isKorean ? "상세 설정" : "Settings";
     public static string MenuExit => _isKorean ? "종료" : "Exit";
 
+    /// <summary>
+    /// UpdateChecker 가 새 버전을 발견했을 때 트레이 메뉴 최상단에 띄우는 항목 라벨.
+    /// 예: "새 버전 있음 (v1.0.1) — 다운로드".
+    /// </summary>
+    public static string FormatMenuUpdateAvailable(string version) =>
+        _isKorean
+            ? $"새 버전 있음 ({version}) — 다운로드"
+            : $"New version available ({version}) — Download";
+
     // ================================================================
     // 상세 설정 대화상자
     // ================================================================

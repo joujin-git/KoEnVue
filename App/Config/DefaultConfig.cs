@@ -85,6 +85,19 @@ internal static class DefaultConfig
     /// <summary>Mutex 이름: "KoEnVue_{GUID}"</summary>
     public static readonly string MutexName = $"KoEnVue_{AppGuid}";
 
+    /// <summary>
+    /// 현재 앱 버전. UpdateChecker 가 GitHub Releases API 의 tag_name 과 비교한다.
+    /// 새 릴리스 publish 전에 본 상수를 수동으로 올린 뒤 dotnet publish + git tag.
+    /// 형식: <c>major.minor.patch</c>. <c>System.Version.TryParse</c> 가 받아들이는 값이어야 함.
+    /// </summary>
+    public const string AppVersion = "1.0.0";
+
+    /// <summary>UpdateChecker 가 조회할 GitHub 레포 owner.</summary>
+    public const string UpdateRepoOwner = "joujin-git";
+
+    /// <summary>UpdateChecker 가 조회할 GitHub 레포 이름.</summary>
+    public const string UpdateRepoName = "KoEnVue";
+
     // === 오버레이 ===
 
     /// <summary>오버레이 윈도우 클래스명</summary>

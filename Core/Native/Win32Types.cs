@@ -277,6 +277,7 @@ internal static class Win32Constants
 
     // --- ShowWindow ---
     public const int SW_HIDE             = 0;
+    public const int SW_SHOWNORMAL       = 1;
     public const int SW_SHOW             = 5;
 
     // --- System Metrics ---

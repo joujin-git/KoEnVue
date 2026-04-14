@@ -3,6 +3,7 @@ using KoEnVue.App.Config;
 using KoEnVue.App.Detector;
 using KoEnVue.App.Models;
 using KoEnVue.App.UI;
+using KoEnVue.App.Update;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Color;
 using KoEnVue.Core.Dpi;
@@ -45,6 +46,10 @@ internal static partial class Program
 
     // CAPS LOCK 토글 캐시 (메인 스레드 전용 — TIMER_ID_CAPS 폴러가 200ms마다 GetKeyState 비교)
     private static bool _lastCapsLockState;
+
+    // UpdateChecker 백그라운드 스레드 → 메인 스레드 페이로드 전달.
+    // PostMessage 의 wParam/lParam 으로 객체를 직접 못 보내므로 volatile 참조로 게시한다.
+    private static volatile UpdateInfo? _pendingUpdate;
 
     // 라이프사이클
     private static bool _stopping;
@@ -137,6 +142,19 @@ internal static partial class Program
         // 11. IME 이벤트 훅 등록
         ImeStatus.RegisterHook(_hwndMain);
 
+        // 12. 업데이트 체크 (백그라운드 1회) — UpdateCheckEnabled=false 면 네트워크 호출 없음.
+        //     hwndMain 을 로컬로 스냅샷해 lambda closure 에 캡처: UpdateChecker.CheckInBackground 는
+        //     즉시 반환하고 워커 스레드가 수 초 후 콜백을 호출하므로 그 시점의 _hwndMain 는 항상 valid.
+        if (_config.UpdateCheckEnabled)
+        {
+            IntPtr hwndForUpdate = _hwndMain;
+            UpdateChecker.CheckInBackground(
+                DefaultConfig.AppVersion,
+                DefaultConfig.UpdateRepoOwner,
+                DefaultConfig.UpdateRepoName,
+                info => OnUpdateCheckResult(hwndForUpdate, info));
+        }
+
         // 13. 핫키 등록
         if (_config.HotkeysEnabled)
             RegisterHotkeys();
@@ -192,6 +210,10 @@ internal static partial class Program
 
             case AppMessages.WM_CONFIG_CHANGED:
                 HandleConfigChanged();
+                return IntPtr.Zero;
+
+            case AppMessages.WM_APP_UPDATE_FOUND:
+                HandleUpdateFound();
                 return IntPtr.Zero;
 
             // === 트레이 ===
@@ -442,6 +464,29 @@ internal static partial class Program
         Settings.ClearProfileCache();
         Overlay.HandleConfigChanged(_config);
         Logger.Info("Config reloaded");
+    }
+
+    /// <summary>
+    /// UpdateChecker 워커 스레드의 콜백. volatile 필드에 페이로드를 게시한 뒤
+    /// 메인 메시지 큐로 WM_APP_UPDATE_FOUND 를 PostMessage 한다 — 본 람다는
+    /// 워커 스레드에서 실행되므로 GUI 작업을 직접 하면 안 됨.
+    /// </summary>
+    private static void OnUpdateCheckResult(IntPtr hwndMain, UpdateInfo info)
+    {
+        _pendingUpdate = info;
+        if (hwndMain != IntPtr.Zero)
+            User32.PostMessageW(hwndMain, AppMessages.WM_APP_UPDATE_FOUND, IntPtr.Zero, IntPtr.Zero);
+    }
+
+    /// <summary>
+    /// 메인 스레드: 새 버전 알림을 트레이에 등록. Tray 가 메뉴 빌드 시점에 페이로드를 읽어
+    /// 메뉴 상단에 "새 버전 있음 ({version}) — 다운로드" 항목을 추가한다.
+    /// </summary>
+    private static void HandleUpdateFound()
+    {
+        var info = _pendingUpdate;
+        if (info is null) return;
+        Tray.OnUpdateFound(info);
     }
 
     private static void HideOverlay()
