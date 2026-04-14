@@ -80,10 +80,12 @@ internal class JsonSettingsManager<T>
                 Logger.Info($"Config loaded from {_filePath}");
                 return config;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException)
             {
                 // 파일은 존재하지만 파싱 실패 — 사용자 복구 가능성을 위해 덮어쓰지 않음.
                 // mtime은 갱신해서 5초 폴링이 WM_CONFIG_CHANGED를 무한 재발송하는 스팸을 차단.
+                // 정책 항목 1(타입 좁히기): I/O + JSON + 소스젠 비지원 타입만 잡고, 훅(Validate/Migrate/...)
+                // 의 로직 버그(NullRef 등)는 propagate 시켜 표면화하도록 한다.
                 Logger.Warning($"Failed to load config from {_filePath}: {ex.Message}. Using defaults without overwriting.");
                 try { _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath); }
                 catch (Exception innerEx) when (innerEx is IOException or UnauthorizedAccessException) { }
@@ -115,9 +117,10 @@ internal class JsonSettingsManager<T>
             _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
             Logger.Debug($"Config saved to {_filePath}");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            // NF-25: 저장 실패 시 로그 경고 + 인메모리 유지
+            // NF-25: 저장 실패 시 로그 경고 + 인메모리 유지.
+            // 정책 항목 1(타입 좁히기): 로직 버그(NullRef 등)는 전파되어 표면화되도록 한다.
             Logger.Warning($"Failed to save config: {ex.Message}");
         }
     }

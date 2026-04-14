@@ -391,8 +391,11 @@ internal static class Tray
             proc?.WaitForExit(SchtasksQueryTimeoutMs);
             return proc?.ExitCode == 0;
         }
-        catch
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
+            or PlatformNotSupportedException or FileNotFoundException)
         {
+            // 정책 항목 1(타입 좁히기): Process.Start 실패(스케쥴러 없음/실행 권한 없음) 만 false 로 폴백.
+            // 로직 버그(NullRef 등)는 propagate 시켜 표면화.
             return false;
         }
     }
@@ -415,8 +418,10 @@ internal static class Tray
                 Logger.Info("Startup registration created");
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
+            or PlatformNotSupportedException or FileNotFoundException)
         {
+            // 정책 항목 1(타입 좁히기): schtasks.exe 실행 실패만 잡음.
             Logger.Warning($"Failed to toggle startup registration: {ex.Message}");
         }
     }
@@ -459,8 +464,10 @@ internal static class Tray
             Logger.Info($"Startup task path moved: '{registeredPath}' -> '{currentPath}', re-registering");
             RunSchtasks($"/create /tn \"{TaskName}\" /tr \"\\\"{currentPath}\\\"\" /sc ONLOGON /rl HIGHEST /f");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
+            or PlatformNotSupportedException or FileNotFoundException)
         {
+            // 정책 항목 1(타입 좁히기): schtasks.exe 실행 실패만 잡음.
             Logger.Warning($"Failed to sync startup task path: {ex.Message}");
         }
     }

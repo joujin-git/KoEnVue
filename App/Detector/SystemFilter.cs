@@ -18,6 +18,11 @@ internal static class SystemFilter
     private static readonly Guid CLSID_VirtualDesktopManager =
         new("aa509086-5ca9-4c25-8f95-589d3c07b48a");
 
+    // IID는 IVirtualDesktopManager의 [Guid] 어트리뷰트와 동일 — 명시적 const 로 추출하여
+    // typeof(...).GUID 리플렉션 경로 의존을 제거 (NativeAOT 트림 안전성 + 의도 명시).
+    private static readonly Guid IID_IVirtualDesktopManager =
+        new("a5cd92ff-29be-454c-8d04-d82879fb3f1b");
+
     private static readonly StrategyBasedComWrappers _comWrappers = new();
     private static readonly IVirtualDesktopManager? _vdm;
 
@@ -29,7 +34,7 @@ internal static class SystemFilter
         try
         {
             Guid clsid = CLSID_VirtualDesktopManager;
-            Guid iid = typeof(IVirtualDesktopManager).GUID;
+            Guid iid = IID_IVirtualDesktopManager;
             int hr = Ole32.CoCreateInstance(ref clsid, IntPtr.Zero,
                 Win32Constants.CLSCTX_INPROC_SERVER, ref iid, out IntPtr ppv);
 
