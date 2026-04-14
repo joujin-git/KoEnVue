@@ -88,14 +88,14 @@ internal static class DefaultConfig
     /// <summary>
     /// 현재 앱 버전. UpdateChecker 가 GitHub Releases API 의 tag_name 과 비교한다.
     /// 새 릴리스 publish 전에 본 상수를 수동으로 올린 뒤 dotnet publish + git tag.
-    /// 형식: <c>major.minor.patch</c>. <c>System.Version.TryParse</c> 가 받아들이는 값이어야 함.
+    /// 형식: <c>major.minor.build[.revision]</c> — <c>System.Version.TryParse</c> 가 받아들이는 2~4-part.
     /// <para>
     /// <b>KoEnVue.csproj 의 <c>&lt;Version&gt;</c> 요소와 반드시 동기화</b> — csproj 값은 PE 헤더의
     /// AssemblyVersion/FileVersion/InformationalVersion 3종에 박히고, 본 상수는 UpdateChecker 전용이다.
     /// 둘 중 하나만 올리면 바이너리 메타데이터와 런타임 비교 값이 불일치한다.
     /// </para>
     /// </summary>
-    public const string AppVersion = "0.8.9";
+    public const string AppVersion = "0.8.9.0";
 
     /// <summary>UpdateChecker 가 조회할 GitHub 레포 owner.</summary>
     public const string UpdateRepoOwner = "joujin-git";
