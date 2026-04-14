@@ -1,10 +1,10 @@
 namespace KoEnVue.Core.Windowing;
 
 /// <summary>
-/// LayeredOverlayBase의 렌더링 입력. AppConfig를 Core 경계 밖으로 빼기 위해
-/// 파사드가 ImeState + AppConfig를 합성해 만드는 값 타입.
+/// LayeredOverlayBase의 렌더링 입력. 앱 설정 레코드를 Core 경계 밖으로 빼기 위해
+/// 파사드가 상태 enum + 설정을 합성해 만드는 값 타입.
 /// <para>
-/// 모든 "LogicalPx" 필드는 <c>config.IndicatorScale</c>만 곱해진 상태이며 DPI 스케일링은
+/// 모든 "LogicalPx" 필드는 <c>IndicatorScale</c>만 곱해진 상태이며 DPI 스케일링은
 /// 엔진이 내부에서 수행한다. 이는 <c>EnsureFont</c>의 <c>Kernel32.MulDiv</c> 정밀도를 보존하기
 /// 위함이다 (단순 <c>(int)Math.Round(...)</c>로 대체 시 0~1px 단위 라벨 폭 회귀 가능).
 /// </para>
@@ -13,9 +13,8 @@ namespace KoEnVue.Core.Windowing;
 /// flip-flop 가드는 이전 스타일과 현재 스타일을 <c>==</c>로 비교해 동일 시 재렌더를 스킵한다.
 /// </para>
 /// <para>
-/// ImeState 누출 금지: 이 타입은 KoEnVue.Core.Windowing 네임스페이스에 있으며 App 레이어
-/// 의존성이 없다. 파사드 <c>Overlay.BuildStyle(config, state)</c>가 상태를 문자열/색상/치수로
-/// 해석해 본 레코드에 주입한다.
+/// 레이어 경계: 이 타입은 KoEnVue.Core.Windowing 네임스페이스에 있으며 App 레이어
+/// 의존성이 없다. 파사드가 상태 enum을 문자열/색상/치수로 해석해 본 레코드에 주입한다.
 /// </para>
 /// </summary>
 internal readonly record struct OverlayStyle(

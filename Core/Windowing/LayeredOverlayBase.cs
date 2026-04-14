@@ -7,7 +7,7 @@ namespace KoEnVue.Core.Windowing;
 /// <summary>
 /// GDI + UpdateLayeredWindow 기반 레이어드 오버레이 렌더 엔진.
 /// <para>
-/// KoEnVue-specific 의존성(AppConfig, ImeState)을 전혀 포함하지 않으며 파사드가 합성한
+/// 앱별 의존성(설정 레코드, 상태 enum)을 전혀 포함하지 않으며 파사드가 합성한
 /// <see cref="OverlayStyle"/>만 받는다. 실제 GDI 그리기(RoundRect, DrawTextW 등)는
 /// 생성자에 주입된 <c>renderToDib</c> 콜백이 담당하고, 엔진은 DIB/HFONT 리소스 생명주기,
 /// 드래그 처리, 창 엣지 스냅, DPI 전환, premultiplied alpha 후처리, UpdateLayeredWindow
