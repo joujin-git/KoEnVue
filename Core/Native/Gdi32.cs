@@ -61,6 +61,10 @@ internal static partial class Gdi32
     internal static partial int GetTextExtentPoint32W(IntPtr hdc, string lpString, int c, out SIZE psizl);
 
     [LibraryImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool GetTextMetricsW(IntPtr hdc, out TEXTMETRICW lptm);
+
+    [LibraryImport("gdi32.dll")]
     internal static partial IntPtr GetStockObject(int i);
 
     [LibraryImport("gdi32.dll")]

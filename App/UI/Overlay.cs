@@ -391,7 +391,12 @@ internal static class Overlay
             uint fgColor = ColorHelper.HexToColorRef(style.FgHex);
             uint oldTextColor = Gdi32.SetTextColor(hdc, fgColor);
 
-            var textRect = new RECT { Left = 0, Top = 0, Right = w, Bottom = h };
+            // textRect를 위로 vOffset만큼 이동 (Top/Bottom 동시) — 높이는 보존되므로
+            // DT_VCENTER가 사각형 안에서 셀을 정상 중앙 정렬하고, 사각형 자체가 위로 이동한 만큼
+            // 글리프 시각 중심이 DIB 중앙에 정확히 맞춰진다. vOffset의 산출은 LayeredOverlayBase.EnsureFont
+            // 의 GetTextMetricsW 분기 참조 ((tmInternalLeading - tmDescent) / 2).
+            int vOffset = metrics.TextVCenterOffsetPx;
+            var textRect = new RECT { Left = 0, Top = -vOffset, Right = w, Bottom = h - vOffset };
             User32.DrawTextW(hdc, style.LabelText, style.LabelText.Length, ref textRect,
                 Win32Constants.DT_CENTER | Win32Constants.DT_VCENTER | Win32Constants.DT_SINGLELINE);
 

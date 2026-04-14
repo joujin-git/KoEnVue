@@ -47,6 +47,37 @@ internal struct SIZE
     public SIZE(int cx, int cy) { this.cx = cx; this.cy = cy; }
 }
 
+/// <summary>
+/// GetTextMetricsW 출력. 폰트 셀 메트릭으로, DT_VCENTER가 셀 중앙(tmAscent+tmDescent의 중점)을
+/// 기준으로 정렬하기 때문에 발생하는 시각적 하향 치우침을 보정하기 위해 사용한다.
+/// tmInternalLeading은 라틴 액센트용 상단 reserved 영역으로 한글/대문자 영문에는 비어 있어,
+/// tmInternalLeading &gt; tmDescent인 폰트는 글리프가 cell 중앙보다 아래로 치우친다.
+/// </summary>
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal struct TEXTMETRICW
+{
+    public int tmHeight;
+    public int tmAscent;
+    public int tmDescent;
+    public int tmInternalLeading;
+    public int tmExternalLeading;
+    public int tmAveCharWidth;
+    public int tmMaxCharWidth;
+    public int tmWeight;
+    public int tmOverhang;
+    public int tmDigitizedAspectX;
+    public int tmDigitizedAspectY;
+    public char tmFirstChar;
+    public char tmLastChar;
+    public char tmDefaultChar;
+    public char tmBreakChar;
+    public byte tmItalic;
+    public byte tmUnderlined;
+    public byte tmStruckOut;
+    public byte tmPitchAndFamily;
+    public byte tmCharSet;
+}
+
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
 internal struct MONITORINFOEXW
 {

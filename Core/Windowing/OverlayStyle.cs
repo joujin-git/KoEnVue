@@ -66,5 +66,11 @@ internal readonly record struct OverlayMetrics(
     int ScaledPaddingX,         // 텍스트 좌우 패딩 (물리 픽셀)
     int ScaledBorderWidth,      // 보더 두께 (물리 픽셀, 0이면 보더 생략)
     int ScaledBorderRadius,     // 모서리 반경 (물리 픽셀)
-    int ScaledFontHeightPx      // MulDiv로 산출된 음수 폰트 픽셀 높이 (참고용)
+    int ScaledFontHeightPx,     // MulDiv로 산출된 음수 폰트 픽셀 높이 (참고용)
+
+    // DT_VCENTER가 폰트 셀(tmAscent+tmDescent의 중점)을 기준으로 정렬하는 탓에 발생하는
+    // 시각적 하향 치우침 보정값. 양수일수록 텍스트를 위로 그만큼 끌어올린다(물리 픽셀).
+    // 콜백은 textRect의 Top/Bottom을 동시에 -TextVCenterOffsetPx만큼 이동시키면 된다 —
+    // 사각형 높이는 보존되므로 DT_VCENTER 자체는 정상 동작하고, 그 안의 셀이 위로 이동한다.
+    int TextVCenterOffsetPx
 );

@@ -55,6 +55,12 @@ internal sealed class LayeredOverlayBase : IDisposable
     private bool _cachedFontIsBold;
     private double _cachedFontDpiScale;
 
+    // DT_VCENTER가 셀 중앙(tmAscent+tmDescent의 중점)을 기준으로 정렬하기 때문에 발생하는
+    // 시각적 하향 치우침 보정값. 양수일수록 텍스트를 위로 끌어올린다(픽셀 단위).
+    // EnsureFont에서 GetTextMetricsW로 한 번 측정해 캐시하며, 폰트 캐시 키가 무효화될 때만
+    // 재측정된다. → 부팅 1회 + 폰트/크기/굵기/DPI 변경 시점에만 호출.
+    private int _textVCenterOffsetPx;
+
     // 위치/상태 추적
     private bool _isVisible;
     private OverlayStyle? _lastRenderedStyle;
@@ -633,6 +639,19 @@ internal sealed class LayeredOverlayBase : IDisposable
         _cachedFontSize = scaledFontSize;
         _cachedFontIsBold = style.IsBold;
         _cachedFontDpiScale = _currentDpiScale;
+
+        // 새 폰트의 메트릭을 측정해 vCenter 보정값 갱신.
+        // 보정 = (tmInternalLeading - tmDescent) / 2  (>0이면 텍스트를 위로 그만큼 이동)
+        // tmInternalLeading은 라틴 액센트용 상단 reserved 공간. 한글/대문자는 이 영역을 쓰지 않아
+        // tmInternalLeading > tmDescent인 폰트(맑은 고딕 등)는 글리프가 cell 중앙보다 아래로 치우친다.
+        // GDI는 폰트가 SelectObject된 상태에서만 메트릭을 반환하므로 _memDC에 임시 SelectObject.
+        IntPtr oldFont = Gdi32.SelectObject(_memDC, hFont);
+        if (Gdi32.GetTextMetricsW(_memDC, out TEXTMETRICW tm))
+            _textVCenterOffsetPx = (tm.tmInternalLeading - tm.tmDescent) / 2;
+        else
+            _textVCenterOffsetPx = 0;
+        if (oldFont != IntPtr.Zero)
+            Gdi32.SelectObject(_memDC, oldFont);
     }
 
     private void EnsureDib(int width, int height)
@@ -714,7 +733,8 @@ internal sealed class LayeredOverlayBase : IDisposable
             ScaledPaddingX: scaledPadding,
             ScaledBorderWidth: scaledBorderW,
             ScaledBorderRadius: scaledBorderR,
-            ScaledFontHeightPx: fontHeightPx);
+            ScaledFontHeightPx: fontHeightPx,
+            TextVCenterOffsetPx: _textVCenterOffsetPx);
     }
 
     // ================================================================
