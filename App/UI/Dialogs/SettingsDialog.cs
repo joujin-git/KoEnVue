@@ -536,33 +536,7 @@ internal static class SettingsDialog
             case Win32Constants.WM_VSCROLL:
             {
                 int scrollCode = (int)(wParam.ToInt64() & 0xFFFF);
-                int newPos = _scrollPos;
-                int lineStep = _lineHeight;
-                int pageStep = _viewportClientH > lineStep ? _viewportClientH - lineStep : lineStep * 5;
-
-                switch (scrollCode)
-                {
-                    case Win32Constants.SB_LINEUP: newPos -= lineStep; break;
-                    case Win32Constants.SB_LINEDOWN: newPos += lineStep; break;
-                    case Win32Constants.SB_PAGEUP: newPos -= pageStep; break;
-                    case Win32Constants.SB_PAGEDOWN: newPos += pageStep; break;
-                    case Win32Constants.SB_TOP: newPos = 0; break;
-                    case Win32Constants.SB_BOTTOM: newPos = _scrollMax; break;
-                    case Win32Constants.SB_THUMBPOSITION:
-                    case Win32Constants.SB_THUMBTRACK:
-                    {
-                        var si = new SCROLLINFO
-                        {
-                            cbSize = (uint)Marshal.SizeOf<SCROLLINFO>(),
-                            fMask = Win32Constants.SIF_TRACKPOS,
-                        };
-                        if (User32.GetScrollInfo(hwnd, Win32Constants.SB_VERT, ref si))
-                            newPos = si.nTrackPos;
-                        break;
-                    }
-                }
-
-                ScrollTo(newPos);
+                ScrollTo(ResolveVScrollPosition(hwnd, scrollCode));
                 return IntPtr.Zero;
             }
 
@@ -577,6 +551,39 @@ internal static class SettingsDialog
 
             default:
                 return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
+        }
+    }
+
+    /// <summary>
+    /// SB_* 스크롤 코드를 목표 스크롤 위치로 해석. WM_VSCROLL 핸들러에서 분리하여 가독성 향상.
+    /// 알 수 없는 코드는 현재 위치를 그대로 반환해 ScrollTo 가 no-op 이 되도록 한다.
+    /// </summary>
+    private static int ResolveVScrollPosition(IntPtr hwnd, int scrollCode)
+    {
+        int lineStep = _lineHeight;
+        int pageStep = _viewportClientH > lineStep ? _viewportClientH - lineStep : lineStep * 5;
+
+        switch (scrollCode)
+        {
+            case Win32Constants.SB_LINEUP: return _scrollPos - lineStep;
+            case Win32Constants.SB_LINEDOWN: return _scrollPos + lineStep;
+            case Win32Constants.SB_PAGEUP: return _scrollPos - pageStep;
+            case Win32Constants.SB_PAGEDOWN: return _scrollPos + pageStep;
+            case Win32Constants.SB_TOP: return 0;
+            case Win32Constants.SB_BOTTOM: return _scrollMax;
+            case Win32Constants.SB_THUMBPOSITION:
+            case Win32Constants.SB_THUMBTRACK:
+            {
+                var si = new SCROLLINFO
+                {
+                    cbSize = (uint)Marshal.SizeOf<SCROLLINFO>(),
+                    fMask = Win32Constants.SIF_TRACKPOS,
+                };
+                return User32.GetScrollInfo(hwnd, Win32Constants.SB_VERT, ref si)
+                    ? si.nTrackPos
+                    : _scrollPos;
+            }
+            default: return _scrollPos;
         }
     }
 

@@ -459,6 +459,7 @@ internal static class Program
     /// <summary>
     /// 현재 앱의 저장 위치 반환. 없으면 기본 위치.
     /// 시스템 입력 프로세스는 항상 기본 위치 — 저장 위치를 무시 (z-band 가시성 보장).
+    /// 저장 위치는 모니터 제거 / 해상도 변경으로 화면 밖이 될 수 있으므로 가시 영역으로 클램프한다.
     /// </summary>
     private static (int x, int y) GetAppPosition()
     {
@@ -470,17 +471,45 @@ internal static class Program
         if (_lastForegroundHwnd != IntPtr.Zero
             && _hwndPositions.TryGetValue(_lastForegroundHwnd, out var hwndPos))
         {
-            return hwndPos;
+            return ClampToVisibleArea(hwndPos.x, hwndPos.y);
         }
         // 2. config 프로세스명별 위치 (영구 저장)
         if (_currentProcessName.Length > 0
             && _config.IndicatorPositions.TryGetValue(_currentProcessName, out int[]? pos)
             && pos.Length >= 2)
         {
-            return (pos[0], pos[1]);
+            return ClampToVisibleArea(pos[0], pos[1]);
         }
         // 3. 기본 위치 (포그라운드 창 모니터 기준, config 기본 위치 적용)
+        //    GetDefaultPosition 은 이미 가시 모니터 작업 영역 기반이라 클램프 불필요.
         return Overlay.GetDefaultPosition(_lastForegroundHwnd, _currentProcessName);
+    }
+
+    /// <summary>
+    /// 저장된 인디케이터 좌표를 현재 살아있는 모니터의 작업 영역 안으로 클램프.
+    /// 모니터 제거 / 해상도 변경 / DPI 변경 후 저장 위치가 화면 밖이 될 수 있는 문제를 방어.
+    /// 저장 값 자체는 덮어쓰지 않아서 원 모니터 복귀 시 원 위치가 복원된다.
+    /// </summary>
+    private static (int x, int y) ClampToVisibleArea(int x, int y)
+    {
+        var (w, h) = Overlay.GetBaseSize();
+        if (w <= 0 || h <= 0) return (x, y);  // 엔진 아직 초기화 전
+
+        // 인디 중심점 기준 가장 가까운 살아있는 모니터로 라우팅 (DEFAULTTONEAREST).
+        // 저장 좌표가 제거된 모니터에 있었다면 잔존 모니터 중 가장 가까운 쪽으로 재매핑된다.
+        IntPtr hMonitor = DpiHelper.GetMonitorFromPoint(x + w / 2, y + h / 2);
+        RECT workArea = DpiHelper.GetWorkArea(hMonitor);
+
+        // 인디 bbox 가 작업 영역 폭/높이를 초과하면 Left/Top 으로 고정 (Math.Clamp 역방향 방어).
+        int maxX = Math.Max(workArea.Left, workArea.Right - w);
+        int maxY = Math.Max(workArea.Top, workArea.Bottom - h);
+        int clampedX = Math.Clamp(x, workArea.Left, maxX);
+        int clampedY = Math.Clamp(y, workArea.Top, maxY);
+
+        if (clampedX != x || clampedY != y)
+            Logger.Debug($"Position clamped: ({x},{y}) -> ({clampedX},{clampedY})");
+
+        return (clampedX, clampedY);
     }
 
     private static void HandleConfigChanged()

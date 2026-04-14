@@ -316,48 +316,57 @@ internal static class Overlay
         // 1. NULL_PEN 선택 (RoundRect 1px 검은색 테두리 제거)
         IntPtr oldPen = Gdi32.SelectObject(hdc, Gdi32.GetStockObject(Win32Constants.NULL_PEN));
 
-        // 2. 배경 RoundRect
+        // 2. 배경 RoundRect — hBrush 는 try/finally 로 예외 경로에서도 DeleteObject 보장
         uint bgColor = ColorHelper.HexToColorRef(style.BgHex);
         IntPtr hBrush = Gdi32.CreateSolidBrush(bgColor);
-        IntPtr oldBrush = Gdi32.SelectObject(hdc, hBrush);
-        int radius = metrics.ScaledBorderRadius;
-        Gdi32.RoundRect(hdc, 0, 0, w, h, radius, radius);
-        Gdi32.SelectObject(hdc, oldBrush);
-
-        // 3. 보더 (borderWidth > 0)
-        int borderW = metrics.ScaledBorderWidth;
-        if (borderW > 0)
+        try
         {
-            uint borderColor = ColorHelper.HexToColorRef(style.BorderHex);
-            IntPtr hBorderPen = Gdi32.CreatePen(Win32Constants.PS_SOLID, borderW, borderColor);
-            IntPtr hNullBrush = Gdi32.GetStockObject(Win32Constants.NULL_BRUSH);
+            IntPtr oldBrush = Gdi32.SelectObject(hdc, hBrush);
+            int radius = metrics.ScaledBorderRadius;
+            Gdi32.RoundRect(hdc, 0, 0, w, h, radius, radius);
+            Gdi32.SelectObject(hdc, oldBrush);
 
-            IntPtr oldBorderPen = Gdi32.SelectObject(hdc, hBorderPen);
-            IntPtr oldBorderBrush = Gdi32.SelectObject(hdc, hNullBrush);
+            // 3. 보더 (borderWidth > 0) — hBorderPen 도 중첩 try/finally 로 보호
+            int borderW = metrics.ScaledBorderWidth;
+            if (borderW > 0)
+            {
+                uint borderColor = ColorHelper.HexToColorRef(style.BorderHex);
+                IntPtr hBorderPen = Gdi32.CreatePen(Win32Constants.PS_SOLID, borderW, borderColor);
+                try
+                {
+                    IntPtr hNullBrush = Gdi32.GetStockObject(Win32Constants.NULL_BRUSH);
+                    IntPtr oldBorderPen = Gdi32.SelectObject(hdc, hBorderPen);
+                    IntPtr oldBorderBrush = Gdi32.SelectObject(hdc, hNullBrush);
 
-            int halfBorder = borderW / 2;
-            Gdi32.RoundRect(hdc, halfBorder, halfBorder, w - halfBorder, h - halfBorder, radius, radius);
+                    int halfBorder = borderW / 2;
+                    Gdi32.RoundRect(hdc, halfBorder, halfBorder, w - halfBorder, h - halfBorder, radius, radius);
 
-            Gdi32.SelectObject(hdc, oldBorderBrush);
-            Gdi32.SelectObject(hdc, oldBorderPen);
-            Gdi32.DeleteObject(hBorderPen);
+                    Gdi32.SelectObject(hdc, oldBorderBrush);
+                    Gdi32.SelectObject(hdc, oldBorderPen);
+                }
+                finally
+                {
+                    Gdi32.DeleteObject(hBorderPen);
+                }
+            }
+
+            // 4. 텍스트 (폰트는 엔진이 사전 SelectObject)
+            int oldBkMode = Gdi32.SetBkMode(hdc, Win32Constants.TRANSPARENT);
+            uint fgColor = ColorHelper.HexToColorRef(style.FgHex);
+            uint oldTextColor = Gdi32.SetTextColor(hdc, fgColor);
+
+            var textRect = new RECT { Left = 0, Top = 0, Right = w, Bottom = h };
+            User32.DrawTextW(hdc, style.LabelText, style.LabelText.Length, ref textRect,
+                Win32Constants.DT_CENTER | Win32Constants.DT_VCENTER | Win32Constants.DT_SINGLELINE);
+
+            Gdi32.SetTextColor(hdc, oldTextColor);
+            Gdi32.SetBkMode(hdc, oldBkMode);
         }
-
-        // 4. 텍스트 (폰트는 엔진이 사전 SelectObject)
-        int oldBkMode = Gdi32.SetBkMode(hdc, Win32Constants.TRANSPARENT);
-        uint fgColor = ColorHelper.HexToColorRef(style.FgHex);
-        uint oldTextColor = Gdi32.SetTextColor(hdc, fgColor);
-
-        var textRect = new RECT { Left = 0, Top = 0, Right = w, Bottom = h };
-        User32.DrawTextW(hdc, style.LabelText, style.LabelText.Length, ref textRect,
-            Win32Constants.DT_CENTER | Win32Constants.DT_VCENTER | Win32Constants.DT_SINGLELINE);
-
-        Gdi32.SetTextColor(hdc, oldTextColor);
-        Gdi32.SetBkMode(hdc, oldBkMode);
-
-        // 5. 정리
-        Gdi32.DeleteObject(hBrush);
-        Gdi32.SelectObject(hdc, oldPen);
+        finally
+        {
+            Gdi32.DeleteObject(hBrush);
+            Gdi32.SelectObject(hdc, oldPen);
+        }
 
         return (w, h);
     }

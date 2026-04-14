@@ -21,7 +21,7 @@ internal readonly record struct OverlayStyle(
     // === 폰트 ===
     string FontFamily,
     int FontSizeLogicalPx,      // config.FontSize * IndicatorScale (DPI 미적용)
-    bool IsBold,                // config.FontWeight == FontWeight.Bold 를 파사드가 변환
+    bool IsBold,                // 앱 레이어의 굵기 설정을 파사드가 bool로 변환
 
     // === 사이즈 (IndicatorScale 적용, DPI 미적용 — 엔진이 DpiHelper.Scale 수행) ===
     int LabelWidthLogicalPx,    // config.LabelWidth * IndicatorScale
