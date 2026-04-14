@@ -182,7 +182,10 @@ internal static class Program
             lpszClassName = MainClassName,
         };
         ushort mainAtom = User32.RegisterClassExW(ref mainClass);
-        Logger.Debug($"Main window class registered: atom={mainAtom}");
+        if (mainAtom == 0)
+            Logger.Error($"RegisterClassExW failed for main class: error={Marshal.GetLastPInvokeError()}");
+        else
+            Logger.Debug($"Main window class registered: atom={mainAtom}");
 
         // 오버레이 윈도우 클래스
         Logger.Debug($"Registering overlay window class: {_config.Advanced.OverlayClassName}");
@@ -193,7 +196,10 @@ internal static class Program
             lpszClassName = _config.Advanced.OverlayClassName,
         };
         ushort overlayAtom = User32.RegisterClassExW(ref overlayClass);
-        Logger.Debug($"Overlay window class registered: atom={overlayAtom}");
+        if (overlayAtom == 0)
+            Logger.Error($"RegisterClassExW failed for overlay class: error={Marshal.GetLastPInvokeError()}");
+        else
+            Logger.Debug($"Overlay window class registered: atom={overlayAtom}");
     }
 
     private static IntPtr CreateMainWindow()

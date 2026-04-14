@@ -53,6 +53,7 @@ internal static class TrayIcon
         IntPtr hBitmap = IntPtr.Zero;
         IntPtr hMask = IntPtr.Zero;
         IntPtr hOldBitmap = IntPtr.Zero;
+        IntPtr hBrush = IntPtr.Zero;
 
         try
         {
@@ -76,10 +77,9 @@ internal static class TrayIcon
             hOldBitmap = Gdi32.SelectObject(memDC, hBitmap);
 
             // 5. 배경색으로 전체 영역 채움
-            IntPtr hBrush = Gdi32.CreateSolidBrush(bgColor);
+            hBrush = Gdi32.CreateSolidBrush(bgColor);
             var rect = new RECT { Left = 0, Top = 0, Right = iconW, Bottom = iconH };
             User32.FillRect(memDC, ref rect, hBrush);
-            Gdi32.DeleteObject(hBrush);
 
             // 6. 캐럿+점 도형 (흰색)
             DrawCaretDot(memDC, iconW, iconH);
@@ -114,6 +114,8 @@ internal static class TrayIcon
             // 9. 임시 GDI 리소스 정리
             if (hOldBitmap != IntPtr.Zero)
                 Gdi32.SelectObject(memDC, hOldBitmap);
+            if (hBrush != IntPtr.Zero)
+                Gdi32.DeleteObject(hBrush);
             if (hMask != IntPtr.Zero)
                 Gdi32.DeleteObject(hMask);
             if (hBitmap != IntPtr.Zero)
