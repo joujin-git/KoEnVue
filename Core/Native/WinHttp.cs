@@ -104,6 +104,15 @@ internal static partial class WinHttp
     [LibraryImport("winhttp.dll", EntryPoint = "WinHttpCloseHandle", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool WinHttpCloseHandle(IntPtr hInternet);
+
+    [LibraryImport("winhttp.dll", EntryPoint = "WinHttpSetTimeouts", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool WinHttpSetTimeouts(
+        IntPtr hInternet,
+        int nResolveTimeout,
+        int nConnectTimeout,
+        int nSendTimeout,
+        int nReceiveTimeout);
 }
 
 /// <summary>
