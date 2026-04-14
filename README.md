@@ -20,6 +20,8 @@ Windows 한/영 IME 상태 인디케이터 — 드래그 가능한 플로팅 오
 
 [Releases](../../releases) 에서 `KoEnVue.exe` 를 받아 원하는 폴더에 두고 실행하면 됩니다. Windows 10/11 x64, 관리자 권한이 필요합니다 (`app.manifest requireAdministrator`).
 
+첫 공개 릴리스는 **v0.8.9.0** (2026-04-14) 입니다. 이 빌드부터 부팅 시 GitHub Releases 에서 새 버전을 1회 자동 확인해 트레이 메뉴 최상단에 "새 버전 있음" 항목을 띄웁니다(자동 설치는 아니며 사용자가 직접 새 exe 로 교체). 싫으면 `config.json` 에서 `update_check_enabled: false`.
+
 ---
 
 ## 빌드
@@ -35,6 +37,33 @@ dotnet publish -r win-x64 -c Release
 ```
 
 결과물: `bin/Release/net10.0-windows/win-x64/publish/KoEnVue.exe`
+
+---
+
+## 릴리즈 (Releasing)
+
+**유지보수자 전용** — 새 릴리스를 내릴 때의 순서입니다. 일반 사용자는 건너뛰세요.
+
+버전 문자열은 **두 곳에서 동일하게** 관리됩니다. 둘 중 하나만 올리면 Windows 파일 속성(PE 헤더)과 런타임 업데이트 체크 값이 어긋나므로 **반드시 함께** 수정하세요.
+
+1. **버전 bump (두 파일 동시 수정)**
+   - [App/Config/DefaultConfig.cs](App/Config/DefaultConfig.cs) 의 `AppVersion` 상수 — `UpdateChecker` 가 GitHub `tag_name` 과 비교
+   - [KoEnVue.csproj](KoEnVue.csproj) 의 `<Version>` 요소 — PE 헤더의 `AssemblyVersion` / `FileVersion` / `InformationalVersion` 3종에 박힘 (Windows 파일 속성 → 자세히 탭에서 보임)
+   - 형식: `major.minor.build.revision` (4-part, 예: `0.8.9.0`). `System.Version.TryParse` 가 2~4-part 를 받아들이지만 4-part 로 맞추면 모든 PE 헤더 필드가 동일해져 혼동이 없음
+2. **빌드 — 디버그와 릴리스 둘 다**
+   ```bash
+   dotnet build
+   dotnet publish -r win-x64 -c Release
+   ```
+3. **GitHub 릴리스 작성** — 웹 UI `Releases → Draft a new release`
+   - Tag: `vX.Y.Z.W` (예: `v0.8.9.0`) — 태그에 `v` 접두어 필수 (`UpdateChecker.NormalizeVersion` 이 벗겨냄)
+   - Title: 자유 (예: `KoEnVue v0.8.9.0`)
+   - Attach: `bin/Release/net10.0-windows/win-x64/publish/KoEnVue.exe`
+   - **"Set as a pre-release" 체크 해제** — 0.x.x 버전이라고 GitHub 가 자동으로 권장하지만, 체크하면 `release.prerelease=true` 로 `UpdateChecker` 가 건너뛰어 사용자에게 노출되지 않음. 정식 릴리스로 내보낼 때는 반드시 해제
+   - Publish release
+4. **검증 (선택)** — 이전 버전 exe 를 실행하면 트레이 메뉴 최상단에 "새 버전 있음 (vX.Y.Z.W) — 다운로드" 가 뜨는지 확인
+
+> PE 헤더의 `InformationalVersion` 에 `+{gitHash}` 자동 접미어가 붙지 않도록 csproj 에 `<IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>` 가 설정되어 있습니다. 태그로 빌드를 식별하므로 해시 중복 불필요.
 
 ---
 
