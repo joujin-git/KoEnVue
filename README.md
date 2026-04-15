@@ -78,7 +78,7 @@ exe 폴더의 `config.json` 을 직접 편집하거나 트레이 **상세 설정
 | `opacity` | `0.85` | 활성 불투명도 |
 | `idle_opacity` | `0.4` | 유휴 불투명도 (Always 모드) |
 | `snap_to_windows` | `true` | 드래그 중 창 엣지 자석 스냅 |
-| `theme` | `"custom"` | `dracula` / `solarized_dark` / `nord` / `monokai` / `catppuccin` / `one_dark` / `custom` |
+| `theme` | `"custom"` | `custom` / `minimal` / `vivid` / `pastel` / `dark` / `system` (6 프리셋) |
 | `poll_interval_ms` | `80` | IME 감지 폴링 간격 (ms) |
 | `hide_in_fullscreen` | `true` | 전체화면 앱에서 숨김 |
 | `hide_when_no_focus` | `true` | 포커스 없는 창에서 숨김 |
@@ -97,4 +97,15 @@ exe 폴더의 `config.json` 을 직접 편집하거나 트레이 **상세 설정
 - **렌더링**: GDI DIB section + UpdateLayeredWindow (premultiplied alpha)
 - **설정**: System.Text.Json source generation
 
-아키텍처 (Core/App 레이어 분리, P1-P6 하드 제약, 재사용 가능한 Core 모듈 목록)는 `CLAUDE.md` 참고.
+---
+
+## 개발자 문서
+
+| 문서 | 내용 |
+|------|------|
+| [CLAUDE.md](CLAUDE.md) | 프로젝트 진입점 — P1-P6 하드 제약, 검증 invariants, 빌드 |
+| [docs/architecture.md](docs/architecture.md) | Core/App 레이어 분리, 재사용 가능한 Core 모듈, 파사드 패턴 |
+| [docs/conventions.md](docs/conventions.md) | 코드 스타일, silent catch 정책, .NET 10 / NativeAOT 호환 노트 |
+| [docs/implementation-notes.md](docs/implementation-notes.md) | 인디케이터 렌더링·드래그·애니메이션·설정 핫리로드 등 구현 세부 |
+| [docs/refactor-history.md](docs/refactor-history.md) | Stage 1-6 리팩터 타임라인과 누적 바이트 추이 |
+| [docs/KoEnVue_PRD.md](docs/KoEnVue_PRD.md) | 제품 요구사항 문서 |
