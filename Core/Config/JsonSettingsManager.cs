@@ -112,6 +112,7 @@ internal class JsonSettingsManager<T>
         try
         {
             string json = JsonSerializer.Serialize(value, _typeInfo);
+            json = FormatJson(json);
             JsonSettingsFile.WriteAllText(_filePath, json);
 
             _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
@@ -193,6 +194,12 @@ internal class JsonSettingsManager<T>
     /// 테마 프리셋 적용 훅 (ThemePresets 등). 기본 구현은 identity.
     /// </summary>
     protected virtual T ApplyTheme(T config) => config;
+
+    /// <summary>
+    /// 직렬화 완료 후 JSON 문자열의 포맷을 후처리하는 훅.
+    /// 기본 구현은 identity (변환 없음).
+    /// </summary>
+    protected virtual string FormatJson(string json) => json;
 
     // ================================================================
     // MergeWithDefaults — T-독립 병합 로직

@@ -371,7 +371,7 @@ internal static class Settings
 /// 5 개의 파이프라인 훅을 AppConfig-specific 로 구현한다.
 /// Core 레이어는 AppConfig 스키마를 몰라야 하므로 이 클래스는 App/Config/ 에 위치.
 /// </summary>
-internal sealed class AppSettingsManager : JsonSettingsManager<AppConfig>
+internal sealed partial class AppSettingsManager : JsonSettingsManager<AppConfig>
 {
     public AppSettingsManager(string filePath, JsonTypeInfo<AppConfig> typeInfo)
         : base(filePath, typeInfo)
@@ -469,6 +469,42 @@ internal sealed class AppSettingsManager : JsonSettingsManager<AppConfig>
     /// 정적 경유 접근점을 제공한다.
     /// </summary>
     public static AppConfig EnsureSubObjectsPublic(AppConfig config) => EnsureSubObjects(config);
+
+    // ================================================================
+    // FormatJson — 숫자 배열 한 줄 압축
+    // ================================================================
+
+    /// <summary>
+    /// 숫자 배열을 한 줄로 압축하여 config.json 가독성 향상.
+    /// <code>
+    /// "TOTALCMD64": [        →  "TOTALCMD64": [ 2511, 1334 ]
+    ///   2511,
+    ///   1334
+    /// ]
+    /// </code>
+    /// </summary>
+    protected override string FormatJson(string json)
+    {
+        return NumericArrayPattern().Replace(json, match =>
+        {
+            var numbers = NumberPattern().Matches(match.Value);
+            if (numbers.Count == 0) return match.Value;
+            var sb = new StringBuilder("[ ");
+            for (int i = 0; i < numbers.Count; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                sb.Append(numbers[i].Value);
+            }
+            sb.Append(" ]");
+            return sb.ToString();
+        });
+    }
+
+    [GeneratedRegex(@"\[\s*\n(?:\s+-?\d+(?:\.\d+)?\s*,\s*\n)*\s*-?\d+(?:\.\d+)?\s*\n\s*\]")]
+    private static partial Regex NumericArrayPattern();
+
+    [GeneratedRegex(@"-?\d+(?:\.\d+)?")]
+    private static partial Regex NumberPattern();
 
     /// <summary>
     /// System.Text.Json 소스 생성기는 JSON에 없는 init 속성의 기본값을 보존하지 않을 수 있다.
