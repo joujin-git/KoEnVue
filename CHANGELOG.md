@@ -3,6 +3,22 @@
 이 프로젝트의 주요 변경 사항을 기록합니다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/)를 따릅니다.
 
+## [Unreleased]
+
+### 수정
+
+- `OnProcessExit`에서 `Logger.Shutdown()` 이후 `Logger.Info()`를 호출하여 종료 로그가 기록되지 않던 문제 — 호출 순서 교정
+- `Shell_NotifyIconW(NIM_ADD)` 반환값 미확인 — 실패 시 `_added = false` 유지 + 로그, `NIM_SETVERSION` 실패도 로그
+- `CreateDIBSection` 실패 시 `out _ppvBits`가 이전 유효 포인터를 덮어써 해제된 메모리 참조 가능성 — 로컬 변수로 수신 후 성공 시에만 필드 갱신
+
+### 개선
+
+- 윈도우 생성(`CreateMainWindow`/`CreateOverlayWindow`) 실패 시 `IntPtr.Zero` 체크 → 조기 종료 (null 핸들로 후속 초기화 진행 방지)
+- `CreateCompatibleDC` 반환값 `Zero` 체크 추가 (`InvalidOperationException`)
+- `DetectionLoop` while 본문 `try-catch` 래핑 — 단일 폴링 예외 시 스레드 무음 종료 대신 로그 + 다음 폴링 계속
+- `OnProcessExit` 종료 시퀀스 강화: CAPS LOCK 타이머 `KillTimer` 명시적 해제, 메인 윈도우 `DestroyWindow` 명시적 파괴 추가
+- `_stopping` 필드에 `volatile` 추가 — 감지 스레드와의 크로스 스레드 가시성 보장 (기존 `_config`/`_lastImeState`/`_indicatorVisible`과 일관성)
+
 ## [0.9.1.0] — 2026-04-16
 
 ### 추가

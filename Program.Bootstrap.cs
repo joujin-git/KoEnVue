@@ -220,16 +220,19 @@ internal static partial class Program
         // 2. 핫키 해제
         UnregisterHotkeys();
 
-        // 3. 파일 로거 종료
-        Logger.Shutdown();
+        // 3. CAPS LOCK 폴링 타이머 명시적 해제
+        if (_hwndMain != IntPtr.Zero)
+            User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_CAPS);
 
         // 4. 애니메이션 + 렌더링 리소스 해제 (윈도우 파괴 전)
         Animation.Dispose();
         Overlay.Dispose();
 
-        // 5. 오버레이 윈도우 파괴
+        // 5. 오버레이 + 메인 윈도우 파괴
         if (_hwndOverlay != IntPtr.Zero)
             User32.DestroyWindow(_hwndOverlay);
+        if (_hwndMain != IntPtr.Zero)
+            User32.DestroyWindow(_hwndMain);
 
         // 6. 트레이 아이콘 제거
         Tray.Remove();
@@ -241,6 +244,8 @@ internal static partial class Program
         // 8. COM 해제
         Ole32.CoUninitialize();
 
+        // 9. 로거 종료 (Shutdown 전에 최종 로그 기록)
         Logger.Info("KoEnVue stopped");
+        Logger.Shutdown();
     }
 }

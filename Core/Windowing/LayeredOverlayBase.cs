@@ -101,6 +101,8 @@ internal sealed class LayeredOverlayBase : IDisposable
         _hwndOverlay = hwnd;
         _renderToDib = renderToDib;
         _memDC = Gdi32.CreateCompatibleDC(IntPtr.Zero);
+        if (_memDC == IntPtr.Zero)
+            throw new InvalidOperationException("CreateCompatibleDC failed");
         _nullPen = Gdi32.GetStockObject(Win32Constants.NULL_PEN);
     }
 
@@ -676,9 +678,11 @@ internal sealed class LayeredOverlayBase : IDisposable
 
         IntPtr hBitmap = Gdi32.CreateDIBSection(
             IntPtr.Zero, ref bmi, Win32Constants.DIB_RGB_COLORS,
-            out _ppvBits, IntPtr.Zero, 0);
+            out IntPtr ppvBits, IntPtr.Zero, 0);
 
         if (hBitmap == IntPtr.Zero) return;
+
+        _ppvBits = ppvBits;
 
         Gdi32.SelectObject(_memDC, hBitmap);
         _currentBitmap?.Dispose();

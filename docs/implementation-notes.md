@@ -1,6 +1,6 @@
 # Implementation notes
 
-Deep-dive details on render pipeline, drag/snap, animation, detection, hot reload, and dialogs. Companion to [CLAUDE.md](../CLAUDE.md) and [KoEnVue_PRD.md](KoEnVue_PRD.md) — this file is where "why" explanations and non-obvious workarounds live.
+Deep-dive details on render pipeline, drag/snap, animation, detection, hot reload, dialogs, and shutdown. Companion to [CLAUDE.md](../CLAUDE.md) and [KoEnVue_PRD.md](KoEnVue_PRD.md) — this file is where "why" explanations and non-obvious workarounds live.
 
 Conventions and policies (P1–P6, catch narrowing, .NET 10 quirks) are in **[conventions.md](conventions.md)**.
 
@@ -44,6 +44,10 @@ The stock pen from `GetStockObject(NULL_PEN)` is intentionally NOT deleted — i
 ### DIB is top-down
 
 Negative `biHeight` in the BITMAPINFO so `(0, 0)` is top-left. Keeps the pixel arithmetic in the post-processing loop consistent with GDI's top-left origin.
+
+### DIB / DC creation safety
+
+`LayeredOverlayBase` 생성자는 `CreateCompatibleDC` 반환값이 `IntPtr.Zero`이면 `InvalidOperationException`을 던져 null DC로 후속 GDI 작업이 진행되는 것을 방지한다. `EnsureDib`의 `CreateDIBSection` 호출은 `out IntPtr ppvBits` 로컬 변수로 수신한 뒤 성공 시에만 `_ppvBits` 필드를 갱신한다. 실패 시 기존 유효 비트맵과 `_ppvBits`가 보존되어 해제된 메모리를 참조하는 위험을 제거한다.
 
 ### Label DIB flip-flop prevention
 
@@ -239,6 +243,10 @@ Main thread:
   WM_MOVING            → Shift axis lock (HandleMoving) + drag-time DPI re-compute
 ```
 
+### Detection loop resilience
+
+`DetectionLoop`의 while 본문은 `try-catch(Exception)`으로 래핑되어 단일 폴링 예외(예: `WindowProcessInfo.GetProcessName` 실패)가 감지 스레드를 종료시키지 않는다. 예외 발생 시 `Logger.Warning`으로 기록하고 다음 폴링 주기에서 정상 재개한다. `Thread.Sleep`은 try 밖에 위치하여 예외 후에도 폴링 간격이 유지된다. `_stopping` 필드는 `volatile`로 선언되어 `OnProcessExit`에서의 쓰기가 감지 스레드에서 즉시 가시적이다.
+
 ### Foreground change detection
 
 `foregroundChanged` flag triggers focus event independently of `hwndFocus` comparison, fixing the return-to-same-window case after a desktop switch.
@@ -355,6 +363,10 @@ Exclusively read from and written to `AppContext.BaseDirectory` (the exe's own f
 ### NIF_SHOWTIP
 
 `NOTIFYICON_VERSION_4` (set via `NIM_SETVERSION`) suppresses the standard `szTip` tooltip by default on Windows 7+. Both `NIM_ADD` and `NIM_MODIFY` calls must include `NIF_SHOWTIP` (0x00000080) alongside `NIF_TIP` in `uFlags`. Without `NIF_SHOWTIP`, `szTip` is correctly populated but the shell silently discards it and renders nothing on hover.
+
+### NIM_ADD / NIM_SETVERSION return value check
+
+`NotifyIconManager.Add`는 `Shell_NotifyIconW(NIM_ADD)` 반환값을 확인하여 실패 시 `_added = false`를 유지하고 즉시 반환한다. `NIM_ADD` 성공 후에만 `NIM_SETVERSION`을 호출하며, `NIM_SETVERSION` 실패는 `Logger.Warning`으로 기록하되 `_added = true`는 유지한다 (아이콘 자체는 등록된 상태이므로). 이 가드 덕분에 이후 `Modify` 호출이 등록되지 않은 아이콘에 대해 무한 실패하는 상황을 방지한다.
 
 ### WM_CONTEXTMENU (not WM_RBUTTONUP)
 
@@ -553,6 +565,23 @@ Separately registered (shared WndProc with main window). `WM_DESTROY` guard chec
 ### `volatile` + `Action<AppConfig>` callback
 
 `_config` is a `volatile` field, and `ref` cannot be used with volatile, so config updates use an `Action<AppConfig>` callback pattern instead of `ref AppConfig`.
+
+### `OnProcessExit` cleanup sequence
+
+`Program.Bootstrap.OnProcessExit`는 다음 순서로 리소스를 정리한다:
+
+1. `_stopping = true` — 감지 스레드 종료 신호 (volatile)
+2. IME 훅 해제 (`ImeStatus.UnregisterHook`)
+3. 핫키 해제 (`UnregisterHotkeys`)
+4. CAPS LOCK 폴링 타이머 명시적 해제 (`KillTimer`)
+5. 애니메이션 + 렌더링 리소스 해제 (윈도우 파괴 전)
+6. 오버레이 + 메인 윈도우 명시적 파괴 (`DestroyWindow`)
+7. 트레이 아이콘 제거 (`NIM_DELETE`)
+8. Mutex 해제 (`Dispose` only — `ReleaseMutex`는 소유 스레드에서만 가능하나 `ProcessExit`는 다른 스레드일 수 있음)
+9. COM 해제 (`CoUninitialize`)
+10. 종료 로그 기록 + 로거 종료 (`Logger.Info` → `Logger.Shutdown`)
+
+`Logger.Shutdown`은 반드시 마지막에 호출하여 이전 단계의 로그가 모두 기록되도록 보장한다. 타이머 해제와 윈도우 파괴는 리소스 해제(5단계) 이후에 수행하여 타이머 콜백이 해제된 리소스를 참조하는 것을 방지한다.
 
 ### `InvariantGlobalization`
 

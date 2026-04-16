@@ -107,6 +107,10 @@ Both have single-line try bodies so wide catch poses no masking risk.
 
 Logic bugs in pipeline hooks (`Migrate`/`Validate`/`ApplyTheme`) and in path normalization helpers now propagate instead of being absorbed.
 
+### 8. Detection loop catch
+
+`DetectionLoop`의 while 본문은 `catch (Exception ex)` + `Logger.Warning`으로 래핑된다. 단일 폴링 예외(예: `WindowProcessInfo.GetProcessName` 내 `Process.GetProcessById` 실패)가 감지 스레드 전체를 종료시키지 않도록 보호하며, 다음 폴링 주기에서 정상 재개한다. `Thread.Sleep`은 try 바깥에 위치하여 예외 후에도 폴링 간격이 유지된다. Rule 2의 변형으로, P/Invoke + BCL 호출이 혼합된 긴 본문이므로 wide catch가 정당하며 `Logger.Warning` 레벨은 Rule 3의 "rare catastrophic" 기준에 해당한다.
+
 ---
 
 ## .NET 10 compatibility notes
