@@ -59,7 +59,16 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 The indicator is a separate TOPMOST window, not tied to any foreground window's geometry. `WM_NCHITTEST → HTCAPTION` enables native drag. `WM_ENTERSIZEMOVE` / `WM_EXITSIZEMOVE` track drag lifecycle.
 
-### Two-tier position memory
+### Position modes
+
+`config.position_mode` (`PositionMode` enum: `Fixed` / `Window`) selects how the indicator is placed:
+
+- **Fixed** (default) — screen-absolute coordinates. Existing two-tier memory (runtime hwnd + config process-name) is used
+- **Window** — relative to the foreground window's DWM visible frame. Only config-level process-name storage is used (no runtime hwnd cache), because coordinates are re-resolved from `window rect + offset` every time
+
+Mode selection is available in the tray menu as a radio submenu ("위치 모드 ▸ 고정 위치 / 창 기준") with `CheckMenuRadioItem`. System input processes (Start Menu, Search) always use the existing fixed-mode logic regardless of the selected mode.
+
+### Two-tier position memory (Fixed mode)
 
 1. **Runtime (`Dictionary<IntPtr, (int, int)>`)** — per-hwnd positions, enables distinguishing multiple windows of the same process (e.g., multiple Notepad/Chrome windows). Lost on restart
 2. **Config (`indicator_positions`)** — per-process-name positions, persists across sessions as fallback
@@ -68,14 +77,36 @@ Process names are resolved via `WindowProcessInfo.GetProcessName(IntPtr hwnd)`. 
 
 On foreground change, lookup order is: runtime hwnd → config process name → default position.
 
+### Window-relative position memory (Window mode)
+
+`config.indicator_positions_relative` stores per-process-name entries as `int[3]`: `[(int)Corner, DeltaX, DeltaY]`. On foreground change, `GetAppPositionWindow` decodes the array, validates `Corner` via `Enum.IsDefined`, obtains the current window's DWM frame via `Dwmapi.TryGetVisibleFrame`, and resolves absolute coordinates with `Overlay.ResolveRelativePosition(frame, relConfig)`. Result is clamped to the visible area.
+
+This design naturally handles the "same app, multiple windows" case: a single process-name entry (e.g., `"notepad": [1, -50, 10]`) produces different absolute coordinates for each window because each window has a different rect on screen. No runtime per-hwnd cache is needed.
+
+On drag end, `Overlay.ComputeRelativeFromCurrentPosition(hwndForeground)` computes the nearest of the 4 DWM frame corners by Manhattan distance and stores the delta as the new relative offset.
+
+### Window movement tracking (Window mode)
+
+In Window mode, the detection loop (80 ms) tracks `lastWindowFrame` and a `windowMoving` flag for the foreground window. When the DWM frame changes (window being moved/resized), the indicator is hidden (`WM_HIDE_INDICATOR`). When the frame stabilizes (no change for 1 tick ≈ 80 ms), `foregroundChanged` is set to `true`, triggering `WM_POSITION_UPDATED` → position re-resolve → indicator re-shown at the new window-relative position.
+
+The `lastWindowFrame` and `windowMoving` state are reset on foreground window change. System input processes are excluded from this tracking (they have their own shared-HWND rect tracking block).
+
 ### Default position
 
-`config.default_indicator_position` is a nullable `DefaultPositionConfig` record (`Corner` + `DeltaX` + `DeltaY`) that stores a user-customizable default for apps without a saved position. `GetDefaultPosition` resolves the anchor against the **foreground window's monitor work area** (not the overlay's current monitor), so the default position follows the active app.
+Two nullable config fields store per-mode defaults for apps without a saved position:
 
-- **Null fallback**: `DefaultConfig.DefaultIndicatorOffsetX = -200, Y = 10` (hardcoded top-right of work area)
-- **Multi-monitor / resolution stability**: offsets are stored relative to a `Corner` anchor, not as absolute pixel coordinates
-- **Tray menu "기본 위치 → 현재 위치로 설정"**: `Overlay.ComputeAnchorFromCurrentPosition()` picks the nearest corner by Manhattan distance from `_lastX, _lastY`. User never has to think about corner selection
-- **Tray menu "초기화"**: sets the field back to null (menu item grayed when already null)
+- **Fixed mode**: `config.default_indicator_position` (`DefaultPositionConfig` record) — `Corner` + `DeltaX` + `DeltaY` resolved against the **foreground window's monitor work area**
+- **Window mode**: `config.default_indicator_position_relative` (`RelativePositionConfig` record) — `Corner` + `DeltaX` + `DeltaY` resolved against the **foreground window's DWM frame**
+
+Null fallbacks:
+- Fixed: `DefaultConfig.DefaultIndicatorOffsetX = -200, Y = 10` (top-right of work area)
+- Window: `DefaultConfig.DefaultRelativeCorner = TopRight, X = -50, Y = 10` (inside top-right of window)
+
+Multi-monitor / resolution stability: offsets are stored relative to a `Corner` anchor, not as absolute pixel coordinates.
+
+Tray menu:
+- **"현재 위치로 설정"**: branches on current mode — Fixed calls `Overlay.ComputeAnchorFromCurrentPosition()` (work area corners), Window calls `Overlay.ComputeRelativeFromCurrentPosition(hwndForeground)` (window frame corners). Both use Manhattan distance to pick the nearest corner
+- **"초기화"**: resets the current mode's field to null (menu item grayed when already null)
 
 ### Off-screen position clamp
 
@@ -358,6 +389,7 @@ Handles the "user moved the exe" case: the first boot after a move still misses 
 ☑ 시작 프로그램 등록
 ───
 기본 위치 ▸    현재 위치로 설정 / 초기화
+위치 모드 ▸    ● 고정 위치 / ○ 창 기준
 위치 기록 정리...
 ───
 상세 설정...
@@ -365,7 +397,7 @@ Handles the "user moved the exe" case: the first boot after a move still misses 
 종료
 ```
 
-Menu IDs live in [Tray.cs](../App/UI/Tray.cs) as `private const int IDM_*`. The `IDM_UPDATE_DOWNLOAD = 4008` item + separator are only appended when `_pendingUpdate != null`.
+Menu IDs live in [Tray.cs](../App/UI/Tray.cs) as `private const int IDM_*`. The `IDM_UPDATE_DOWNLOAD = 4008` item + separator are only appended when `_pendingUpdate != null`. Position mode submenu uses `IDM_POSITION_FIXED = 3301` / `IDM_POSITION_WINDOW = 3302` with `CheckMenuRadioItem`.
 
 ### Quick opacity presets (`ApplyQuickOpacity`)
 
@@ -392,7 +424,7 @@ All three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) share 
 
 ### CleanupDialog
 
-Checkbox list of **all** `indicator_positions` entries. Running processes are shown with a "(실행 중)" / "(running)" suffix. Full select/deselect toggle. "저장된 위치 기록이 없습니다" message when empty. When items exceed `DlgMaxVisibleItems` (15), a scrollable viewport child window with `WS_VSCROLL` + mouse wheel support is used — same pattern as `SettingsDialog.Scroll.cs`.
+Checkbox list of the union of `indicator_positions` and `indicator_positions_relative` keys. Deletion removes from both dicts. Running processes are shown with a "(실행 중)" / "(running)" suffix. Full select/deselect toggle. "저장된 위치 기록이 없습니다" message when empty. When items exceed `DlgMaxVisibleItems` (15), a scrollable viewport child window with `WS_VSCROLL` + mouse wheel support is used — same pattern as `SettingsDialog.Scroll.cs`.
 
 ### ScaleInputDialog
 

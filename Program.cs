@@ -381,19 +381,42 @@ internal static partial class Program
             return;
         }
 
-        // 런타임 hwnd별 위치 저장
-        if (_lastForegroundHwnd != IntPtr.Zero)
-            _hwndPositions[_lastForegroundHwnd] = (x, y);
-        // config 프로세스명별 위치 저장 (영구)
-        if (_currentProcessName.Length > 0)
+        if (_config.PositionMode == PositionMode.Window)
         {
-            var positions = new Dictionary<string, int[]>(_config.IndicatorPositions)
+            // 창 기준 모드: 절대좌표 → 창 기준 상대 오프셋으로 변환 후 저장
+            if (_currentProcessName.Length > 0)
             {
-                [_currentProcessName] = [x, y]
-            };
-            _config = _config with { IndicatorPositions = positions };
-            Settings.Save(_config);
-            Logger.Debug($"Saved indicator position for {_currentProcessName}: ({x}, {y})");
+                RelativePositionConfig? rel =
+                    Overlay.ComputeRelativeFromCurrentPosition(_lastForegroundHwnd);
+                if (rel is not null)
+                {
+                    var positions = new Dictionary<string, int[]>(
+                        _config.IndicatorPositionsRelative)
+                    {
+                        [_currentProcessName] = [(int)rel.Corner, rel.DeltaX, rel.DeltaY]
+                    };
+                    _config = _config with { IndicatorPositionsRelative = positions };
+                    Settings.Save(_config);
+                    Logger.Debug($"Saved relative position for {_currentProcessName}: "
+                        + $"corner={rel.Corner}, delta=({rel.DeltaX}, {rel.DeltaY})");
+                }
+            }
+        }
+        else
+        {
+            // 고정 모드: 기존 절대좌표 저장
+            if (_lastForegroundHwnd != IntPtr.Zero)
+                _hwndPositions[_lastForegroundHwnd] = (x, y);
+            if (_currentProcessName.Length > 0)
+            {
+                var positions = new Dictionary<string, int[]>(_config.IndicatorPositions)
+                {
+                    [_currentProcessName] = [x, y]
+                };
+                _config = _config with { IndicatorPositions = positions };
+                Settings.Save(_config);
+                Logger.Debug($"Saved indicator position for {_currentProcessName}: ({x}, {y})");
+            }
         }
         // 새 위치의 모니터 DPI로 리소스 재생성
         Overlay.Show(x, y, _lastImeState);
@@ -406,10 +429,19 @@ internal static partial class Program
     /// </summary>
     private static (int x, int y) GetAppPosition()
     {
-        // 시스템 입력 프로세스: 저장 위치 우회
+        // 시스템 입력 프로세스: 모드 무관하게 기존 방식
         if (DefaultConfig.IsSystemInputProcess(_currentProcessName))
             return Overlay.GetDefaultPosition(_lastForegroundHwnd, _currentProcessName);
 
+        if (_config.PositionMode == PositionMode.Window)
+            return GetAppPositionWindow();
+
+        return GetAppPositionFixed();
+    }
+
+    /// <summary>고정 모드 위치 조회 (기존 로직).</summary>
+    private static (int x, int y) GetAppPositionFixed()
+    {
         // 1. 런타임 hwnd별 위치 (세션 내 창별 구분)
         if (_lastForegroundHwnd != IntPtr.Zero
             && _hwndPositions.TryGetValue(_lastForegroundHwnd, out var hwndPos))
@@ -424,8 +456,33 @@ internal static partial class Program
             return ClampToVisibleArea(pos[0], pos[1]);
         }
         // 3. 기본 위치 (포그라운드 창 모니터 기준, config 기본 위치 적용)
-        //    GetDefaultPosition 은 이미 가시 모니터 작업 영역 기반이라 클램프 불필요.
         return Overlay.GetDefaultPosition(_lastForegroundHwnd, _currentProcessName);
+    }
+
+    /// <summary>창 기준 모드 위치 조회 — 창 DWM 프레임 기준 상대 오프셋 → 절대좌표 변환.</summary>
+    private static (int x, int y) GetAppPositionWindow()
+    {
+        // 1. config 프로세스명별 상대 위치
+        if (_currentProcessName.Length > 0
+            && _config.IndicatorPositionsRelative.TryGetValue(_currentProcessName, out int[]? rel)
+            && rel.Length >= 3
+            && Enum.IsDefined((Corner)rel[0])
+            && _lastForegroundHwnd != IntPtr.Zero
+            && Dwmapi.TryGetVisibleFrame(_lastForegroundHwnd, out RECT frame))
+        {
+            var relConfig = new RelativePositionConfig
+            {
+                Corner = (Corner)rel[0],
+                DeltaX = rel[1],
+                DeltaY = rel[2],
+            };
+            var (x, y) = Overlay.ResolveRelativePosition(frame, relConfig);
+            return ClampToVisibleArea(x, y);
+        }
+        // 2. 기본 상대 위치
+        return Overlay.GetDefaultRelativePosition(
+            _lastForegroundHwnd, _currentProcessName,
+            _config.DefaultIndicatorPositionRelative);
     }
 
     /// <summary>
@@ -560,7 +617,7 @@ internal static partial class Program
 
     private static void HandleMenuCommand(int commandId)
     {
-        Tray.HandleMenuCommand(commandId, _config, _hwndMain,
+        Tray.HandleMenuCommand(commandId, _config, _hwndMain, _lastForegroundHwnd,
             updateConfig: newConfig =>
             {
                 _config = ThemePresets.Apply(newConfig);
@@ -653,6 +710,8 @@ internal static partial class Program
         IntPtr lastHwndForeground = IntPtr.Zero;
         string lastForegroundProcessName = string.Empty;
         RECT lastSystemInputFrame = default;
+        RECT lastWindowFrame = default;        // 창 기준 모드: 포그라운드 창 rect 추적
+        bool windowMoving = false;             // 창 기준 모드: 창 이동 중 → 인디 숨김
         bool lastFiltered = false;
         ImeState lastImeState = ImeState.English;
         AppConfig lastAppConfig = _config;
@@ -721,6 +780,8 @@ internal static partial class Program
                 leavingSystemInput = DefaultConfig.IsSystemInputProcess(lastForegroundProcessName);
                 lastForegroundProcessName = WindowProcessInfo.GetProcessName(hwndForeground);
                 lastSystemInputFrame = default;
+                lastWindowFrame = default;
+                windowMoving = false;
             }
 
             // 필터 해소 또는 포그라운드 변경 → 위치/포커스 갱신
@@ -788,7 +849,35 @@ internal static partial class Program
                 }
             }
 
-            // 3. 포그라운드 변경 시 위치 갱신 (플로팅 인디케이터 — 윈도우 이동 추적 불필요)
+            // 창 기준 모드: 포그라운드 창 rect 변화 감지 → 이동 중 인디 숨김, 안정화 시 재표시.
+            // 시스템 입력 프로세스는 위의 전용 블록에서 처리하므로 제외.
+            if (_config.PositionMode == PositionMode.Window
+                && !DefaultConfig.IsSystemInputProcess(lastForegroundProcessName)
+                && !foregroundChanged
+                && Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT windowFrame))
+            {
+                bool rectChanged = windowFrame.Left != lastWindowFrame.Left
+                    || windowFrame.Top != lastWindowFrame.Top
+                    || windowFrame.Right != lastWindowFrame.Right
+                    || windowFrame.Bottom != lastWindowFrame.Bottom;
+
+                if (rectChanged)
+                {
+                    if (_indicatorVisible && !windowMoving)
+                        User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
+                            IntPtr.Zero, IntPtr.Zero);
+                    windowMoving = true;
+                    lastWindowFrame = windowFrame;
+                }
+                else if (windowMoving)
+                {
+                    // 창 이동 멈춤 → 새 위치에서 인디 재표시
+                    windowMoving = false;
+                    foregroundChanged = true;
+                }
+            }
+
+            // 3. 포그라운드 변경 시 위치 갱신
             if (foregroundChanged)
             {
                 User32.PostMessageW(_hwndMain, AppMessages.WM_POSITION_UPDATED,

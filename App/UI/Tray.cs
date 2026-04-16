@@ -40,6 +40,10 @@ internal static class Tray
     private const int ScaleIntegerMin = 1;
     private const int ScaleIntegerMax = 5;
 
+    // 서브메뉴: 위치 모드
+    private const int IDM_POSITION_FIXED  = 3301;
+    private const int IDM_POSITION_WINDOW = 3302;
+
     // 메인 메뉴
     private const int IDM_STARTUP            = 4001;
     private const int IDM_CLEANUP            = 4003;
@@ -216,10 +220,24 @@ internal static class Tray
         IntPtr hDefaultPosMenu = User32.CreatePopupMenu();
         User32.AppendMenuW(hDefaultPosMenu, Win32Constants.MF_STRING,
             (nuint)IDM_DEFAULT_POS_SET_CURRENT, I18n.MenuDefaultPosSetCurrent);
+        bool hasDefault = config.PositionMode == PositionMode.Window
+            ? config.DefaultIndicatorPositionRelative is not null
+            : config.DefaultIndicatorPosition is not null;
         uint resetFlags = Win32Constants.MF_STRING
-            | (config.DefaultIndicatorPosition is null ? Win32Constants.MF_GRAYED : 0);
+            | (hasDefault ? 0u : Win32Constants.MF_GRAYED);
         User32.AppendMenuW(hDefaultPosMenu, resetFlags,
             (nuint)IDM_DEFAULT_POS_RESET, I18n.MenuDefaultPosReset);
+
+        // --- 서브메뉴: 위치 모드 ---
+        IntPtr hPositionModeMenu = User32.CreatePopupMenu();
+        User32.AppendMenuW(hPositionModeMenu, Win32Constants.MF_STRING,
+            (nuint)IDM_POSITION_FIXED, I18n.MenuPositionFixed);
+        User32.AppendMenuW(hPositionModeMenu, Win32Constants.MF_STRING,
+            (nuint)IDM_POSITION_WINDOW, I18n.MenuPositionWindow);
+        uint positionModeCheckId = config.PositionMode == PositionMode.Fixed
+            ? (uint)IDM_POSITION_FIXED : (uint)IDM_POSITION_WINDOW;
+        User32.CheckMenuRadioItem(hPositionModeMenu, (uint)IDM_POSITION_FIXED,
+            (uint)IDM_POSITION_WINDOW, positionModeCheckId, Win32Constants.MF_BYCOMMAND);
 
         // --- 메인 메뉴 ---
         IntPtr hMenu = User32.CreatePopupMenu();
@@ -250,6 +268,8 @@ internal static class Tray
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
             (nuint)(nint)hDefaultPosMenu, I18n.MenuDefaultPosition);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
+            (nuint)(nint)hPositionModeMenu, I18n.MenuPositionMode);
         User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_CLEANUP, I18n.MenuCleanup);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
         User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_SETTINGS, I18n.MenuSettings);
@@ -272,7 +292,7 @@ internal static class Tray
     /// config 변경이 필요한 항목은 updateConfig 콜백으로 Program.cs에 위임.
     /// </summary>
     internal static void HandleMenuCommand(int commandId, AppConfig config, IntPtr hwndMain,
-        Action<AppConfig> updateConfig)
+        IntPtr hwndForeground, Action<AppConfig> updateConfig)
     {
         // --- 크기 배율 정수 프리셋 (동적 ID 범위 매칭) ---
         if (commandId >= IDM_SIZE_BASE && commandId < IDM_SIZE_BASE + (ScaleIntegerMax - ScaleIntegerMin + 1))
@@ -319,13 +339,34 @@ internal static class Tray
 
             // --- 기본 위치: 현재 위치로 설정 ---
             case IDM_DEFAULT_POS_SET_CURRENT:
-                SetDefaultPositionToCurrent(config, updateConfig);
+                SetDefaultPositionToCurrent(config, hwndForeground, updateConfig);
                 break;
 
             // --- 기본 위치: 초기화 ---
             case IDM_DEFAULT_POS_RESET:
-                updateConfig(config with { DefaultIndicatorPosition = null });
+                if (config.PositionMode == PositionMode.Window)
+                    updateConfig(config with { DefaultIndicatorPositionRelative = null });
+                else
+                    updateConfig(config with { DefaultIndicatorPosition = null });
                 Logger.Info("Default indicator position reset to hardcoded fallback");
+                break;
+
+            // --- 위치 모드: 고정 위치 ---
+            case IDM_POSITION_FIXED:
+                if (config.PositionMode != PositionMode.Fixed)
+                {
+                    updateConfig(config with { PositionMode = PositionMode.Fixed });
+                    Logger.Info("Position mode changed to Fixed");
+                }
+                break;
+
+            // --- 위치 모드: 창 기준 ---
+            case IDM_POSITION_WINDOW:
+                if (config.PositionMode != PositionMode.Window)
+                {
+                    updateConfig(config with { PositionMode = PositionMode.Window });
+                    Logger.Info("Position mode changed to Window");
+                }
                 break;
 
             // --- 창에 자석처럼 붙이기 토글 ---
@@ -401,25 +442,47 @@ internal static class Tray
     // ================================================================
 
     /// <summary>
-    /// 현재 인디케이터 위치를 가장 가까운 work area 모서리 기준으로 환산하여
-    /// config.DefaultIndicatorPosition에 저장한다. 인디가 한 번도 표시된 적이 없으면 경고.
+    /// 현재 인디케이터 위치를 가장 가까운 모서리 기준으로 환산하여 기본 위치로 저장.
+    /// 고정 모드 → work area 기준, 창 기준 모드 → 포그라운드 창 기준.
+    /// 인디가 한 번도 표시된 적이 없으면 경고.
     /// </summary>
-    private static void SetDefaultPositionToCurrent(AppConfig config, Action<AppConfig> updateConfig)
+    private static void SetDefaultPositionToCurrent(AppConfig config, IntPtr hwndForeground,
+        Action<AppConfig> updateConfig)
     {
-        DefaultPositionConfig? anchor = Overlay.ComputeAnchorFromCurrentPosition();
-        if (anchor is null)
+        if (config.PositionMode == PositionMode.Window)
         {
-            User32.MessageBoxW(_hwndMain,
-                I18n.IsKorean
-                    ? "인디케이터 위치를 확인할 수 없습니다. 잠시 후 다시 시도하세요."
-                    : "Cannot determine current indicator position. Please try again shortly.",
-                "KoEnVue", 0);
-            return;
+            RelativePositionConfig? rel =
+                Overlay.ComputeRelativeFromCurrentPosition(hwndForeground);
+            if (rel is null)
+            {
+                ShowPositionError();
+                return;
+            }
+            updateConfig(config with { DefaultIndicatorPositionRelative = rel });
+            Logger.Info($"Default relative position saved: corner={rel.Corner}, "
+                      + $"delta=({rel.DeltaX}, {rel.DeltaY})");
         }
+        else
+        {
+            DefaultPositionConfig? anchor = Overlay.ComputeAnchorFromCurrentPosition();
+            if (anchor is null)
+            {
+                ShowPositionError();
+                return;
+            }
+            updateConfig(config with { DefaultIndicatorPosition = anchor });
+            Logger.Info($"Default indicator position saved: corner={anchor.Corner}, "
+                      + $"delta=({anchor.DeltaX}, {anchor.DeltaY})");
+        }
+    }
 
-        updateConfig(config with { DefaultIndicatorPosition = anchor });
-        Logger.Info($"Default indicator position saved: corner={anchor.Corner}, "
-                  + $"delta=({anchor.DeltaX}, {anchor.DeltaY})");
+    private static void ShowPositionError()
+    {
+        User32.MessageBoxW(_hwndMain,
+            I18n.IsKorean
+                ? "인디케이터 위치를 확인할 수 없습니다. 잠시 후 다시 시도하세요."
+                : "Cannot determine current indicator position. Please try again shortly.",
+            "KoEnVue", 0);
     }
 
     // ================================================================
@@ -639,7 +702,12 @@ internal static class Tray
     /// </summary>
     private static void CleanupPositions(AppConfig config, Action<AppConfig> updateConfig)
     {
-        if (config.IndicatorPositions.Count == 0)
+        // 양쪽 dict의 키 합집합
+        var allKeys = new HashSet<string>(config.IndicatorPositions.Keys, StringComparer.OrdinalIgnoreCase);
+        foreach (string k in config.IndicatorPositionsRelative.Keys)
+            allKeys.Add(k);
+
+        if (allKeys.Count == 0)
         {
             User32.MessageBoxW(_hwndMain,
                 I18n.IsKorean ? "저장된 위치 기록이 없습니다." : "No saved position history.",
@@ -657,8 +725,6 @@ internal static class Tray
                 catch (Exception ex) when (ex is InvalidOperationException
                                              or System.ComponentModel.Win32Exception)
                 {
-                    // InvalidOperationException: ProcessName 게터가 이미 종료된 프로세스를 참조
-                    // Win32Exception: 시스템/서비스 프로세스 접근 권한 부족
                     Logger.Debug($"CleanupDialog: failed to read process name: {ex.Message}");
                 }
                 finally { proc.Dispose(); }
@@ -666,7 +732,6 @@ internal static class Tray
         }
         catch (Exception ex)
         {
-            // 프로세스 열거 실패 시 접미사 없이 전체 항목만 표시 (기능은 정상 동작)
             Logger.Warning($"CleanupDialog: Process.GetProcesses enumeration failed: {ex.Message}");
         }
 
@@ -674,7 +739,7 @@ internal static class Tray
         string runningSuffix = I18n.IsKorean ? " (실행 중)" : " (running)";
         var displayItems = new List<string>();
         var originalNames = new List<string>();
-        foreach (string name in config.IndicatorPositions.Keys)
+        foreach (string name in allKeys)
         {
             originalNames.Add(name);
             displayItems.Add(running.Contains(name) ? name + runningSuffix : name);
@@ -692,11 +757,19 @@ internal static class Tray
                 selectedOriginal.Add(originalNames[i]);
         }
 
-        var cleaned = new Dictionary<string, int[]>(config.IndicatorPositions);
+        var cleanedFixed = new Dictionary<string, int[]>(config.IndicatorPositions);
+        var cleanedRelative = new Dictionary<string, int[]>(config.IndicatorPositionsRelative);
         foreach (string name in selectedOriginal)
-            cleaned.Remove(name);
+        {
+            cleanedFixed.Remove(name);
+            cleanedRelative.Remove(name);
+        }
 
-        updateConfig(config with { IndicatorPositions = cleaned });
+        updateConfig(config with
+        {
+            IndicatorPositions = cleanedFixed,
+            IndicatorPositionsRelative = cleanedRelative,
+        });
         Logger.Info($"Cleaned {selectedOriginal.Count} position(s): {string.Join(", ", selectedOriginal)}");
     }
 

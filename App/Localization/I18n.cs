@@ -64,6 +64,9 @@ internal static class I18n
     public static string MenuSnapToWindows => _isKorean ? "창에 자석처럼 붙이기" : "Snap to Windows";
     public static string MenuAnimation => _isKorean ? "애니메이션 사용" : "Animations enabled";
     public static string MenuChangeHighlight => _isKorean ? "변경 시 강조" : "Highlight on change";
+    public static string MenuPositionMode => _isKorean ? "위치 모드" : "Position Mode";
+    public static string MenuPositionFixed => _isKorean ? "고정 위치" : "Fixed Position";
+    public static string MenuPositionWindow => _isKorean ? "창 기준" : "Relative to Window";
     public static string MenuCleanup => _isKorean ? "위치 기록 정리..." : "Clean position history...";
     public static string MenuSettings => _isKorean ? "상세 설정..." : "Settings...";
     public static string MenuExit => _isKorean ? "종료" : "Exit";

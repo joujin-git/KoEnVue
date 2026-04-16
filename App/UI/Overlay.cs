@@ -323,6 +323,85 @@ internal static class Overlay
         };
     }
 
+    /// <summary>
+    /// 현재 인디 위치에서 포그라운드 창의 가장 가까운 모서리를 찾아
+    /// RelativePositionConfig로 환산. 트레이 "기본 위치 → 현재 위치로 설정"(창 기준 모드)에서 호출.
+    /// 인디가 한 번도 표시된 적이 없거나 창 rect를 얻을 수 없으면 null.
+    /// </summary>
+    public static RelativePositionConfig? ComputeRelativeFromCurrentPosition(IntPtr hwndForeground)
+    {
+        (int lastX, int lastY) = _engine.GetLastPosition();
+        if (lastX == 0 && lastY == 0) return null;
+        if (hwndForeground == IntPtr.Zero) return null;
+        if (!Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT frame)) return null;
+
+        (Corner corner, int dx, int dy) best = (Corner.TopRight, 0, 0);
+        long bestDist = long.MaxValue;
+
+        void Consider(Corner c, int ax, int ay)
+        {
+            int cdx = lastX - ax;
+            int cdy = lastY - ay;
+            long dist = Math.Abs((long)cdx) + Math.Abs((long)cdy);
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                best = (c, cdx, cdy);
+            }
+        }
+
+        Consider(Corner.TopLeft, frame.Left, frame.Top);
+        Consider(Corner.TopRight, frame.Right, frame.Top);
+        Consider(Corner.BottomLeft, frame.Left, frame.Bottom);
+        Consider(Corner.BottomRight, frame.Right, frame.Bottom);
+
+        return new RelativePositionConfig
+        {
+            Corner = best.corner,
+            DeltaX = best.dx,
+            DeltaY = best.dy,
+        };
+    }
+
+    /// <summary>
+    /// RelativePositionConfig + 창 RECT → 절대 화면 좌표로 변환.
+    /// ResolveAnchor의 창 기준 버전.
+    /// </summary>
+    public static (int x, int y) ResolveRelativePosition(RECT windowFrame, RelativePositionConfig rel)
+    {
+        int x = rel.Corner is Corner.TopLeft or Corner.BottomLeft
+            ? windowFrame.Left + rel.DeltaX
+            : windowFrame.Right + rel.DeltaX;
+        int y = rel.Corner is Corner.TopLeft or Corner.TopRight
+            ? windowFrame.Top + rel.DeltaY
+            : windowFrame.Bottom + rel.DeltaY;
+        return (x, y);
+    }
+
+    /// <summary>
+    /// 창 기준 모드의 기본 위치. 저장 위치 없는 앱에 사용.
+    /// 시스템 입력 프로세스는 기존 GetDefaultPosition으로 위임.
+    /// </summary>
+    public static (int x, int y) GetDefaultRelativePosition(
+        IntPtr hwndForeground, string processName,
+        RelativePositionConfig? configDefault)
+    {
+        if (DefaultConfig.IsSystemInputProcess(processName))
+            return GetDefaultPosition(hwndForeground, processName);
+
+        if (hwndForeground == IntPtr.Zero
+            || !Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT frame))
+            return GetDefaultPosition(hwndForeground, processName);
+
+        RelativePositionConfig anchor = configDefault ?? new RelativePositionConfig
+        {
+            Corner = DefaultConfig.DefaultRelativeCorner,
+            DeltaX = DefaultConfig.DefaultRelativeOffsetX,
+            DeltaY = DefaultConfig.DefaultRelativeOffsetY,
+        };
+        return ResolveRelativePosition(frame, anchor);
+    }
+
     // ================================================================
     // BuildStyle — ImeState + AppConfig → OverlayStyle
     //

@@ -77,6 +77,7 @@ exe 폴더의 `config.json` 을 직접 편집하거나 트레이 **상세 설정
 | `indicator_scale` | `1.0` | 크기 배율 1.0~5.0 (0.1 단위) |
 | `opacity` | `0.85` | 활성 불투명도 |
 | `idle_opacity` | `0.4` | 유휴 불투명도 (Always 모드) |
+| `position_mode` | `"fixed"` | `"fixed"` 화면 고정 / `"window"` 창 기준 상대 위치 |
 | `snap_to_windows` | `true` | 드래그 중 창 엣지 자석 스냅 |
 | `snap_gap_px` | `2` | 창 엣지 스냅 시 간격 (px, 0 = 밀착) |
 | `theme` | `"custom"` | `custom` / `minimal` / `vivid` / `pastel` / `dark` / `system` (6 프리셋) |

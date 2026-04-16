@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using KoEnVue.App.Models;
 
 namespace KoEnVue.App.Config;
 
@@ -26,6 +27,24 @@ internal static class DefaultConfig
     /// 양수 = 모서리에서 아래로. AppConfig.DefaultIndicatorPosition이 null일 때 폴백.
     /// </summary>
     public const int DefaultIndicatorOffsetY = 10;
+
+    /// <summary>
+    /// 창 기준 모드 기본 앵커 코너.
+    /// AppConfig.DefaultIndicatorPositionRelative가 null일 때 폴백.
+    /// </summary>
+    public const Corner DefaultRelativeCorner = Corner.TopRight;
+
+    /// <summary>
+    /// 창 기준 모드 기본 위치 — 창의 앵커 코너 기준 X 오프셋.
+    /// 음수 = 모서리에서 왼쪽으로.
+    /// </summary>
+    public const int DefaultRelativeOffsetX = -50;
+
+    /// <summary>
+    /// 창 기준 모드 기본 위치 — 창의 앵커 코너 기준 Y 오프셋.
+    /// 양수 = 모서리에서 아래로.
+    /// </summary>
+    public const int DefaultRelativeOffsetY = 10;
 
     /// <summary>
     /// 드래그 중 창 엣지 스냅 임계값 (DPI 스케일링 전 px).
@@ -95,7 +114,7 @@ internal static class DefaultConfig
     /// 둘 중 하나만 올리면 바이너리 메타데이터와 런타임 비교 값이 불일치한다.
     /// </para>
     /// </summary>
-    public const string AppVersion = "0.9.0.6";
+    public const string AppVersion = "0.9.1.0";
 
     /// <summary>UpdateChecker 가 조회할 GitHub 레포 owner.</summary>
     public const string UpdateRepoOwner = "joujin-git";

@@ -116,13 +116,25 @@ internal sealed record AppConfig
     public bool PerMonitorScale { get; init; } = true;
     public bool ClampToWorkArea { get; init; } = true;
 
-    // [인디케이터 위치 -- 앱별 저장]
+    // [인디케이터 위치 -- 모드]
+    public PositionMode PositionMode { get; init; } = PositionMode.Fixed;
+
+    // [인디케이터 위치 -- 앱별 저장 (고정)]
     public Dictionary<string, int[]> IndicatorPositions { get; init; } = new();
 
-    // [인디케이터 위치 -- 저장 안 된 앱의 기본 표시 위치]
+    // [인디케이터 위치 -- 앱별 저장 (창 기준)]
+    // int[3]: [(int)Corner, DeltaX, DeltaY] — 포그라운드 창 DWM 프레임 기준 상대 오프셋.
+    public Dictionary<string, int[]> IndicatorPositionsRelative { get; init; } = new();
+
+    // [인디케이터 위치 -- 저장 안 된 앱의 기본 표시 위치 (고정)]
     // null = 하드코딩 폴백 (work area 우상단, DefaultConfig.DefaultIndicatorOffset*).
     // 값이 있으면 Corner anchor + delta로 포그라운드 모니터 work area 기준 위치 계산.
     public DefaultPositionConfig? DefaultIndicatorPosition { get; init; } = null;
+
+    // [인디케이터 위치 -- 저장 안 된 앱의 기본 표시 위치 (창 기준)]
+    // null = 하드코딩 폴백 (창 TopRight, DefaultConfig.DefaultRelativeOffset*).
+    // 값이 있으면 Corner anchor + delta로 포그라운드 창 DWM 프레임 기준 위치 계산.
+    public RelativePositionConfig? DefaultIndicatorPositionRelative { get; init; } = null;
 
     // [인디케이터 위치 -- 드래그 중 창 엣지 스냅]
     // true = 드래그 중 가시 창의 엣지와 모니터 work area 엣지에 자석처럼 붙음.
@@ -156,11 +168,22 @@ internal sealed record AdvancedConfig
 }
 
 /// <summary>
-/// 저장 위치가 없는 앱에 인디케이터를 표시할 기본 위치.
+/// 저장 위치가 없는 앱에 인디케이터를 표시할 기본 위치 (고정 모드).
 /// Corner anchor + delta — 포그라운드 모니터 work area 기준으로 계산되므로
 /// 멀티모니터·해상도 변경에 안정적.
 /// </summary>
 internal sealed record DefaultPositionConfig
+{
+    public Corner Corner { get; init; } = Corner.TopRight;
+    public int DeltaX { get; init; }
+    public int DeltaY { get; init; }
+}
+
+/// <summary>
+/// 저장 위치가 없는 앱에 인디케이터를 표시할 기본 위치 (창 기준 모드).
+/// Corner anchor + delta — 포그라운드 창의 DWM visible frame 기준.
+/// </summary>
+internal sealed record RelativePositionConfig
 {
     public Corner Corner { get; init; } = Corner.TopRight;
     public int DeltaX { get; init; }
@@ -180,6 +203,7 @@ internal sealed record DefaultPositionConfig
 [JsonSerializable(typeof(EventTriggersConfig))]
 [JsonSerializable(typeof(AdvancedConfig))]
 [JsonSerializable(typeof(DefaultPositionConfig))]
+[JsonSerializable(typeof(RelativePositionConfig))]
 [JsonSerializable(typeof(Dictionary<string, JsonElement>))]
 [JsonSerializable(typeof(Dictionary<string, int[]>))]
 internal partial class AppConfigJsonContext : JsonSerializerContext { }

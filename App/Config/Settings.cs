@@ -390,33 +390,60 @@ internal sealed class AppSettingsManager : JsonSettingsManager<AppConfig>
     /// </summary>
     protected override AppConfig PostDeserializeFixup(AppConfig config, string mergedJson)
     {
-        // STJ가 정상 파싱했으면 건너뛰기
-        if (config.IndicatorPositions.Count > 0)
+        bool needsFixedFixup = config.IndicatorPositions.Count == 0;
+        bool needsRelativeFixup = config.IndicatorPositionsRelative.Count == 0;
+
+        if (!needsFixedFixup && !needsRelativeFixup)
             return config;
 
         try
         {
             using var doc = JsonDocument.Parse(mergedJson);
-            if (!doc.RootElement.TryGetProperty("indicator_positions", out JsonElement posElement))
-                return config;
-            if (posElement.ValueKind != JsonValueKind.Object)
-                return config;
 
-            var positions = new Dictionary<string, int[]>();
-            foreach (var prop in posElement.EnumerateObject())
+            // 고정 모드 위치 수동 파싱
+            if (needsFixedFixup
+                && doc.RootElement.TryGetProperty("indicator_positions", out JsonElement posElement)
+                && posElement.ValueKind == JsonValueKind.Object)
             {
-                if (prop.Value.ValueKind == JsonValueKind.Array && prop.Value.GetArrayLength() >= 2)
+                var positions = new Dictionary<string, int[]>();
+                foreach (var prop in posElement.EnumerateObject())
                 {
-                    int x = prop.Value[0].GetInt32();
-                    int y = prop.Value[1].GetInt32();
-                    positions[prop.Name] = [x, y];
+                    if (prop.Value.ValueKind == JsonValueKind.Array && prop.Value.GetArrayLength() >= 2)
+                    {
+                        int x = prop.Value[0].GetInt32();
+                        int y = prop.Value[1].GetInt32();
+                        positions[prop.Name] = [x, y];
+                    }
+                }
+                if (positions.Count > 0)
+                {
+                    Logger.Info($"Manual parse recovered {positions.Count} indicator position(s)");
+                    config = config with { IndicatorPositions = positions };
                 }
             }
 
-            if (positions.Count > 0)
+            // 창 기준 모드 위치 수동 파싱
+            if (needsRelativeFixup
+                && doc.RootElement.TryGetProperty("indicator_positions_relative", out JsonElement relElement)
+                && relElement.ValueKind == JsonValueKind.Object)
             {
-                Logger.Info($"Manual parse recovered {positions.Count} indicator position(s)");
-                return config with { IndicatorPositions = positions };
+                var relPositions = new Dictionary<string, int[]>();
+                foreach (var prop in relElement.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.Array && prop.Value.GetArrayLength() >= 3)
+                    {
+                        int corner = prop.Value[0].GetInt32();
+                        if (!Enum.IsDefined((Corner)corner)) continue;
+                        int dx = prop.Value[1].GetInt32();
+                        int dy = prop.Value[2].GetInt32();
+                        relPositions[prop.Name] = [corner, dx, dy];
+                    }
+                }
+                if (relPositions.Count > 0)
+                {
+                    Logger.Info($"Manual parse recovered {relPositions.Count} relative position(s)");
+                    config = config with { IndicatorPositionsRelative = relPositions };
+                }
             }
         }
         catch
@@ -459,6 +486,7 @@ internal sealed class AppSettingsManager : JsonSettingsManager<AppConfig>
             SystemHideProcessesUser = config.SystemHideProcessesUser ?? [],
             AppProfiles = config.AppProfiles ?? new(),
             IndicatorPositions = config.IndicatorPositions ?? new(),
+            IndicatorPositionsRelative = config.IndicatorPositionsRelative ?? new(),
             AppFilterList = config.AppFilterList ?? [],
             TrayQuickOpacityPresets = config.TrayQuickOpacityPresets ?? [0.95, 0.85, 0.6],
             BorderColor = config.BorderColor ?? "#000000",
