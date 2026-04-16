@@ -352,7 +352,7 @@ dotnet publish -r win-x64 -c Release  # NativeAOT 릴리스 퍼블리시
 |------|------|
 | **[../CLAUDE.md](../CLAUDE.md)** | 프로젝트 진입점, 기술 스택, P1–P6, 빌드 |
 | **[../README.md](../README.md)** | 다운로드, 빌드, 릴리즈 절차, `config.json` 키 |
-| **[사용설명서.md](사용설명서.md)** | 최종 사용자 매뉴얼 |
+| **[User_Guide.md](User_Guide.md)** | 최종 사용자 매뉴얼 |
 | **[architecture.md](architecture.md)** | Core / App 모듈 상세, 재사용 계약, 파사드 패턴 |
 | **[implementation-notes.md](implementation-notes.md)** | 렌더 파이프라인, 드래그/스냅, 애니메이션, CAPS LOCK, 핫 리로드, 다이얼로그, 업데이트 체크 |
 | **[conventions.md](conventions.md)** | P1–P6 세부, silent catch 정책, .NET 10 호환 노트 |

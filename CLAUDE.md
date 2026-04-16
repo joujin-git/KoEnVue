@@ -62,7 +62,7 @@ dotnet publish -r win-x64 -c Release  # NativeAOT single exe
 | File | Purpose |
 |------|---------|
 | **[docs/KoEnVue_PRD.md](docs/KoEnVue_PRD.md)** | Product requirements (feature spec, behavior, config) |
-| **[docs/사용설명서.md](docs/사용설명서.md)** | End-user manual (Korean) |
+| **[docs/User_Guide.md](docs/User_Guide.md)** | End-user manual (Korean) |
 | **[README.md](README.md)** | Download, build, release procedure, config.json keys |
 | **[docs/architecture.md](docs/architecture.md)** | Core/App module list, reuse contract, facade pattern |
 | **[docs/implementation-notes.md](docs/implementation-notes.md)** | Render pipeline, drag/snap, animation, CAPS LOCK, hot reload, dialogs, update check |

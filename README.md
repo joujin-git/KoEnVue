@@ -10,7 +10,7 @@ Windows 한/영 IME 상태 인디케이터 — 드래그 가능한 플로팅 오
 
 ## 사용자 문서
 
-사용 방법·트레이 메뉴·단축키·FAQ 는 **[docs/사용설명서.md](docs/사용설명서.md)** 를 참고하세요.
+사용 방법·트레이 메뉴·단축키·FAQ 는 **[docs/User_Guide.md](docs/User_Guide.md)** 를 참고하세요.
 
 설계·스펙 문서는 **[docs/KoEnVue_PRD.md](docs/KoEnVue_PRD.md)** 에 있습니다.
 
