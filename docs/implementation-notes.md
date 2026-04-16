@@ -2,7 +2,7 @@
 
 Deep-dive details on render pipeline, drag/snap, animation, detection, hot reload, and dialogs. Companion to [CLAUDE.md](../CLAUDE.md) and [KoEnVue_PRD.md](KoEnVue_PRD.md) — this file is where "why" explanations and non-obvious workarounds live.
 
-Conventions and policies (P1–P6, catch narrowing, .NET 10 quirks) are in **[conventions.md](conventions.md)**. Timeline of how the code got here is in **[refactor-history.md](refactor-history.md)**.
+Conventions and policies (P1–P6, catch narrowing, .NET 10 quirks) are in **[conventions.md](conventions.md)**.
 
 ---
 
@@ -159,7 +159,7 @@ Timer IDs (injected via `AnimationTimerIds` record so Core stays ID-agnostic):
 | Timer | Purpose | Source constant |
 |-------|---------|-----------------|
 | `Fade` | Fade-in / fade-out frame tick | `DefaultConfig.AnimationFrameMs = 16` (~60 fps) |
-| `Hold` | Transition from Holding → FadingOut (OnEvent mode) | `config.EventDisplayDurationMs` |
+| `Hold` | Holding → next phase. OnEvent: FadingOut → Hidden. Always: FadeToIdle (→ IdleOpacity) | OnEvent: `config.EventDisplayDurationMs`, Always: `config.AlwaysIdleTimeoutMs` |
 | `Highlight` | IME-change zoom (1.3× → 1.0×) | `config.HighlightDurationMs` |
 | `Topmost` | Periodic `ForceTopmost` re-assert | `DefaultConfig.ForceTopmostIntervalMs = 5000` |
 | `Slide` | Ease-out cubic position interpolation | `config.SlideSpeedMs` |
@@ -175,6 +175,8 @@ Ease-out cubic interpolation: `1 - (1 - t)^3` via `TIMER_ID_SLIDE`. All animatio
 ### Always mode default
 
 `DisplayMode.Always` — indicator always visible (bright on events, dim at idle). `DisplayMode.OnEvent` available via config for fade-out-after-hold behavior.
+
+Idle dimming is driven by `FadeToIdle()` inside `OverlayAnimator`: Hold timer fires after `AlwaysIdleTimeoutMs` → fade from current alpha to `IdleOpacity` over `FadeOutMs`. On the next event, `TriggerShow` fades back from `IdleOpacity` to `ActiveOpacity` over `FadeInMs`.
 
 ### HideOverlay `forceHidden`
 
@@ -359,6 +361,10 @@ Handles the "user moved the exe" case: the first boot after a move still misses 
 ```
 
 Menu IDs live in [Tray.cs](../App/UI/Tray.cs) as `private const int IDM_*`. The `IDM_UPDATE_DOWNLOAD = 4008` item + separator are only appended when `_pendingUpdate != null`.
+
+### Quick opacity presets (`ApplyQuickOpacity`)
+
+The three opacity presets (진하게/보통/연하게) apply mode-aware config changes via `Tray.ApplyQuickOpacity`. In Always mode, the preset value is written to `ActiveOpacity` and `IdleOpacity` is proportionally scaled (ratio preserved). In OnEvent mode, only `Opacity` is written. The radio check compares against `ActiveOpacity` in Always mode, `Opacity` in OnEvent mode.
 
 ### Three-toggle duplication with settings dialog
 

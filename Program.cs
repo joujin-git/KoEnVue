@@ -463,6 +463,14 @@ internal static partial class Program
         I18n.Load(_config.Language);
         Settings.ClearProfileCache();
         Overlay.HandleConfigChanged(_config);
+        // 인디가 가시 상태라면 애니메이터 config 갱신 + 새 alpha/크기/색상 즉시 반영
+        if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
+        {
+            var (x, y) = GetAppPosition();
+            Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
+        }
+        if (_config.TrayEnabled)
+            Tray.UpdateState(_lastImeState, _config);
         Logger.Info("Config reloaded");
     }
 
@@ -557,10 +565,17 @@ internal static partial class Program
             {
                 _config = newConfig;
                 Overlay.HandleConfigChanged(_config);
-                // HandleConfigChanged는 리소스만 재생성하고 UpdateLayeredWindow를 호출하지 않으므로
-                // 인디가 가시 상태라면 새 크기/색상이 즉시 화면에 반영되도록 명시적 재렌더.
-                if (_indicatorVisible)
+                // 인디가 가시 상태라면 애니메이터 config 갱신 + 새 alpha/크기/색상이 즉시 반영되도록
+                // TriggerShow로 전체 갱신. TriggerShow는 UpdateConfig + Overlay.Show를 포함한다.
+                if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
+                {
+                    var (x, y) = GetAppPosition();
+                    Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
+                }
+                else if (_indicatorVisible)
+                {
                     Overlay.UpdateColor(_lastImeState);
+                }
                 if (_config.TrayEnabled)
                     Tray.UpdateState(_lastImeState, _config);
                 Settings.Save(_config);

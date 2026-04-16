@@ -163,10 +163,14 @@ internal static class Tray
                 $"{I18n.OpacityLow} {presets[2]}");
 
             // 현재 opacity와 매칭되는 프리셋에 라디오 체크
+            // Always 모드에서는 ActiveOpacity가 실제 적용 값이므로 이를 기준으로 비교
+            double effectiveOpacity = config.DisplayMode == DisplayMode.Always
+                ? config.ActiveOpacity
+                : config.Opacity;
             uint opacityCheckId = 0;
-            if (Math.Abs(config.Opacity - presets[0]) < OpacityTolerance) opacityCheckId = (uint)IDM_OPACITY_HIGH;
-            else if (Math.Abs(config.Opacity - presets[1]) < OpacityTolerance) opacityCheckId = (uint)IDM_OPACITY_NORMAL;
-            else if (Math.Abs(config.Opacity - presets[2]) < OpacityTolerance) opacityCheckId = (uint)IDM_OPACITY_LOW;
+            if (Math.Abs(effectiveOpacity - presets[0]) < OpacityTolerance) opacityCheckId = (uint)IDM_OPACITY_HIGH;
+            else if (Math.Abs(effectiveOpacity - presets[1]) < OpacityTolerance) opacityCheckId = (uint)IDM_OPACITY_NORMAL;
+            else if (Math.Abs(effectiveOpacity - presets[2]) < OpacityTolerance) opacityCheckId = (uint)IDM_OPACITY_LOW;
 
             if (opacityCheckId != 0)
                 User32.CheckMenuRadioItem(hOpacityMenu, (uint)IDM_OPACITY_HIGH, (uint)IDM_OPACITY_LOW,
@@ -297,15 +301,15 @@ internal static class Tray
             // --- 투명도 ---
             case IDM_OPACITY_HIGH:
                 if (config.TrayQuickOpacityPresets.Length >= 1)
-                    updateConfig(config with { Opacity = config.TrayQuickOpacityPresets[0] });
+                    updateConfig(ApplyQuickOpacity(config, config.TrayQuickOpacityPresets[0]));
                 break;
             case IDM_OPACITY_NORMAL:
                 if (config.TrayQuickOpacityPresets.Length >= 2)
-                    updateConfig(config with { Opacity = config.TrayQuickOpacityPresets[1] });
+                    updateConfig(ApplyQuickOpacity(config, config.TrayQuickOpacityPresets[1]));
                 break;
             case IDM_OPACITY_LOW:
                 if (config.TrayQuickOpacityPresets.Length >= 3)
-                    updateConfig(config with { Opacity = config.TrayQuickOpacityPresets[2] });
+                    updateConfig(ApplyQuickOpacity(config, config.TrayQuickOpacityPresets[2]));
                 break;
 
             // --- 시작 프로그램 등록 ---
@@ -430,6 +434,32 @@ internal static class Tray
     {
         if (!config.TrayTooltip) return null;
         return $"KoEnVue - {I18n.GetTrayTooltip(state)}";
+    }
+
+    // ================================================================
+    // Private — 빠른 투명도 프리셋 적용
+    // ================================================================
+
+    /// <summary>
+    /// 빠른 투명도 프리셋을 DisplayMode에 맞게 적용한다.
+    /// Always 모드에서는 ActiveOpacity를 프리셋 값으로, IdleOpacity를 기존 비율 유지하며 변경.
+    /// OnEvent 모드에서는 Opacity만 변경.
+    /// </summary>
+    private static AppConfig ApplyQuickOpacity(AppConfig config, double preset)
+    {
+        if (config.DisplayMode == DisplayMode.Always)
+        {
+            double idleRatio = config.ActiveOpacity > OpacityTolerance
+                ? config.IdleOpacity / config.ActiveOpacity
+                : 0.0;
+            return config with
+            {
+                Opacity = preset,
+                ActiveOpacity = preset,
+                IdleOpacity = Math.Clamp(preset * idleRatio, 0.1, 1.0)
+            };
+        }
+        return config with { Opacity = preset };
     }
 
     // ================================================================

@@ -107,5 +107,4 @@ exe 폴더의 `config.json` 을 직접 편집하거나 트레이 **상세 설정
 | [docs/architecture.md](docs/architecture.md) | Core/App 레이어 분리, 재사용 가능한 Core 모듈, 파사드 패턴 |
 | [docs/conventions.md](docs/conventions.md) | 코드 스타일, silent catch 정책, .NET 10 / NativeAOT 호환 노트 |
 | [docs/implementation-notes.md](docs/implementation-notes.md) | 인디케이터 렌더링·드래그·애니메이션·설정 핫리로드 등 구현 세부 |
-| [docs/refactor-history.md](docs/refactor-history.md) | Stage 1-6 리팩터 타임라인과 누적 바이트 추이 |
 | [docs/KoEnVue_PRD.md](docs/KoEnVue_PRD.md) | 제품 요구사항 문서 |

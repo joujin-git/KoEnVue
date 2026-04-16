@@ -2,7 +2,7 @@
 
 Enforcement rules, code style policies, and .NET 10 / NativeAOT compatibility notes. Companion to [CLAUDE.md](../CLAUDE.md) — this file is the normative source for "what gets rejected in review".
 
-Related: [architecture.md](architecture.md) (structural rules), [implementation-notes.md](implementation-notes.md) (non-obvious implementation choices), [refactor-history.md](refactor-history.md) (how the rules got here).
+Related: [architecture.md](architecture.md) (structural rules), [implementation-notes.md](implementation-notes.md) (non-obvious implementation choices).
 
 ---
 
@@ -38,7 +38,7 @@ Centralized modules enforced across the codebase:
 | Async logging | [Core/Logging/Logger](../Core/Logging/Logger.cs) |
 | HWND → class/process | [Core/Windowing/WindowProcessInfo](../Core/Windowing/WindowProcessInfo.cs) |
 
-Before adding a new helper: **grep Core/ first**. The Stage 1 wave resolved 6 distinct duplications that had slipped into the codebase before the rule was enforced mechanically (see [refactor-history.md § Stage 1](refactor-history.md#stage-1--deduplication--initial-split)).
+Before adding a new helper: **grep Core/ first**.
 
 ### P6 verification invariants
 
@@ -170,9 +170,7 @@ Example: `_imeChangeCallback` in [ImeStatus.cs](../App/Detector/ImeStatus.cs).
 
 ### ILC byte-size discipline
 
-Every structural refactor tracks the NativeAOT publish exe size before and after. The informal gate is **≤+100 KB per stage**. Byte-level trajectory is logged in [refactor-history.md](refactor-history.md#cumulative-byte-size-trajectory).
-
-Stage 4's Core extraction (6 modules) cost +19.5 KB — well within the gate, proving that `record struct` primitive boundaries + engine-instance composition + `JsonTypeInfo<T>` injection all survive ILC tree-shaking without rooting anything new.
+Every structural refactor tracks the NativeAOT publish exe size before and after. The informal gate is **≤+100 KB per stage**.
 
 ---
 
@@ -187,7 +185,7 @@ All three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) share:
 - **`[UnmanagedCallersOnly]` `WndProc`** function pointer private to each file (no NativeAOT export name collision)
 - **Tab/Enter/ESC** routed through `IsDialogMessageW` in `ModalDialogLoop`
 
-The `SafeFontHandle` `using` pattern is critical — early release would crash `DrawTextW` while child controls still reference the HFONT. See Stage 1 Risk 3 in [refactor-history.md](refactor-history.md#stage-1--deduplication--initial-split).
+The `SafeFontHandle` `using` pattern is critical — early release would crash `DrawTextW` while child controls still reference the HFONT.
 
 ---
 

@@ -280,8 +280,8 @@ public sealed class OverlayAnimator : IDisposable
         // 2. 모드별 분기
         if (_config.AlwaysMode && !forceHidden)
         {
-            // Always 모드: 페이드아웃 없이 현재 alpha 유지 → Idle
-            _phase = AnimPhase.Idle;
+            // Always 모드: IdleOpacity로 페이드 (dim-idle)
+            FadeToIdle();
         }
         else
         {
@@ -380,8 +380,8 @@ public sealed class OverlayAnimator : IDisposable
 
         if (_config.AlwaysMode)
         {
-            // Always 모드: 페이드아웃 없이 현재 alpha 유지 → Idle
-            _phase = AnimPhase.Idle;
+            // Always 모드: ActiveOpacity → IdleOpacity 페이드 (dim-idle)
+            FadeToIdle();
             return;
         }
 
@@ -447,6 +447,31 @@ public sealed class OverlayAnimator : IDisposable
     // ================================================================
     // 내부 헬퍼
     // ================================================================
+
+    /// <summary>
+    /// Always 모드 dim-idle 전이: 현재 alpha → IdleOpacity 페이드.
+    /// 애니메이션 비활성이거나 alpha가 이미 일치하면 즉시 전이.
+    /// FadingOut 완료 핸들러의 Always 분기가 Idle로 최종 전이한다.
+    /// </summary>
+    private void FadeToIdle()
+    {
+        byte idleAlpha = GetTargetAlpha(active: false);
+        if (_currentAlpha != idleAlpha && _config.AnimationEnabled)
+        {
+            StartFade(_currentAlpha, idleAlpha, _config.FadeOutMs);
+            _phase = AnimPhase.FadingOut;
+            User32.SetTimer(_hwndTimer, _timerIds.Fade, _config.AnimationFrameMs, IntPtr.Zero);
+        }
+        else
+        {
+            if (_currentAlpha != idleAlpha)
+            {
+                _currentAlpha = idleAlpha;
+                _onAlphaChange(idleAlpha);
+            }
+            _phase = AnimPhase.Idle;
+        }
+    }
 
     private byte GetTargetAlpha(bool active)
     {

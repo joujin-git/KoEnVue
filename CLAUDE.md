@@ -66,16 +66,5 @@ dotnet publish -r win-x64 -c Release  # NativeAOT single exe
 | **[README.md](README.md)** | Download, build, release procedure, config.json keys |
 | **[docs/architecture.md](docs/architecture.md)** | Core/App module list, reuse contract, facade pattern |
 | **[docs/implementation-notes.md](docs/implementation-notes.md)** | Render pipeline, drag/snap, animation, CAPS LOCK, hot reload, dialogs, update check |
-| **[docs/refactor-history.md](docs/refactor-history.md)** | Stage 1–6 refactor timeline with byte-size deltas |
 | **[docs/conventions.md](docs/conventions.md)** | P1–P6 enforcement, silent catch policy, .NET 10 quirks |
-
-## Releasing
-
-Version string lives in **two places that must stay synchronized**:
-
-- [App/Config/DefaultConfig.cs](App/Config/DefaultConfig.cs) `AppVersion` — runtime `UpdateChecker` compares this against GitHub `tag_name`
-- [KoEnVue.csproj](KoEnVue.csproj) `<Version>` — PE header `AssemblyVersion` / `FileVersion` / `InformationalVersion`
-
-Bumping only one creates a mismatch between Windows file properties and the runtime update check. Full procedure (bump both, build, publish, attach exe, clear GitHub "pre-release" flag): **[README.md → 릴리즈 (Releasing)](README.md)**.
-
-First public release: **v0.8.9.0** (2026-04-14).
+| **[CHANGELOG.md](CHANGELOG.md)** | Release history (Keep a Changelog format) |
