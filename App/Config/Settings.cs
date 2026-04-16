@@ -25,7 +25,7 @@ internal static class Settings
     // ================================================================
 
     /// <summary>현재 config 스키마 버전.</summary>
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     /// <summary>앱 프로필 LRU 캐시 최대 크기.</summary>
     private const int ProfileCacheMaxSize = 50;
@@ -139,6 +139,27 @@ internal static class Settings
         // v2 → v3: system_edit_focus_classes 필드 제거 (바탕화면 리네임 escape hatch 폐기).
         // 필드 자체가 AppConfig에서 삭제됐으므로 STJ가 JSON 키를 무시하고,
         // 다음 Save에서 자동으로 파일에서 사라진다. 여기선 버전만 갱신.
+
+        // v3 → v4: 바탕화면 우클릭 컨텍스트 메뉴(Win11) 숨김 클래스 추가.
+        // 기존 사용자의 system_hide_classes에 XamlExplorerHostIslandWindow_WASDK가 없으면 추가.
+        if (version < 4)
+        {
+            const string desktopMenuClass = "XamlExplorerHostIslandWindow_WASDK";
+            string[] classes = config.SystemHideClasses;
+            bool found = false;
+            foreach (string c in classes)
+            {
+                if (c.Equals(desktopMenuClass, StringComparison.OrdinalIgnoreCase))
+                { found = true; break; }
+            }
+            if (!found)
+            {
+                string[] updated = new string[classes.Length + 1];
+                classes.CopyTo(updated, 0);
+                updated[classes.Length] = desktopMenuClass;
+                config = config with { SystemHideClasses = updated };
+            }
+        }
 
         return config with { ConfigVersion = CurrentVersion };
     }
@@ -429,8 +450,10 @@ internal sealed class AppSettingsManager : JsonSettingsManager<AppConfig>
         {
             EventTriggers = config.EventTriggers ?? new(),
             Advanced = config.Advanced ?? new(),
-            SystemHideClasses = config.SystemHideClasses ?? ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"],
+            SystemHideClasses = config.SystemHideClasses ?? ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow_WASDK"],
             SystemHideClassesUser = config.SystemHideClassesUser ?? [],
+            SystemHideProcesses = config.SystemHideProcesses ?? ["ShellExperienceHost"],
+            SystemHideProcessesUser = config.SystemHideProcessesUser ?? [],
             AppProfiles = config.AppProfiles ?? new(),
             IndicatorPositions = config.IndicatorPositions ?? new(),
             AppFilterList = config.AppFilterList ?? [],

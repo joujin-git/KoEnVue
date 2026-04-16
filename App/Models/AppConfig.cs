@@ -66,8 +66,10 @@ internal sealed record AppConfig
     public bool HideInFullscreen { get; init; } = true;
     public bool HideWhenNoFocus { get; init; } = true;
     public bool HideOnLockScreen { get; init; } = true;
-    public string[] SystemHideClasses { get; init; } = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"];
+    public string[] SystemHideClasses { get; init; } = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow_WASDK"];
     public string[] SystemHideClassesUser { get; init; } = [];
+    public string[] SystemHideProcesses { get; init; } = ["ShellExperienceHost"];
+    public string[] SystemHideProcessesUser { get; init; } = [];
 
     // [앱별 프로필] -- Phase 06에서 구현
     public Dictionary<string, JsonElement> AppProfiles { get; init; } = new();

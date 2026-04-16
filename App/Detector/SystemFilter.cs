@@ -11,7 +11,7 @@ using KoEnVue.App.Localization;
 namespace KoEnVue.App.Detector;
 
 /// <summary>
-/// 시스템 필터. 7-조건 단락 평가로 인디케이터 숨김 여부를 판정한다.
+/// 시스템 필터. 8-조건 단락 평가로 인디케이터 숨김 여부를 판정한다.
 /// </summary>
 internal static class SystemFilter
 {
@@ -62,7 +62,7 @@ internal static class SystemFilter
     // ================================================================
 
     /// <summary>
-    /// 7-조건 단락 평가. 하나라도 true면 인디케이터를 숨긴다.
+    /// 8-조건 단락 평가. 하나라도 true면 인디케이터를 숨긴다.
     /// </summary>
     public static bool ShouldHide(IntPtr hwnd, IntPtr hwndFocus, AppConfig config)
     {
@@ -75,7 +75,7 @@ internal static class SystemFilter
         // 3. 현재 가상 데스크톱이 아님
         if (!IsOnCurrentVirtualDesktop(hwnd)) return true;
 
-        // 4. 클래스명 블랙리스트 (기본: 바탕화면/작업 표시줄)
+        // 4. 클래스명 블랙리스트 (기본: 바탕화면/작업 표시줄 + Win11 바탕화면 컨텍스트 메뉴)
         string className = WindowProcessInfo.GetClassName(hwnd);
         foreach (string c in config.SystemHideClasses)
         {
@@ -88,14 +88,33 @@ internal static class SystemFilter
                 return true;
         }
 
-        // 5. 키보드 포커스 없음
+        // 5. 프로세스명 블랙리스트 (기본: ShellExperienceHost — 작업 표시줄 컨텍스트 메뉴/팝업)
+        //    클래스명과 달리 프로세스명 조회(GetProcessName)는 비용이 있으므로
+        //    리스트가 비어 있으면 조회 자체를 건너뛴다.
+        string processName = string.Empty;
+        if (config.SystemHideProcesses.Length > 0 || config.SystemHideProcessesUser.Length > 0)
+        {
+            processName = WindowProcessInfo.GetProcessName(hwnd);
+            foreach (string p in config.SystemHideProcesses)
+            {
+                if (p.Equals(processName, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            foreach (string p in config.SystemHideProcessesUser)
+            {
+                if (p.Equals(processName, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+
+        // 6. 키보드 포커스 없음
         if (hwndFocus == IntPtr.Zero && config.HideWhenNoFocus) return true;
 
-        // 6. 전체화면 독점
+        // 7. 전체화면 독점
         if (config.HideInFullscreen && IsFullscreenExclusive(hwnd)) return true;
 
-        // 7. 앱 필터 (블랙/화이트리스트)
-        if (!PassesAppFilter(hwnd, config)) return true;
+        // 8. 앱 필터 (블랙/화이트리스트) — 조건 5에서 이미 조회한 processName 재사용
+        if (!PassesAppFilter(hwnd, processName, config)) return true;
 
         return false;
     }
@@ -161,12 +180,14 @@ internal static class SystemFilter
 
     /// <summary>
     /// 앱 필터 (블랙/화이트리스트) 판정.
+    /// processName이 비어 있으면(조건 5가 스킵된 경우) 여기서 조회한다.
     /// </summary>
-    private static bool PassesAppFilter(IntPtr hwnd, AppConfig config)
+    private static bool PassesAppFilter(IntPtr hwnd, string processName, AppConfig config)
     {
         if (config.AppFilterList.Length == 0) return true;
 
-        string processName = WindowProcessInfo.GetProcessName(hwnd);
+        if (processName.Length == 0)
+            processName = WindowProcessInfo.GetProcessName(hwnd);
         bool inList = config.AppFilterList.Contains(processName, StringComparer.OrdinalIgnoreCase);
 
         return config.AppFilterMode switch

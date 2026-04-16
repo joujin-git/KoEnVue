@@ -219,15 +219,16 @@ Detection loop only updates `lastHwndForeground` **after** `ShouldHide` passes. 
 - `GetKeyboardLayout` LANGID check (for non-Korean IME identification)
 - `EVENT_OBJECT_IME_CHANGE` WinEvent hook as supplementary signal
 
-### System filter (7 conditions)
+### System filter (8 conditions)
 
 1. Secure desktop (no hwnd)
 2. Invisible / minimized window
 3. Other virtual desktop
-4. Class name blacklist (`Progman`, `WorkerW`, `Shell_TrayWnd`, etc. + user-specified)
-5. No focus (`hide_when_no_focus`)
-6. Fullscreen exclusive (covers monitor + no `WS_CAPTION`)
-7. App blacklist / whitelist (`app_filter_list` + `app_filter_mode`)
+4. Class name blacklist (`Progman`, `WorkerW`, `Shell_TrayWnd`, `Shell_SecondaryTrayWnd`, `XamlExplorerHostIslandWindow_WASDK` + user-specified)
+5. Process name blacklist (`ShellExperienceHost` + user-specified) — hides taskbar/desktop right-click context menus on Win11 where the popup becomes the foreground window with a null owner chain
+6. No focus (`hide_when_no_focus`)
+7. Fullscreen exclusive (covers monitor + no `WS_CAPTION`)
+8. App blacklist / whitelist (`app_filter_list` + `app_filter_mode`)
 
 ---
 
@@ -393,7 +394,7 @@ Parsing uses `double.TryParse` + `CultureInfo.InvariantCulture`, so `"2.3"` work
 
 **`controlColW` dynamic cap**: capped to `innerContentW - labelColW - colGap` so input boxes never encroach on the vertical scrollbar reserve area — a fixed `controlColW` would get clipped under the scrollbar at the default dialog width.
 
-**Excludes**: fields already toggleable from the tray menu (opacity, indicator_scale, default_indicator_position, startup_with_windows, snap_to_windows, animation_enabled, change_highlight, indicator_positions, tray_enabled), complex collection fields (app_profiles, app_filter_list, system_hide_classes, ime_fallback_chain), and internal-only fields (overlay_class_name, config_version).
+**Excludes**: fields already toggleable from the tray menu (opacity, indicator_scale, default_indicator_position, startup_with_windows, snap_to_windows, animation_enabled, change_highlight, indicator_positions, tray_enabled), complex collection fields (app_profiles, app_filter_list, system_hide_classes, system_hide_processes, ime_fallback_chain), and internal-only fields (overlay_class_name, config_version).
 
 ### Decimal indicator scale
 
