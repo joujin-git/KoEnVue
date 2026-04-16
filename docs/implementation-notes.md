@@ -98,6 +98,18 @@ Path 3 (default position) is not clamped because `GetDefaultPosition` already co
 
 Win11 reuses a single HWND (e.g., `SearchHost 0x30254`) for both Start Menu and Search modes, distinguishing them only by rect. `DetectionLoop` caches `lastSystemInputFrame` and treats any DWM frame change on the same HWND as a foreground change, re-posting `WM_POSITION_UPDATED`. `HandlePositionUpdated` has a `sysInput` branch that re-resolves position even when `hwndForeground == _lastForegroundHwnd`, so Start Menu ↔ Search transitions re-anchor the indicator.
 
+### System input ESC-dismissal detection
+
+시스템 입력 프로세스(`StartMenuExperienceHost`, `SearchHost`, `SearchApp`)는 `SystemFilter` 블랙리스트에 의도적으로 포함되지 않으므로(인디케이터를 표시해야 하므로), 이들 UI가 ESC 등으로 닫힐 때 인디를 숨기는 별도 메커니즘이 `DetectionLoop`에 있다. 두 가지 닫힘 패턴이 경험적으로 확인됨:
+
+**(A) HWND 유지 + DWM cloaked — `StartMenuExperienceHost`**
+ESC 후 foreground HWND가 수 초간 유지되며 DWM cloaked 상태(`DWMWA_CLOAKED`)가 된다. `DetectionLoop`가 매 틱마다 `Dwmapi.IsCloaked(hwndForeground)`를 확인하여 cloaked이면 `WM_HIDE_INDICATOR`를 보내고 `continue`한다. 이후 OS가 foreground를 이전 앱으로 돌리면 다음 틱에서 정상 표시 경로를 탄다.
+
+**(B) 즉시 foreground 전환 — `SearchHost` / `SearchApp`**
+ESC 후 cloaked 없이 foreground가 즉시 다른 앱의 HWND로 변경된다. `leavingSystemInput` 플래그(HWND 변경 시 이전 프로세스명이 시스템 입력인지 확인)가 true이고, 새 foreground가 시스템 입력이 아닌 일반 앱이면 `WM_HIDE_INDICATOR` 후 `continue`한다. `lastHwndForeground`를 갱신하지 않으므로 다음 틱에서 foreground 변경이 재감지되어 새 앱에 인디가 표시된다. 단, 인디가 이미 (A)에 의해 숨겨진 경우에는 `continue`하지 않고 fall-through하여 새 앱에 즉시 표시한다.
+
+시스템 입력 간 전환(시작 메뉴 → 검색)은 (B)에서 제외되어 정상 표시 흐름을 유지한다.
+
 ---
 
 ## Drag and snap

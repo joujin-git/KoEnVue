@@ -698,8 +698,12 @@ internal static partial class Program
             lastAppConfig = appConfig;
 
             // hwnd 변경 시에만 프로세스 이름 캐시 갱신 (폴링당 Process.GetProcessById 호출 회피)
+            // leavingSystemInput: 시스템 입력 프로세스(검색 창 등)에서 일반 앱으로 즉시
+            // 전환되는 경우를 감지하기 위해 갱신 전 이전 프로세스명을 확인한다.
+            bool leavingSystemInput = false;
             if (hwndForeground != lastHwndForeground)
             {
+                leavingSystemInput = DefaultConfig.IsSystemInputProcess(lastForegroundProcessName);
                 lastForegroundProcessName = WindowProcessInfo.GetProcessName(hwndForeground);
                 lastSystemInputFrame = default;
             }
@@ -707,6 +711,51 @@ internal static partial class Program
             // 필터 해소 또는 포그라운드 변경 → 위치/포커스 갱신
             bool foregroundChanged = (hwndForeground != lastHwndForeground) || lastFiltered;
             lastFiltered = false;
+
+            // ── 시스템 입력 프로세스 닫힘 감지 ──
+            //
+            // 시작 메뉴(StartMenuExperienceHost)와 검색 창(SearchHost)은 SystemFilter 블랙리스트에
+            // 없어 인디케이터를 표시하지만, ESC로 닫힌 뒤에도 숨김 전환이 발생하지 않는 문제가 있다.
+            // 두 프로세스의 ESC 후 동작이 다르므로 두 가지 체크가 필요하다:
+            //
+            // (A) SMEH: ESC 후 foreground를 유지한 채 DWM cloaked 상태가 됨 (수 초간 지속).
+            //     IsWindowVisible=true, hwndFocus≠0이라 ShouldHide 8조건을 모두 통과한다.
+            //     → IsCloaked로 감지하여 숨김.
+            //
+            // (B) SearchHost: ESC 후 cloaked 없이 foreground가 즉시 다른 앱으로 변경됨.
+            //     non-filtered→non-filtered 전환이라 기존 숨김 로직이 동작하지 않음.
+            //     → leavingSystemInput 플래그로 감지하여 숨김.
+
+            // (A) HWND 유지 + cloaked: 시작 메뉴 ESC 후 foreground가 아직 안 바뀐 경우
+            if (!leavingSystemInput
+                && DefaultConfig.IsSystemInputProcess(lastForegroundProcessName)
+                && Dwmapi.IsCloaked(hwndForeground))
+            {
+                if (_indicatorVisible)
+                    User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
+                        IntPtr.Zero, IntPtr.Zero);
+                lastHwndForeground = hwndForeground;
+                lastHwndFocus = hwndFocus;
+                lastSystemInputFrame = default;
+                continue;
+            }
+
+            // (B) 즉시 전환: 검색 창 등에서 일반 앱으로 직접 변경된 경우
+            //     시스템 입력 간 전환(시작 메뉴 ↔ 검색)은 제외.
+            //     인디가 이미 숨겨진 경우(A에 의해)에는 fall-through하여 새 앱에 즉시 표시.
+            if (leavingSystemInput
+                && !DefaultConfig.IsSystemInputProcess(lastForegroundProcessName))
+            {
+                if (_indicatorVisible)
+                {
+                    User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
+                        IntPtr.Zero, IntPtr.Zero);
+                    // lastHwndForeground 미갱신 → 다음 틱에서 foreground 변경 감지 → 새 앱에 인디 표시
+                    lastHwndFocus = hwndFocus;
+                    lastSystemInputFrame = default;
+                    continue;
+                }
+            }
 
             // 시스템 입력 프로세스(시작 메뉴 ↔ 검색 창)는 하나의 HWND를 모드별로 재사용하면서
             // rect만 바꾸기 때문에 hwnd 비교만으로는 전환을 감지할 수 없다. 같은 hwnd라도
