@@ -3,6 +3,17 @@
 이 프로젝트의 주요 변경 사항을 기록합니다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/)를 따릅니다.
 
+## [0.9.0.6] — 2026-04-16
+
+### 수정
+
+- UWP 앱(설정, Microsoft Store 등) 간 인디케이터 위치가 공유되던 문제 — `ApplicationFrameHost` 윈도우의 자식 윈도우를 탐색하여 실제 앱 프로세스 이름으로 위치 저장
+
+### 추가
+
+- `User32.EnumChildWindows` P/Invoke
+- `WindowProcessInfo` UWP 프로세스 이름 해석 (`[ThreadStatic]` 브리지 + `[UnmanagedCallersOnly]` 콜백)
+
 ## [0.9.0.5] — 2026-04-16
 
 ### 수정

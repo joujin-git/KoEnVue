@@ -64,6 +64,8 @@ The indicator is a separate TOPMOST window, not tied to any foreground window's 
 1. **Runtime (`Dictionary<IntPtr, (int, int)>`)** — per-hwnd positions, enables distinguishing multiple windows of the same process (e.g., multiple Notepad/Chrome windows). Lost on restart
 2. **Config (`indicator_positions`)** — per-process-name positions, persists across sessions as fallback
 
+Process names are resolved via `WindowProcessInfo.GetProcessName(IntPtr hwnd)`. UWP apps (Settings, Microsoft Store, Calculator, etc.) are hosted by `ApplicationFrameHost.exe` — `GetWindowThreadProcessId` returns the frame host PID, not the actual app. `WindowProcessInfo` detects this and enumerates child windows via `EnumChildWindows` to find a child with a different PID, returning that child's process name (e.g., `"SystemSettings"`, `"WinStore.App"`). This ensures each UWP app gets its own position entry instead of all sharing `"ApplicationFrameHost"`.
+
 On foreground change, lookup order is: runtime hwnd → config process name → default position.
 
 ### Default position
@@ -132,9 +134,11 @@ Shift can be pressed/released mid-drag — axis flips if the user drags far enou
 - **`HandleMoving(ref RECT, style, snapToWindows, snapThresholdPx, snapGapPx)`** picks the smallest X and Y edge-pair distances within `snapThresholdPx = 10` (DPI-scaled) via the private `ApplySnap` helper. Window edge snaps apply a configurable gap (`snapGapPx`, default 2, DPI-scaled) to prevent the indicator from overlapping with the target window's border; screen (work area) edges snap flush with zero gap. Only applied to axes not already locked by Shift
 - **`EndDrag`** clears `_snapRects`
 
-### EnumWindows NativeAOT callback
+### EnumWindows / EnumChildWindows NativeAOT callbacks
 
 Uses `delegate* unmanaged<IntPtr, IntPtr, int>` + `[UnmanagedCallersOnly]` instead of delegate marshaling — consistent with the rest of the project's `[LibraryImport]` style. Return type is `int` (not `bool`) because Win32 `BOOL` is 4 bytes.
+
+`EnumWindows` is used in `LayeredOverlayBase.BeginDrag` for snap candidate collection. `EnumChildWindows` is used in `WindowProcessInfo.ResolveUwpProcessName` to find the actual UWP app process inside an `ApplicationFrameHost` window. The latter uses `[ThreadStatic]` bridge fields (not static fields) because `GetProcessName` is called from both the main thread and the detection thread.
 
 ### WM_MOVING drift re-sync
 

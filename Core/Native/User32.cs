@@ -44,6 +44,11 @@ internal static partial class User32
     internal static unsafe partial bool EnumWindows(
         delegate* unmanaged<IntPtr, IntPtr, int> lpEnumFunc, IntPtr lParam);
 
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static unsafe partial bool EnumChildWindows(
+        IntPtr hWndParent, delegate* unmanaged<IntPtr, IntPtr, int> lpEnumFunc, IntPtr lParam);
+
     // === 좌표 변환 ===
 
     [LibraryImport("user32.dll")]

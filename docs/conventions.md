@@ -140,7 +140,7 @@ Verification: `git grep "DllImport"` must return 0.
 
 ### `[UnmanagedCallersOnly]` + `delegate*` for Win32 callbacks
 
-Prefer function pointer + `[UnmanagedCallersOnly]` over delegate marshaling for Win32 callbacks. Used by `EnumWindows`, dialog `WndProc`, window class `WndProc`, etc.
+Prefer function pointer + `[UnmanagedCallersOnly]` over delegate marshaling for Win32 callbacks. Used by `EnumWindows`, `EnumChildWindows`, dialog `WndProc`, window class `WndProc`, etc.
 
 Example (from drag snap):
 

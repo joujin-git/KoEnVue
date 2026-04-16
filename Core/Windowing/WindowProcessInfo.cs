@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Logging;
 
@@ -9,6 +10,14 @@ namespace KoEnVue.Core.Windowing;
 /// </summary>
 internal static class WindowProcessInfo
 {
+    private const string ApplicationFrameHost = "ApplicationFrameHost";
+
+    // EnumChildWindows 콜백용 스레드별 브리지 필드.
+    // GetProcessName은 메인 스레드와 감지 스레드 양쪽에서 호출되므로
+    // [ThreadStatic]으로 스레드 안전성 확보.
+    [ThreadStatic] private static string? t_resolvedUwpName;
+    [ThreadStatic] private static uint t_frameHostPid;
+
     /// <summary>
     /// 윈도우 클래스명 조회.
     /// </summary>
@@ -21,11 +30,22 @@ internal static class WindowProcessInfo
 
     /// <summary>
     /// HWND로부터 프로세스 이름 조회.
+    /// UWP 앱은 ApplicationFrameHost가 윈도우 프레임을 소유하므로,
+    /// 자식 윈도우를 탐색하여 실제 앱 프로세스 이름을 반환한다.
     /// </summary>
     public static string GetProcessName(IntPtr hwnd)
     {
         User32.GetWindowThreadProcessId(hwnd, out uint processId);
-        return GetProcessName(processId);
+        string name = GetProcessName(processId);
+
+        if (name == ApplicationFrameHost)
+        {
+            string resolved = ResolveUwpProcessName(hwnd, processId);
+            if (resolved.Length > 0)
+                return resolved;
+        }
+
+        return name;
     }
 
     /// <summary>
@@ -51,5 +71,41 @@ internal static class WindowProcessInfo
             Logger.Debug($"GetProcessName failed: {ex.Message}");
             return string.Empty;
         }
+    }
+
+    /// <summary>
+    /// ApplicationFrameHost 윈도우의 자식 윈도우를 탐색하여
+    /// 프레임 호스트와 다른 PID를 가진 실제 UWP 앱 프로세스 이름을 반환한다.
+    /// </summary>
+    private static string ResolveUwpProcessName(IntPtr hwnd, uint frameHostPid)
+    {
+        t_frameHostPid = frameHostPid;
+        t_resolvedUwpName = null;
+
+        unsafe
+        {
+            User32.EnumChildWindows(hwnd, &EnumChildCallback, IntPtr.Zero);
+        }
+
+        return t_resolvedUwpName ?? string.Empty;
+    }
+
+    /// <summary>
+    /// EnumChildWindows 콜백. 프레임 호스트와 다른 PID를 가진 첫 자식의 프로세스명을 캡처.
+    /// </summary>
+    [UnmanagedCallersOnly]
+    private static int EnumChildCallback(IntPtr hwnd, IntPtr lParam)
+    {
+        User32.GetWindowThreadProcessId(hwnd, out uint childPid);
+        if (childPid != 0 && childPid != t_frameHostPid)
+        {
+            string childName = GetProcessName(childPid);
+            if (childName.Length > 0)
+            {
+                t_resolvedUwpName = childName;
+                return 0; // 열거 중단
+            }
+        }
+        return 1; // 계속
     }
 }
