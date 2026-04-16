@@ -277,7 +277,7 @@ internal static partial class Program
                 {
                     RECT movingRect = Marshal.PtrToStructure<RECT>(lParam);
                     if (Overlay.HandleMoving(ref movingRect, _lastImeState,
-                            _config.SnapToWindows, DefaultConfig.SnapThresholdPx))
+                            _config.SnapToWindows, DefaultConfig.SnapThresholdPx, _config.SnapGapPx))
                     {
                         Marshal.StructureToPtr(movingRect, lParam, false);
                         return (IntPtr)1;

@@ -120,6 +120,10 @@ internal sealed record AppConfig
     // true = 드래그 중 가시 창의 엣지와 모니터 work area 엣지에 자석처럼 붙음.
     public bool SnapToWindows { get; init; } = true;
 
+    // 창 엣지 스냅 시 인디케이터와 타겟 창 사이 간격 (DPI 스케일링 전 px).
+    // 0 = 엣지에 밀착, 양수 = 경계선 겹침 방지 여백. 화면 엣지에는 적용 안 됨.
+    public int SnapGapPx { get; init; } = 2;
+
     // [고급]
     public AdvancedConfig Advanced { get; init; } = new();
 

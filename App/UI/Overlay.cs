@@ -131,9 +131,9 @@ internal static class Overlay
     /// WM_MOVING 핸들러. Stage 3-A: config 레코드 대신 primitive 두 개.
     /// 드래그 중 DPI 전환 시 리렌더용 OverlayStyle을 매 틱 합성해 엔진에 전달.
     /// </summary>
-    public static bool HandleMoving(ref RECT movingRect, ImeState state, bool snapToWindows, int snapThresholdPx)
+    public static bool HandleMoving(ref RECT movingRect, ImeState state, bool snapToWindows, int snapThresholdPx, int snapGapPx)
     {
-        return _engine.HandleMoving(ref movingRect, BuildStyle(_config, state), snapToWindows, snapThresholdPx);
+        return _engine.HandleMoving(ref movingRect, BuildStyle(_config, state), snapToWindows, snapThresholdPx, snapGapPx);
     }
 
     /// <summary>드래그 종료 (WM_EXITSIZEMOVE).</summary>

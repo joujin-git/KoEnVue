@@ -112,6 +112,9 @@ internal static class Settings
             HighlightDurationMs = Math.Clamp(config.HighlightDurationMs, 0, 2000),
             SlideSpeedMs = Math.Clamp(config.SlideSpeedMs, 0, 2000),
 
+            // 스냅
+            SnapGapPx = Math.Clamp(config.SnapGapPx, 0, 10),
+
             // 크기
             FontSize = Math.Clamp(config.FontSize, 8, 36),
             LabelWidth = Math.Clamp(config.LabelWidth, 16, 128),

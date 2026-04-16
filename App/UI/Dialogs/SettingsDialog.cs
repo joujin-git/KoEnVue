@@ -9,7 +9,7 @@ namespace KoEnVue.App.UI.Dialogs;
 
 /// <summary>
 /// 트레이 메뉴 → "상세 설정" 대화상자.
-/// 트레이 메뉴와 겹치지 않는 59개 설정 필드를 스크롤 가능한 테이블 형태로 노출한다.
+/// 트레이 메뉴와 겹치지 않는 60개 설정 필드를 스크롤 가능한 테이블 형태로 노출한다.
 /// 룩앤필은 Tray.cs의 CleanupDialog/ScaleDialog와 맞춘다.
 ///
 /// <para>

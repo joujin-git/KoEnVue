@@ -10,7 +10,7 @@ namespace KoEnVue.App.UI.Dialogs;
 /// <summary>
 /// SettingsDialog 의 필드 정의/팩토리/빌더 분할.
 /// FieldDef/RowDef 메타데이터, 6개 팩토리(Bool/Int/Dbl/Str/ColorField/Combo),
-/// BuildRowDefs(13 섹션 × 59 필드), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
+/// BuildRowDefs(13 섹션 × 60 필드), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
 /// </summary>
 internal static partial class SettingsDialog
 {
@@ -57,7 +57,7 @@ internal static partial class SettingsDialog
     // ================================================================
 
     /// <summary>
-    /// 13개 섹션 × 59개 필드의 RowDef 리스트를 빌드하며 _fields를 채운다.
+    /// 13개 섹션 × 60개 필드의 RowDef 리스트를 빌드하며 _fields를 채운다.
     /// 각 섹션 제목, 라벨, 검증 범위는 언어(I18n.IsKorean)에 따라 결정된다.
     /// </summary>
     private static List<RowDef> BuildRowDefs()
@@ -284,6 +284,8 @@ internal static partial class SettingsDialog
             c => c.PerMonitorScale, (c, v) => c with { PerMonitorScale = v }));
         Add(Bool("작업 영역 안으로 제한", "Clamp to work area",
             c => c.ClampToWorkArea, (c, v) => c with { ClampToWorkArea = v }));
+        Add(Int("창 스냅 간격 (px)", "Snap gap (px)", 0, 10,
+            c => c.SnapGapPx, (c, v) => c with { SnapGapPx = v }));
 
         // ================================================================
         // 13. 고급

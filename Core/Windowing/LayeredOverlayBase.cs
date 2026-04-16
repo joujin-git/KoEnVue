@@ -335,7 +335,7 @@ internal sealed class LayeredOverlayBase : IDisposable
     /// <paramref name="style"/>는 드래그 중 DPI 전환 시 리렌더용 — 파사드가 매 틱 <c>BuildStyle</c>로
     /// 합성해 넘겨야 한다.
     /// </summary>
-    public bool HandleMoving(ref RECT movingRect, OverlayStyle style, bool snapToWindows, int snapThresholdPx)
+    public bool HandleMoving(ref RECT movingRect, OverlayStyle style, bool snapToWindows, int snapThresholdPx, int snapGapPx)
     {
         if (!_isDragging) return false;
 
@@ -375,7 +375,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         }
 
         if (snapToWindows)
-            ApplySnap(ref movingRect, xLocked, yLocked, snapThresholdPx);
+            ApplySnap(ref movingRect, xLocked, yLocked, snapThresholdPx, snapGapPx);
 
         HandleDragDpiChange(movingRect.Left, movingRect.Top, style);
 
@@ -389,9 +389,10 @@ internal sealed class LayeredOverlayBase : IDisposable
     /// work area는 인디가 항상 그 안에 있어 겹침 체크가 항상 통과 → 화면 엣지 스냅 성립.
     /// <paramref name="snapThresholdPx"/>는 pre-DPI 값이며 내부에서 DpiHelper.Scale로 변환.
     /// </summary>
-    private bool ApplySnap(ref RECT movingRect, bool xLocked, bool yLocked, int snapThresholdPx)
+    private bool ApplySnap(ref RECT movingRect, bool xLocked, bool yLocked, int snapThresholdPx, int snapGapPx)
     {
         int threshold = DpiHelper.Scale(snapThresholdPx, _currentDpiScale);
+        int gap = DpiHelper.Scale(snapGapPx, _currentDpiScale);
         int w = movingRect.Right - movingRect.Left;
         int h = movingRect.Bottom - movingRect.Top;
 
@@ -399,17 +400,18 @@ internal sealed class LayeredOverlayBase : IDisposable
         int bestDistX = threshold + 1;
         int bestDistY = threshold + 1;
 
-        // 현재 위치의 모니터 work area 추가 (화면 엣지 스냅)
+        // 현재 위치의 모니터 work area 추가 (화면 엣지 스냅 — 간격 없음)
         IntPtr hMonitor = DpiHelper.GetMonitorFromPoint(
             movingRect.Left + w / 2, movingRect.Top + h / 2);
         RECT workArea = DpiHelper.GetWorkArea(hMonitor);
         ConsiderTarget(ref movingRect, workArea, xLocked, yLocked,
-            ref bestDx, ref bestDy, ref bestDistX, ref bestDistY);
+            ref bestDx, ref bestDy, ref bestDistX, ref bestDistY, gap: 0);
 
+        // 창 엣지 스냅 — 경계선 겹침 방지 간격 적용
         foreach (RECT target in s_activeSnapRects)
         {
             ConsiderTarget(ref movingRect, target, xLocked, yLocked,
-                ref bestDx, ref bestDy, ref bestDistX, ref bestDistY);
+                ref bestDx, ref bestDy, ref bestDistX, ref bestDistY, gap);
         }
 
         bool modified = false;
@@ -437,24 +439,26 @@ internal sealed class LayeredOverlayBase : IDisposable
         ref RECT movingRect, RECT target,
         bool xLocked, bool yLocked,
         ref int bestDx, ref int bestDy,
-        ref int bestDistX, ref int bestDistY)
+        ref int bestDistX, ref int bestDistY,
+        int gap)
     {
         bool yOverlap = movingRect.Top < target.Bottom && movingRect.Bottom > target.Top;
         if (!xLocked && yOverlap)
         {
-            TryEdge(target.Left - movingRect.Left, ref bestDistX, ref bestDx);
-            TryEdge(target.Left - movingRect.Right, ref bestDistX, ref bestDx);
-            TryEdge(target.Right - movingRect.Left, ref bestDistX, ref bestDx);
-            TryEdge(target.Right - movingRect.Right, ref bestDistX, ref bestDx);
+            // gap 부호: inside(같은 쪽 엣지)는 안쪽으로, outside(반대 쪽)는 바깥으로
+            TryEdge(target.Left + gap - movingRect.Left, ref bestDistX, ref bestDx);    // L-L inside
+            TryEdge(target.Left - gap - movingRect.Right, ref bestDistX, ref bestDx);   // L-R outside
+            TryEdge(target.Right + gap - movingRect.Left, ref bestDistX, ref bestDx);   // R-L outside
+            TryEdge(target.Right - gap - movingRect.Right, ref bestDistX, ref bestDx);  // R-R inside
         }
 
         bool xOverlap = movingRect.Left < target.Right && movingRect.Right > target.Left;
         if (!yLocked && xOverlap)
         {
-            TryEdge(target.Top - movingRect.Top, ref bestDistY, ref bestDy);
-            TryEdge(target.Top - movingRect.Bottom, ref bestDistY, ref bestDy);
-            TryEdge(target.Bottom - movingRect.Top, ref bestDistY, ref bestDy);
-            TryEdge(target.Bottom - movingRect.Bottom, ref bestDistY, ref bestDy);
+            TryEdge(target.Top + gap - movingRect.Top, ref bestDistY, ref bestDy);      // T-T inside
+            TryEdge(target.Top - gap - movingRect.Bottom, ref bestDistY, ref bestDy);   // T-B outside
+            TryEdge(target.Bottom + gap - movingRect.Top, ref bestDistY, ref bestDy);   // B-T outside
+            TryEdge(target.Bottom - gap - movingRect.Bottom, ref bestDistY, ref bestDy);// B-B inside
         }
     }
 
@@ -565,6 +569,7 @@ internal sealed class LayeredOverlayBase : IDisposable
     /// 접근할 수 없으므로 Core 레이어에 동일 값을 복사 유지한다.
     /// </summary>
     private const int SnapMinWindowSizePx = 80;
+
 
     // ================================================================
     // 리소스 관리

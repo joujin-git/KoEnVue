@@ -78,6 +78,7 @@ exe 폴더의 `config.json` 을 직접 편집하거나 트레이 **상세 설정
 | `opacity` | `0.85` | 활성 불투명도 |
 | `idle_opacity` | `0.4` | 유휴 불투명도 (Always 모드) |
 | `snap_to_windows` | `true` | 드래그 중 창 엣지 자석 스냅 |
+| `snap_gap_px` | `2` | 창 엣지 스냅 시 간격 (px, 0 = 밀착) |
 | `theme` | `"custom"` | `custom` / `minimal` / `vivid` / `pastel` / `dark` / `system` (6 프리셋) |
 | `poll_interval_ms` | `80` | IME 감지 폴링 간격 (ms) |
 | `hide_in_fullscreen` | `true` | 전체화면 앱에서 숨김 |
