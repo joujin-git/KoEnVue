@@ -90,7 +90,7 @@ internal static class Logger
     {
         if (LogLevel.Debug >= _logLevel)
         {
-            string formatted = $"[DEBUG] {DateTime.Now:HH:mm:ss.fff} {message}";
+            string formatted = $"[DEBUG] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} {message}";
             Trace.WriteLine(formatted);
             EnqueueToFile(formatted);
         }
@@ -100,7 +100,7 @@ internal static class Logger
     {
         if (LogLevel.Info >= _logLevel)
         {
-            string formatted = $"[INFO] {DateTime.Now:HH:mm:ss.fff} {message}";
+            string formatted = $"[INFO] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} {message}";
             Trace.WriteLine(formatted);
             EnqueueToFile(formatted);
         }
@@ -110,7 +110,7 @@ internal static class Logger
     {
         if (LogLevel.Warning >= _logLevel)
         {
-            string formatted = $"[WARN] {DateTime.Now:HH:mm:ss.fff} {message}";
+            string formatted = $"[WARN] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} {message}";
             Trace.WriteLine(formatted);
             EnqueueToFile(formatted);
         }
@@ -120,7 +120,7 @@ internal static class Logger
     {
         if (LogLevel.Error >= _logLevel)
         {
-            string formatted = $"[ERROR] {DateTime.Now:HH:mm:ss.fff} {message}";
+            string formatted = $"[ERROR] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} {message}";
             Trace.WriteLine(formatted);
             EnqueueToFile(formatted);
         }
@@ -130,7 +130,7 @@ internal static class Logger
     {
         if (LogLevel.Error >= _logLevel)
         {
-            string formatted = $"[ERROR] {DateTime.Now:HH:mm:ss.fff} {message}: {ex.Message}";
+            string formatted = $"[ERROR] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} {message}: {ex.Message}";
             Trace.WriteLine(formatted);
             EnqueueToFile(formatted);
         }
@@ -215,14 +215,14 @@ internal static class Logger
                 try
                 {
                     _fileWriter?.WriteLine(
-                        $"[WARN] {DateTime.Now:HH:mm:ss.fff} Logger drain thread join timed out after {ShutdownJoinTimeoutMs}ms");
+                        $"[WARN] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} Logger drain thread join timed out after {ShutdownJoinTimeoutMs}ms");
                 }
                 catch (Exception ex) when (ex is IOException or ObjectDisposedException)
                 {
                     _ = ex;
                 }
                 Console.Error.WriteLine(
-                    $"[WARN] {DateTime.Now:HH:mm:ss.fff} Logger drain thread join timed out after {ShutdownJoinTimeoutMs}ms");
+                    $"[WARN] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} Logger drain thread join timed out after {ShutdownJoinTimeoutMs}ms");
             }
         }
 
