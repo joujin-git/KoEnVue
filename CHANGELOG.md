@@ -3,7 +3,7 @@
 이 프로젝트의 주요 변경 사항을 기록합니다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/)를 따릅니다.
 
-## [Unreleased]
+## [0.9.0.1] — 2026-04-16
 
 ### 수정
 
