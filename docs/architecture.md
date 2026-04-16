@@ -20,7 +20,7 @@ Main thread (UI):
 Detection thread (BG):
   • 80 ms IME polling (ImeStatus.Detect)
   • Foreground window / focus tracking
-  • SystemFilter evaluation (7 hide conditions)
+  • SystemFilter evaluation (9 hide conditions)
   • ConfigFile mtime check (every ~62 polls ≈ 5 s)
   • Cross-thread signalling via User32.PostMessageW(hwndMain, WM_APP + N)
 ```
@@ -93,7 +93,7 @@ Every file in `Core/` is reusable in another Windows desktop project; every file
 | [App/Config/Settings.cs](../App/Config/Settings.cs) | Static facade delegating to `AppSettingsManager : JsonSettingsManager<AppConfig>`. Handles `Load`/`Save`/`CheckReload`/`ResolveForApp` (per-app profile merge) |
 | [App/Config/ThemePresets.cs](../App/Config/ThemePresets.cs) | 6 theme presets: `Custom`, `Minimal`, `Vivid`, `Pastel`, `Dark`, `System` (Windows accent color) |
 | [App/Detector/ImeStatus.cs](../App/Detector/ImeStatus.cs) | `WM_IME_CONTROL` + `GetKeyboardLayout` IME state detection + `EVENT_OBJECT_IME_CHANGE` WinEvent hook |
-| [App/Detector/SystemFilter.cs](../App/Detector/SystemFilter.cs) | 7-condition hide logic (lock screen, virtual desktop, fullscreen, class blacklist, app filter list, etc.) |
+| [App/Detector/SystemFilter.cs](../App/Detector/SystemFilter.cs) | 9-condition hide logic (lock screen, virtual desktop, fullscreen, class/owner-chain blacklist, app filter list, etc.) |
 | [App/Localization/I18n.cs](../App/Localization/I18n.cs) | Korean default, English fallback. Bool flag + ternary pattern (NativeAOT-friendly, zero allocation) |
 | [App/Update/](../App/Update/) | `UpdateChecker` (background thread, fire-once-per-boot GitHub Releases poll) + `GitHubRelease` (JSON DTO + source-gen context) + `UpdateInfo` (callback payload) |
 | [App/UI/Overlay.cs](../App/UI/Overlay.cs) | Static facade over `LayeredOverlayBase`. Holds `private static AppConfig _config` + engine instance. **`BuildStyle(config, state)` is the sole `ImeState` → `OverlayStyle` conversion point** in the codebase |

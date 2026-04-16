@@ -88,6 +88,41 @@ internal static class SystemFilter
                 return true;
         }
 
+        // 4-b. 소유자(owner) 창 클래스명 블랙리스트
+        //      바탕화면(Progman/WorkerW) 등 숨김 대상 창에서 띄운 대화상자(#32770 등)도
+        //      함께 숨긴다. 단, 소유자와 대화상자의 프로세스가 같은 경우만 (시스템 대화상자).
+        //      WinUI 앱(메모장 등)의 Common File Dialog는 Progman을 소유자로 사용하지만
+        //      프로세스가 다르므로(explorer ≠ Notepad) 제외된다.
+        //      무한 루프 방지를 위해 최대 5단계까지만 탐색.
+        IntPtr hwndOwner = User32.GetWindow(hwnd, Win32Constants.GW_OWNER);
+        for (int depth = 0; hwndOwner != IntPtr.Zero && depth < 5; depth++)
+        {
+            string ownerClass = WindowProcessInfo.GetClassName(hwndOwner);
+            bool ownerInHideList = false;
+            foreach (string c in config.SystemHideClasses)
+            {
+                if (c.Equals(ownerClass, StringComparison.OrdinalIgnoreCase))
+                { ownerInHideList = true; break; }
+            }
+            if (!ownerInHideList)
+            {
+                foreach (string c in config.SystemHideClassesUser)
+                {
+                    if (c.Equals(ownerClass, StringComparison.OrdinalIgnoreCase))
+                    { ownerInHideList = true; break; }
+                }
+            }
+            if (ownerInHideList)
+            {
+                // 소유자와 대화상자가 같은 프로세스일 때만 숨김 (시스템 대화상자)
+                string ownerProcess = WindowProcessInfo.GetProcessName(hwndOwner);
+                string dialogProcess = WindowProcessInfo.GetProcessName(hwnd);
+                if (ownerProcess.Equals(dialogProcess, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            hwndOwner = User32.GetWindow(hwndOwner, Win32Constants.GW_OWNER);
+        }
+
         // 5. 프로세스명 블랙리스트 (기본: ShellExperienceHost — 작업 표시줄 컨텍스트 메뉴/팝업)
         //    클래스명과 달리 프로세스명 조회(GetProcessName)는 비용이 있으므로
         //    리스트가 비어 있으면 조회 자체를 건너뛴다.

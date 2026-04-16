@@ -234,12 +234,13 @@ Detection loop only updates `lastHwndForeground` **after** `ShouldHide` passes. 
 - `GetKeyboardLayout` LANGID check (for non-Korean IME identification)
 - `EVENT_OBJECT_IME_CHANGE` WinEvent hook as supplementary signal
 
-### System filter (8 conditions)
+### System filter (9 conditions)
 
 1. Secure desktop (no hwnd)
 2. Invisible / minimized window
 3. Other virtual desktop
 4. Class name blacklist (`Progman`, `WorkerW`, `Shell_TrayWnd`, `Shell_SecondaryTrayWnd`, `XamlExplorerHostIslandWindow_WASDK` + user-specified)
+4-b. Owner chain blacklist — walks `GetWindow(GW_OWNER)` up to 5 levels; hides only when owner class is in hide list **and** dialog/owner share the same process. This catches desktop-initiated system dialogs (e.g. Recycle Bin empty confirm: `#32770` owned by `Progman`, both `explorer.exe`) while allowing app-initiated Common File Dialogs (e.g. Notepad Save As: `#32770` owned by `Progman` but process `Notepad` ≠ `explorer`)
 5. Process name blacklist (`ShellExperienceHost` + user-specified) — hides taskbar/desktop right-click context menus on Win11 where the popup becomes the foreground window with a null owner chain
 6. No focus (`hide_when_no_focus`)
 7. Fullscreen exclusive (covers monitor + no `WS_CAPTION`)

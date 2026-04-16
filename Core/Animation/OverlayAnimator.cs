@@ -226,6 +226,7 @@ public sealed class OverlayAnimator : IDisposable
         else if (_phase == AnimPhase.FadingOut)
         {
             User32.KillTimer(_hwndTimer, _timerIds.Fade);
+            _forceHidden = false; // TriggerHide(forceHidden)가 남긴 플래그 초기화
             StartFade(_currentAlpha, _targetAlpha, _config.FadeInMs);
             _phase = AnimPhase.FadingIn;
             User32.SetTimer(_hwndTimer, _timerIds.Fade, _config.AnimationFrameMs, IntPtr.Zero);

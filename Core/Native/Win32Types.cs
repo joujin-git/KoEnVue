@@ -275,6 +275,9 @@ internal static class Win32Constants
     public const int GWL_STYLE           = -16;
     public const int GWL_EXSTYLE         = -20;
 
+    // --- GetWindow 관계 ---
+    public const uint GW_OWNER           = 4;
+
     // --- ShowWindow ---
     public const int SW_HIDE             = 0;
     public const int SW_SHOWNORMAL       = 1;
