@@ -9,8 +9,8 @@ using KoEnVue.App.Localization;
 namespace KoEnVue.App.UI.Dialogs;
 
 /// <summary>
-/// 미사용 indicator_positions 항목을 체크박스 UI로 선택 삭제하는 Win32 모달 다이얼로그.
-/// Tray.cs에서 분리 (Wave 1-D) — 공용 Win32 다이얼로그 헬퍼와 함께 사용.
+/// indicator_positions 항목을 체크박스 UI로 선택 삭제하는 Win32 모달 다이얼로그.
+/// 항목이 DlgMaxVisibleItems를 초과하면 스크롤 가능한 뷰포트를 표시한다.
 /// </summary>
 internal static class CleanupDialog
 {
@@ -28,14 +28,18 @@ internal static class CleanupDialog
     private const int DlgSepGap = 12;
     private const int DlgItemIndent = 20;
 
+    // 스크롤 상수
+    private const int WheelLineStep = 3;
+
     // 다이얼로그 컨트롤 ID
     private const int IDC_CHECK_BASE = 5000;
     private const int IDC_SELECT_ALL = 5500;
     private const int IDC_BTN_OK = 5501;
     private const int IDC_BTN_CANCEL = 5502;
 
-    // Win32 다이얼로그 윈도우 클래스 이름
+    // Win32 윈도우 클래스 이름
     private const string DlgClassName = "KoEnVueCleanupDlg";
+    private const string ViewportClassName = "KoEnVueCleanupViewport";
 
     // ================================================================
     // 다이얼로그 상태 (모달 루프용)
@@ -43,8 +47,19 @@ internal static class CleanupDialog
     private static bool _dlgResult;
     private static bool _dlgClosed;
     private static IntPtr _hwndDialog;
+    private static IntPtr _hwndViewport;
     private static readonly List<IntPtr> _checkboxHandles = [];
     private static bool _selectAllState = true;
+
+    // ================================================================
+    // 스크롤 상태
+    // ================================================================
+    private static int _scrollPos;
+    private static int _scrollMax;
+    private static int _viewportClientH;
+    private static int _itemHeight;  // DPI-scaled (checkH + checkGap)
+    private static int _checkItemX;  // DPI-scaled itemIndent (뷰포트 내 체크박스 X 좌표)
+    private static readonly List<(IntPtr Hwnd, int LogicalY)> _scrollChildren = [];
 
     /// <summary>
     /// 체크박스 선택 다이얼로그를 표시하고 선택된 항목을 반환한다. 취소 시 null.
@@ -54,13 +69,17 @@ internal static class CleanupDialog
         _dlgResult = false;
         _dlgClosed = false;
         _checkboxHandles.Clear();
+        _scrollChildren.Clear();
         _selectAllState = true;
+        _scrollPos = 0;
+        _scrollMax = 0;
 
         // DPI 스케일링
         User32.GetCursorPos(out POINT cursorPt);
         IntPtr hMon = User32.MonitorFromPoint(cursorPt, Win32Constants.MONITOR_DEFAULTTOPRIMARY);
         double dpiScale = DpiHelper.GetScale(hMon);
         var (_, dpiY) = DpiHelper.GetRawDpi(hMon);
+        uint rawDpi = (uint)Math.Round(dpiScale * DpiHelper.BASE_DPI);
 
         int pad = DpiHelper.Scale(DlgPadding, dpiScale);
         int checkH = DpiHelper.Scale(DlgCheckHeight, dpiScale);
@@ -71,11 +90,16 @@ internal static class CleanupDialog
         int sepGap = DpiHelper.Scale(DlgSepGap, dpiScale);
         int itemIndent = DpiHelper.Scale(DlgItemIndent, dpiScale);
 
+        _itemHeight = checkH + checkGap;
+        _checkItemX = itemIndent;
         int visibleCount = Math.Min(items.Count, DlgMaxVisibleItems);
-        int checkAreaHeight = visibleCount * (checkH + checkGap);
+        bool needsScroll = items.Count > DlgMaxVisibleItems;
+        int scrollbarW = needsScroll
+            ? User32.GetSystemMetricsForDpi(Win32Constants.SM_CXVSCROLL, rawDpi) : 0;
+
+        int viewportH = visibleCount * _itemHeight;
         int dlgWidth = DpiHelper.Scale(DlgMinWidth, dpiScale);
         // 비클라이언트 영역 높이 (타이틀바 + 프레임) — 공통 헬퍼 사용
-        uint rawDpi = (uint)Math.Round(dpiScale * DpiHelper.BASE_DPI);
         int nonClientH = Win32DialogHelper.CalculateNonClientHeight(rawDpi);
 
         int dlgHeight = nonClientH               // non-client (title bar + borders)
@@ -83,7 +107,7 @@ internal static class CleanupDialog
             + descH + checkGap                   // description label
             + checkH + checkGap                  // "전체 선택"
             + sepGap                             // separator
-            + checkAreaHeight                    // items
+            + viewportH                          // scrollable item area
             + pad                                // gap before buttons
             + btnH                               // buttons
             + pad;                               // bottom padding
@@ -92,7 +116,7 @@ internal static class CleanupDialog
         using var hFont = Win32DialogHelper.CreateDialogFont(dpiY);
         IntPtr hFontRaw = hFont.DangerousGetHandle();
 
-        // 다이얼로그 윈도우 클래스 등록 (한 번만)
+        // 윈도우 클래스 등록 (한 번만, 중복 등록은 무시됨)
         var wc = new WNDCLASSEXW
         {
             cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
@@ -100,21 +124,28 @@ internal static class CleanupDialog
             lpszClassName = DlgClassName,
             hbrBackground = (IntPtr)(Win32Constants.COLOR_BTNFACE + 1),
         };
-        User32.RegisterClassExW(ref wc); // 중복 등록은 무시됨
+        User32.RegisterClassExW(ref wc);
+
+        var vpWc = new WNDCLASSEXW
+        {
+            cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
+            lpfnWndProc = (IntPtr)(delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&ViewportProc,
+            lpszClassName = ViewportClassName,
+            hbrBackground = (IntPtr)(Win32Constants.COLOR_BTNFACE + 1),
+        };
+        User32.RegisterClassExW(ref vpWc);
 
         // 화면 중앙 좌표 — 공통 헬퍼 (anchor=null → rcWork 정중앙)
         var (cx, cy) = Win32DialogHelper.CalculateDialogPosition(hMon, dlgWidth, dlgHeight);
 
-        string title = I18n.IsKorean ? "미사용 위치 데이터 정리" : "Clean unused position data";
+        string title = I18n.IsKorean ? "위치 기록 정리" : "Clean position history";
         _hwndDialog = User32.CreateWindowExW(0, DlgClassName, title,
             Win32Constants.WS_CAPTION | Win32Constants.WS_SYSMENU,
             cx, cy, dlgWidth, dlgHeight,
             hwndMain, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
 
         if (_hwndDialog == IntPtr.Zero)
-        {
             return null;
-        }
 
         // 클라이언트 영역 너비 (비클라이언트 보더 제외)
         int borderW = DpiHelper.Scale(16, dpiScale);
@@ -125,8 +156,8 @@ internal static class CleanupDialog
 
         // 설명 라벨
         string descText = I18n.IsKorean
-            ? "삭제할 위치 데이터를 선택하세요."
-            : "Select position data to delete.";
+            ? "삭제할 위치 기록을 선택하세요."
+            : "Select position history to delete.";
         IntPtr hwndDesc = User32.CreateWindowExW(0, "STATIC", descText,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE,
             pad, y, contentW, descH,
@@ -152,19 +183,48 @@ internal static class CleanupDialog
             _hwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
         y += sepGap;
 
-        // 항목 체크박스
+        // 스크롤 뷰포트 (항목 체크박스 컨테이너)
+        uint vpStyle = Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE;
+        if (needsScroll) vpStyle |= Win32Constants.WS_VSCROLL;
+        _hwndViewport = User32.CreateWindowExW(0, ViewportClassName, "",
+            vpStyle, pad, y, contentW, viewportH,
+            _hwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        _viewportClientH = viewportH;
+
+        // 항목 체크박스 (뷰포트의 자식)
+        int checkW = contentW - itemIndent - scrollbarW;
         for (int i = 0; i < items.Count; i++)
         {
+            int logicalY = i * _itemHeight;
             IntPtr hwndCheck = User32.CreateWindowExW(0, "BUTTON", items[i],
                 Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.BS_AUTOCHECKBOX,
-                pad + itemIndent, y, contentW - itemIndent, checkH,
-                _hwndDialog, (IntPtr)(IDC_CHECK_BASE + i), IntPtr.Zero, IntPtr.Zero);
+                itemIndent, logicalY, checkW, checkH,
+                _hwndViewport, (IntPtr)(IDC_CHECK_BASE + i), IntPtr.Zero, IntPtr.Zero);
             Win32DialogHelper.ApplyFont(hwndCheck, hFontRaw);
             User32.SendMessageW(hwndCheck, Win32Constants.BM_SETCHECK,
                 (IntPtr)Win32Constants.BST_CHECKED, IntPtr.Zero);
             _checkboxHandles.Add(hwndCheck);
-            y += checkH + checkGap;
+            _scrollChildren.Add((hwndCheck, logicalY));
         }
+
+        // 스크롤바 범위 설정
+        if (needsScroll)
+        {
+            int totalContentH = items.Count * _itemHeight;
+            _scrollMax = Math.Max(0, totalContentH - _viewportClientH);
+            var si = new SCROLLINFO
+            {
+                cbSize = (uint)Marshal.SizeOf<SCROLLINFO>(),
+                fMask = Win32Constants.SIF_RANGE | Win32Constants.SIF_PAGE | Win32Constants.SIF_POS,
+                nMin = 0,
+                nMax = Math.Max(0, totalContentH - 1),
+                nPage = (uint)Math.Max(1, _viewportClientH),
+                nPos = 0,
+            };
+            User32.SetScrollInfo(_hwndViewport, Win32Constants.SB_VERT, ref si, true);
+        }
+
+        y += viewportH;
 
         // 버튼 영역
         y += pad;
@@ -208,11 +268,81 @@ internal static class CleanupDialog
         // 정리
         User32.DestroyWindow(_hwndDialog);
         _hwndDialog = IntPtr.Zero;
+        _hwndViewport = IntPtr.Zero;
         _checkboxHandles.Clear();
+        _scrollChildren.Clear();
         // hFont는 using 스코프 종료 시 자동 해제 (SafeFontHandle → DeleteObject)
 
         return result;
     }
+
+    // ================================================================
+    // 스크롤
+    // ================================================================
+
+    private static void ScrollTo(int newPos)
+    {
+        newPos = Math.Clamp(newPos, 0, _scrollMax);
+        if (newPos == _scrollPos) return;
+
+        _scrollPos = newPos;
+
+        var si = new SCROLLINFO
+        {
+            cbSize = (uint)Marshal.SizeOf<SCROLLINFO>(),
+            fMask = Win32Constants.SIF_POS,
+            nPos = newPos,
+        };
+        User32.SetScrollInfo(_hwndViewport, Win32Constants.SB_VERT, ref si, true);
+
+        foreach (var (h, logicalY) in _scrollChildren)
+        {
+            User32.SetWindowPos(h, IntPtr.Zero, _checkItemX, logicalY - newPos, 0, 0,
+                Win32Constants.SWP_NOSIZE | Win32Constants.SWP_NOZORDER);
+        }
+
+        User32.InvalidateRect(_hwndViewport, IntPtr.Zero, true);
+    }
+
+    private static int ResolveVScrollPosition(IntPtr hwnd, int scrollCode)
+    {
+        int lineStep = _itemHeight;
+        int pageStep = _viewportClientH > lineStep ? _viewportClientH - lineStep : lineStep * 5;
+
+        switch (scrollCode)
+        {
+            case Win32Constants.SB_LINEUP: return _scrollPos - lineStep;
+            case Win32Constants.SB_LINEDOWN: return _scrollPos + lineStep;
+            case Win32Constants.SB_PAGEUP: return _scrollPos - pageStep;
+            case Win32Constants.SB_PAGEDOWN: return _scrollPos + pageStep;
+            case Win32Constants.SB_TOP: return 0;
+            case Win32Constants.SB_BOTTOM: return _scrollMax;
+            case Win32Constants.SB_THUMBPOSITION:
+            case Win32Constants.SB_THUMBTRACK:
+            {
+                var si = new SCROLLINFO
+                {
+                    cbSize = (uint)Marshal.SizeOf<SCROLLINFO>(),
+                    fMask = Win32Constants.SIF_TRACKPOS,
+                };
+                return User32.GetScrollInfo(hwnd, Win32Constants.SB_VERT, ref si)
+                    ? si.nTrackPos
+                    : _scrollPos;
+            }
+            default: return _scrollPos;
+        }
+    }
+
+    private static void HandleMouseWheel(IntPtr wParam)
+    {
+        short delta = (short)((wParam.ToInt64() >> 16) & 0xFFFF);
+        int steps = delta / Win32Constants.WHEEL_DELTA;
+        ScrollTo(_scrollPos - steps * WheelLineStep * _itemHeight);
+    }
+
+    // ================================================================
+    // WndProc — 다이얼로그
+    // ================================================================
 
     [UnmanagedCallersOnly]
     private static IntPtr CleanupDlgProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
@@ -244,9 +374,39 @@ internal static class CleanupDialog
                 }
                 return IntPtr.Zero;
 
+            case Win32Constants.WM_MOUSEWHEEL:
+                // 뷰포트 외부(버튼 등)에 포커스가 있을 때도 스크롤 동작
+                HandleMouseWheel(wParam);
+                return IntPtr.Zero;
+
             case Win32Constants.WM_CLOSE:
                 _dlgResult = false;
                 _dlgClosed = true;
+                return IntPtr.Zero;
+
+            default:
+                return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
+        }
+    }
+
+    // ================================================================
+    // WndProc — 뷰포트
+    // ================================================================
+
+    [UnmanagedCallersOnly]
+    private static IntPtr ViewportProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
+    {
+        switch (msg)
+        {
+            case Win32Constants.WM_VSCROLL:
+            {
+                int scrollCode = (int)(wParam.ToInt64() & 0xFFFF);
+                ScrollTo(ResolveVScrollPosition(hwnd, scrollCode));
+                return IntPtr.Zero;
+            }
+
+            case Win32Constants.WM_MOUSEWHEEL:
+                HandleMouseWheel(wParam);
                 return IntPtr.Zero;
 
             default:

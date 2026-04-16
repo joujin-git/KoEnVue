@@ -287,6 +287,7 @@ internal static class Win32Constants
     public const int SM_CYCAPTION        = 4;
     public const int SM_CXFIXEDFRAME     = 7;
     public const int SM_CYFIXEDFRAME     = 8;
+    public const int SM_CXVSCROLL        = 2;
     public const int SM_CXSMICON         = 49;
     public const int SM_CYSMICON         = 50;
     public const int SM_CXPADDEDBORDER   = 92;

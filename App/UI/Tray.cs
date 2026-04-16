@@ -346,9 +346,9 @@ internal static class Tray
                 Logger.Info($"ChangeHighlight toggled: {!config.ChangeHighlight}");
                 break;
 
-            // --- 미사용 위치 데이터 정리 ---
+            // --- 위치 기록 정리 ---
             case IDM_CLEANUP:
-                CleanupUnusedPositions(config, updateConfig);
+                CleanupPositions(config, updateConfig);
                 break;
 
             // --- 상세 설정 ---
@@ -630,15 +630,22 @@ internal static class Tray
     }
 
     // ================================================================
-    // Private — 미사용 위치 데이터 정리
+    // Private — 위치 기록 정리
     // ================================================================
 
     /// <summary>
-    /// 현재 실행 중이 아닌 프로세스의 indicator_positions 항목을 체크박스 다이얼로그로 선택 삭제한다.
+    /// indicator_positions 전체 항목을 체크박스 다이얼로그로 표시하여 선택 삭제한다.
+    /// 실행 중인 프로세스에는 "(실행 중)" / "(running)" 접미사를 붙여 표시한다.
     /// </summary>
-    private static void CleanupUnusedPositions(AppConfig config, Action<AppConfig> updateConfig)
+    private static void CleanupPositions(AppConfig config, Action<AppConfig> updateConfig)
     {
-        if (config.IndicatorPositions.Count == 0) return;
+        if (config.IndicatorPositions.Count == 0)
+        {
+            User32.MessageBoxW(_hwndMain,
+                I18n.IsKorean ? "저장된 위치 기록이 없습니다." : "No saved position history.",
+                "KoEnVue", 0);
+            return;
+        }
 
         // 실행 중인 프로세스 이름 수집
         var running = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -659,39 +666,38 @@ internal static class Tray
         }
         catch (Exception ex)
         {
-            // 외부 루프 전체가 실패하면 "실행 중 프로세스 0개"로 오인되어 unused 목록이 과도 확장될
-            // 위험이 있는 드문 치명 경로. 내부에서 던질 예외 타입을 특정하기 어려워 wide catch 유지.
+            // 프로세스 열거 실패 시 접미사 없이 전체 항목만 표시 (기능은 정상 동작)
             Logger.Warning($"CleanupDialog: Process.GetProcesses enumeration failed: {ex.Message}");
-            return;
         }
 
-        // 실행 중이 아닌 항목 찾기
-        var unused = new List<string>();
+        // 전체 항목에 실행 중 여부 접미사 추가
+        string runningSuffix = I18n.IsKorean ? " (실행 중)" : " (running)";
+        var displayItems = new List<string>();
+        var originalNames = new List<string>();
         foreach (string name in config.IndicatorPositions.Keys)
         {
-            if (!running.Contains(name))
-                unused.Add(name);
-        }
-
-        if (unused.Count == 0)
-        {
-            User32.MessageBoxW(_hwndMain,
-                I18n.IsKorean ? "정리할 항목이 없습니다." : "Nothing to clean up.",
-                "KoEnVue", 0);
-            return;
+            originalNames.Add(name);
+            displayItems.Add(running.Contains(name) ? name + runningSuffix : name);
         }
 
         // 체크박스 다이얼로그 표시
-        List<string>? selected = CleanupDialog.Show(_hwndMain, unused);
+        List<string>? selected = CleanupDialog.Show(_hwndMain, displayItems);
         if (selected is null || selected.Count == 0) return;
 
-        // 삭제
+        // 선택된 표시 이름에서 원본 이름 복원 후 삭제
+        var selectedOriginal = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < displayItems.Count; i++)
+        {
+            if (selected.Contains(displayItems[i]))
+                selectedOriginal.Add(originalNames[i]);
+        }
+
         var cleaned = new Dictionary<string, int[]>(config.IndicatorPositions);
-        foreach (string name in selected)
+        foreach (string name in selectedOriginal)
             cleaned.Remove(name);
 
         updateConfig(config with { IndicatorPositions = cleaned });
-        Logger.Info($"Cleaned {selected.Count} position(s): {string.Join(", ", selected)}");
+        Logger.Info($"Cleaned {selectedOriginal.Count} position(s): {string.Join(", ", selectedOriginal)}");
     }
 
     private static void RunSchtasks(string arguments)

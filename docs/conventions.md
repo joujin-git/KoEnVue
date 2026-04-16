@@ -76,7 +76,7 @@ If the `try` body is a single P/Invoke or COM call and expected exception types 
 ### 3. Log level
 
 - Hot-path / modal-internal swallowing → `Logger.Debug`
-- Rare catastrophic paths (`CleanupDialog` outer `Process.GetProcesses` failure, `Tray.Remove` `NIM_DELETE` failure on shutdown) → `Logger.Warning`
+- Rare catastrophic paths (`CleanupPositions` `Process.GetProcesses` failure, `Tray.Remove` `NIM_DELETE` failure on shutdown) → `Logger.Warning`
 - Silent failures that will propagate to users if ignored → `Logger.Error`
 
 ### 4. Intentionally empty catches

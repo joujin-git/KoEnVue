@@ -20,6 +20,8 @@ internal static class ModalDialogLoop
 {
     /// <summary>
     /// 소유자 비활성화 → 중첩 메시지 루프 → 소유자 재활성화 + 포그라운드 복원.
+    /// 외부에서 PostQuitMessage 로 WM_QUIT 가 도착하면 루프를 탈출한 뒤 WM_QUIT 를
+    /// 재전달하여 메인 메시지 루프도 종료될 수 있도록 한다.
     /// </summary>
     /// <param name="hwndDialog">다이얼로그 윈도우 핸들. IsDialogMessageW 전처리 대상.</param>
     /// <param name="hwndOwner">모달 소유자(= 메인 윈도우) 핸들.</param>
@@ -28,10 +30,22 @@ internal static class ModalDialogLoop
     {
         User32.EnableWindow(hwndOwner, false);
 
+        bool quitReceived = false;
+        int quitCode = 0;
+
         while (!isClosedFlag)
         {
             int ret = User32.GetMessageW(out MSG msg, IntPtr.Zero, 0, 0);
-            if (ret <= 0) break; // WM_QUIT(0) 또는 오류(-1) — 즉시 탈출
+            if (ret <= 0)
+            {
+                // WM_QUIT(ret=0): 이 중첩 루프가 소비했으므로 루프 탈출 후 재전달
+                if (ret == 0)
+                {
+                    quitReceived = true;
+                    quitCode = (int)msg.wParam;
+                }
+                break;
+            }
             if (!User32.IsDialogMessageW(hwndDialog, ref msg))
             {
                 User32.TranslateMessage(ref msg);
@@ -41,5 +55,9 @@ internal static class ModalDialogLoop
 
         User32.EnableWindow(hwndOwner, true);
         User32.SetForegroundWindow(hwndOwner);
+
+        // WM_QUIT 가 이 중첩 루프에서 소비되었으므로 외부 메시지 루프에 재전달
+        if (quitReceived)
+            User32.PostQuitMessage(quitCode);
     }
 }

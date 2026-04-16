@@ -346,7 +346,7 @@ Handles the "user moved the exe" case: the first boot after a move still misses 
 새 버전 있음 (v0.9.0) — 다운로드       ← only when UpdateChecker finds an update
 ───
 투명도 ▸       진하게 / 보통 / 연하게
-크기 ▸         1배 / 2배 / 3배 / 4배 / 5배 / 직접 지정
+크기 ▸         1배 / 2배 / 3배 / 4배 / 5배 / 직접 지정...
 ☑ 창에 자석처럼 붙이기
 ☑ 애니메이션 사용
 ☑ 변경 시 강조
@@ -354,9 +354,9 @@ Handles the "user moved the exe" case: the first boot after a move still misses 
 ☑ 시작 프로그램 등록
 ───
 기본 위치 ▸    현재 위치로 설정 / 초기화
-미사용 위치 데이터 정리
+위치 기록 정리...
 ───
-상세 설정
+상세 설정...
 ───
 종료
 ```
@@ -379,7 +379,7 @@ The duplication is kept as vertical copy rather than extracted to a helper becau
 
 All three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) share the same modal infrastructure:
 
-- **`ModalDialogLoop.Run(hwndDialog, hwndOwner, ref isClosed)`** — Core helper for the `EnableWindow(owner, false) + while(GetMessageW... IsDialogMessageW(...)) { Translate/Dispatch } + EnableWindow(owner, true)` boilerplate. The `ref bool isClosedFlag` lets each dialog's WndProc signal close from inside `WM_COMMAND`/`WM_CLOSE` without the loop helper knowing the close semantics
+- **`ModalDialogLoop.Run(hwndDialog, hwndOwner, ref isClosed)`** — Core helper for the `EnableWindow(owner, false) + while(GetMessageW... IsDialogMessageW(...)) { Translate/Dispatch } + EnableWindow(owner, true)` boilerplate. The `ref bool isClosedFlag` lets each dialog's WndProc signal close from inside `WM_COMMAND`/`WM_CLOSE` without the loop helper knowing the close semantics. When the nested loop consumes `WM_QUIT` (e.g., tray Exit while a dialog is open), it re-posts `PostQuitMessage` so the outer message loop also terminates
 - **`Win32DialogHelper.CreateDialogFont(dpiY) → SafeFontHandle`** — 9 pt 맑은 고딕 with `SafeFontHandle` RAII
 - **`Win32DialogHelper.CalculateDialogPosition(hMonitor, w, h, anchor?)`** — `null` anchor = center in work area (Cleanup/Settings pattern); `POINT` anchor = top-left at that point (ScaleInput cursor-anchored pattern). Both paths apply work-area clamping
 - **`using var hFont = ...`** declared at the top of each dialog's `Show` method frame before `CreateWindowExW`. The `using` scope covers the full modal loop + `DestroyWindow` so the HFONT cannot be freed while child controls still reference it
@@ -388,7 +388,7 @@ All three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) share 
 
 ### CleanupDialog
 
-Checkbox list of `indicator_positions` entries whose process is not currently running. Full select/deselect toggle. "정리할 항목 없음" message when empty.
+Checkbox list of **all** `indicator_positions` entries. Running processes are shown with a "(실행 중)" / "(running)" suffix. Full select/deselect toggle. "저장된 위치 기록이 없습니다" message when empty. When items exceed `DlgMaxVisibleItems` (15), a scrollable viewport child window with `WS_VSCROLL` + mouse wheel support is used — same pattern as `SettingsDialog.Scroll.cs`.
 
 ### ScaleInputDialog
 
@@ -420,7 +420,7 @@ Parsing uses `double.TryParse` + `CultureInfo.InvariantCulture`, so `"2.3"` work
 
 `config.IndicatorScale` is a `double` in range `[1.0, 5.0]`, rounded to 1 decimal place in `Settings.Validate`. Applied as `(int)Math.Round(baseValue * scale)` to `LabelWidth`, `LabelHeight`, `FontSize`, `LabelBorderRadius`, `BorderWidth`, and `LABEL_PADDING_X` — *before* DPI scaling, so DPI and `IndicatorScale` compose multiplicatively.
 
-Tray menu "크기 ▸" submenu lists 5 integer presets (1배~5배) plus a "직접 지정" item that opens `ShowScaleInputDialog`. Radio check behavior: `IsIntegerScale(scale)` (tolerance 0.001) places the check on the matching integer preset; otherwise the check moves to "직접 지정" and the label becomes `I18n.FormatCustomScaleLabel(scale)` (e.g., "직접 지정 (2.3배)") so the user always sees the current non-integer value in the menu.
+Tray menu "크기 ▸" submenu lists 5 integer presets (1배~5배) plus a "직접 지정..." item that opens `ShowScaleInputDialog`. Radio check behavior: `IsIntegerScale(scale)` (tolerance 0.001) places the check on the matching integer preset; otherwise the check moves to "직접 지정..." and the label becomes `I18n.FormatCustomScaleLabel(scale)` (e.g., "직접 지정... (2.3배)") so the user always sees the current non-integer value in the menu.
 
 ---
 
