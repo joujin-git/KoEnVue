@@ -281,7 +281,7 @@ Read twice on startup — once inside `Overlay.Initialize` (so the very first `P
 3. **`PostDeserializeFixup`** (MergeWithDefaults) — serializes default `AppConfig` to JSON, overlays user keys, deserializes back. Works around STJ source-gen init-default loss (see [conventions.md](conventions.md#net-10-compatibility-notes))
 4. **`Migrate`** — version upgrades (when `config_version` changes)
 5. **`Validate`** — range clamping and normalization
-6. **`ApplyTheme`** — theme preset overlay (if `theme != custom`)
+6. **`ApplyTheme`** — theme preset overlay (if `theme != custom`). 프리셋 적용 시 기존 커스텀 색상을 `custom_backup_*` 필드에 백업하고, `custom` 복귀 시 복원 후 백업 소멸. `updateConfig` 콜백에서도 즉시 실행되어 상세 설정 변경이 앱 재시작 없이 반영됨
 
 ### Delete-safe hot reload
 

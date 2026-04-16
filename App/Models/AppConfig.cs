@@ -49,6 +49,14 @@ internal sealed record AppConfig
     // [외관 -- 테마]
     public Theme Theme { get; init; } = Theme.Custom;
 
+    // [외관 -- 테마 백업] — 프리셋 적용 전 커스텀 색상 보존. 프리셋 활성 시에만 값 존재.
+    public string? CustomBackupHangulBg { get; init; }
+    public string? CustomBackupHangulFg { get; init; }
+    public string? CustomBackupEnglishBg { get; init; }
+    public string? CustomBackupEnglishFg { get; init; }
+    public string? CustomBackupNonKoreanBg { get; init; }
+    public string? CustomBackupNonKoreanFg { get; init; }
+
     // [애니메이션]
     public bool AnimationEnabled { get; init; } = true;
     public int FadeInMs { get; init; } = 150;

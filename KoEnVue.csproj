@@ -13,7 +13,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>koenvue.ico</ApplicationIcon>
     <!-- AssemblyVersion/FileVersion/InformationalVersion 3종 세트. DefaultConfig.AppVersion 과 동기화 유지. -->
-    <Version>0.9.0.4</Version>
+    <Version>0.9.0.5</Version>
     <!-- InformationalVersion 에 "+{gitHash}" 자동 suffix 비활성화. 릴리즈 태그로 버전 식별하므로 해시 중복 불필요. -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>

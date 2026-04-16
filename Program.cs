@@ -563,7 +563,7 @@ internal static partial class Program
         Tray.HandleMenuCommand(commandId, _config, _hwndMain,
             updateConfig: newConfig =>
             {
-                _config = newConfig;
+                _config = ThemePresets.Apply(newConfig);
                 Overlay.HandleConfigChanged(_config);
                 // 인디가 가시 상태라면 애니메이터 config 갱신 + 새 alpha/크기/색상이 즉시 반영되도록
                 // TriggerShow로 전체 갱신. TriggerShow는 UpdateConfig + Overlay.Show를 포함한다.

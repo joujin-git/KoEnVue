@@ -89,9 +89,9 @@ Every file in `Core/` is reusable in another Windows desktop project; every file
 | Module | Purpose |
 |--------|---------|
 | [App/Models/](../App/Models/) | `AppConfig` immutable record + all enums (`DisplayMode`, `DetectionMethod`, `ImeState`, `FontWeight`, `Theme`, `NonKoreanImeMode`, `AppProfileMatch`, `AppFilterMode`, `TrayIconStyle`, `TrayClickAction`, `Corner`) |
-| [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) | Magic-number constants: animation timings, pixel offsets, `AppVersion = "0.9.0.4"`, `UpdateRepoOwner/Name`, system-input process list |
+| [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) | Magic-number constants: animation timings, pixel offsets, `AppVersion = "0.9.0.5"`, `UpdateRepoOwner/Name`, system-input process list |
 | [App/Config/Settings.cs](../App/Config/Settings.cs) | Static facade delegating to `AppSettingsManager : JsonSettingsManager<AppConfig>`. Handles `Load`/`Save`/`CheckReload`/`ResolveForApp` (per-app profile merge) |
-| [App/Config/ThemePresets.cs](../App/Config/ThemePresets.cs) | 6 theme presets: `Custom`, `Minimal`, `Vivid`, `Pastel`, `Dark`, `System` (Windows accent color) |
+| [App/Config/ThemePresets.cs](../App/Config/ThemePresets.cs) | 6 theme presets: `Custom`, `Minimal`, `Vivid`, `Pastel`, `Dark`, `System` (Windows accent color). 프리셋 전환 시 커스텀 색상 자동 백업/복원 (`custom_backup_*` 필드) |
 | [App/Detector/ImeStatus.cs](../App/Detector/ImeStatus.cs) | `WM_IME_CONTROL` + `GetKeyboardLayout` IME state detection + `EVENT_OBJECT_IME_CHANGE` WinEvent hook |
 | [App/Detector/SystemFilter.cs](../App/Detector/SystemFilter.cs) | 9-condition hide logic (lock screen, virtual desktop, fullscreen, class/owner-chain blacklist, app filter list, etc.) |
 | [App/Localization/I18n.cs](../App/Localization/I18n.cs) | Korean default, English fallback. Bool flag + ternary pattern (NativeAOT-friendly, zero allocation) |
