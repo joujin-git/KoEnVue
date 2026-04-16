@@ -92,6 +92,7 @@ Path 3 (default position) is not clamped because `GetDefaultPosition` already co
 - Drag is ignored (position never saved)
 - `GetDefaultPosition` places the indicator just above the window's visual top-left corner: `(frame.Left, frame.Top - labelH - SystemInputGapPx)`, clamped to `workArea.Top`
 - The "visual" frame is obtained via `Dwmapi.TryGetVisibleFrame` → `DwmGetWindowAttribute(DWMWA_EXTENDED_FRAME_BOUNDS)` to exclude the invisible resize border
+- **Full-screen DWM frame guard + cached frame reuse**: CoreWindow hosts (e.g., `StartMenuExperienceHost`) return DWM extended frame bounds covering the entire screen, not the visible panel. When the frame encloses the full work area (`Left ≤ workArea.Left && Top ≤ workArea.Top && Right ≥ workArea.Right && Bottom ≥ workArea.Bottom`), the static `_lastValidSystemInputFrame` cache is consulted — if a recent non-full-screen system input frame exists (typically from `SearchHost`, which always appears before `StartMenuExperienceHost` in the Win11 Start Menu opening sequence), that cached frame is used for positioning. Only when no cached frame is available does the code fall through to the general default position
 
 ### Shared-HWND system input rect tracking
 

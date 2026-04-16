@@ -174,6 +174,14 @@ internal static class Overlay
     /// <summary>시스템 입력 프로세스 기본 위치의 창 상단 여백(px).</summary>
     private const int SystemInputGapPx = 4;
 
+    /// <summary>
+    /// 직전 시스템 입력 프로세스에서 관찰된 유효(비전체화면) DWM 프레임.
+    /// StartMenuExperienceHost처럼 CoreWindow가 화면 전체를 덮는 경우,
+    /// 직전 SearchHost 등이 남긴 실제 패널 프레임을 재사용해 위치를 보정한다.
+    /// 메인 스레드에서만 접근하므로 동기화 불필요.
+    /// </summary>
+    private static RECT _lastValidSystemInputFrame;
+
     /// <summary>CAPS LOCK 막대 두께 (logical px, DPI 스케일링 전).</summary>
     private const int CapsLockBarWidthLogicalPx = 2;
 
@@ -209,19 +217,43 @@ internal static class Overlay
             && hwndForeground != IntPtr.Zero
             && Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT frame))
         {
-            (int _, int labelH) = _engine.GetBaseSize();
-            if (labelH <= 0)
+            // CoreWindow 계열(StartMenuExperienceHost 등)은 DWM extended frame bounds가
+            // 화면 전체를 덮어 시각적 패널 위치를 반영하지 않는다.
+            // 직전 SearchHost 등이 남긴 유효 프레임이 있으면 재사용하고,
+            // 없으면 일반 기본 위치로 폴스루한다.
+            bool isFullScreen = frame.Left <= workArea.Left
+                && frame.Top <= workArea.Top
+                && frame.Right >= workArea.Right
+                && frame.Bottom >= workArea.Bottom;
+
+            if (!isFullScreen)
             {
-                // 폴백: IndicatorScale 적용 logical 높이를 현재 DPI로 스케일링.
-                double scale = _config.IndicatorScale;
-                labelH = DpiHelper.Scale(
-                    (int)Math.Round(_config.LabelHeight * scale),
-                    DpiHelper.GetScale(hMonitor));
+                _lastValidSystemInputFrame = frame;
             }
-            int x = frame.Left;
-            int y = frame.Top - labelH - SystemInputGapPx;
-            if (y < workArea.Top) y = workArea.Top;
-            return (x, y);
+            else if (_lastValidSystemInputFrame.Right > _lastValidSystemInputFrame.Left)
+            {
+                // 캐시된 유효 프레임으로 대체 (SearchHost → StartMenuExperienceHost 전환)
+                frame = _lastValidSystemInputFrame;
+                isFullScreen = false;
+            }
+
+            if (!isFullScreen)
+            {
+                (int _, int labelH) = _engine.GetBaseSize();
+                if (labelH <= 0)
+                {
+                    // 폴백: IndicatorScale 적용 logical 높이를 현재 DPI로 스케일링.
+                    double scale = _config.IndicatorScale;
+                    labelH = DpiHelper.Scale(
+                        (int)Math.Round(_config.LabelHeight * scale),
+                        DpiHelper.GetScale(hMonitor));
+                }
+                int x = frame.Left;
+                int y = frame.Top - labelH - SystemInputGapPx;
+                if (y < workArea.Top) y = workArea.Top;
+                return (x, y);
+            }
+            // 캐시도 없는 경우 → 일반 기본 위치로 폴스루
         }
 
         if (_config.DefaultIndicatorPosition is { } anchor)
