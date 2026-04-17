@@ -836,6 +836,22 @@ internal static partial class Program
                 if (hwndForeground == _hwndMain || hwndForeground == _hwndOverlay)
                     continue;
 
+                // 모달 대화상자(크기 직접 지정 / 위치 기록 정리 / 상세 설정) 활성 중에는
+                // 인디케이터를 숨긴다. 대화상자 HWND 는 _hwndMain 과 별개 top-level 이라
+                // 위 skip 에 걸리지 않아, 가드 없이 두면 감지 스레드가 대화상자를 일반
+                // 포그라운드 앱으로 오인식해 인디 위치가 대화상자 근처로 튄다.
+                //
+                // lastFiltered=true 로 설정해 대화상자 종료 후 원 앱 foreground 복귀
+                // 첫 틱에서 foregroundChanged=true 를 유도 → 자연 재표시.
+                if (ModalDialogLoop.IsActive)
+                {
+                    if (!lastFiltered && _indicatorVisible)
+                        User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
+                            IntPtr.Zero, IntPtr.Zero);
+                    lastFiltered = true;
+                    continue;
+                }
+
                 uint threadId = User32.GetWindowThreadProcessId(hwndForeground, out _);
 
                 // GUITHREADINFO로 hwndFocus 획득

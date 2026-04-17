@@ -279,6 +279,10 @@ Detection loop sends `WM_POSITION_UPDATED` **before** `WM_IME_STATE_CHANGED` / `
 
 `DetectionLoop` evaluates `ResolveForApp + SystemFilter.ShouldHide` every tick (not only on foreground change) and uses a `lastFiltered` flag to suppress duplicate `WM_HIDE_INDICATOR` messages. Fixes the "desktop click → same app return" case where nothing appeared to change but the indicator needed to reappear. Hide message is emitted only on `!lastFiltered → filtered` transitions.
 
+### Modal dialog gate
+
+`DetectionLoop` short-circuits with `if (ModalDialogLoop.IsActive) { hide + lastFiltered=true + continue; }` right after the `_hwndMain`/`_hwndOverlay` self-window skip. The three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) are separate top-level windows owned by `_hwndMain` but with distinct HWNDs, so the self-skip doesn't cover them — without the gate, the detection thread resolves the dialog HWND as a regular foreground app and emits `WM_POSITION_UPDATED`, making the indicator jump next to the dialog (Window mode) and causing `TriggerShow` renders that interfered with the dialog's focus (delayed ESC dismissal until after the first render settled). The gate unifies OK/Cancel/Esc exit behavior: indicator hides on modal entry, and `lastFiltered=true` forces `foregroundChanged=true` on the first post-modal tick so the original foreground app naturally re-triggers the show. Applies uniformly across `PositionMode` (Fixed/Window) and `DragModifier` (None/Ctrl/Alt/CtrlAlt) combinations.
+
 ### `wasHidden` re-trigger
 
 `HandlePositionUpdated` treats `!_indicatorVisible` as a signal to re-resolve position and show, even when `hwndForeground == _lastForegroundHwnd`. Complements per-poll filter re-eval: detection thread posts `WM_POSITION_UPDATED` after filter clears, main thread sees the same hwnd but knows the indicator needs to come back.
@@ -450,6 +454,7 @@ All three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) share 
 - **`using var hFont = ...`** declared at the top of each dialog's `Show` method frame before `CreateWindowExW`. The `using` scope covers the full modal loop + `DestroyWindow` so the HFONT cannot be freed while child controls still reference it
 - **`[UnmanagedCallersOnly]` WndProc function pointers** private to each file (no NativeAOT export name collision)
 - **Tab/Enter/ESC** routed through `IsDialogMessageW`
+- **Detection-thread gate**: `DetectionLoop` checks `ModalDialogLoop.IsActive` and suppresses its own polling side effects while any of the three dialogs is modal. See [Detection → Modal dialog gate](#modal-dialog-gate)
 
 ### CleanupDialog
 

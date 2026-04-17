@@ -188,6 +188,7 @@ All three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) share:
 - **`Win32DialogHelper.CalculateDialogPosition(hMonitor, w, h, anchor?)`** for positioning (null = centered, POINT = anchored)
 - **`[UnmanagedCallersOnly]` `WndProc`** function pointer private to each file (no NativeAOT export name collision)
 - **Tab/Enter/ESC** routed through `IsDialogMessageW` in `ModalDialogLoop`
+- **Detection-thread gate** via `ModalDialogLoop.IsActive` — `DetectionLoop` suppresses its per-tick foreground processing while any of the three dialogs is modal, so polling-side effects (indicator jumping to the dialog HWND, focus-interfering `TriggerShow` renders) never reach the UI thread. New modal dialogs using `ModalDialogLoop.Run` inherit this behavior without any call-site hide logic
 
 The `SafeFontHandle` `using` pattern is critical — early release would crash `DrawTextW` while child controls still reference the HFONT.
 
