@@ -242,6 +242,7 @@ internal static class Win32Constants
     public const uint WS_EX_TOPMOST      = 0x00000008;
     public const uint WS_EX_TOOLWINDOW   = 0x00000080;
     public const uint WS_EX_NOACTIVATE   = 0x08000000;
+    public const uint WS_EX_COMPOSITED   = 0x02000000;
 
     // --- 윈도우 스타일 ---
     public const uint WS_POPUP           = 0x80000000;
@@ -250,6 +251,7 @@ internal static class Win32Constants
     public const uint WS_CHILD          = 0x40000000;
     public const uint WS_VISIBLE        = 0x10000000;
     public const uint WS_TABSTOP        = 0x00010000;
+    public const uint WS_CLIPCHILDREN   = 0x02000000;
     public const uint WS_OVERLAPPEDWINDOW = 0x00CF0000;
 
     // --- 버튼/체크박스 스타일 ---
@@ -490,6 +492,11 @@ internal static class Win32Constants
     public const int  SB_BOTTOM           = 7;
     public const int  SB_ENDSCROLL        = 8;
     public const int  WHEEL_DELTA         = 120;
+
+    // ScrollWindowEx flags
+    public const uint SW_SCROLLCHILDREN   = 0x0001;
+    public const uint SW_INVALIDATE       = 0x0002;
+    public const uint SW_ERASE            = 0x0004;
 
     // --- 콤보박스 ---
     public const uint CBS_DROPDOWNLIST    = 0x0003;

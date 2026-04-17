@@ -283,6 +283,8 @@ Detection loop sends `WM_POSITION_UPDATED` **before** `WM_IME_STATE_CHANGED` / `
 
 `DetectionLoop` short-circuits with `if (ModalDialogLoop.IsActive) { hide + lastFiltered=true + continue; }` right after the `_hwndMain`/`_hwndOverlay` self-window skip. The three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) are separate top-level windows owned by `_hwndMain` but with distinct HWNDs, so the self-skip doesn't cover them — without the gate, the detection thread resolves the dialog HWND as a regular foreground app and emits `WM_POSITION_UPDATED`, making the indicator jump next to the dialog (Window mode) and causing `TriggerShow` renders that interfered with the dialog's focus (delayed ESC dismissal until after the first render settled). The gate unifies OK/Cancel/Esc exit behavior: indicator hides on modal entry, and `lastFiltered=true` forces `foregroundChanged=true` on the first post-modal tick so the original foreground app naturally re-triggers the show. Applies uniformly across `PositionMode` (Fixed/Window) and `DragModifier` (None/Ctrl/Alt/CtrlAlt) combinations.
 
+**External modals (`MessageBoxW`)**: `Tray` 의 두 경고 대화상자("이미 저장된 위치입니다", "저장된 위치 기록이 없습니다")는 `User32.MessageBoxW` 가 자체 메시지 루프를 돌리므로 `ModalDialogLoop.Run` 을 쓸 수 없다. 대신 `ModalDialogLoop.RunExternal(hwndSentinel, action)` 로 호출 구간만 감싸 `IsActive` 센티넬을 세팅/복원한다. `RunExternal` 은 메시지 펌프나 `EnableWindow` 은 건드리지 않고 감지 스레드 가드만 세우므로, `MessageBoxW` 가 활성인 동안에도 인디케이터가 해당 다이얼로그 근처로 튀는 폴링 부작용이 억제된다. 기존 활성 모달이 있으면 이전 값을 보관 후 finally 에서 복원하여 중첩을 지원한다.
+
 ### `wasHidden` re-trigger
 
 `HandlePositionUpdated` treats `!_indicatorVisible` as a signal to re-resolve position and show, even when `hwndForeground == _lastForegroundHwnd`. Complements per-poll filter re-eval: detection thread posts `WM_POSITION_UPDATED` after filter clears, main thread sees the same hwnd but knows the indicator needs to come back.
@@ -449,6 +451,7 @@ The duplication is kept as vertical copy rather than extracted to a helper becau
 All three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) share the same modal infrastructure:
 
 - **`ModalDialogLoop.Run(hwndDialog, hwndOwner, ref isClosed)`** — Core helper for the `EnableWindow(owner, false) + while(GetMessageW... IsDialogMessageW(...)) { Translate/Dispatch } + EnableWindow(owner, true)` boilerplate. The `ref bool isClosedFlag` lets each dialog's WndProc signal close from inside `WM_COMMAND`/`WM_CLOSE` without the loop helper knowing the close semantics. When the nested loop consumes `WM_QUIT` (e.g., tray Exit while a dialog is open), it re-posts `PostQuitMessage` so the outer message loop also terminates
+- **`ModalDialogLoop.RunExternal(hwndSentinel, action)`** — `IsActive` 가드만 씌우는 경량 변형. `User32.MessageBoxW` 처럼 Win32 가 자체 메시지 루프를 돌려 `Run` 을 쓸 수 없는 외부 모달 구간에 사용한다 (현재 `Tray.ShowPositionError` / `Tray.CleanupPositions` 의 빈 목록 알림). 메시지 펌프 · `EnableWindow` 는 건드리지 않고 감지 스레드의 폴링 사이드-이펙트만 차단한다. 기존 활성 모달이 있으면 스택처럼 이전 값을 보관 후 `finally` 에서 복원
 - **`Win32DialogHelper.CreateDialogFont(dpiY) → SafeFontHandle`** — 9 pt 맑은 고딕 with `SafeFontHandle` RAII
 - **`Win32DialogHelper.CalculateDialogPosition(hMonitor, w, h, anchor?)`** — `null` anchor = center in work area (Cleanup/Settings pattern); `POINT` anchor = top-left at that point (ScaleInput cursor-anchored pattern). Both paths apply work-area clamping
 - **`using var hFont = ...`** declared at the top of each dialog's `Show` method frame before `CreateWindowExW`. The `using` scope covers the full modal loop + `DestroyWindow` so the HFONT cannot be freed while child controls still reference it
@@ -478,7 +481,7 @@ Parsing uses `double.TryParse` + `CultureInfo.InvariantCulture`, so `"2.3"` work
 
 `partial class` shares all static state at compile time. No call-site changes — `SettingsDialog.Show(hwndMain, config, updateConfig)` is the same public entry point.
 
-**Scroll implementation**: `ScrollTo` updates `_scrollPos`, calls `SetScrollInfo` to move the thumb, then iterates `_scrollChildren` (tracked as `(Hwnd, X, LogicalY)`) calling `SetWindowPos(h, x, logicalY - _scrollPos, SWP_NOSIZE | SWP_NOZORDER)` per child, and finally `InvalidateRect(viewport, null, true)` to erase and repaint the viewport background. `SWP_NOSIZE` preserves each COMBOBOX's `rowH + ComboDropExtra = 220` dropdown-ready height.
+**Scroll implementation**: `ScrollTo` 는 스크롤 델타 `dy = _scrollPos - newPos` 를 계산한 뒤 `SetScrollInfo` 로 썸 위치를 갱신하고, `ScrollWindowEx(viewport, 0, dy, ..., SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE)` 한 번으로 모든 자식을 OS 가 BitBlt 로 이동시킨다. 노출된 띠 영역만 무효화 + 배경 지움 처리되므로, 기존 "N 개 자식에 대한 `SetWindowPos` 루프 + 전체 `InvalidateRect(viewport, null, true)`" 방식 대비 휠 틱당 작업량이 O(N) → O(1) 로 줄어 휠 스크롤 반응성이 크게 향상된다. 뷰포트는 `WS_CLIPCHILDREN` + `WS_EX_COMPOSITED` 조합으로 DWM off-screen 합성을 사용해 스크롤 중 플리커도 없다. 자식 윈도우 크기는 `ScrollWindowEx` 가 보존하므로 COMBOBOX 의 `rowH + ComboDropExtra = 220` 드롭다운 높이는 영향 없음.
 
 **Validation failure handling**: `TryCommit` shows a MessageBox, calls `ScrollFieldIntoView` to bring the offending field into view, refocuses the control, and for EDITs selects all text via `EM_SETSEL`.
 

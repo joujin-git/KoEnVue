@@ -321,4 +321,12 @@ internal static partial class User32
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool InvalidateRect(IntPtr hWnd, IntPtr lpRect,
         [MarshalAs(UnmanagedType.Bool)] bool bErase);
+
+    // ScrollWindowEx: dx/dy 픽셀만큼 클라이언트를 BitBlt 복사 후 자식까지 자동 이동(SW_SCROLLCHILDREN)
+    // 하고 노출 영역만 무효화(SW_INVALIDATE|SW_ERASE) 한다. 다이얼로그 스크롤에서 수십~수백개의
+    // 자식 SetWindowPos 루프 + 전체 InvalidateRect 를 대체하기 위해 사용.
+    [LibraryImport("user32.dll")]
+    internal static partial int ScrollWindowEx(IntPtr hWnd, int dx, int dy,
+        IntPtr prcScroll, IntPtr prcClip,
+        IntPtr hrgnUpdate, IntPtr prcUpdate, uint flags);
 }

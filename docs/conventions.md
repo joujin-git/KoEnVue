@@ -188,7 +188,7 @@ All three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) share:
 - **`Win32DialogHelper.CalculateDialogPosition(hMonitor, w, h, anchor?)`** for positioning (null = centered, POINT = anchored)
 - **`[UnmanagedCallersOnly]` `WndProc`** function pointer private to each file (no NativeAOT export name collision)
 - **Tab/Enter/ESC** routed through `IsDialogMessageW` in `ModalDialogLoop`
-- **Detection-thread gate** via `ModalDialogLoop.IsActive` — `DetectionLoop` suppresses its per-tick foreground processing while any of the three dialogs is modal, so polling-side effects (indicator jumping to the dialog HWND, focus-interfering `TriggerShow` renders) never reach the UI thread. New modal dialogs using `ModalDialogLoop.Run` inherit this behavior without any call-site hide logic
+- **Detection-thread gate** via `ModalDialogLoop.IsActive` — `DetectionLoop` suppresses its per-tick foreground processing while any of the three dialogs is modal, so polling-side effects (indicator jumping to the dialog HWND, focus-interfering `TriggerShow` renders) never reach the UI thread. New modal dialogs using `ModalDialogLoop.Run` inherit this behavior without any call-site hide logic. 외부 모달(`User32.MessageBoxW` 등 Win32 가 자체 메시지 루프를 돌리는 경우)은 `ModalDialogLoop.RunExternal(hwndSentinel, action)` 으로 감싸 동일한 감지 스레드 가드를 적용한다 (메시지 펌프/`EnableWindow` 건드리지 않고 `IsActive` 센티넬만 세팅)
 
 The `SafeFontHandle` `using` pattern is critical — early release would crash `DrawTextW` while child controls still reference the HFONT.
 

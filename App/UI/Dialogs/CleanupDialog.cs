@@ -193,9 +193,13 @@ internal static class CleanupDialog
         y += sepGap;
 
         // 스크롤 뷰포트 (항목 체크박스 컨테이너)
-        uint vpStyle = Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE;
+        // WS_CLIPCHILDREN: 부모 페인트·에레이즈에서 자식 영역 제외 (1차 방어).
+        // WS_EX_COMPOSITED (dwExStyle): DWM 이 뷰포트와 모든 자식을 오프스크린 비트맵에 합성 후
+        // 한 번에 출력하는 더블버퍼링. 썸 드래그·휠 스크롤의 연속 이동 중 중간 상태가
+        // 화면에 노출되지 않아 플리커·티어링 제거.
+        uint vpStyle = Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_CLIPCHILDREN;
         if (needsScroll) vpStyle |= Win32Constants.WS_VSCROLL;
-        _hwndViewport = User32.CreateWindowExW(0, ViewportClassName, "",
+        _hwndViewport = User32.CreateWindowExW(Win32Constants.WS_EX_COMPOSITED, ViewportClassName, "",
             vpStyle, pad, y, contentW, viewportH,
             _hwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
         _viewportClientH = viewportH;
@@ -301,6 +305,7 @@ internal static class CleanupDialog
         newPos = Math.Clamp(newPos, 0, _scrollMax);
         if (newPos == _scrollPos) return;
 
+        int dy = _scrollPos - newPos;  // 위로 스크롤(newPos↑) = 콘텐츠 위로 이동 = dy 음수
         _scrollPos = newPos;
 
         var si = new SCROLLINFO
@@ -311,13 +316,11 @@ internal static class CleanupDialog
         };
         User32.SetScrollInfo(_hwndViewport, Win32Constants.SB_VERT, ref si, true);
 
-        foreach (var (h, logicalY) in _scrollChildren)
-        {
-            User32.SetWindowPos(h, IntPtr.Zero, _checkItemX, logicalY - newPos, 0, 0,
-                Win32Constants.SWP_NOSIZE | Win32Constants.SWP_NOZORDER);
-        }
-
-        User32.InvalidateRect(_hwndViewport, IntPtr.Zero, true);
+        // 자식 체크박스 HWND 들을 SW_SCROLLCHILDREN 으로 OS가 한 번에 이동시키고,
+        // 노출된 띠만 SW_INVALIDATE|SW_ERASE 로 무효화 → 기존 N회 SetWindowPos + 전체 InvalidateRect 대체.
+        User32.ScrollWindowEx(_hwndViewport, 0, dy,
+            IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
+            Win32Constants.SW_SCROLLCHILDREN | Win32Constants.SW_INVALIDATE | Win32Constants.SW_ERASE);
     }
 
     private static int ResolveVScrollPosition(IntPtr hwnd, int scrollCode)

@@ -52,6 +52,7 @@ internal static partial class SettingsDialog
         newPos = Math.Clamp(newPos, 0, _scrollMax);
         if (newPos == _scrollPos) return;
 
+        int dy = _scrollPos - newPos;  // 위로 스크롤(newPos↑) = 콘텐츠 위로 이동 = dy 음수
         _scrollPos = newPos;
 
         var si = new SCROLLINFO
@@ -62,13 +63,11 @@ internal static partial class SettingsDialog
         };
         User32.SetScrollInfo(_hwndViewport, Win32Constants.SB_VERT, ref si, true);
 
-        foreach (var (h, x, logicalY) in _scrollChildren)
-        {
-            User32.SetWindowPos(h, IntPtr.Zero, x, logicalY - newPos, 0, 0,
-                Win32Constants.SWP_NOSIZE | Win32Constants.SWP_NOZORDER);
-        }
-
-        User32.InvalidateRect(_hwndViewport, IntPtr.Zero, true);
+        // N개의 자식 컨트롤(100+)을 SW_SCROLLCHILDREN 으로 OS가 한 번에 이동시키고
+        // 노출된 띠만 SW_INVALIDATE|SW_ERASE 로 무효화 → 기존 SetWindowPos 루프 + 전체 InvalidateRect 대체.
+        User32.ScrollWindowEx(_hwndViewport, 0, dy,
+            IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
+            Win32Constants.SW_SCROLLCHILDREN | Win32Constants.SW_INVALIDATE | Win32Constants.SW_ERASE);
     }
 
     /// <summary>필드 i가 화면에 보이도록 스크롤 위치를 조정.</summary>

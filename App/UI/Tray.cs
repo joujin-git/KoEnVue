@@ -567,11 +567,15 @@ internal static class Tray
 
     private static void ShowPositionError()
     {
-        User32.MessageBoxW(_hwndMain,
-            I18n.IsKorean
-                ? "인디케이터 위치를 확인할 수 없습니다. 잠시 후 다시 시도하세요."
-                : "Cannot determine current indicator position. Please try again shortly.",
-            "KoEnVue", 0);
+        // MessageBoxW 는 자체 메시지 루프를 돌리므로 ModalDialogLoop.Run 으로 감쌀 수 없다.
+        // RunExternal 로 IsActive 가드만 씌워, 박스가 열린 동안 감지 스레드가 인디를
+        // 박스 근처로 튀게 만들지 않도록 한다.
+        ModalDialogLoop.RunExternal(_hwndMain, () =>
+            User32.MessageBoxW(_hwndMain,
+                I18n.IsKorean
+                    ? "인디케이터 위치를 확인할 수 없습니다. 잠시 후 다시 시도하세요."
+                    : "Cannot determine current indicator position. Please try again shortly.",
+                "KoEnVue", 0));
     }
 
     // ================================================================
@@ -811,9 +815,12 @@ internal static class Tray
 
         if (allKeys.Count == 0)
         {
-            User32.MessageBoxW(_hwndMain,
-                I18n.IsKorean ? "저장된 위치 기록이 없습니다." : "No saved position history.",
-                "KoEnVue", 0);
+            // MessageBoxW 는 자체 메시지 루프를 돌리므로 ModalDialogLoop.Run 으로 감쌀 수 없다.
+            // RunExternal 로 IsActive 가드만 씌워 박스가 열린 동안 인디를 억제.
+            ModalDialogLoop.RunExternal(_hwndMain, () =>
+                User32.MessageBoxW(_hwndMain,
+                    I18n.IsKorean ? "저장된 위치 기록이 없습니다." : "No saved position history.",
+                    "KoEnVue", 0));
             return;
         }
 

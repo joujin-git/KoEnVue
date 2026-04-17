@@ -88,4 +88,20 @@ internal static class ModalDialogLoop
         if (quitReceived)
             User32.PostQuitMessage(quitCode);
     }
+
+    /// <summary>
+    /// MessageBoxW 등 Win32 가 자체 메시지 루프를 돌리는 외부 모달 구간에 대해
+    /// <see cref="IsActive"/> 가드만 씌운다. <see cref="Run"/> 과 달리 메시지 펌프나
+    /// EnableWindow 는 건드리지 않으며, 감지 스레드의 폴링 사이드-이펙트(인디가
+    /// 모달 HWND 근처로 튀는 현상)만 억제하는 용도.
+    /// 기존에 활성 모달이 있으면 스택처럼 이전 값을 보관 후 finally 에서 복원한다.
+    /// </summary>
+    public static void RunExternal(IntPtr hwndSentinel, Action action)
+    {
+        IntPtr prev = s_activeDialog;
+        // IntPtr.Zero 가 넘어와도 IsActive 가 true 로 유지되도록 (-1) sentinel 로 대체.
+        s_activeDialog = hwndSentinel != IntPtr.Zero ? hwndSentinel : (IntPtr)(-1);
+        try { action(); }
+        finally { s_activeDialog = prev; }
+    }
 }

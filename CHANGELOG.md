@@ -14,6 +14,11 @@
 ### 수정
 
 - **모달 대화상자 활성 중 인디케이터 거동 통일** — 세 대화상자(크기 직접 지정 / 위치 기록 정리 / 상세 설정)의 OK/취소/Esc 경로에 따라 인디 숨김 여부가 달랐고, 특히 Window 위치 모드에선 감지 스레드가 대화상자 HWND 를 일반 포그라운드 앱으로 오인식해 인디가 대화상자 근처로 튀는 부작용이 있었음. `DetectionLoop` 에 `ModalDialogLoop.IsActive` 가드를 추가해 모달 활성 중에는 `WM_HIDE_INDICATOR` 1회 송출 + `lastFiltered=true` 후 틱을 건너뛰도록 수정. 대화상자 종료 후 원 앱 foreground 복귀 첫 틱에서 `foregroundChanged=true` 로 자연 재표시. `PositionMode`(Fixed/Window), `DragModifier`(None/Ctrl/Alt/CtrlAlt) 모든 조합에 동일 적용. 부수 효과로 모달 중 감지 경로의 `WM_POSITION_UPDATED` → `TriggerShow` 렌더 간섭이 사라지면서, 대화상자가 뜨자마자 ESC 로 닫을 때 포커스 지연이 사라짐
+- **MessageBoxW 안내 대화상자도 동일 가드 적용** — `Tray.ShowPositionError` / `CleanupPositions` 의 빈-상태 안내("저장된 위치 기록이 없습니다.", "인디케이터 위치를 확인할 수 없습니다.") 두 `MessageBoxW` 호출은 Win32 자체 메시지 루프를 돌려 `ModalDialogLoop.Run` 으로 감쌀 수 없었음. 신규 `ModalDialogLoop.RunExternal(hwndSentinel, action)` 헬퍼로 `IsActive` 가드만 씌워(메시지 펌프·`EnableWindow` 은 Win32 에 위임), 박스가 열린 동안 감지 스레드가 박스 HWND 를 일반 앱으로 오인식해 인디가 근처로 튀는 부작용 제거. 세 커스텀 다이얼로그 내부의 `MessageBoxW` (Settings/ScaleInput 검증 실패 팝업)는 부모 모달이 이미 `Run` 중이라 별도 래핑 불필요
+- **상세 설정 · 위치 기록 정리 스크롤 플리커 및 성능 회귀** — 썸 드래그·휠 스크롤 중 뷰포트가 비어 보이거나 렌더가 스크롤바를 못 쫓아오던 문제. 두 축을 함께 적용해 해결:
+  - (1) 스크롤 뷰포트 스타일에 `WS_CLIPCHILDREN` + `WS_EX_COMPOSITED` 를 추가 — DWM 이 뷰포트와 모든 자식을 오프스크린 비트맵에 합성 후 한 번에 출력하는 더블버퍼링. 연속 이동 중 중간 상태가 화면에 노출되지 않아 플리커·티어링 제거
+  - (2) `ScrollTo` 의 "N개 자식 `SetWindowPos` 루프 + 전체 `InvalidateRect`" 를 단일 `User32.ScrollWindowEx(0, dy, ..., SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE)` 호출로 대체 — OS 가 클라이언트 픽셀을 BitBlt 로 복사하고 자식 HWND 까지 한 번에 이동시키며, 노출된 띠만 무효화해 휠 한 틱당 작업량이 `O(N)` → `O(1)` 로 감소. Settings 다이얼로그(120+ 컨트롤)에서 체감 휠 반응 개선
+  - `Win32Constants.SW_SCROLLCHILDREN` / `SW_INVALIDATE` / `SW_ERASE` / `WS_CLIPCHILDREN` / `WS_EX_COMPOSITED` 상수, `User32.ScrollWindowEx` P/Invoke, `ModalDialogLoop.RunExternal` 헬퍼 추가
 
 ## [0.9.1.3] — 2026-04-17
 

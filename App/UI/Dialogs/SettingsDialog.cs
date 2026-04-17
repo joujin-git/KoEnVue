@@ -202,9 +202,13 @@ internal static partial class SettingsDialog
         int vpH = clientH - vpY - btnAreaH - pad;
         _viewportClientH = vpH;
 
+        // WS_CLIPCHILDREN: 부모 페인트·에레이즈에서 자식 영역 제외 (1차 방어).
+        // WS_EX_COMPOSITED (dwExStyle): DWM 이 뷰포트와 모든 자식을 오프스크린 비트맵에 합성 후
+        // 한 번에 출력하는 더블버퍼링. 120여 개 컨트롤이 동시 이동하는 스크롤 중 중간 상태가
+        // 화면에 노출되지 않아 플리커·티어링 제거.
         _hwndViewport = User32.CreateWindowExW(
-            0, viewportClassName, "",
-            Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE
+            Win32Constants.WS_EX_COMPOSITED, viewportClassName, "",
+            Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_CLIPCHILDREN
                 | Win32Constants.WS_VSCROLL | Win32Constants.WS_BORDER,
             vpX, vpY, vpW, vpH,
             _hwndDialog, (IntPtr)IDC_VIEWPORT, IntPtr.Zero, IntPtr.Zero);
