@@ -433,7 +433,7 @@ The three opacity presets (진하게/보통/연하게) apply mode-aware config c
 
 ### Three-toggle duplication with settings dialog
 
-`SnapToWindows`, `AnimationEnabled`, and `ChangeHighlight` are toggleable from both the tray menu and `SettingsDialog`. The settings dialog drops these three rows to avoid duplication (63 → 61 fields). `SlideAnimation` is deliberately **not** added to the tray because usage frequency is low and keeping the menu short is a UX goal.
+`SnapToWindows`, `AnimationEnabled`, and `ChangeHighlight` are toggleable from both the tray menu and `SettingsDialog`. The settings dialog drops these three rows to avoid duplication (64 → 62 fields). `SlideAnimation` is deliberately **not** added to the tray because usage frequency is low and keeping the menu short is a UX goal.
 
 The duplication is kept as vertical copy rather than extracted to a helper because `HandleMenuCommand`'s per-field `with`-expression getters/setters can't be mechanically abstracted without a delegate map or reflection (conflicts with NativeAOT + P1).
 
@@ -464,7 +464,7 @@ Parsing uses `double.TryParse` + `CultureInfo.InvariantCulture`, so `"2.3"` work
 
 ### SettingsDialog
 
-61 fields across 13 sections. Split across 3 partial class files:
+62 fields across 13 sections. Split across 3 partial class files:
 
 - **`SettingsDialog.cs`** (modal state, `Show`, `TryCommit`, dialog WndProc)
 - **`SettingsDialog.Fields.cs`** (`FieldType` enum, `FieldDef`/`RowDef` records, `BuildRowDefs` 13-section spec, 6 factory methods: `Bool`/`Int`/`Dbl`/`Str`/`ColorField`/`Combo`)
