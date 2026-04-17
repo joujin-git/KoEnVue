@@ -246,6 +246,18 @@ internal static partial class User32
     [LibraryImport("user32.dll")]
     internal static partial IntPtr GetWindow(IntPtr hWnd, uint uCmd);
 
+    // === 윈도우 탐색 / 메시지 등록 ===
+
+    // FindWindowW: 클래스명 + 타이틀(선택)로 최상위 윈도우 핸들 조회.
+    // 다중 인스턴스 중복 실행 시 기존 인스턴스에 활성화 신호를 보내기 위해 사용.
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial IntPtr FindWindowW(string? lpClassName, string? lpWindowName);
+
+    // RegisterWindowMessageW: 시스템 전역 유일 메시지 ID를 등록.
+    // Explorer 재시작 시 셸이 브로드캐스트하는 "TaskbarCreated" 메시지 수신에 사용.
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial uint RegisterWindowMessageW(string lpString);
+
     // === 윈도우 텍스트 ===
 
     [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]

@@ -21,6 +21,11 @@ internal static partial class Program
 
     private static Mutex? _mutex;
 
+    // TaskbarCreated 브로드캐스트 메시지 ID — Explorer 재시작 시 셸이 모든 최상위 창에 브로드캐스트.
+    // RegisterWindowMessageW 의 반환값 (0이면 등록 실패 → 핸들러 비활성).
+    // 동적 ID 라 WndProc switch 에 넣지 못하므로 switch 앞단의 if 분기에서 비교한다.
+    private static uint _taskbarCreatedMsgId;
+
     // 핫키 ID (P3: 매직 넘버 금지)
     private const int HOTKEY_TOGGLE_VISIBILITY = 1;
     private const int HOTKEY_COUNT = 1;
@@ -49,6 +54,28 @@ internal static partial class Program
             return false;
         }
         return true;
+    }
+
+    /// <summary>
+    /// 중복 실행 시 기존(실행 중) 인스턴스를 찾아 활성화 신호를 전송한다.
+    /// 메인 윈도우 클래스명으로 <c>FindWindowW</c> 탐색 → <c>PostMessageW</c> 로
+    /// <see cref="AppMessages.WM_APP_ACTIVATE"/> 게시. 기존 인스턴스는 WndProc 에서 이를 받아
+    /// 인디케이터를 즉시 표시한다.
+    /// 탐색 실패(기존 창이 막 파괴 중이거나 클래스명이 달라진 경우)는 조용히 무시한다.
+    /// </summary>
+    private static void NotifyExistingInstance()
+    {
+        IntPtr hwndExisting = User32.FindWindowW(MainClassName, null);
+        if (hwndExisting == IntPtr.Zero)
+        {
+            Logger.Debug("NotifyExistingInstance: no existing window found");
+            return;
+        }
+
+        if (!User32.PostMessageW(hwndExisting, AppMessages.WM_APP_ACTIVATE, IntPtr.Zero, IntPtr.Zero))
+            Logger.Warning("NotifyExistingInstance: PostMessageW failed");
+        else
+            Logger.Debug("NotifyExistingInstance: WM_APP_ACTIVATE posted to existing instance");
     }
 
     // ================================================================

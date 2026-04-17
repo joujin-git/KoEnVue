@@ -540,6 +540,44 @@ Every link in the chain (`WinHttpSetTimeouts` inheritance, `SafeWinHttpHandle` R
 
 ---
 
+## Multi-instance and tray recovery
+
+### Mutex ordering — why acquire before cleanup
+
+`Program.MainImpl` 초기화 순서에서 `TryAcquireMutex` 가 `CleanupPreviousTrayIcon` 보다 **먼저** 실행되어야 한다. 두 함수 모두 `DefaultConfig.AppGuid` 와 연관된 상태(Mutex 이름, 트레이 아이콘 GUID)에 작용하므로 순서가 역전되면 두 번째 인스턴스가 이미 실행 중인 정상 인스턴스의 트레이 아이콘을 `NIM_DELETE` 로 지워버린 뒤 Mutex 실패로 종료하는 부작용이 발생한다.
+
+Mutex 획득 성공은 "이전 인스턴스가 존재하지 않는다" 는 보장이므로(크래시 시 OS 가 Mutex 를 자동 해제), 이 조건 하에서만 Cleanup 이 안전하게 "이전 크래시의 유령 아이콘을 정리" 한다는 의미를 가진다.
+
+### Second-instance activation signal
+
+`TryAcquireMutex` 실패 시 `NotifyExistingInstance` 가 호출된다. 메인 윈도우 클래스명(`"KoEnVueMain"`)으로 `User32.FindWindowW` 호출 → 기존 인스턴스의 HWND 를 얻고 `PostMessageW(hwnd, AppMessages.WM_APP_ACTIVATE, 0, 0)`. 두 번째 인스턴스는 즉시 종료한다.
+
+기존 인스턴스의 WndProc 는 `WM_APP_ACTIVATE` (`WM_APP + 7`) 를 수신해 `HandleActivateRequest` 로 분기한다. 여기서 현재 포그라운드 앱 기준 좌표로 `Animation.TriggerShow` 를 호출해 인디케이터를 즉시 표시 — `DisplayMode` 와 `EventTriggers` 설정을 **무시**하고 강제 표시하는 이유는 사용자의 명시적인 재실행 행위에 대한 응답이기 때문.
+
+메시지 전용 윈도우(HWND_MESSAGE parent) 가 아니라 일반 최상위 윈도우(데스크톱 parent + 화면 미표시)로 생성되므로 `FindWindowW` 가 정상 매칭한다. 탐색 실패(기존 창이 막 파괴 중이거나 클래스명이 달라진 경우)는 조용히 무시된다.
+
+### TaskbarCreated — shell restart recovery
+
+셸(`explorer.exe`) 재시작 시 이전에 등록된 모든 트레이 아이콘 정보는 소실된다. Windows 는 이를 보완하기 위해 `"TaskbarCreated"` 라는 이름의 **등록된 윈도우 메시지**를 모든 최상위 창에 브로드캐스트한다. 셸 업데이트, 크래시, 수동 재시작(`taskkill /im explorer.exe` 등) 시나리오에서 모두 발생.
+
+`Program.MainImpl` 은 메인 윈도우 생성 직후 `User32.RegisterWindowMessageW("TaskbarCreated")` 로 메시지 ID 를 받아 `_taskbarCreatedMsgId` 필드에 저장한다. 동적 ID 이므로 WndProc 의 `switch` 에 넣을 수 없어 switch 앞단의 if 분기로 비교한다:
+
+```csharp
+if (msg != 0 && msg == _taskbarCreatedMsgId && hwnd == _hwndMain)
+{
+    HandleTaskbarCreated();
+    return IntPtr.Zero;
+}
+```
+
+`hwnd == _hwndMain` 체크는 오버레이 창도 최상위라 같은 브로드캐스트를 받는 문제를 피하기 위함 — 메인 창에서만 한 번 처리한다.
+
+`HandleTaskbarCreated` 는 `config.TrayEnabled` 확인 후 `Tray.Recreate(_lastImeState, _config)` 를 호출한다. `Recreate` 는 `Remove` (내부 상태 초기화, `NIM_DELETE` 는 셸 측 등록이 없으므로 실패해도 무해) → `Initialize` (`NotifyIconManager` 재생성 + `NIM_ADD` + `NIM_SETVERSION`) 순서로 아이콘을 복구한다.
+
+`RegisterWindowMessageW` 등록 실패(매우 드묾) 시에는 `Logger.Warning` 만 남기고 복구 기능만 비활성화된다 — 앱 자체 동작엔 영향 없음.
+
+---
+
 ## Misc
 
 ### Delegate GC prevention

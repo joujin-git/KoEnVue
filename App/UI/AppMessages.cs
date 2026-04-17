@@ -53,6 +53,15 @@ internal static class AppMessages
     /// </summary>
     public const uint WM_APP_UPDATE_FOUND = Win32Constants.WM_APP + 6;
 
+    /// <summary>
+    /// 중복 실행된 두 번째 인스턴스가 기존(실행 중) 인스턴스에 활성화를 요청.
+    /// 수신 시 현재 포그라운드 앱 기준으로 인디케이터를 즉시 표시해 사용자에게
+    /// "이미 실행 중" 이라는 시각 피드백을 준다.
+    /// wParam: 0
+    /// lParam: 0
+    /// </summary>
+    public const uint WM_APP_ACTIVATE = Win32Constants.WM_APP + 7;
+
     // --- Timer IDs (WM_TIMER wParam) ---
 
     public const nuint TIMER_ID_FADE      = 1;  // ~16ms, 페이드 애니메이션

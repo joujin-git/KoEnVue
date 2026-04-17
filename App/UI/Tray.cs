@@ -129,6 +129,23 @@ internal static class Tray
     }
 
     /// <summary>
+    /// 트레이 아이콘 재등록.
+    /// Explorer 재시작(업데이트, 크래시) 또는 다른 원인으로 셸이 아이콘을 잃었을 때
+    /// TaskbarCreated 브로드캐스트를 수신한 Program 이 호출.
+    /// 내부 상태를 초기화한 뒤 Initialize 를 다시 호출한다 — 셸 측에 이전 등록이 없으므로
+    /// NIM_DELETE 는 실패해도 무해하다.
+    /// </summary>
+    internal static void Recreate(ImeState state, AppConfig config)
+    {
+        if (_hwndMain == IntPtr.Zero) return;
+
+        IntPtr hwndMain = _hwndMain;
+        Remove();
+        Initialize(hwndMain, state, config);
+        Logger.Info("Tray icon recreated (TaskbarCreated or recovery)");
+    }
+
+    /// <summary>
     /// 트레이 아이콘 제거 (NIM_DELETE). 앱 종료 시 호출.
     /// </summary>
     internal static void Remove()

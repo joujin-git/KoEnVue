@@ -92,11 +92,18 @@ internal static partial class Program
 
     static void MainImpl()
     {
-        // 1. 이전 트레이 찌꺼기 정리 (크래시 복구)
-        CleanupPreviousTrayIcon();
+        // 1. 다중 인스턴스 체크 — 실패 시 기존 인스턴스에 활성화 신호만 보내고 즉시 종료.
+        //    Cleanup 보다 먼저 실행해야 "이미 실행 중" 인 정상 인스턴스의 트레이 아이콘을
+        //    NIM_DELETE 로 지워버리는 부작용이 없다.
+        if (!TryAcquireMutex())
+        {
+            NotifyExistingInstance();
+            return;
+        }
 
-        // 2. 다중 인스턴스 체크
-        if (!TryAcquireMutex()) return;
+        // 2. 이전 트레이 찌꺼기 정리 — Mutex 획득 성공했으므로 동일 GUID 로 남은 아이콘은
+        //    이전 크래시의 유령이다.
+        CleanupPreviousTrayIcon();
 
         // 3. 설정 로드
         _config = Settings.Load();
@@ -127,6 +134,13 @@ internal static partial class Program
             Logger.Error("Main window creation failed, aborting");
             return;
         }
+
+        // 8a. Explorer 재시작 감지용 브로드캐스트 메시지 ID 등록.
+        //     셸이 재시작될 때마다 모든 최상위 창에 이 메시지를 보낸다 → WndProc 에서
+        //     트레이 아이콘을 재등록해 아이콘 유실을 복구.
+        _taskbarCreatedMsgId = User32.RegisterWindowMessageW("TaskbarCreated");
+        if (_taskbarCreatedMsgId == 0)
+            Logger.Warning("RegisterWindowMessageW(TaskbarCreated) failed — Explorer-restart tray recovery disabled");
 
         // 9. 오버레이 윈도우 생성
         Logger.Debug("Creating overlay window");
@@ -208,6 +222,15 @@ internal static partial class Program
     [UnmanagedCallersOnly]
     private static IntPtr WndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
+        // === 동적 메시지 ID (switch 불가) ===
+        // RegisterWindowMessageW 로 런타임에 받은 TaskbarCreated ID — 등록 실패 시 0.
+        // 오버레이 창도 최상위라 같은 브로드캐스트를 받으므로 메인 창에서만 처리해 중복 방지.
+        if (msg != 0 && msg == _taskbarCreatedMsgId && hwnd == _hwndMain)
+        {
+            HandleTaskbarCreated();
+            return IntPtr.Zero;
+        }
+
         switch (msg)
         {
             // === 커스텀 메시지 (감지 스레드 → 메인 스레드) ===
@@ -234,6 +257,10 @@ internal static partial class Program
 
             case AppMessages.WM_APP_UPDATE_FOUND:
                 HandleUpdateFound();
+                return IntPtr.Zero;
+
+            case AppMessages.WM_APP_ACTIVATE:
+                HandleActivateRequest();
                 return IntPtr.Zero;
 
             // === 트레이 ===
@@ -572,6 +599,32 @@ internal static partial class Program
         var info = _pendingUpdate;
         if (info is null) return;
         Tray.OnUpdateFound(info);
+    }
+
+    /// <summary>
+    /// 중복 실행된 두 번째 인스턴스의 WM_APP_ACTIVATE 수신 핸들러.
+    /// 현재 포그라운드 앱 기준으로 인디케이터를 즉시 표시해 "이미 실행 중" 이라는 시각 피드백을 준다.
+    /// DisplayMode / EventTriggers 설정과 무관하게 강제 표시 — 사용자의 명시적 재실행 행위에 대한 응답.
+    /// </summary>
+    private static void HandleActivateRequest()
+    {
+        Logger.Info("Activation request from second instance received");
+        if (_lastForegroundHwnd == IntPtr.Zero) return;
+
+        _indicatorVisible = true;
+        var (x, y) = GetAppPosition();
+        Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
+    }
+
+    /// <summary>
+    /// Explorer 재시작(업데이트, 크래시 복구) 시 셸이 브로드캐스트하는 TaskbarCreated 메시지 핸들러.
+    /// 셸은 재시작 시 모든 트레이 아이콘 등록 정보를 잃으므로 앱이 스스로 재등록해야 한다.
+    /// </summary>
+    private static void HandleTaskbarCreated()
+    {
+        Logger.Info("TaskbarCreated broadcast received, recreating tray icon");
+        if (_config.TrayEnabled)
+            Tray.Recreate(_lastImeState, _config);
     }
 
     private static void HideOverlay()
