@@ -22,7 +22,7 @@
 - **중복 실행 시 기존 인스턴스에 활성화 신호 전달** — 두 번째 인스턴스가 조용히 종료되던 이전 동작 대신, `FindWindowW` 로 실행 중인 메인 윈도우를 찾아 `WM_APP_ACTIVATE` (`WM_APP + 7`) 을 `PostMessageW` 로 전송. 기존 인스턴스는 `HandleActivateRequest` 에서 현재 포그라운드 앱 기준으로 인디케이터를 즉시 표시해 "이미 실행 중" 시각 피드백을 제공 (`DisplayMode` / `EventTriggers` 설정과 무관하게 강제 표시)
 - **Explorer 재시작 시 트레이 아이콘 자동 복구** — `RegisterWindowMessageW("TaskbarCreated")` 로 셸 브로드캐스트 메시지 ID 를 등록하고 WndProc 에서 수신 → `Tray.Recreate` (내부 상태 초기화 + `NotifyIconManager` 재생성 + `NIM_ADD` + `NIM_SETVERSION`) 로 아이콘 재등록. 셸 업데이트·크래시·수동 `explorer.exe` 재시작 시나리오 모두 커버. 등록 실패 시 `Logger.Warning` + 복구 기능만 비활성화 (앱 자체는 정상 동작)
 - `User32.FindWindowW`, `User32.RegisterWindowMessageW` P/Invoke 추가
-- `Tray.Recreate(ImeState, AppConfig)` public API 추가
+- `Tray.Recreate(ImeState, AppConfig)` internal API 추가
 
 ## [0.9.1.2] — 2026-04-17
 

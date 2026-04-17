@@ -416,8 +416,9 @@ Handles the "user moved the exe" case: the first boot after a move still misses 
 ───
 ☑ 시작 프로그램 등록
 ───
-기본 위치 ▸    현재 위치로 설정 / 초기화
-위치 모드 ▸    ○ 고정 위치 / ● 창 기준
+기본 위치 ▸       현재 위치로 설정 / 초기화
+위치 모드 ▸       ○ 고정 위치 / ● 창 기준
+드래그 활성 키 ▸  ● 없음 / ○ Ctrl / ○ Alt / ○ Ctrl + Alt
 위치 기록 정리...
 ───
 상세 설정...
