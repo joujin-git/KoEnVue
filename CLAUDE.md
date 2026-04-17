@@ -2,7 +2,7 @@
 
 Windows Korean/English IME state indicator. Draggable floating overlay showing **한** / **En** / **EN** labels, with optional CAPS LOCK bars on the label edges.
 
-C# 14 / .NET 10 + NativeAOT single exe (~4.9 MB). Zero external NuGet packages.
+C# 14 / .NET 10 + NativeAOT single exe (~4.7 MB). Zero external NuGet packages.
 
 ## Tech stack
 

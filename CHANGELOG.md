@@ -11,6 +11,10 @@
 - 트레이 메뉴 "드래그 활성 키" 서브메뉴(라디오 4항목, `IDM_DRAG_MOD_*`) 및 상세 설정 "다중 모니터" 섹션 콤보박스. 기본값 `None` 이라 기존 사용자 영향 없음
 - `App/Models/DragModifier.cs` enum, `AppConfig.DragModifier` 필드, `Win32Constants.VK_CONTROL` / `VK_MENU` 상수 추가. `Program.IsDragModifierPressed` 헬퍼 — `Ctrl` 모드는 `Ctrl && !Alt` 엄격 판정으로 Ctrl+Alt 조합에 우발 트리거되지 않음. `Shift`는 드래그 중 축 고정에 선점되어 있어 선택지에서 제외
 
+### 개선
+
+- **퍼블리시 exe 크기 다이어트 (~407 KB / 7.9 %)** — NativeAOT 진단 메타데이터를 비활성화하는 csproj 빌드 플래그 6 종 추가: `StackTraceSupport=false` (예외 스택트레이스의 메서드명 테이블 제거 — 본 앱은 silent-catch 정책으로 사용자에게 스택을 노출하지 않음), `UseSystemResourceKeys=true` (BCL 예외 메시지를 짧은 키로 — 사용자 대면 예외 텍스트 없음), `DebuggerSupport=false` (릴리스 디버거 어태치 메타데이터), `MetadataUpdaterSupport=false` (Hot Reload — 릴리스 무관), `EventSourceSupport=false` (ETW/EventSource — 자체 `Logger` 사용), `HttpActivityPropagationSupport=false` (DiagnosticSource HTTP 전파 — `WinHTTP` 직접 P/Invoke 사용). 결과: release exe 5,130,752 B → **4,723,200 B**. 코드 동작 변화 없음
+
 ### 수정
 
 - **모달 대화상자 활성 중 인디케이터 거동 통일** — 세 대화상자(크기 직접 지정 / 위치 기록 정리 / 상세 설정)의 OK/취소/Esc 경로에 따라 인디 숨김 여부가 달랐고, 특히 Window 위치 모드에선 감지 스레드가 대화상자 HWND 를 일반 포그라운드 앱으로 오인식해 인디가 대화상자 근처로 튀는 부작용이 있었음. `DetectionLoop` 에 `ModalDialogLoop.IsActive` 가드를 추가해 모달 활성 중에는 `WM_HIDE_INDICATOR` 1회 송출 + `lastFiltered=true` 후 틱을 건너뛰도록 수정. 대화상자 종료 후 원 앱 foreground 복귀 첫 틱에서 `foregroundChanged=true` 로 자연 재표시. `PositionMode`(Fixed/Window), `DragModifier`(None/Ctrl/Alt/CtrlAlt) 모든 조합에 동일 적용. 부수 효과로 모달 중 감지 경로의 `WM_POSITION_UPDATED` → `TriggerShow` 렌더 간섭이 사라지면서, 대화상자가 뜨자마자 ESC 로 닫을 때 포커스 지연이 사라짐
