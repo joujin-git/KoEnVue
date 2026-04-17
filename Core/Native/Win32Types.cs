@@ -416,6 +416,8 @@ internal static class Win32Constants
     // --- 입력 ---
     public const int VK_LBUTTON          = 0x01;
     public const int VK_SHIFT            = 0x10;
+    public const int VK_CONTROL          = 0x11;
+    public const int VK_MENU             = 0x12;  // Alt 키
     public const int VK_CAPITAL          = 0x14;
 
     // --- F 키 ---

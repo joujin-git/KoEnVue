@@ -316,7 +316,14 @@ internal static partial class Program
 
             case Win32Constants.WM_NCHITTEST:
                 if (hwnd == _hwndOverlay)
-                    return Win32Constants.HTCAPTION;  // 본체 드래그 가능
+                {
+                    // DragModifier=None: 기존 동작 (항상 드래그 가능, 모든 클릭 소비).
+                    // 모디파이어 설정 시 해당 키가 눌려 있을 때만 HTCAPTION 반환 → 드래그 시작.
+                    // 안 눌렸으면 HTTRANSPARENT 반환 → 클릭/휠이 아래 창으로 투과.
+                    return IsDragModifierPressed(_config.DragModifier)
+                        ? Win32Constants.HTCAPTION
+                        : Win32Constants.HTTRANSPARENT;
+                }
                 return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
 
             case Win32Constants.WM_MOVING:
@@ -409,6 +416,27 @@ internal static partial class Program
             Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
         }
         // 같은 앱 내 윈도우 이동 — 플로팅 인디케이터는 위치 고정이므로 무시
+    }
+
+    /// <summary>
+    /// 현재 드래그 활성 키 설정에 해당하는 모디파이어가 눌려 있는지 확인.
+    /// None 모드는 항상 true — 기존 동작(항상 드래그 가능) 유지.
+    /// WM_NCHITTEST 메인 스레드에서 호출 — GetAsyncKeyState 스레드 제약 없음.
+    /// </summary>
+    private static bool IsDragModifierPressed(DragModifier mode)
+    {
+        const short KeyPressedMask = unchecked((short)0x8000);
+        if (mode == DragModifier.None) return true;
+
+        bool ctrl = (User32.GetAsyncKeyState(Win32Constants.VK_CONTROL) & KeyPressedMask) != 0;
+        bool alt  = (User32.GetAsyncKeyState(Win32Constants.VK_MENU) & KeyPressedMask) != 0;
+        return mode switch
+        {
+            DragModifier.Ctrl    => ctrl && !alt,
+            DragModifier.Alt     => alt && !ctrl,
+            DragModifier.CtrlAlt => ctrl && alt,
+            _                    => true,
+        };
     }
 
     /// <summary>

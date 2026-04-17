@@ -144,6 +144,12 @@ internal sealed record AppConfig
     // 0 = 엣지에 밀착, 양수 = 경계선 겹침 방지 여백. 화면 엣지에는 적용 안 됨.
     public int SnapGapPx { get; init; } = 2;
 
+    // [인디케이터 위치 -- 드래그 활성 키]
+    // None  = 항상 드래그 가능 (기존 동작). 오버레이가 모든 마우스 이벤트 소비.
+    // Ctrl / Alt / CtrlAlt = 해당 키 누른 상태에서만 드래그. 키를 놓으면 클릭/휠이
+    // 아래 창으로 투과 (WM_NCHITTEST → HTTRANSPARENT). Shift는 축 고정에 선점되어 제외.
+    public DragModifier DragModifier { get; init; } = DragModifier.None;
+
     // [고급]
     public AdvancedConfig Advanced { get; init; } = new();
 

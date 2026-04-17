@@ -44,6 +44,12 @@ internal static class Tray
     private const int IDM_POSITION_FIXED  = 3301;
     private const int IDM_POSITION_WINDOW = 3302;
 
+    // 서브메뉴: 드래그 활성 키
+    private const int IDM_DRAG_MOD_NONE     = 3401;
+    private const int IDM_DRAG_MOD_CTRL     = 3402;
+    private const int IDM_DRAG_MOD_ALT      = 3403;
+    private const int IDM_DRAG_MOD_CTRL_ALT = 3404;
+
     // 메인 메뉴
     private const int IDM_STARTUP            = 4001;
     private const int IDM_CLEANUP            = 4003;
@@ -256,6 +262,26 @@ internal static class Tray
         User32.CheckMenuRadioItem(hPositionModeMenu, (uint)IDM_POSITION_FIXED,
             (uint)IDM_POSITION_WINDOW, positionModeCheckId, Win32Constants.MF_BYCOMMAND);
 
+        // --- 서브메뉴: 드래그 활성 키 ---
+        IntPtr hDragModMenu = User32.CreatePopupMenu();
+        User32.AppendMenuW(hDragModMenu, Win32Constants.MF_STRING,
+            (nuint)IDM_DRAG_MOD_NONE, I18n.MenuDragModifierNone);
+        User32.AppendMenuW(hDragModMenu, Win32Constants.MF_STRING,
+            (nuint)IDM_DRAG_MOD_CTRL, I18n.MenuDragModifierCtrl);
+        User32.AppendMenuW(hDragModMenu, Win32Constants.MF_STRING,
+            (nuint)IDM_DRAG_MOD_ALT, I18n.MenuDragModifierAlt);
+        User32.AppendMenuW(hDragModMenu, Win32Constants.MF_STRING,
+            (nuint)IDM_DRAG_MOD_CTRL_ALT, I18n.MenuDragModifierCtrlAlt);
+        uint dragModCheckId = config.DragModifier switch
+        {
+            DragModifier.Ctrl    => (uint)IDM_DRAG_MOD_CTRL,
+            DragModifier.Alt     => (uint)IDM_DRAG_MOD_ALT,
+            DragModifier.CtrlAlt => (uint)IDM_DRAG_MOD_CTRL_ALT,
+            _                    => (uint)IDM_DRAG_MOD_NONE,
+        };
+        User32.CheckMenuRadioItem(hDragModMenu, (uint)IDM_DRAG_MOD_NONE,
+            (uint)IDM_DRAG_MOD_CTRL_ALT, dragModCheckId, Win32Constants.MF_BYCOMMAND);
+
         // --- 메인 메뉴 ---
         IntPtr hMenu = User32.CreatePopupMenu();
 
@@ -287,6 +313,8 @@ internal static class Tray
             (nuint)(nint)hDefaultPosMenu, I18n.MenuDefaultPosition);
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
             (nuint)(nint)hPositionModeMenu, I18n.MenuPositionMode);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
+            (nuint)(nint)hDragModMenu, I18n.MenuDragModifier);
         User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_CLEANUP, I18n.MenuCleanup);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
         User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_SETTINGS, I18n.MenuSettings);
@@ -383,6 +411,36 @@ internal static class Tray
                 {
                     updateConfig(config with { PositionMode = PositionMode.Window });
                     Logger.Info("Position mode changed to Window");
+                }
+                break;
+
+            // --- 드래그 활성 키 ---
+            case IDM_DRAG_MOD_NONE:
+                if (config.DragModifier != DragModifier.None)
+                {
+                    updateConfig(config with { DragModifier = DragModifier.None });
+                    Logger.Info("DragModifier changed to None");
+                }
+                break;
+            case IDM_DRAG_MOD_CTRL:
+                if (config.DragModifier != DragModifier.Ctrl)
+                {
+                    updateConfig(config with { DragModifier = DragModifier.Ctrl });
+                    Logger.Info("DragModifier changed to Ctrl");
+                }
+                break;
+            case IDM_DRAG_MOD_ALT:
+                if (config.DragModifier != DragModifier.Alt)
+                {
+                    updateConfig(config with { DragModifier = DragModifier.Alt });
+                    Logger.Info("DragModifier changed to Alt");
+                }
+                break;
+            case IDM_DRAG_MOD_CTRL_ALT:
+                if (config.DragModifier != DragModifier.CtrlAlt)
+                {
+                    updateConfig(config with { DragModifier = DragModifier.CtrlAlt });
+                    Logger.Info("DragModifier changed to CtrlAlt");
                 }
                 break;
 

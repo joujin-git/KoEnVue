@@ -63,6 +63,22 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 The indicator is a separate TOPMOST window, not tied to any foreground window's geometry. `WM_NCHITTEST → HTCAPTION` enables native drag. `WM_ENTERSIZEMOVE` / `WM_EXITSIZEMOVE` track drag lifecycle.
 
+### Drag modifier (click-through gate)
+
+`config.drag_modifier` (`DragModifier` enum: `None` / `Ctrl` / `Alt` / `CtrlAlt`) controls whether mouse clicks on the indicator are consumed or pass through to the underlying window.
+
+- **None (default)** — `WM_NCHITTEST` returns `HTCAPTION` unconditionally. Every left-click hits the indicator as a "title bar" and starts (or no-ops as a 0-px) drag; right-click and wheel are also consumed. Matches pre-existing behavior.
+- **Ctrl / Alt / CtrlAlt** — `WM_NCHITTEST` queries `GetAsyncKeyState` on the main thread and returns `HTCAPTION` only when the exact modifier combo is held. Otherwise returns `HTTRANSPARENT`, which makes Windows route the mouse event (click, right-click, `WM_MOUSEWHEEL`) to the next window underneath the indicator. The matching is strict: `Ctrl` mode requires Ctrl pressed **and** Alt released, so Ctrl+Alt cannot accidentally trigger `Ctrl` mode.
+
+Key properties:
+
+- The indicator is layered (`WS_EX_LAYERED`) and `WS_EX_NOACTIVATE`, so `HTTRANSPARENT` works cleanly — no window-style toggling, no flicker.
+- Once drag begins, Windows enters a modal `WM_ENTERSIZEMOVE` loop with mouse capture. Releasing the modifier mid-drag does not abort the drag — `NCHITTEST` is not re-queried inside that loop.
+- `Shift` is reserved for axis-lock during an active drag (see [`LayeredOverlayBase.HandleMoving`](../Core/Windowing/LayeredOverlayBase.cs)) and is not offered as a drag-gate choice.
+- In a non-`None` mode, clicking through the indicator delivers the click to the underlying window — this can change the foreground window, which the detection thread picks up and triggers `HandlePositionUpdated` (normal path). Expected behavior, but worth noting as a behavioral difference from `None`.
+
+UI exposure: tray menu "드래그 활성 키" radio submenu (4 items) and settings dialog combo in the "다중 모니터" section.
+
 ### Position modes
 
 `config.position_mode` (`PositionMode` enum: `Fixed` / `Window`) selects how the indicator is placed:
@@ -456,7 +472,7 @@ Parsing uses `double.TryParse` + `CultureInfo.InvariantCulture`, so `"2.3"` work
 
 `partial class` shares all static state at compile time. No call-site changes — `SettingsDialog.Show(hwndMain, config, updateConfig)` is the same public entry point.
 
-**Scroll implementation**: tracks every child widget in `_scrollChildren` as `(Hwnd, X, LogicalY)` and repositions them via `SetWindowPos(SWP_NOSIZE | SWP_NOZORDER)` on `WM_VSCROLL` / `WM_MOUSEWHEEL`. `SWP_NOSIZE` preserves COMBOBOX dropdown height (created at `rowH + ComboDropExtra = 220`).
+**Scroll implementation**: `ScrollTo` updates `_scrollPos`, calls `SetScrollInfo` to move the thumb, then iterates `_scrollChildren` (tracked as `(Hwnd, X, LogicalY)`) calling `SetWindowPos(h, x, logicalY - _scrollPos, SWP_NOSIZE | SWP_NOZORDER)` per child, and finally `InvalidateRect(viewport, null, true)` to erase and repaint the viewport background. `SWP_NOSIZE` preserves each COMBOBOX's `rowH + ComboDropExtra = 220` dropdown-ready height.
 
 **Validation failure handling**: `TryCommit` shows a MessageBox, calls `ScrollFieldIntoView` to bring the offending field into view, refocuses the control, and for EDITs selects all text via `EM_SETSEL`.
 

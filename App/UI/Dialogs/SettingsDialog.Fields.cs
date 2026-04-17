@@ -288,6 +288,11 @@ internal static partial class SettingsDialog
             c => c.ClampToWorkArea, (c, v) => c with { ClampToWorkArea = v }));
         Add(Int("창 스냅 간격 (px)", "Snap gap (px)", 0, 10,
             c => c.SnapGapPx, (c, v) => c with { SnapGapPx = v }));
+        Add(Combo("드래그 활성 키", "Drag modifier",
+            ko ? ["없음", "Ctrl", "Alt", "Ctrl + Alt"]
+               : ["None", "Ctrl", "Alt", "Ctrl + Alt"],
+            c => (int)c.DragModifier,
+            (c, i) => c with { DragModifier = (DragModifier)Math.Clamp(i, 0, 3) }));
 
         // ================================================================
         // 13. 고급

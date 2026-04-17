@@ -67,6 +67,11 @@ internal static class I18n
     public static string MenuPositionMode => _isKorean ? "위치 모드" : "Position Mode";
     public static string MenuPositionFixed => _isKorean ? "고정 위치" : "Fixed Position";
     public static string MenuPositionWindow => _isKorean ? "창 기준" : "Relative to Window";
+    public static string MenuDragModifier => _isKorean ? "드래그 활성 키" : "Drag Modifier";
+    public static string MenuDragModifierNone => _isKorean ? "없음" : "None";
+    public static string MenuDragModifierCtrl => _isKorean ? "Ctrl" : "Ctrl";
+    public static string MenuDragModifierAlt => _isKorean ? "Alt" : "Alt";
+    public static string MenuDragModifierCtrlAlt => _isKorean ? "Ctrl + Alt" : "Ctrl + Alt";
     public static string MenuCleanup => _isKorean ? "위치 기록 정리..." : "Clean position history...";
     public static string MenuSettings => _isKorean ? "상세 설정..." : "Settings...";
     public static string MenuExit => _isKorean ? "종료" : "Exit";

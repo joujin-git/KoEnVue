@@ -80,6 +80,7 @@ exe 폴더의 `config.json` 을 직접 편집하거나 트레이 **상세 설정
 | `position_mode` | `"window"` | `"fixed"` 화면 고정 / `"window"` 창 기준 상대 위치 |
 | `snap_to_windows` | `true` | 드래그 중 창 엣지 자석 스냅 |
 | `snap_gap_px` | `2` | 창 엣지 스냅 시 간격 (px, 0 = 밀착) |
+| `drag_modifier` | `"none"` | 드래그 활성 키. `"none"` 항상 드래그 (클릭 소비) / `"ctrl"`·`"alt"`·`"ctrl_alt"` 해당 키 누른 상태에서만 드래그, 평상시 클릭·휠은 아래 창으로 투과 |
 | `theme` | `"custom"` | `custom` / `minimal` / `vivid` / `pastel` / `dark` / `system` (6 프리셋) |
 | `poll_interval_ms` | `80` | IME 감지 폴링 간격 (ms) |
 | `hide_in_fullscreen` | `true` | 전체화면 앱에서 숨김 |
@@ -87,7 +88,7 @@ exe 폴더의 `config.json` 을 직접 편집하거나 트레이 **상세 설정
 | `tray_tooltip` | `true` | 트레이 아이콘 호버 툴팁 표시 |
 | `update_check_enabled` | `true` | 부팅 시 GitHub Releases 에서 새 버전 1회 확인 (발견 시 트레이 메뉴 최상단에 "새 버전 있음" 항목 표시) |
 
-전체 61개 설정 필드는 트레이 "상세 설정" 다이얼로그에서 13개 섹션으로 편집할 수 있습니다.
+전체 62개 설정 필드는 트레이 "상세 설정" 다이얼로그에서 13개 섹션으로 편집할 수 있습니다.
 
 ---
 

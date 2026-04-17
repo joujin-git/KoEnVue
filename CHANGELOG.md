@@ -3,6 +3,14 @@
 이 프로젝트의 주요 변경 사항을 기록합니다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/)를 따릅니다.
 
+## [Unreleased]
+
+### 추가
+
+- **드래그 활성 키(`drag_modifier`)** — 인디케이터 마우스 클릭을 아래 창으로 투과시킬지 여부를 결정하는 신규 옵션. `"none"`(기본, 기존 동작: 모든 마우스 이벤트를 오버레이가 소비하고 어디든 드래그 가능) / `"ctrl"` / `"alt"` / `"ctrl_alt"` 4종. 비-None 모드에선 `WM_NCHITTEST`가 `GetAsyncKeyState`로 모디파이어 상태를 확인해, 눌려 있으면 `HTCAPTION`(드래그), 안 눌렸으면 `HTTRANSPARENT`(클릭·우클릭·휠이 아래 창으로 투과) 반환. 인디를 창 종료 버튼 위에 둔 채 클릭해 창을 닫는 용도 등에 활용. 드래그 도중 모디파이어를 놓아도 `WM_ENTERSIZEMOVE` 모달 루프가 캡처를 유지해 드래그 끊기지 않음
+- 트레이 메뉴 "드래그 활성 키" 서브메뉴(라디오 4항목, `IDM_DRAG_MOD_*`) 및 상세 설정 "다중 모니터" 섹션 콤보박스. 기본값 `None` 이라 기존 사용자 영향 없음
+- `App/Models/DragModifier.cs` enum, `AppConfig.DragModifier` 필드, `Win32Constants.VK_CONTROL` / `VK_MENU` 상수 추가. `Program.IsDragModifierPressed` 헬퍼 — `Ctrl` 모드는 `Ctrl && !Alt` 엄격 판정으로 Ctrl+Alt 조합에 우발 트리거되지 않음. `Shift`는 드래그 중 축 고정에 선점되어 있어 선택지에서 제외
+
 ## [0.9.1.3] — 2026-04-17
 
 ### 수정
