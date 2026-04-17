@@ -291,9 +291,11 @@ internal static class Settings
                         return MergeProfile(global, profile);
                     }
                 }
-                catch
+                catch (Exception ex) when (ex is ArgumentException or RegexMatchTimeoutException)
                 {
-                    // 잘못된 정규식 패턴 무시
+                    // 잘못된 정규식 패턴(ArgumentException) 또는 매칭 타임아웃만 흡수.
+                    // 로직 버그는 전파되어 드러난다.
+                    _ = ex;
                 }
             }
             return global;
@@ -354,9 +356,14 @@ internal static class Settings
             AppConfig? merged = JsonSerializer.Deserialize(mergedJson, AppConfigJsonContext.Default.AppConfig);
             return merged is not null ? AppSettingsManager.EnsureSubObjectsPublic(merged) : global;
         }
-        catch
+        catch (Exception ex) when (ex is JsonException
+            or NotSupportedException
+            or ArgumentException
+            or InvalidOperationException)
         {
-            Logger.Warning("Failed to merge app profile, using global config");
+            // STJ 직렬화/역직렬화·Utf8JsonWriter·JsonDocument 계열 실패만 흡수하고 global 로 폴백.
+            // 로직 버그는 전파.
+            Logger.Warning($"Failed to merge app profile, using global config: {ex.Message}");
             return global;
         }
     }
@@ -446,9 +453,15 @@ internal sealed partial class AppSettingsManager : JsonSettingsManager<AppConfig
                 }
             }
         }
-        catch
+        catch (Exception ex) when (ex is JsonException
+            or InvalidOperationException
+            or FormatException
+            or OverflowException
+            or KeyNotFoundException)
         {
-            // 수동 파싱 실패 시 무시
+            // 수동 파싱 실패(JSON 구조/숫자 파싱/범위/키 부재)만 흡수. STJ 가 이미 빈 딕셔너리로
+            // 역직렬화했으므로 데이터만 손실되고 앱은 정상 동작. 로직 버그는 전파.
+            _ = ex;
         }
 
         return config;

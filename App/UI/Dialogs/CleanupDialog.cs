@@ -66,6 +66,15 @@ internal static class CleanupDialog
     /// </summary>
     public static unsafe List<string>? Show(IntPtr hwndMain, List<string> items)
     {
+        // 재진입 가드: 이미 다른 모달 다이얼로그가 열려 있으면 그 창으로 포커스만 복원.
+        // 트레이 아이콘은 shell32 관리라 EnableWindow(_hwndMain, false) 로 차단되지 않으므로
+        // 다이얼로그가 열린 상태에서도 트레이 메뉴 → 같은/다른 다이얼로그 재호출이 가능하다.
+        if (ModalDialogLoop.IsActive)
+        {
+            User32.SetForegroundWindow(ModalDialogLoop.ActiveDialog);
+            return null;
+        }
+
         _dlgResult = false;
         _dlgClosed = false;
         _checkboxHandles.Clear();
@@ -246,32 +255,39 @@ internal static class CleanupDialog
 
         // 모달 표시 — 루프/EnableWindow/포그라운드 복원은 공용 헬퍼에 위임
         User32.ShowWindow(_hwndDialog, Win32Constants.SW_SHOW);
-        ModalDialogLoop.Run(_hwndDialog, hwndMain, ref _dlgClosed);
 
-        // 결과 수집
+        // 모달 루프 + 결과 수집을 try, 정리는 finally 에서 보장한다. finally 가 _checkboxHandles
+        // 를 비우므로 결과 수집은 반드시 try 내부에 유지되어야 한다.
         List<string>? result = null;
-        if (_dlgResult)
+        try
         {
-            result = [];
-            for (int i = 0; i < items.Count; i++)
+            ModalDialogLoop.Run(_hwndDialog, hwndMain, ref _dlgClosed);
+
+            if (_dlgResult)
             {
-                if (i < _checkboxHandles.Count)
+                result = [];
+                for (int i = 0; i < items.Count; i++)
                 {
-                    IntPtr state = User32.SendMessageW(_checkboxHandles[i],
-                        Win32Constants.BM_GETCHECK, IntPtr.Zero, IntPtr.Zero);
-                    if (state == (IntPtr)Win32Constants.BST_CHECKED)
-                        result.Add(items[i]);
+                    if (i < _checkboxHandles.Count)
+                    {
+                        IntPtr state = User32.SendMessageW(_checkboxHandles[i],
+                            Win32Constants.BM_GETCHECK, IntPtr.Zero, IntPtr.Zero);
+                        if (state == (IntPtr)Win32Constants.BST_CHECKED)
+                            result.Add(items[i]);
+                    }
                 }
             }
         }
-
-        // 정리
-        User32.DestroyWindow(_hwndDialog);
-        _hwndDialog = IntPtr.Zero;
-        _hwndViewport = IntPtr.Zero;
-        _checkboxHandles.Clear();
-        _scrollChildren.Clear();
-        // hFont는 using 스코프 종료 시 자동 해제 (SafeFontHandle → DeleteObject)
+        finally
+        {
+            // 정리
+            User32.DestroyWindow(_hwndDialog);
+            _hwndDialog = IntPtr.Zero;
+            _hwndViewport = IntPtr.Zero;
+            _checkboxHandles.Clear();
+            _scrollChildren.Clear();
+            // hFont는 using 스코프 종료 시 자동 해제 (SafeFontHandle → DeleteObject)
+        }
 
         return result;
     }
@@ -351,13 +367,15 @@ internal static class CleanupDialog
         {
             case Win32Constants.WM_COMMAND:
                 int id = (int)(wParam.ToInt64() & 0xFFFF);
-                if (id == IDC_BTN_OK)
+                if (id == IDC_BTN_OK || id == Win32Constants.IDOK)
                 {
                     _dlgResult = true;
                     _dlgClosed = true;
                     return IntPtr.Zero;
                 }
-                if (id == IDC_BTN_CANCEL)
+                // IsDialogMessageW 가 ESC 를 WM_COMMAND wParam=IDCANCEL(2) 로 변환해 보낸다.
+                // 취소 버튼 ID(IDC_BTN_CANCEL=5502)와 별개로 IDCANCEL 도 수락해야 ESC 가 작동.
+                if (id == IDC_BTN_CANCEL || id == Win32Constants.IDCANCEL)
                 {
                     _dlgResult = false;
                     _dlgClosed = true;

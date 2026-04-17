@@ -42,6 +42,7 @@ internal static class UpdateChecker
 
     private static void RunCheck(string currentVersion, string repoOwner, string repoName, Action<UpdateInfo> onUpdateFound)
     {
+        UpdateInfo? info = null;
         try
         {
             string path = $"/repos/{repoOwner}/{repoName}/releases/latest";
@@ -80,17 +81,34 @@ internal static class UpdateChecker
             }
 
             Logger.Info($"UpdateChecker: new version available — current={currentVersion} latest={release.TagName}");
-            onUpdateFound(new UpdateInfo
+            info = new UpdateInfo
             {
                 Version = release.TagName,
                 HtmlUrl = release.HtmlUrl,
-            });
+            };
         }
         catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException)
         {
             // 정책 항목 1(타입 좁히기): JSON 파싱/소스젠/매핑 오류만 흡수.
             // 로직 버그(NullRef 등)는 propagate 시켜 표면화한다.
             Logger.Debug($"UpdateChecker: parse error — {ex.Message}");
+        }
+
+        // 콜백 호출부는 파싱/HTTP try 블록 밖으로 분리한다.
+        // 콜백 구현(호출자가 주입)에서 발생하는 예외는 parse 실패와 의미가 다르고,
+        // 백그라운드 스레드에서 미처리 시 프로세스가 종료되므로 별도 보호 블록으로 감싼다.
+        if (info is not null)
+        {
+            try
+            {
+                onUpdateFound(info);
+            }
+            catch (Exception ex)
+            {
+                // 콜백 내부 예외 — 호출자가 주입한 코드라 타입 예측 불가. 백그라운드 스레드
+                // 경계 방어(conventions.md §2)로 wide catch 정당. 로그로 표면화 후 삼킨다.
+                Logger.Error($"UpdateChecker: onUpdateFound callback threw — {ex}");
+            }
         }
     }
 

@@ -117,7 +117,7 @@ internal sealed record AppConfig
     public bool ClampToWorkArea { get; init; } = true;
 
     // [인디케이터 위치 -- 모드]
-    public PositionMode PositionMode { get; init; } = PositionMode.Fixed;
+    public PositionMode PositionMode { get; init; } = PositionMode.Window;
 
     // [인디케이터 위치 -- 앱별 저장 (고정)]
     public Dictionary<string, int[]> IndicatorPositions { get; init; } = new();
@@ -148,7 +148,9 @@ internal sealed record AppConfig
     public AdvancedConfig Advanced { get; init; } = new();
 
     // [버전]
-    public int ConfigVersion { get; init; } = 3;
+    // 반드시 Settings.CurrentVersion 과 일치. 새 config 파일은 이 값으로 생성되며,
+    // Settings.Migrate 가 구버전 파일을 CurrentVersion 으로 갱신한다.
+    public int ConfigVersion { get; init; } = 4;
 }
 
 // === 중첩 설정 레코드 ===

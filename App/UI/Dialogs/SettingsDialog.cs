@@ -91,6 +91,15 @@ internal static partial class SettingsDialog
     /// </summary>
     internal static unsafe void Show(IntPtr hwndMain, AppConfig config, Action<AppConfig> updateConfig)
     {
+        // 재진입 가드: 이미 다른 모달 다이얼로그가 열려 있으면 그 창으로 포커스만 복원.
+        // 트레이 아이콘은 shell32 관리라 EnableWindow(_hwndMain, false) 로 차단되지 않으므로
+        // 다이얼로그가 열린 상태에서도 트레이 메뉴 → 같은/다른 다이얼로그 재호출이 가능하다.
+        if (ModalDialogLoop.IsActive)
+        {
+            User32.SetForegroundWindow(ModalDialogLoop.ActiveDialog);
+            return;
+        }
+
         _hwndMain = hwndMain;
         _initialConfig = config;
         _workingConfig = config;
@@ -329,16 +338,23 @@ internal static partial class SettingsDialog
         User32.ShowWindow(_hwndDialog, Win32Constants.SW_SHOW);
         User32.SetForegroundWindow(_hwndDialog);
 
-        ModalDialogLoop.Run(_hwndDialog, _hwndMain, ref _dlgClosed);
-
-        // 정리
-        User32.DestroyWindow(_hwndDialog);
-        _hwndDialog = IntPtr.Zero;
-        _hwndViewport = IntPtr.Zero;
-        _fields.Clear();
-        _fieldInputs.Clear();
-        _scrollChildren.Clear();
-        // hFont는 using 스코프 종료 시 자동 해제 (SafeFontHandle → DeleteObject)
+        // 모달 루프 실행 + 정리를 try/finally 로 보호. 루프 중 예외가 전파되어도
+        // DestroyWindow 및 정적 상태 초기화가 누수 없이 수행된다.
+        try
+        {
+            ModalDialogLoop.Run(_hwndDialog, _hwndMain, ref _dlgClosed);
+        }
+        finally
+        {
+            // 정리
+            User32.DestroyWindow(_hwndDialog);
+            _hwndDialog = IntPtr.Zero;
+            _hwndViewport = IntPtr.Zero;
+            _fields.Clear();
+            _fieldInputs.Clear();
+            _scrollChildren.Clear();
+            // hFont는 using 스코프 종료 시 자동 해제 (SafeFontHandle → DeleteObject)
+        }
 
         if (_dlgResult && _updateCallback != null)
             _updateCallback(_workingConfig);

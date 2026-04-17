@@ -60,6 +60,15 @@ internal static class ScaleInputDialog
     /// </summary>
     public static unsafe double? Show(IntPtr hwndMain, double initialValue)
     {
+        // 재진입 가드: 이미 다른 모달 다이얼로그가 열려 있으면 그 창으로 포커스만 복원.
+        // 트레이 아이콘은 shell32 관리라 EnableWindow(_hwndMain, false) 로 차단되지 않으므로
+        // 다이얼로그가 열린 상태에서도 트레이 메뉴 → 같은/다른 다이얼로그 재호출이 가능하다.
+        if (ModalDialogLoop.IsActive)
+        {
+            User32.SetForegroundWindow(ModalDialogLoop.ActiveDialog);
+            return null;
+        }
+
         _scaleDlgResult = false;
         _scaleDlgClosed = false;
         _scaleDlgParsedValue = 0;
@@ -175,14 +184,20 @@ internal static class ScaleInputDialog
         User32.SetFocus(_hwndScaleEdit);
         User32.SendMessageW(_hwndScaleEdit, Win32Constants.EM_SETSEL, IntPtr.Zero, (IntPtr)(-1));
 
-        ModalDialogLoop.Run(_hwndScaleDlg, hwndMain, ref _scaleDlgClosed);
-
-        double? result = _scaleDlgResult ? _scaleDlgParsedValue : null;
-
-        User32.DestroyWindow(_hwndScaleDlg);
-        _hwndScaleDlg = IntPtr.Zero;
-        _hwndScaleEdit = IntPtr.Zero;
-        // hFont는 using 스코프 종료 시 자동 해제 (SafeFontHandle → DeleteObject)
+        // 모달 루프 + 결과 취득을 try, 정리는 finally 로 보장.
+        double? result = null;
+        try
+        {
+            ModalDialogLoop.Run(_hwndScaleDlg, hwndMain, ref _scaleDlgClosed);
+            if (_scaleDlgResult) result = _scaleDlgParsedValue;
+        }
+        finally
+        {
+            User32.DestroyWindow(_hwndScaleDlg);
+            _hwndScaleDlg = IntPtr.Zero;
+            _hwndScaleEdit = IntPtr.Zero;
+            // hFont는 using 스코프 종료 시 자동 해제 (SafeFontHandle → DeleteObject)
+        }
 
         return result;
     }

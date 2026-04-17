@@ -646,8 +646,15 @@ internal static class Tray
             if (proc.ExitCode != 0) return null;
             return ExtractCommandFromXml(xml);
         }
-        catch
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
+            or InvalidOperationException
+            or PlatformNotSupportedException
+            or FileNotFoundException
+            or IOException)
         {
+            // schtasks.exe 실행/stdout 파이프 읽기 실패만 흡수 → null(미등록으로 취급).
+            // 로직 버그는 전파.
+            _ = ex;
             return null;
         }
     }
@@ -686,8 +693,14 @@ internal static class Tray
                 Path.GetFullPath(b),
                 StringComparison.OrdinalIgnoreCase);
         }
-        catch
+        catch (Exception ex) when (ex is ArgumentException
+            or System.Security.SecurityException
+            or PathTooLongException
+            or NotSupportedException)
         {
+            // 경로 정규화 실패(잘못된 문자/권한/길이 초과/플랫폼 미지원) 시 원본 문자열 비교로 폴백.
+            // 로직 버그는 전파.
+            _ = ex;
             return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
         }
     }

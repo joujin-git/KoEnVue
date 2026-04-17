@@ -181,7 +181,15 @@ internal static class Logger
             var fi = new FileInfo(_filePath);
             if (fi.Exists && fi.Length >= _maxSizeBytes)
             {
-                _fileWriter.Dispose();
+                // 회전 실패 시 disposed writer 참조가 남아 다음 WriteLine에서
+                // ObjectDisposedException(= 필터 밖)이 터져 드레인 스레드가 죽는 문제 방어.
+                // 필드를 먼저 null 로 교체한 뒤 로컬로 Dispose 하면, 이후 File.Move /
+                // new StreamWriter 가 IOException/UnauthorizedAccessException 으로 실패해도
+                // _fileWriter = null 상태가 유지되어 다음 FlushQueue 진입 시 가드가 안전 처리.
+                StreamWriter old = _fileWriter;
+                _fileWriter = null;
+                old.Dispose();
+
                 string oldPath = _filePath + ".old";
                 if (File.Exists(oldPath)) File.Delete(oldPath);
                 File.Move(_filePath, oldPath);

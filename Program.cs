@@ -71,10 +71,20 @@ internal static partial class Program
         }
         catch (Exception ex)
         {
-            // 비상 로깅 — Logger 초기화 전이면 파일에 직접 기록
-            try { File.AppendAllText(
-                Path.Combine(AppContext.BaseDirectory, "koenvue_crash.txt"),
-                $"[{DateTime.Now:HH:mm:ss.fff}] FATAL: {ex}\n"); } catch { }
+            // 비상 로깅 — Logger 초기화 전이면 파일에 직접 기록. 기록 실패 시에도 앱 종료 경로라
+            // 추가 복구할 수 없으므로 I/O·권한·보안 실패를 흡수. 로직 버그는 전파.
+            try
+            {
+                File.AppendAllText(
+                    Path.Combine(AppContext.BaseDirectory, "koenvue_crash.txt"),
+                    $"[{DateTime.Now:HH:mm:ss.fff}] FATAL: {ex}\n");
+            }
+            catch (Exception inner) when (inner is IOException
+                or UnauthorizedAccessException
+                or System.Security.SecurityException)
+            {
+                _ = inner;
+            }
             Logger.Error($"Fatal: {ex}");
             Logger.Shutdown();
         }
@@ -915,8 +925,14 @@ internal static partial class Program
                 }
 
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
+                or InvalidOperationException
+                or COMException
+                or ArgumentException)
             {
+                // 감지 루프 본문은 P/Invoke(User32/Dwmapi/Imm32) + VDM COM + Process.GetProcessById
+                // 조합이므로 일시적 Win32/COM/프로세스 실패는 흡수하고 다음 폴링에서 재개한다.
+                // 로직 버그(NullRef 등)는 전파되어 감지 스레드 종료로 드러난다.
                 Logger.Warning($"Detection loop error: {ex.Message}");
             }
         }

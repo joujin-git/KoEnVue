@@ -3,16 +3,26 @@
 이 프로젝트의 주요 변경 사항을 기록합니다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/)를 따릅니다.
 
-## [Unreleased]
+## [0.9.1.1] — 2026-04-17
+
+### 변경
+
+- `position_mode` 기본값을 `"fixed"` → `"window"` 로 변경 — 새 설치 시 창 기준 모드로 시작 (기존 `config.json` 은 영향 없음)
 
 ### 수정
 
+- `Logger` 로테이션 시 `StreamWriter` 교체 중 예외 발생하면 `_fileWriter`가 dispose된 인스턴스를 가리켜 이후 쓰기에서 `ObjectDisposedException` 으로 드레인 스레드가 종료되던 문제 — 필드를 null 로 먼저 비운 뒤 dispose 하도록 교정
+- `UpdateChecker` 콜백에서 예외 발생 시 백그라운드 스레드가 미처리 예외로 종료되어 프로세스가 죽을 가능성 — 콜백 호출부를 파싱 try 블록 밖으로 분리하고 별도 방어 블록으로 감쌈
 - `OnProcessExit`에서 `Logger.Shutdown()` 이후 `Logger.Info()`를 호출하여 종료 로그가 기록되지 않던 문제 — 호출 순서 교정
 - `Shell_NotifyIconW(NIM_ADD)` 반환값 미확인 — 실패 시 `_added = false` 유지 + 로그, `NIM_SETVERSION` 실패도 로그
 - `CreateDIBSection` 실패 시 `out _ppvBits`가 이전 유효 포인터를 덮어써 해제된 메모리 참조 가능성 — 로컬 변수로 수신 후 성공 시에만 필드 갱신
+- `AppConfig.ConfigVersion` 기본값이 `3` 이어서 새 config 파일이 이전 스키마로 기록되던 문제 — `Settings.CurrentVersion` 과 일치하는 `4` 로 정렬
 
 ### 개선
 
+- `config.json` 숫자 배열(`tray_quick_opacity_presets`, `indicator_positions*`)을 `[0.95, 0.85, 0.6]` 형태의 1줄로 압축 출력 — 가독성 향상
+- 모달 다이얼로그(상세 설정/위치 기록 정리/배율 입력)의 `ModalDialogLoop.Run` + `DestroyWindow` + 정적 상태 초기화를 `try/finally` 로 감싸 도중 예외 발생 시에도 윈도우/핸들이 누수되지 않도록 보장
+- 8개 bare catch 지점을 좁은 예외 집합으로 교체(`Settings` Regex/Profile/PostDeserialize, `Tray` 작업 스케줄러/경로 비교, `Program.Main`, `DetectionLoop`) — 로직 버그가 silent 삼켜지지 않고 표면화
 - 윈도우 생성(`CreateMainWindow`/`CreateOverlayWindow`) 실패 시 `IntPtr.Zero` 체크 → 조기 종료 (null 핸들로 후속 초기화 진행 방지)
 - `CreateCompatibleDC` 반환값 `Zero` 체크 추가 (`InvalidOperationException`)
 - `DetectionLoop` while 본문 `try-catch` 래핑 — 단일 폴링 예외 시 스레드 무음 종료 대신 로그 + 다음 폴링 계속
