@@ -345,7 +345,7 @@ Core / App 각 모듈의 책임·공개 API·재사용 지침은 별도 문서 *
 - **플립-플롭 가드**: `OverlayStyle` 이 `record struct` 이므로 값 동등성으로 자동 비교되며, `Render(newStyle)` 은 `newStyle == _lastStyle` 이면 재렌더를 스킵한다. `MeasureLabels` 에 세 상태 레이블을 모두 넣는 것도 `_fixedLabelWidth` 를 상태 전환 시 churn 없이 max 에 고정하기 위함
 - **엔진 인스턴스 + 정적 파사드 조합**: `Overlay` / `Animation` / `Tray` / `Settings` 파사드는 `private static` 필드에 Core 엔진 인스턴스를 보관하고 기존 정적 API 에서 엔진 메서드로 위임한다. 결과적으로 `Program.cs` · 다이얼로그 · Tray · Animation 서로 간의 호출 지점은 Stage 4 전후로 **바이트 동일**하며, 재구성의 영향은 파사드 내부에 국한된다
 - **`JsonSettingsManager<T>` 의 `JsonTypeInfo<T>` 주입**: `JsonSerializerIsReflectionEnabledByDefault=false` 환경에서는 STJ 소스 생성기 컨텍스트만이 유효하다. `AppSettingsManager` 는 생성자에 `AppConfigJsonContext.Default.AppConfig` 를 넘겨 NativeAOT 트리밍을 통과시킨다
-- **크기 예산**: Stage 6 업데이트 알림 추가 후 퍼블리시 exe 는 v0.8.9.0 기준 약 **4.94 MB** (Stage 2 기준 4,891,136 bytes 대비 +52 KB 내외). 같은 기능을 `System.Net.Http.HttpClient` 로 구현하면 NativeAOT 퍼블리시에 ~2.5 MB 가 추가되므로 WinHTTP P/Invoke 경로가 약 60 배 작다. [Unreleased] 기준 약 **4.72 MB** — `StackTraceSupport=false` 등 진단 메타데이터 6종을 비활성화해 v0.9.1.3 대비 약 **407 KB (~7.9 %)** 추가 절감
+- **크기 예산**: Stage 6 업데이트 알림 추가 후 퍼블리시 exe 는 v0.8.9.0 기준 약 **4.94 MB** (Stage 2 기준 4,891,136 bytes 대비 +52 KB 내외). 같은 기능을 `System.Net.Http.HttpClient` 로 구현하면 NativeAOT 퍼블리시에 ~2.5 MB 가 추가되므로 WinHTTP P/Invoke 경로가 약 60 배 작다. v0.9.1.4 기준 약 **4.72 MB** — `StackTraceSupport=false` 등 진단 메타데이터 6종을 비활성화해 v0.9.1.3 대비 약 **407 KB (~7.9 %)** 추가 절감
 
 ### 8.4 다중 인스턴스 및 트레이 복구
 
