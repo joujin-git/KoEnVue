@@ -412,6 +412,13 @@ internal static class Tray
     /// <summary>
     /// 펜딩된 업데이트의 GitHub 릴리스 페이지를 기본 브라우저로 연다.
     /// ShellExecuteW 반환값이 32 이하면 실패지만 사용자에게 알려도 할 일이 없으므로 silent log.
+    /// <para>
+    /// <b>URL 프리픽스 검증</b> — <c>info.HtmlUrl</c> 은 GitHub API 응답 JSON 의 <c>html_url</c> 필드에서 왔다.
+    /// 신뢰된 CA 를 가진 MITM 프록시가 응답을 조작하거나 계정이 탈취되면 <c>file:///</c>·<c>javascript:</c>·
+    /// <c>ms-settings:</c> 등의 스킴이 주입될 가능성이 있다. 앱이 <c>requireAdministrator</c> 로 기동되므로
+    /// 임의 스킴 실행은 EoP 로 번질 수 있다. 따라서 예상 릴리스 페이지 URL 프리픽스
+    /// (<c>https://github.com/{owner}/{name}/</c>) 와 일치하지 않으면 열지 않는다.
+    /// </para>
     /// </summary>
     private static void OpenUpdatePage()
     {
@@ -419,6 +426,13 @@ internal static class Tray
         if (info is null)
         {
             Logger.Debug("OpenUpdatePage called with no pending update");
+            return;
+        }
+
+        string expectedPrefix = $"https://github.com/{DefaultConfig.UpdateRepoOwner}/{DefaultConfig.UpdateRepoName}/";
+        if (!info.HtmlUrl.StartsWith(expectedPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            Logger.Warning($"Refused to open update URL with unexpected prefix: {info.HtmlUrl}");
             return;
         }
 

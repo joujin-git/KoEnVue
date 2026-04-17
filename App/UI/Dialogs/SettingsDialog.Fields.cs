@@ -10,7 +10,7 @@ namespace KoEnVue.App.UI.Dialogs;
 /// <summary>
 /// SettingsDialog 의 필드 정의/팩토리/빌더 분할.
 /// FieldDef/RowDef 메타데이터, 6개 팩토리(Bool/Int/Dbl/Str/ColorField/Combo),
-/// BuildRowDefs(13 섹션 × 60 필드), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
+/// BuildRowDefs(13 섹션 × 61 필드), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
 /// </summary>
 internal static partial class SettingsDialog
 {
@@ -275,6 +275,8 @@ internal static partial class SettingsDialog
             c => c.LogFilePath, (c, v) => c with { LogFilePath = v }, allowEmpty: true));
         Add(Int("로그 최대 크기 (MB)", "Log max size (MB)", 1, 100,
             c => c.LogMaxSizeMb, (c, v) => c with { LogMaxSizeMb = v }));
+        Add(Bool("부팅 시 업데이트 확인", "Check for updates on startup",
+            c => c.UpdateCheckEnabled, (c, v) => c with { UpdateCheckEnabled = v }));
 
         // ================================================================
         // 12. 다중 모니터

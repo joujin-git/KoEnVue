@@ -89,7 +89,7 @@ Every file in `Core/` is reusable in another Windows desktop project; every file
 | Module | Purpose |
 |--------|---------|
 | [App/Models/](../App/Models/) | `AppConfig` immutable record + all enums (`DisplayMode`, `DetectionMethod`, `ImeState`, `FontWeight`, `Theme`, `NonKoreanImeMode`, `AppProfileMatch`, `AppFilterMode`, `TrayIconStyle`, `TrayClickAction`, `Corner`, `PositionMode`) |
-| [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) | Magic-number constants: animation timings, pixel offsets, `AppVersion = "0.9.1.0"`, `UpdateRepoOwner/Name`, system-input process list |
+| [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) | Magic-number constants: animation timings, pixel offsets, `AppVersion = "0.9.1.2"`, `UpdateRepoOwner/Name`, system-input process list |
 | [App/Config/Settings.cs](../App/Config/Settings.cs) | Static facade delegating to `AppSettingsManager : JsonSettingsManager<AppConfig>`. Handles `Load`/`Save`/`CheckReload`/`ResolveForApp` (per-app profile merge) |
 | [App/Config/ThemePresets.cs](../App/Config/ThemePresets.cs) | 6 theme presets: `Custom`, `Minimal`, `Vivid`, `Pastel`, `Dark`, `System` (Windows accent color). 프리셋 전환 시 커스텀 색상 자동 백업/복원 (`custom_backup_*` 필드) |
 | [App/Detector/ImeStatus.cs](../App/Detector/ImeStatus.cs) | `WM_IME_CONTROL` + `GetKeyboardLayout` IME state detection + `EVENT_OBJECT_IME_CHANGE` WinEvent hook |
@@ -103,7 +103,7 @@ Every file in `Core/` is reusable in another Windows desktop project; every file
 | [App/UI/AppMessages.cs](../App/UI/AppMessages.cs) | `WM_APP + N` message constants for cross-thread signalling |
 | [App/UI/Dialogs/CleanupDialog.cs](../App/UI/Dialogs/CleanupDialog.cs) | `indicator_positions` management dialog (checkbox list of all entries, scrollable viewport when >15 items) |
 | [App/UI/Dialogs/ScaleInputDialog.cs](../App/UI/Dialogs/ScaleInputDialog.cs) | Custom scale entry dialog (1.0–5.0, spawned at cursor position) |
-| [App/UI/Dialogs/SettingsDialog.cs](../App/UI/Dialogs/SettingsDialog.cs) (+ `.Fields.cs` + `.Scroll.cs`) | 60-field scrollable settings dialog split across 3 partial class files |
+| [App/UI/Dialogs/SettingsDialog.cs](../App/UI/Dialogs/SettingsDialog.cs) (+ `.Fields.cs` + `.Scroll.cs`) | 61-field scrollable settings dialog split across 3 partial class files |
 
 ---
 

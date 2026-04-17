@@ -87,7 +87,7 @@ exe 폴더의 `config.json` 을 직접 편집하거나 트레이 **상세 설정
 | `tray_tooltip` | `true` | 트레이 아이콘 호버 툴팁 표시 |
 | `update_check_enabled` | `true` | 부팅 시 GitHub Releases 에서 새 버전 1회 확인 (발견 시 트레이 메뉴 최상단에 "새 버전 있음" 항목 표시) |
 
-전체 59개 설정 필드는 트레이 "상세 설정" 다이얼로그에서 13개 섹션으로 편집할 수 있습니다.
+전체 61개 설정 필드는 트레이 "상세 설정" 다이얼로그에서 13개 섹션으로 편집할 수 있습니다.
 
 ---
 
@@ -110,3 +110,11 @@ exe 폴더의 `config.json` 을 직접 편집하거나 트레이 **상세 설정
 | [docs/conventions.md](docs/conventions.md) | 코드 스타일, silent catch 정책, .NET 10 / NativeAOT 호환 노트 |
 | [docs/implementation-notes.md](docs/implementation-notes.md) | 인디케이터 렌더링·드래그·애니메이션·설정 핫리로드 등 구현 세부 |
 | [docs/KoEnVue_PRD.md](docs/KoEnVue_PRD.md) | 제품 요구사항 문서 |
+
+---
+
+## 라이선스
+
+[MIT License](LICENSE) — 자유로운 사용·수정·재배포 허용, 무보증(As-Is). 저작권 고지만 유지해 주세요.
+
+`koenvue.ico` 아이콘은 본 저장소 소유자가 직접 제작한 것으로 MIT 적용 범위에 포함됩니다. 외부 라이선스 의존성은 없습니다 (.NET 10 BCL + Windows SDK P/Invoke 만 사용, NuGet 패키지 0개).

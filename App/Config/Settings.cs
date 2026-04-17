@@ -30,6 +30,13 @@ internal static class Settings
     /// <summary>앱 프로필 LRU 캐시 최대 크기.</summary>
     private const int ProfileCacheMaxSize = 50;
 
+    /// <summary>
+    /// title 매칭 모드에서 앱 프로필 키(Regex 패턴) 평가 타임아웃.
+    /// config.json 이 user-writable 이라 악의적 패턴으로 ReDoS 공격이 가능하므로 상한을 둔다.
+    /// 100 ms 면 정상 패턴에는 충분히 여유가 있고 지수 백트래킹은 금방 컷오프된다.
+    /// </summary>
+    private static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromMilliseconds(100);
+
     // ================================================================
     // 상태
     // ================================================================
@@ -281,11 +288,13 @@ internal static class Settings
         {
             // title 모드: 각 프로필 키를 Regex 패턴으로 매칭
             // NativeAOT: RegexOptions.Compiled 금지 (Reflection.Emit 불가)
+            // 타임아웃: config.json 이 user-writable 일 때 악의적 패턴(지수 백트래킹)으로 매칭이
+            // 고착되는 ReDoS 를 방지. 기본값 Regex.InfiniteMatchTimeout 은 catch 블록을 무력화한다.
             foreach (var (pattern, profile) in global.AppProfiles)
             {
                 try
                 {
-                    if (Regex.IsMatch(key, pattern, RegexOptions.IgnoreCase))
+                    if (Regex.IsMatch(key, pattern, RegexOptions.IgnoreCase, RegexMatchTimeout))
                     {
                         if (IsDisabledProfile(profile)) return null;
                         return MergeProfile(global, profile);

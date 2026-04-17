@@ -3,6 +3,19 @@
 이 프로젝트의 주요 변경 사항을 기록합니다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/)를 따릅니다.
 
+## [0.9.1.2] — 2026-04-17
+
+### 추가
+
+- **MIT LICENSE** — 저장소 루트에 `LICENSE` 파일 추가. 이전까지는 라이선스 미명시 상태(기본 "All Rights Reserved")였던 문제 해소. `README.md` 라이선스 섹션 + `koenvue.ico` 출처 명시
+- `KoEnVue.csproj` 에 `<Copyright>` / `<Company>` / `<Product>` 필드 추가 — PE 헤더에 박혀 Windows 탐색기 "자세히" 탭에 노출 (`LegalCopyright: Copyright (c) 2026 joujin-git`)
+- **상세 설정 → 시스템 섹션에 "부팅 시 업데이트 확인" 토글 노출** — `update_check_enabled` 를 UI 에서 즉시 on/off 가능. 이전에는 `config.json` 을 직접 편집해야 했음(폐쇄망 사용자 UX 개선)
+
+### 수정
+
+- `Tray.OpenUpdatePage` 의 `ShellExecuteW` 호출이 GitHub API 응답의 `html_url` 을 스킴 검증 없이 열던 문제 — 신뢰된 CA 를 가진 MITM 프록시가 `file:///`·`javascript:`·`ms-settings:` 등을 주입하면 `requireAdministrator` 프로세스에서 EoP 로 번질 수 있음. `https://github.com/{UpdateRepoOwner}/{UpdateRepoName}/` 프리픽스 일치 검사 추가(`OrdinalIgnoreCase`). 불일치 시 `Logger.Warning` 후 즉시 반환
+- `Settings.MatchProfile` 의 `Regex.IsMatch` 가 타임아웃을 지정하지 않아 기본값 `Regex.InfiniteMatchTimeout` 이 적용, 기존 `catch (RegexMatchTimeoutException)` 이 무력화되던 문제 — `RegexMatchTimeout = TimeSpan.FromMilliseconds(100)` 상수 + 4-인자 오버로드로 교체. `app_profiles` 맵(title 모드)에 악의적 지수 백트래킹 패턴이 들어가도 감지 경로가 고착되지 않음
+
 ## [0.9.1.1] — 2026-04-17
 
 ### 변경
