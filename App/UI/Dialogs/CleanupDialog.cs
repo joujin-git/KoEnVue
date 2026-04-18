@@ -28,9 +28,6 @@ internal static class CleanupDialog
     private const int DlgSepGap = 12;
     private const int DlgItemIndent = 20;
 
-    // 스크롤 상수
-    private const int WheelLineStep = 3;
-
     // 다이얼로그 컨트롤 ID
     private const int IDC_CHECK_BASE = 5000;
     private const int IDC_SELECT_ALL = 5500;
@@ -301,63 +298,14 @@ internal static class CleanupDialog
     // ================================================================
 
     private static void ScrollTo(int newPos)
-    {
-        newPos = Math.Clamp(newPos, 0, _scrollMax);
-        if (newPos == _scrollPos) return;
-
-        int dy = _scrollPos - newPos;  // 위로 스크롤(newPos↑) = 콘텐츠 위로 이동 = dy 음수
-        _scrollPos = newPos;
-
-        var si = new SCROLLINFO
-        {
-            cbSize = (uint)Marshal.SizeOf<SCROLLINFO>(),
-            fMask = Win32Constants.SIF_POS,
-            nPos = newPos,
-        };
-        User32.SetScrollInfo(_hwndViewport, Win32Constants.SB_VERT, ref si, true);
-
-        // 자식 체크박스 HWND 들을 SW_SCROLLCHILDREN 으로 OS가 한 번에 이동시키고,
-        // 노출된 띠만 SW_INVALIDATE|SW_ERASE 로 무효화 → 기존 N회 SetWindowPos + 전체 InvalidateRect 대체.
-        User32.ScrollWindowEx(_hwndViewport, 0, dy,
-            IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
-            Win32Constants.SW_SCROLLCHILDREN | Win32Constants.SW_INVALIDATE | Win32Constants.SW_ERASE);
-    }
+        => ScrollableDialogHelper.ScrollTo(_hwndViewport, ref _scrollPos, _scrollMax, newPos);
 
     private static int ResolveVScrollPosition(IntPtr hwnd, int scrollCode)
-    {
-        int lineStep = _itemHeight;
-        int pageStep = _viewportClientH > lineStep ? _viewportClientH - lineStep : lineStep * 5;
-
-        switch (scrollCode)
-        {
-            case Win32Constants.SB_LINEUP: return _scrollPos - lineStep;
-            case Win32Constants.SB_LINEDOWN: return _scrollPos + lineStep;
-            case Win32Constants.SB_PAGEUP: return _scrollPos - pageStep;
-            case Win32Constants.SB_PAGEDOWN: return _scrollPos + pageStep;
-            case Win32Constants.SB_TOP: return 0;
-            case Win32Constants.SB_BOTTOM: return _scrollMax;
-            case Win32Constants.SB_THUMBPOSITION:
-            case Win32Constants.SB_THUMBTRACK:
-            {
-                var si = new SCROLLINFO
-                {
-                    cbSize = (uint)Marshal.SizeOf<SCROLLINFO>(),
-                    fMask = Win32Constants.SIF_TRACKPOS,
-                };
-                return User32.GetScrollInfo(hwnd, Win32Constants.SB_VERT, ref si)
-                    ? si.nTrackPos
-                    : _scrollPos;
-            }
-            default: return _scrollPos;
-        }
-    }
+        => ScrollableDialogHelper.ResolveVScrollPosition(
+            hwnd, scrollCode, _scrollPos, _scrollMax, _viewportClientH, _itemHeight);
 
     private static void HandleMouseWheel(IntPtr wParam)
-    {
-        short delta = (short)((wParam.ToInt64() >> 16) & 0xFFFF);
-        int steps = delta / Win32Constants.WHEEL_DELTA;
-        ScrollTo(_scrollPos - steps * WheelLineStep * _itemHeight);
-    }
+        => ScrollTo(ScrollableDialogHelper.CalculateWheelScrollPos(wParam, _scrollPos, _itemHeight));
 
     // ================================================================
     // WndProc — 다이얼로그

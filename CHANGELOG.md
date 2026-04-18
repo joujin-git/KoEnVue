@@ -14,6 +14,8 @@
 - **드래그 진입/종료 시 `GetWindowRect` 실패 무시** — `BeginDrag`/`EndDrag` 의 `GetWindowRect` 반환값을 검사하지 않고 `rc=default(RECT)` 로 진행하던 흐름. 실패 시 `_dragStartX/Y=0` 으로 드래그가 좌상단 (0,0) 에서 시작되는 시각 튐. 반환값이 `false` 이면 조기 반환
 - **`Program.HandleConfigChanged` 핫 리로드 이외 경로의 `UpdateConfigAndNotify` 사각지대** — `Program.UpdateConfigAndNotify` 호출처가 0건(dead code). 삭제로 동일 의도의 재진입 경로 혼선 제거
 - **`Core/Native/Kernel32.GetLastError` P/Invoke 미사용** — 호출처 0건. 선언 삭제로 `[LibraryImport]` surface 축소
+- **`ModalDialogLoop.s_activeDialog` 스레드 가시성 공백** — `IsActive`/`ActiveDialog` 가 감지 스레드(`Program.MainLoop` / `DetectionLoop` 의 모달 게이트, [Program.cs:820](Program.cs#L820))와 UI 스레드(재진입 가드) 양쪽에서 접근되지만 필드는 `IntPtr` 로 `volatile` 을 받지 못하는 상태였음. 접근 4곳(getter 2 + `Run` write 진입·finally + `RunExternal` prev/write/restore)을 `Volatile.Read`/`Volatile.Write` 로 교체해 모달 진입/종료 타이밍 직후 감지 스레드가 구값을 관측하지 않도록 메모리 배리어 명시. 기존 주석 "UI 스레드에서만 호출" 은 사실 오독이었음 — 교차 스레드 접근이 설계에 포함된다는 점을 주석에 명시
+- **`Logger` 비동기 큐 무제한 성장 방어** — 로그 회전 중 `File.Move` 가 다른 프로세스의 파일 잠금 등으로 실패하면 `_fileWriter = null` 상태가 지속되며 `FlushQueue` 가 조기 반환, 그동안 `EnqueueToFile` 은 `_drainThread is not null` 만 체크하므로 큐가 무제한 성장할 수 있었음. `MaxQueueSize = 10_000` 상한 추가 + `Interlocked.Increment` 기반 드롭 카운터로 최고령 메시지부터 드롭. 파일 쓰기가 복구되는 첫 `FlushQueue` 에서 누적 드롭 건수를 1회 요약 경고로 기록
 
 ### 개선
 
@@ -22,11 +24,14 @@
 - **`JsonSettingsManager` 예외 필터 패턴 추출** — `IsExpectedLoadException`/`IsExpectedSaveException`/`IsExpectedIoException` 3종 private static 헬퍼로 추출. Load/Save/CheckReload 가 동일한 `IOException or UnauthorizedAccessException [or JsonException] [or NotSupportedException]` 조합을 재사용. 훅(Validate/Migrate/PostDeserializeFixup) 의 로직 버그는 여전히 전파되는 정책 유지
 - **`Win32DialogHelper.ApplyFont` AggressiveInlining** — 1-liner `SendMessageW(WM_SETFONT)` wrapper 에 `[MethodImpl(MethodImplOptions.AggressiveInlining)]` 어트리뷰트 추가로 NativeAOT 호출 오버헤드 제거
 - **`Win32Constants.S_OK` HRESULT 상수 도입** — `DpiHelper.GetScale`/`GetRawDpi` 의 `hr != 0` 비교를 `hr != Win32Constants.S_OK` 로 교체해 HRESULT 의미 명시화. 기존 raw 0 비교는 winerror.h 의미와 동일하나 가독성/일관성 향상
+- **`SystemFilter.MatchesAny` 2-리스트 조회 헬퍼** — 클래스명·프로세스명 블랙리스트 조회가 `config.SystemHideClasses` + `SystemHideClassesUser` (소유자 탐색까지 포함해 4쌍) 의 8회 `foreach` + `Equals(OrdinalIgnoreCase)` 로 중복되어 있었음. `MatchesAny(name, baseList, userList)` private 헬퍼 1곳으로 통합해 소유자 탐색 시 `ownerInHideList` 임시 플래그도 제거. 호출부가 단일 표현식 1줄로 축약
+- **`ScrollableDialogHelper` 공용 추출** — `SettingsDialog.Scroll.ScrollTo`/`ResolveVScrollPosition`/WM_MOUSEWHEEL 핸들러와 `CleanupDialog` 의 동일 3조합(SB_* → `SIF_POS` + `ScrollWindowEx(SW_SCROLLCHILDREN|SW_INVALIDATE|SW_ERASE)`, SB_*→목표 위치 해석, `delta / WHEEL_DELTA × WheelLineStep × lineHeight`) 을 `Core/Windowing/ScrollableDialogHelper.cs` 의 `ScrollTo(ref scrollPos, ...)`/`ResolveVScrollPosition(...)`/`CalculateWheelScrollPos(...)` 3 메서드로 추출. 호출부는 expression-bodied 1-라이너로 축약되고 `WheelLineStep = 3` 상수도 헬퍼로 이동 (P4 공통 모듈 규칙 준수)
 
 ### 제거
 
 - **핫키 기능** — `hotkeys_enabled` / `hotkey_toggle_visibility` config 키, 트레이 메뉴 등록 없이 오직 `Ctrl+Alt+H`(또는 사용자 지정) 으로만 인디 표시/숨김 토글하던 기능 전체 제거. 트레이 좌클릭이 `tray_click_action` 으로 동일 토글을 제공하므로 기능 중복. 관련 삭제: `Program.Bootstrap.RegisterHotkeys`/`UnregisterHotkeys`/`ParseHotkey` (~75 줄), `Program.HandleHotkey` + `WM_HOTKEY` 분기, `Core/Native/User32.RegisterHotKey`/`UnregisterHotKey` P/Invoke, `Win32Constants.WM_HOTKEY`/`MOD_*`/`VK_F1..F12` 상수, `AppConfig.HotkeysEnabled`/`HotkeyToggleVisibility`, 상세 설정 다이얼로그 "핫키" 섹션 2필드
 - **`TrayIconStyle` enum 및 `tray_icon_style` config 키** — 캐럿+점(`caret_dot`) 디자인 고정으로 단순화. `Static` 변종은 트레이 아이콘으로 IME 상태를 보여주지 않는 옵션이었으나 사용 사례가 불분명. `App/Models/TrayIconStyle.cs` 파일 삭제, `AppConfig.TrayIconStyle` 필드, `TrayIcon.CreateIcon` 의 Static 정규화 분기, `Tray.UpdateState` 의 스타일 전환 설명, 상세 설정 다이얼로그 "트레이 > 아이콘 스타일" 콤보 제거. `TrayIcon.CreateIcon` 은 항상 IME 상태에 따라 `HangulBg`/`EnglishBg`/`NonKoreanBg` 로 캐럿+점을 그린다
+- **`Win32Constants` 미사용 상수 6건** — `CB_RESETCONTENT`, `SWP_NOZORDER`, `SWP_NOREDRAW`, `UIA_TextPattern2Id`, `CS_HREDRAW`, `CS_VREDRAW` 및 이에 딸린 "// --- UIA ---", "// --- 기타 ---" 주석 헤더. 프로젝트 전역 grep 결과 호출처 0건. `Core/Native/Win32Types.cs` 상수 표 축소
 
 ### 문서
 

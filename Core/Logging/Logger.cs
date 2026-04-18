@@ -29,6 +29,11 @@ internal static class Logger
     private const int DrainLoopTimeoutMs = 1000;
     private const int ShutdownJoinTimeoutMs = 3000;
 
+    // 큐 상한 — 회전 실패 등으로 _fileWriter=null 상태가 지속되면 FlushQueue 가 early-return
+    // 하여 큐가 무제한 성장한다. 상한 초과 시 최고령 메시지부터 드롭해 최근 로그 우선 보존.
+    private const int MaxQueueSize = 10_000;
+    private static int _droppedCount;
+
     /// <summary>로그 레벨 설정.</summary>
     public static void SetLevel(LogLevel level) => _logLevel = level;
 
@@ -104,10 +109,18 @@ internal static class Logger
     // 비동기 큐 내부
     // ================================================================
 
-    /// <summary>비차단 enqueue. drain 스레드가 없으면 무시.</summary>
+    /// <summary>
+    /// 비차단 enqueue. drain 스레드가 없으면 무시.
+    /// <see cref="MaxQueueSize"/> 초과 시 최고령부터 드롭하여 메모리 무제한 증가를 차단.
+    /// </summary>
     private static void EnqueueToFile(string formatted)
     {
         if (_drainThread is null) return;
+
+        // Count 비교는 대략치이지만 상한 근처에서만 오버슈트 가능 — 허용.
+        while (_logQueue.Count >= MaxQueueSize && _logQueue.TryDequeue(out _))
+            Interlocked.Increment(ref _droppedCount);
+
         _logQueue.Enqueue(formatted);
         _drainSignal.Set();
     }
@@ -136,6 +149,14 @@ internal static class Logger
 
         try
         {
+            // 큐 상한 초과로 드롭이 있었으면 복귀 직후 1회 요약 기록.
+            int dropped = Interlocked.Exchange(ref _droppedCount, 0);
+            if (dropped > 0)
+            {
+                _fileWriter.WriteLine(
+                    $"[WARN] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} Logger dropped {dropped} oldest messages (queue cap {MaxQueueSize})");
+            }
+
             while (_logQueue.TryDequeue(out string? message))
             {
                 _fileWriter.WriteLine(message);

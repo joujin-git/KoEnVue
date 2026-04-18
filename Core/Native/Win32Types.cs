@@ -485,18 +485,6 @@ internal static class Win32Constants
     public const uint CB_ADDSTRING        = 0x0143;
     public const uint CB_GETCURSEL        = 0x0147;
     public const uint CB_SETCURSEL        = 0x014E;
-    public const uint CB_RESETCONTENT     = 0x014B;
-
-    // --- SetWindowPos 추가 플래그 ---
-    public const uint SWP_NOZORDER        = 0x0004;
-    public const uint SWP_NOREDRAW        = 0x0008;
-
-    // --- UIA ---
-    public const int UIA_TextPattern2Id   = 10024;
-
-    // --- 기타 ---
-    public const uint CS_HREDRAW         = 0x0002;
-    public const uint CS_VREDRAW         = 0x0001;
 
     // --- GetKeyboardLayout ---
     // LOWORD(HKL) -> LANGID, 0x0412 = 한국어

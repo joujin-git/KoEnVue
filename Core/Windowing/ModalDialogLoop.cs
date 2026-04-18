@@ -26,16 +26,22 @@ namespace KoEnVue.Core.Windowing;
 /// </summary>
 internal static class ModalDialogLoop
 {
+    // s_activeDialog 는 UI 스레드에서 쓰이고 감지 스레드(Program.cs DetectionLoop)에서도
+    // IsActive 를 읽는다. IntPtr 은 volatile 키워드를 받지 않으므로 모든 접근에
+    // Volatile.Read/Write 를 명시해 스레드 가시성을 보장한다.
     private static IntPtr s_activeDialog;
 
-    /// <summary>현재 활성 모달 다이얼로그 존재 여부. UI 스레드에서만 호출.</summary>
-    public static bool IsActive => s_activeDialog != IntPtr.Zero;
+    /// <summary>
+    /// 현재 활성 모달 다이얼로그 존재 여부.
+    /// UI 스레드(재진입 가드) + 감지 스레드(DetectionLoop 게이트) 양쪽에서 읽힌다.
+    /// </summary>
+    public static bool IsActive => Volatile.Read(ref s_activeDialog) != IntPtr.Zero;
 
     /// <summary>
     /// 현재 활성 모달 다이얼로그 HWND. 재진입 감지 시 이 창에 포커스를 복원하기 위한
     /// 참조용. <see cref="IsActive"/> 가 false 일 때는 <see cref="IntPtr.Zero"/>.
     /// </summary>
-    public static IntPtr ActiveDialog => s_activeDialog;
+    public static IntPtr ActiveDialog => Volatile.Read(ref s_activeDialog);
 
     /// <summary>
     /// 소유자 비활성화 → 중첩 메시지 루프 → 소유자 재활성화 + 포그라운드 복원.
@@ -49,7 +55,7 @@ internal static class ModalDialogLoop
     /// <param name="isClosedFlag">WndProc 가 true 로 전환하면 루프 종료.</param>
     public static void Run(IntPtr hwndDialog, IntPtr hwndOwner, ref bool isClosedFlag)
     {
-        s_activeDialog = hwndDialog;
+        Volatile.Write(ref s_activeDialog, hwndDialog);
         User32.EnableWindow(hwndOwner, false);
 
         bool quitReceived = false;
@@ -81,7 +87,7 @@ internal static class ModalDialogLoop
         {
             User32.EnableWindow(hwndOwner, true);
             User32.SetForegroundWindow(hwndOwner);
-            s_activeDialog = IntPtr.Zero;
+            Volatile.Write(ref s_activeDialog, IntPtr.Zero);
         }
 
         // WM_QUIT 가 이 중첩 루프에서 소비되었으므로 외부 메시지 루프에 재전달
@@ -98,10 +104,11 @@ internal static class ModalDialogLoop
     /// </summary>
     public static void RunExternal(IntPtr hwndSentinel, Action action)
     {
-        IntPtr prev = s_activeDialog;
+        IntPtr prev = Volatile.Read(ref s_activeDialog);
         // IntPtr.Zero 가 넘어와도 IsActive 가 true 로 유지되도록 (-1) sentinel 로 대체.
-        s_activeDialog = hwndSentinel != IntPtr.Zero ? hwndSentinel : (IntPtr)(-1);
+        Volatile.Write(ref s_activeDialog,
+            hwndSentinel != IntPtr.Zero ? hwndSentinel : (IntPtr)(-1));
         try { action(); }
-        finally { s_activeDialog = prev; }
+        finally { Volatile.Write(ref s_activeDialog, prev); }
     }
 }

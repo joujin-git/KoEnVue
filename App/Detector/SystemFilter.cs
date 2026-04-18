@@ -77,16 +77,8 @@ internal static class SystemFilter
 
         // 4. 클래스명 블랙리스트 (기본: 바탕화면/작업 표시줄 + Win11 바탕화면 컨텍스트 메뉴)
         string className = WindowProcessInfo.GetClassName(hwnd);
-        foreach (string c in config.SystemHideClasses)
-        {
-            if (c.Equals(className, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        foreach (string c in config.SystemHideClassesUser)
-        {
-            if (c.Equals(className, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
+        if (MatchesAny(className, config.SystemHideClasses, config.SystemHideClassesUser))
+            return true;
 
         // 4-b. 소유자(owner) 창 클래스명 블랙리스트
         //      바탕화면(Progman/WorkerW) 등 숨김 대상 창에서 띄운 대화상자(#32770 등)도
@@ -98,21 +90,7 @@ internal static class SystemFilter
         for (int depth = 0; hwndOwner != IntPtr.Zero && depth < 5; depth++)
         {
             string ownerClass = WindowProcessInfo.GetClassName(hwndOwner);
-            bool ownerInHideList = false;
-            foreach (string c in config.SystemHideClasses)
-            {
-                if (c.Equals(ownerClass, StringComparison.OrdinalIgnoreCase))
-                { ownerInHideList = true; break; }
-            }
-            if (!ownerInHideList)
-            {
-                foreach (string c in config.SystemHideClassesUser)
-                {
-                    if (c.Equals(ownerClass, StringComparison.OrdinalIgnoreCase))
-                    { ownerInHideList = true; break; }
-                }
-            }
-            if (ownerInHideList)
+            if (MatchesAny(ownerClass, config.SystemHideClasses, config.SystemHideClassesUser))
             {
                 // 소유자와 대화상자가 같은 프로세스일 때만 숨김 (시스템 대화상자)
                 string ownerProcess = WindowProcessInfo.GetProcessName(hwndOwner);
@@ -130,16 +108,8 @@ internal static class SystemFilter
         if (config.SystemHideProcesses.Length > 0 || config.SystemHideProcessesUser.Length > 0)
         {
             processName = WindowProcessInfo.GetProcessName(hwnd);
-            foreach (string p in config.SystemHideProcesses)
-            {
-                if (p.Equals(processName, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-            foreach (string p in config.SystemHideProcessesUser)
-            {
-                if (p.Equals(processName, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
+            if (MatchesAny(processName, config.SystemHideProcesses, config.SystemHideProcessesUser))
+                return true;
         }
 
         // 6. 키보드 포커스 없음
@@ -157,6 +127,19 @@ internal static class SystemFilter
     // ================================================================
     // Private 헬퍼
     // ================================================================
+
+    /// <summary>
+    /// name 이 두 배열(기본 + 사용자) 중 하나라도 대소문자 무시하여 일치하면 true.
+    /// SystemHideClasses/SystemHideProcesses 등 "기본 + 사용자 추가" 2-리스트 조회를 단일화한다.
+    /// </summary>
+    private static bool MatchesAny(string name, string[] baseList, string[] userList)
+    {
+        foreach (string s in baseList)
+            if (s.Equals(name, StringComparison.OrdinalIgnoreCase)) return true;
+        foreach (string s in userList)
+            if (s.Equals(name, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
 
     /// <summary>
     /// 현재 가상 데스크톱에 있는지 확인.
