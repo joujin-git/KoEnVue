@@ -15,7 +15,6 @@ Main thread (UI):
   • Tray icon (NotifyIconManager → Shell_NotifyIconW)
   • Animation (WM_TIMER — 5-state machine + highlight/slide sub-phases)
   • CAPS LOCK poll (WM_TIMER, 200 ms)
-  • Hotkey handling (WM_HOTKEY)
 
 Detection thread (BG):
   • 80 ms IME polling (ImeStatus.Detect)
@@ -56,7 +55,7 @@ KoEnVue/
 │       └── Dialogs/         CleanupDialog + ScaleInputDialog + SettingsDialog(×3)
 │
 ├── Program.cs               Main message loop + WndProc + detection thread
-├── Program.Bootstrap.cs     partial class: mutex, window classes, hotkeys, teardown,
+├── Program.Bootstrap.cs     partial class: mutex, window classes, teardown,
 │                            second-instance activation, TaskbarCreated tray recovery
 └── KoEnVue.csproj
 ```
@@ -89,8 +88,8 @@ Every file in `Core/` is reusable in another Windows desktop project; every file
 
 | Module | Purpose |
 |--------|---------|
-| [App/Models/](../App/Models/) | `AppConfig` immutable record + all enums (`DisplayMode`, `DetectionMethod`, `ImeState`, `FontWeight`, `Theme`, `NonKoreanImeMode`, `AppProfileMatch`, `AppFilterMode`, `TrayIconStyle`, `TrayClickAction`, `Corner`, `PositionMode`, `DragModifier`) |
-| [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) | Magic-number constants: animation timings, pixel offsets, `AppVersion = "0.9.1.5"`, `UpdateRepoOwner/Name`, system-input process list |
+| [App/Models/](../App/Models/) | `AppConfig` immutable record + all enums (`DisplayMode`, `DetectionMethod`, `ImeState`, `FontWeight`, `Theme`, `NonKoreanImeMode`, `AppProfileMatch`, `AppFilterMode`, `TrayClickAction`, `Corner`, `PositionMode`, `DragModifier`) |
+| [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) | Magic-number constants: animation timings, pixel offsets, `AppVersion = "0.9.1.6"`, `UpdateRepoOwner/Name`, system-input process list |
 | [App/Config/Settings.cs](../App/Config/Settings.cs) | Static facade delegating to `AppSettingsManager : JsonSettingsManager<AppConfig>`. Handles `Load`/`Save`/`CheckReload`/`ResolveForApp` (per-app profile merge) |
 | [App/Config/ThemePresets.cs](../App/Config/ThemePresets.cs) | 6 theme presets: `Custom`, `Minimal`, `Vivid`, `Pastel`, `Dark`, `System` (Windows accent color). 프리셋 전환 시 커스텀 색상 자동 백업/복원 (`custom_backup_*` 필드) |
 | [App/Detector/ImeStatus.cs](../App/Detector/ImeStatus.cs) | `WM_IME_CONTROL` + `GetKeyboardLayout` IME state detection + `EVENT_OBJECT_IME_CHANGE` WinEvent hook |
@@ -100,11 +99,11 @@ Every file in `Core/` is reusable in another Windows desktop project; every file
 | [App/UI/Overlay.cs](../App/UI/Overlay.cs) | Static facade over `LayeredOverlayBase`. Holds `private static AppConfig _config` + engine instance. **`BuildStyle(config, state)` is the sole `ImeState` → `OverlayStyle` conversion point** in the codebase |
 | [App/UI/Animation.cs](../App/UI/Animation.cs) | Static facade over `OverlayAnimator`. `BuildAnimationConfig(config)` extracts primitives; `SetDimMode` routes `NonKoreanImeMode.Dim && state == NonKorean` into a `bool` |
 | [App/UI/Tray.cs](../App/UI/Tray.cs) | Static facade over `NotifyIconManager`. Menu construction, schtasks startup registration, `_pendingUpdate` storage |
-| [App/UI/TrayIcon.cs](../App/UI/TrayIcon.cs) | GDI-based dynamic icon bitmap. `CreateIcon` 진입점에서 `config.TrayIconStyle == Static` 이면 `state = ImeState.English` 로 정규화해 IME 전환과 무관하게 `EnglishBg` 고정 렌더링 — Static 경로 단일 정규화 지점 |
+| [App/UI/TrayIcon.cs](../App/UI/TrayIcon.cs) | GDI-based dynamic icon bitmap — 캐럿+점(caret+dot) 디자인 고정. IME 상태별 배경색을 `CreateIcon`이 즉석에서 그려 `SafeIconHandle`로 반환 |
 | [App/UI/AppMessages.cs](../App/UI/AppMessages.cs) | `WM_APP + N` message constants for cross-thread signalling |
 | [App/UI/Dialogs/CleanupDialog.cs](../App/UI/Dialogs/CleanupDialog.cs) | `indicator_positions` management dialog (checkbox list of all entries, scrollable viewport when >15 items) |
 | [App/UI/Dialogs/ScaleInputDialog.cs](../App/UI/Dialogs/ScaleInputDialog.cs) | Custom scale entry dialog (1.0–5.0, spawned at cursor position) |
-| [App/UI/Dialogs/SettingsDialog.cs](../App/UI/Dialogs/SettingsDialog.cs) (+ `.Fields.cs` + `.Scroll.cs`) | 62-field scrollable settings dialog split across 3 partial class files |
+| [App/UI/Dialogs/SettingsDialog.cs](../App/UI/Dialogs/SettingsDialog.cs) (+ `.Fields.cs` + `.Scroll.cs`) | Scrollable settings dialog (12 sections) split across 3 partial class files |
 
 ---
 

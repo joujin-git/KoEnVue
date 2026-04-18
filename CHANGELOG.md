@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### 제거
+
+- **핫키 기능** — `hotkeys_enabled` / `hotkey_toggle_visibility` config 키, 트레이 메뉴 등록 없이 오직 `Ctrl+Alt+H`(또는 사용자 지정) 으로만 인디 표시/숨김 토글하던 기능 전체 제거. 트레이 좌클릭이 `tray_click_action` 으로 동일 토글을 제공하므로 기능 중복. 관련 삭제: `Program.Bootstrap.RegisterHotkeys`/`UnregisterHotkeys`/`ParseHotkey` (~75 줄), `Program.HandleHotkey` + `WM_HOTKEY` 분기, `Core/Native/User32.RegisterHotKey`/`UnregisterHotKey` P/Invoke, `Win32Constants.WM_HOTKEY`/`MOD_*`/`VK_F1..F12` 상수, `AppConfig.HotkeysEnabled`/`HotkeyToggleVisibility`, 상세 설정 다이얼로그 "핫키" 섹션 2필드
+- **`TrayIconStyle` enum 및 `tray_icon_style` config 키** — 캐럿+점(`caret_dot`) 디자인 고정으로 단순화. `Static` 변종은 트레이 아이콘으로 IME 상태를 보여주지 않는 옵션이었으나 사용 사례가 불분명. `App/Models/TrayIconStyle.cs` 파일 삭제, `AppConfig.TrayIconStyle` 필드, `TrayIcon.CreateIcon` 의 Static 정규화 분기, `Tray.UpdateState` 의 스타일 전환 설명, 상세 설정 다이얼로그 "트레이 > 아이콘 스타일" 콤보 제거. `TrayIcon.CreateIcon` 은 항상 IME 상태에 따라 `HangulBg`/`EnglishBg`/`NonKoreanBg` 로 캐럿+점을 그린다
+
 ## [0.9.1.6] — 2026-04-18
 
 ### 수정

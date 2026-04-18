@@ -38,13 +38,6 @@ internal static class TrayIcon
         int iconW = User32.GetSystemMetrics(Win32Constants.SM_CXSMICON);
         int iconH = User32.GetSystemMetrics(Win32Constants.SM_CYSMICON);
 
-        // TrayIconStyle.Static: 상태 미표시 — state 를 English 로 정규화해 IME 전환과 무관하게
-        // 항상 EnglishBg 로 렌더링. Tray.UpdateState 는 state/style 변경 구분 없이 매번 재생성
-        // 하므로(CaretDot↔Static 스타일 전환을 올바르게 반영하기 위함), 정규화는 CreateIcon
-        // 진입점에서 단일 지점으로 수행한다.
-        if (config.TrayIconStyle == TrayIconStyle.Static)
-            state = ImeState.English;
-
         // 상태별 배경색 (P4: ColorHelper 사용 강제)
         string bgHex = state switch
         {

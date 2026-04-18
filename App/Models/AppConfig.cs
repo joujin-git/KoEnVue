@@ -85,13 +85,8 @@ internal sealed record AppConfig
     public AppFilterMode AppFilterMode { get; init; } = AppFilterMode.Blacklist;
     public string[] AppFilterList { get; init; } = [];
 
-    // [핫키]
-    public bool HotkeysEnabled { get; init; } = true;
-    public string HotkeyToggleVisibility { get; init; } = "Ctrl+Alt+H";
-
     // [시스템 트레이]
     public bool TrayEnabled { get; init; } = true;
-    public TrayIconStyle TrayIconStyle { get; init; } = TrayIconStyle.CaretDot;
     public bool TrayTooltip { get; init; } = true;
     public TrayClickAction TrayClickAction { get; init; } = TrayClickAction.Toggle;
     public bool TrayShowNotification { get; init; } = false;

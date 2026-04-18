@@ -201,16 +201,6 @@ internal static partial class User32
     [LibraryImport("user32.dll")]
     internal static partial IntPtr GetKeyboardLayout(uint idThread);
 
-    // === 핫키 ===
-
-    [LibraryImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static partial bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
-
-    [LibraryImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static partial bool UnregisterHotKey(IntPtr hWnd, int id);
-
     // === 윈도우 배치/시스템 ===
 
     [LibraryImport("user32.dll", SetLastError = true)]

@@ -111,13 +111,6 @@ internal static class Tray
 
     /// <summary>
     /// IME 상태 변경 또는 config 변경 시 아이콘 + 툴팁 갱신 (NIM_MODIFY).
-    /// <para>
-    /// <see cref="TrayIconStyle.Static"/> 일 때는 <see cref="TrayIcon.CreateIcon"/> 이
-    /// 내부적으로 state 를 <see cref="ImeState.English"/> 로 정규화해 배경색이 고정되므로
-    /// IME 전환 시에도 동일한 아이콘이 재생성된다. CaretDot↔Static 스타일 전환을
-    /// 올바르게 반영하려면 state 변경/Config 변경을 구분하지 않고 항상 재렌더해야 한다
-    /// (NIM_MODIFY 비용은 수 μs 수준으로 무시 가능).
-    /// </para>
     /// </summary>
     internal static void UpdateState(ImeState state, AppConfig config)
     {

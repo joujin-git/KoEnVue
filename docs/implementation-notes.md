@@ -239,7 +239,7 @@ Idle dimming is driven by `FadeToIdle()` inside `OverlayAnimator`: Hold timer fi
 
 ### HideOverlay `forceHidden`
 
-System filter, hotkey toggle off, and tray toggle off all pass `forceHidden: true` to `Animation.TriggerHide` so Always mode collapses fully instead of sliding into dim-idle. "Hide" from these sources means "actually disappear", distinct from Always-mode idle dimming.
+System filter and tray toggle off both pass `forceHidden: true` to `Animation.TriggerHide` so Always mode collapses fully instead of sliding into dim-idle. "Hide" from these sources means "actually disappear", distinct from Always-mode idle dimming.
 
 ---
 
@@ -399,10 +399,6 @@ Exclusively read from and written to `AppContext.BaseDirectory` (the exe's own f
 ### NIF_SHOWTIP
 
 `NOTIFYICON_VERSION_4` (set via `NIM_SETVERSION`) suppresses the standard `szTip` tooltip by default on Windows 7+. Both `NIM_ADD` and `NIM_MODIFY` calls must include `NIF_SHOWTIP` (0x00000080) alongside `NIF_TIP` in `uFlags`. Without `NIF_SHOWTIP`, `szTip` is correctly populated but the shell silently discards it and renders nothing on hover.
-
-### TrayIconStyle.Static normalization
-
-`TrayIconStyle.Static` (설정 다이얼로그 "아이콘 스타일" 콤보 두 번째 항목, config 키 `"tray_icon_style": "static"`) 은 "IME 상태를 트레이 아이콘 색으로 노출하지 않음" 을 의미한다. 실제 효과는 `TrayIcon.CreateIcon` 진입점에서 단 한 줄: `if (config.TrayIconStyle == TrayIconStyle.Static) state = ImeState.English;` — 이후 색상 결정 `switch` 가 `EnglishBg` 로 귀결된다. `Tray.UpdateState` 는 스타일·상태 변경 구분 없이 매번 `CreateIcon + NIM_MODIFY` 를 수행하므로 CaretDot↔Static 런타임 전환이 즉시 반영된다 (NIM_MODIFY 비용은 수 μs 수준이라 IME 변경마다 동일 아이콘을 재생성해도 체감 오버헤드 없음). 툴팁은 `config.TrayTooltip` 이 별도로 제어하므로 Static 이어도 사용자가 원하면 `"한글 모드"/"English"` 등의 상태 텍스트를 호버로 확인 가능.
 
 ### NIM_ADD / NIM_SETVERSION return value check
 
@@ -635,10 +631,6 @@ Main thread pre-initializes COM STA + forces `SystemFilter` static constructor b
 
 Separately registered (shared WndProc with main window). `WM_DESTROY` guard checks `hwnd == _hwndMain` so app exit doesn't trigger when the overlay is destroyed.
 
-### F-key hotkey parsing
-
-`ParseHotkey` supports F1–F12 via pattern match → `VK_F1 + (fNum - 1)`. Default hotkey is `Ctrl+Alt+H`.
-
 ### DWMWA constants location
 
 `DWMWA_EXTENDED_FRAME_BOUNDS` and `DWMWA_CLOAKED` live in [Core/Native/Win32Types.cs](../Core/Native/Win32Types.cs) under the `Win32Constants` class rather than inside `Core/Native/Dwmapi.cs`. P4 mandates that all Win32 structs and constants are centralized in `Win32Types.cs` regardless of which DLL they belong to.
@@ -653,14 +645,13 @@ Separately registered (shared WndProc with main window). `WM_DESTROY` guard chec
 
 1. `_stopping = true` — 감지 스레드 종료 신호 (volatile)
 2. IME 훅 해제 (`ImeStatus.UnregisterHook`)
-3. 핫키 해제 (`UnregisterHotkeys`)
-4. CAPS LOCK 폴링 타이머 명시적 해제 (`KillTimer`)
-5. 애니메이션 + 렌더링 리소스 해제 (윈도우 파괴 전)
-6. 오버레이 + 메인 윈도우 명시적 파괴 (`DestroyWindow`)
-7. 트레이 아이콘 제거 (`NIM_DELETE`)
-8. Mutex 해제 (`Dispose` only — `ReleaseMutex`는 소유 스레드에서만 가능하나 `ProcessExit`는 다른 스레드일 수 있음)
-9. COM 해제 (`CoUninitialize`)
-10. 종료 로그 기록 + 로거 종료 (`Logger.Info` → `Logger.Shutdown`)
+3. CAPS LOCK 폴링 타이머 명시적 해제 (`KillTimer`)
+4. 애니메이션 + 렌더링 리소스 해제 (윈도우 파괴 전)
+5. 오버레이 + 메인 윈도우 명시적 파괴 (`DestroyWindow`)
+6. 트레이 아이콘 제거 (`NIM_DELETE`)
+7. Mutex 해제 (`Dispose` only — `ReleaseMutex`는 소유 스레드에서만 가능하나 `ProcessExit`는 다른 스레드일 수 있음)
+8. COM 해제 (`CoUninitialize`)
+9. 종료 로그 기록 + 로거 종료 (`Logger.Info` → `Logger.Shutdown`)
 
 `Logger.Shutdown`은 반드시 마지막에 호출하여 이전 단계의 로그가 모두 기록되도록 보장한다. 타이머 해제와 윈도우 파괴는 리소스 해제(5단계) 이후에 수행하여 타이머 콜백이 해제된 리소스를 참조하는 것을 방지한다.
 

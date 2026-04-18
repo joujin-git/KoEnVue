@@ -20,7 +20,7 @@ namespace KoEnVue;
 /// 가독성을 위해 partial class 분할:
 /// <list type="bullet">
 ///   <item><c>Program.cs</c> — 진입점, MainImpl, 메시지 루프, WndProc, 이벤트 핸들러, 감지 스레드</item>
-///   <item><c>Program.Bootstrap.cs</c> — 다중 인스턴스, 윈도우 클래스/생성, 핫키 등록·해제·파싱, ProcessExit</item>
+///   <item><c>Program.Bootstrap.cs</c> — 다중 인스턴스, 윈도우 클래스/생성, ProcessExit</item>
 /// </list>
 /// </para>
 /// </summary>
@@ -189,16 +189,12 @@ internal static partial class Program
                 info => OnUpdateCheckResult(hwndForUpdate, info));
         }
 
-        // 13. 핫키 등록
-        if (_config.HotkeysEnabled)
-            RegisterHotkeys();
-
-        // 14. 종료 핸들러
+        // 13. 종료 핸들러
         AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
 
         Logger.Info("Initialization complete, entering message loop");
 
-        // 15. 메인 메시지 루프
+        // 14. 메인 메시지 루프
         RunMessageLoop();
     }
 
@@ -276,12 +272,6 @@ internal static partial class Program
                     HandleCapsLockTimer();
                 else
                     HandleTimer(wParam);
-                return IntPtr.Zero;
-
-            // === 핫키 ===
-
-            case Win32Constants.WM_HOTKEY:
-                HandleHotkey((int)wParam);
                 return IntPtr.Zero;
 
             // === 시스템 메시지 ===
@@ -658,7 +648,7 @@ internal static partial class Program
     private static void HideOverlay()
     {
         // forceHidden: Always 모드에서도 Idle이 아닌 완전 숨김으로 전환.
-        // 시스템 필터(바탕화면/작업 표시줄), 핫키/트레이 토글 OFF 모두
+        // 시스템 필터(바탕화면/작업 표시줄), 트레이 토글 OFF 모두
         // "실제로 사라져야 하는" 의도이므로 Always 모드의 dim-idle 유지를 우회.
         Animation.TriggerHide(_config, forceHidden: true);
         _indicatorVisible = false;
@@ -703,16 +693,6 @@ internal static partial class Program
                     if (!_indicatorVisible) HideOverlay();
                 }
                 break;
-        }
-    }
-
-    private static void HandleHotkey(int hotkeyId)
-    {
-        Logger.Debug($"Hotkey pressed: {hotkeyId}");
-        if (hotkeyId == HOTKEY_TOGGLE_VISIBILITY)
-        {
-            _indicatorVisible = !_indicatorVisible;
-            if (!_indicatorVisible) HideOverlay();
         }
     }
 

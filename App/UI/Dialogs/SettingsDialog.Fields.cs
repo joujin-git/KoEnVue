@@ -10,7 +10,7 @@ namespace KoEnVue.App.UI.Dialogs;
 /// <summary>
 /// SettingsDialog 의 필드 정의/팩토리/빌더 분할.
 /// FieldDef/RowDef 메타데이터, 6개 팩토리(Bool/Int/Dbl/Str/ColorField/Combo),
-/// BuildRowDefs(13 섹션 × 62 필드), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
+/// BuildRowDefs(12 섹션 × 59 필드), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
 /// </summary>
 internal static partial class SettingsDialog
 {
@@ -57,7 +57,7 @@ internal static partial class SettingsDialog
     // ================================================================
 
     /// <summary>
-    /// 13개 섹션 × 60개 필드의 RowDef 리스트를 빌드하며 _fields를 채운다.
+    /// 12개 섹션의 RowDef 리스트를 빌드하며 _fields를 채운다.
     /// 각 섹션 제목, 라벨, 검증 범위는 언어(I18n.IsKorean)에 따라 결정된다.
     /// </summary>
     private static List<RowDef> BuildRowDefs()
@@ -217,23 +217,9 @@ internal static partial class SettingsDialog
             (c, i) => c with { AppFilterMode = (AppFilterMode)Math.Clamp(i, 0, 1) }));
 
         // ================================================================
-        // 9. 핫키
-        // ================================================================
-        Sec("핫키", "Hotkeys");
-        Add(Bool("핫키 사용", "Hotkeys enabled",
-            c => c.HotkeysEnabled, (c, v) => c with { HotkeysEnabled = v }));
-        Add(Str("표시 토글 핫키", "Toggle visibility hotkey",
-            c => c.HotkeyToggleVisibility, (c, v) => c with { HotkeyToggleVisibility = v },
-            allowEmpty: true));
-
-        // ================================================================
-        // 10. 트레이
+        // 9. 트레이
         // ================================================================
         Sec("트레이", "Tray");
-        Add(Combo("아이콘 스타일", "Icon style",
-            ko ? ["캐럿+점", "고정"] : ["Caret+dot", "Static"],
-            c => (int)c.TrayIconStyle,
-            (c, i) => c with { TrayIconStyle = (TrayIconStyle)Math.Clamp(i, 0, 1) }));
         Add(Bool("툴팁 표시", "Show tooltip",
             c => c.TrayTooltip, (c, v) => c with { TrayTooltip = v }));
         Add(Combo("좌클릭 동작", "Left-click action",
@@ -254,7 +240,7 @@ internal static partial class SettingsDialog
             (c, v) => c with { TrayQuickOpacityPresets = SetPresetAt(c.TrayQuickOpacityPresets, 2, v) }));
 
         // ================================================================
-        // 11. 시스템
+        // 10. 시스템
         // ================================================================
         Sec("시스템", "System");
         Add(Bool("최소화 상태로 시작", "Start minimized",
@@ -279,7 +265,7 @@ internal static partial class SettingsDialog
             c => c.UpdateCheckEnabled, (c, v) => c with { UpdateCheckEnabled = v }));
 
         // ================================================================
-        // 12. 다중 모니터
+        // 11. 다중 모니터
         // ================================================================
         Sec("다중 모니터", "Multi-Monitor");
         Add(Bool("모니터별 DPI 스케일", "Per-monitor DPI scaling",
@@ -295,7 +281,7 @@ internal static partial class SettingsDialog
             (c, i) => c with { DragModifier = (DragModifier)Math.Clamp(i, 0, 3) }));
 
         // ================================================================
-        // 13. 고급
+        // 12. 고급
         // ================================================================
         Sec("고급", "Advanced");
         Add(Int("TOPMOST 강제 주기 (ms)", "Force topmost interval (ms)", 0, 60000,

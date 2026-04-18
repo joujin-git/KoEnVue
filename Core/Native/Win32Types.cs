@@ -375,7 +375,6 @@ internal static class Win32Constants
     public const uint WM_TIMER           = 0x0113;
     public const uint WM_COMMAND         = 0x0111;
     public const uint WM_CONTEXTMENU     = 0x007B;
-    public const uint WM_HOTKEY          = 0x0312;
     public const uint WM_POWERBROADCAST  = 0x0218;
     public const uint WM_DISPLAYCHANGE   = 0x007E;
     public const uint WM_SETTINGCHANGE   = 0x001A;
@@ -421,27 +420,6 @@ internal static class Win32Constants
     public const int VK_CONTROL          = 0x11;
     public const int VK_MENU             = 0x12;  // Alt 키
     public const int VK_CAPITAL          = 0x14;
-
-    // --- F 키 ---
-    public const int VK_F1               = 0x70;
-    public const int VK_F2               = 0x71;
-    public const int VK_F3               = 0x72;
-    public const int VK_F4               = 0x73;
-    public const int VK_F5               = 0x74;
-    public const int VK_F6               = 0x75;
-    public const int VK_F7               = 0x76;
-    public const int VK_F8               = 0x77;
-    public const int VK_F9               = 0x78;
-    public const int VK_F10              = 0x79;
-    public const int VK_F11              = 0x7A;
-    public const int VK_F12              = 0x7B;
-
-    // --- 핫키 모디파이어 ---
-    public const uint MOD_ALT            = 0x0001;
-    public const uint MOD_CONTROL        = 0x0002;
-    public const uint MOD_SHIFT          = 0x0004;
-    public const uint MOD_WIN            = 0x0008;
-    public const uint MOD_NOREPEAT       = 0x4000;
 
     // --- MessageBox ---
     public const uint MB_YESNO           = 0x00000004;

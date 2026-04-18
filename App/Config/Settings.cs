@@ -558,7 +558,6 @@ internal sealed partial class AppSettingsManager : JsonSettingsManager<AppConfig
             HangulLabel = config.HangulLabel ?? "한",
             EnglishLabel = config.EnglishLabel ?? "En",
             NonKoreanLabel = config.NonKoreanLabel ?? "EN",
-            HotkeyToggleVisibility = config.HotkeyToggleVisibility ?? "Ctrl+Alt+H",
             Language = config.Language ?? "ko",
             LogFilePath = config.LogFilePath ?? "",
         };
