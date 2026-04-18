@@ -59,6 +59,8 @@ Negative `biHeight` in the BITMAPINFO so `(0, 0)` is top-left. Keeps the pixel a
 
 The per-render skip uses `OverlayStyle` `record struct` value equality — `newStyle == _lastStyle` returns `true` when nothing visible has changed. Because `CapsLockOn` is a field inside the record, toggling it automatically breaks equality and forces a re-render.
 
+`CalculateFixedLabelWidth` also skips its own work via a 7-key measurement cache (`MeasureLabels` tuple + `PaddingXLogicalPx` + `LabelWidthLogicalPx` + `_currentDpiScale` + `_cachedFont{Family,Size,IsBold}`) + `_fixedLabelWidth > 0` guard. Cache hit elides three `GetTextExtentPoint32W` GDI calls, the `Max` reduction, and the downstream `EnsureDib` call — `EnsureResources` has already sized the DIB to `_fixedLabelWidth` before `CalculateFixedLabelWidth` runs, so no additional resize is needed. Invalidation is a single `_cachedLabelDpiScale = 0` write inside `HandleDpiChanged` (forces a DPI-match miss on next call); font-signature mismatch is caught automatically because `EnsureFont` updates `_cachedFont*` before `CalculateFixedLabelWidth` compares them.
+
 ---
 
 ## Indicator positioning
@@ -142,7 +144,9 @@ Tray menu:
 
 Clamp bounds use `Math.Max(workArea.Left, workArea.Right - w)` as the upper limit so indicators larger than the work area collapse to `Left`/`Top` instead of flipping through `Math.Clamp`'s invalid-range exception.
 
-**The saved value is never rewritten** — reattaching the original monitor restores the original position on the next lookup. Defends monitor removal / resolution change / DPI change scenarios that would otherwise leave the indicator unreachable.
+**Read path — stored value is never rewritten.** `GetAppPositionFixed` clamps only the returned coordinate; `_hwndPositions` / `config.IndicatorPositions` entries retain their original values. Reattaching the original monitor restores the original position on the next lookup. Defends monitor removal / resolution change / DPI change scenarios that would otherwise leave the indicator unreachable.
+
+**Write path — new values are clamped before persistence.** `HandleOverlayDragEnd` (Fixed mode branch) applies `ClampToVisibleArea` to the drag-end coordinate before writing to `_hwndPositions` and `config.IndicatorPositions`. Normal drag produces in-screen coordinates because the OS drag loop keeps the cursor on screen, so this is a no-op in the common case — the guard exists for edge conditions such as monitor unplug mid-drag or work-area reduction between drag start and drag end. Keeps `config.json` free of off-screen coordinates even at these boundaries; does not mutate pre-existing entries (see read-path invariant above). Window mode stores a frame-relative offset and is exempt — its absolute resolution is already clamped at read time.
 
 Path 3 (default position) is not clamped because `GetDefaultPosition` already computes against the live foreground monitor's work area. System input processes bypass this entirely since they already route straight to `GetDefaultPosition`.
 

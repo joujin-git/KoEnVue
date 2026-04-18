@@ -450,7 +450,9 @@ internal static partial class Program
 
         if (_config.PositionMode == PositionMode.Window)
         {
-            // 창 기준 모드: 절대좌표 → 창 기준 상대 오프셋으로 변환 후 저장
+            // 창 기준 모드: 절대좌표 → 창 기준 상대 오프셋으로 변환 후 저장.
+            // 상대 오프셋은 창 프레임 기준이므로 work area 클램프는 적용하지 않는다
+            // (창 밖 좌표라도 읽기 경로의 ClampToVisibleArea 가 표시 시점에 보정).
             if (_currentProcessName.Length > 0)
             {
                 RelativePositionConfig? rel =
@@ -471,7 +473,11 @@ internal static partial class Program
         }
         else
         {
-            // 고정 모드: 기존 절대좌표 저장
+            // 고정 모드: 저장 전 work area 로 클램프 — config.json 에 off-screen 좌표가
+            // 영구 기록되지 않도록 방어. 읽기 경로(GetAppPositionFixed)도 클램프하지만
+            // 저장 시점에 정제해 두면 설정 파일 값 품질이 보장된다.
+            (x, y) = ClampToVisibleArea(x, y);
+
             if (_lastForegroundHwnd != IntPtr.Zero)
                 _hwndPositions[_lastForegroundHwnd] = (x, y);
             if (_currentProcessName.Length > 0)
@@ -551,6 +557,10 @@ internal static partial class Program
             _lastForegroundHwnd, _currentProcessName,
             _config.DefaultIndicatorPositionRelative);
     }
+
+    /// <summary>RECT 의 4 필드를 모두 비교해 동등 여부 판정.</summary>
+    private static bool RectsEqual(in RECT a, in RECT b) =>
+        a.Left == b.Left && a.Top == b.Top && a.Right == b.Right && a.Bottom == b.Bottom;
 
     /// <summary>
     /// 저장된 인디케이터 좌표를 현재 살아있는 모니터의 작업 영역 안으로 클램프.
@@ -778,224 +788,37 @@ internal static partial class Program
         thread.Start();
     }
 
+    /// <summary>
+    /// 감지 루프의 tick 간 상태. 로컬 변수 9개를 한 구조체로 묶어
+    /// 분할된 헬퍼들이 ref 로 공유한다. 스레드 간 공유 상태 아님 (감지 스레드 전용).
+    /// </summary>
+    private struct DetectionState
+    {
+        public IntPtr LastHwndFocus;
+        public IntPtr LastHwndForeground;
+        public string LastForegroundProcessName;
+        public RECT LastSystemInputFrame;
+        public RECT LastWindowFrame;
+        public bool WindowMoving;
+        public bool LastFiltered;
+        public ImeState LastImeState;
+        public int PollCount;
+    }
+
     private static void DetectionLoop()
     {
-        IntPtr lastHwndFocus = IntPtr.Zero;
-        IntPtr lastHwndForeground = IntPtr.Zero;
-        string lastForegroundProcessName = string.Empty;
-        RECT lastSystemInputFrame = default;
-        RECT lastWindowFrame = default;        // 창 기준 모드: 포그라운드 창 rect 추적
-        bool windowMoving = false;             // 창 기준 모드: 창 이동 중 → 인디 숨김
-        bool lastFiltered = false;
-        ImeState lastImeState = ImeState.English;
-        AppConfig lastAppConfig = _config;
-        int pollCount = 0;
+        var state = new DetectionState
+        {
+            LastForegroundProcessName = string.Empty,
+            LastImeState = ImeState.English,
+        };
 
         while (!_stopping)
         {
             Thread.Sleep(_config.PollIntervalMs);
             try
             {
-                pollCount++;
-
-                // 0. config.json 변경 감지 (~5초마다)
-                if (pollCount % DefaultConfig.ConfigCheckIntervalPolls == 0)
-                    Settings.CheckConfigFileChange(_hwndMain);
-
-                // 1. 포그라운드 윈도우 확인
-                IntPtr hwndForeground = User32.GetForegroundWindow();
-
-                // 자기 자신 무시
-                if (hwndForeground == _hwndMain || hwndForeground == _hwndOverlay)
-                    continue;
-
-                // 모달 게이트용 PID 와 GUITHREADINFO 용 threadId 를 한 번에 확보.
-                uint threadId = User32.GetWindowThreadProcessId(hwndForeground, out uint fgPid);
-
-                // 모달 대화상자 활성 + 포그라운드가 자기 프로세스일 때만 인디를 숨긴다.
-                // Win32 다이얼로그는 소유자 기준 모달일 뿐이라 Alt+Tab 으로 외부 앱에 포커스가
-                // 넘어가면 해당 앱에서는 인디가 정상 표시돼야 한다. PID 비교는 자체 대화상자 +
-                // MessageBoxW (HWND 가 user32 내부 소유라 ActiveDialog HWND 로 식별 불가) 를
-                // 모두 커버하는 유일한 견고 해법 — Environment.ProcessId 는 .NET BCL 속성이라
-                // P/Invoke 불필요. lastFiltered=true 로 모달 종료 후 원 앱 foreground 복귀 첫
-                // 틱에서 foregroundChanged=true 를 유도 → 자연 재표시.
-                if (ModalDialogLoop.IsActive && fgPid == (uint)Environment.ProcessId)
-                {
-                    if (!lastFiltered && _indicatorVisible)
-                        User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
-                            IntPtr.Zero, IntPtr.Zero);
-                    lastFiltered = true;
-                    continue;
-                }
-
-                // GUITHREADINFO로 hwndFocus 획득
-                GUITHREADINFO gti = default;
-                gti.cbSize = (uint)Marshal.SizeOf<GUITHREADINFO>();
-                User32.GetGUIThreadInfo(threadId, ref gti);
-                IntPtr hwndFocus = gti.hwndFocus;
-
-                // 콘솔 호스트(conhost) 앱은 hwndFocus가 0 — 포그라운드 윈도우로 대체
-                if (hwndFocus == IntPtr.Zero)
-                {
-                    string fgClass = WindowProcessInfo.GetClassName(hwndForeground);
-                    if (fgClass.Equals(Win32Constants.ConsoleWindowClass, StringComparison.OrdinalIgnoreCase))
-                        hwndFocus = hwndForeground;
-                }
-
-                // 2. 앱별 프로필 + 시스템 필터 (매 폴링 평가 — 단순함이 정확성을 보장)
-                //    - 같은 앱으로 복귀(데스크톱 → 같은 앱) 시 인디 표시
-                AppConfig? resolved = Settings.ResolveForApp(_config, hwndForeground);
-                bool currentlyFiltered = (resolved is null)
-                    || SystemFilter.ShouldHide(hwndForeground, hwndFocus, resolved);
-
-                if (currentlyFiltered)
-                {
-                    // 필터 진입 시에만 숨김 메시지 전송 (중복 메시지 억제)
-                    if (!lastFiltered && _indicatorVisible)
-                        User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
-                            IntPtr.Zero, IntPtr.Zero);
-                    lastHwndForeground = hwndForeground;
-                    lastHwndFocus = hwndFocus;
-                    lastFiltered = true;
-                    lastSystemInputFrame = default;
-                    continue;
-                }
-
-                AppConfig appConfig = resolved!;
-                lastAppConfig = appConfig;
-
-                // hwnd 변경 시에만 프로세스 이름 캐시 갱신 (폴링당 Process.GetProcessById 호출 회피)
-                // leavingSystemInput: 시스템 입력 프로세스(검색 창 등)에서 일반 앱으로 즉시
-                // 전환되는 경우를 감지하기 위해 갱신 전 이전 프로세스명을 확인한다.
-                bool leavingSystemInput = false;
-                if (hwndForeground != lastHwndForeground)
-                {
-                    leavingSystemInput = DefaultConfig.IsSystemInputProcess(lastForegroundProcessName);
-                    lastForegroundProcessName = WindowProcessInfo.GetProcessName(hwndForeground);
-                    lastSystemInputFrame = default;
-                    lastWindowFrame = default;
-                    windowMoving = false;
-                }
-
-                // 필터 해소 또는 포그라운드 변경 → 위치/포커스 갱신
-                bool foregroundChanged = (hwndForeground != lastHwndForeground) || lastFiltered;
-                lastFiltered = false;
-
-                // ── 시스템 입력 프로세스 닫힘 감지 ──
-                //
-                // 시작 메뉴(StartMenuExperienceHost)와 검색 창(SearchHost)은 SystemFilter 블랙리스트에
-                // 없어 인디케이터를 표시하지만, ESC로 닫힌 뒤에도 숨김 전환이 발생하지 않는 문제가 있다.
-                // 두 프로세스의 ESC 후 동작이 다르므로 두 가지 체크가 필요하다:
-                //
-                // (A) SMEH: ESC 후 foreground를 유지한 채 DWM cloaked 상태가 됨 (수 초간 지속).
-                //     IsWindowVisible=true, hwndFocus≠0이라 ShouldHide 8조건을 모두 통과한다.
-                //     → IsCloaked로 감지하여 숨김.
-                //
-                // (B) SearchHost: ESC 후 cloaked 없이 foreground가 즉시 다른 앱으로 변경됨.
-                //     non-filtered→non-filtered 전환이라 기존 숨김 로직이 동작하지 않음.
-                //     → leavingSystemInput 플래그로 감지하여 숨김.
-
-                // (A) HWND 유지 + cloaked: 시작 메뉴 ESC 후 foreground가 아직 안 바뀐 경우
-                if (!leavingSystemInput
-                    && DefaultConfig.IsSystemInputProcess(lastForegroundProcessName)
-                    && Dwmapi.IsCloaked(hwndForeground))
-                {
-                    if (_indicatorVisible)
-                        User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
-                            IntPtr.Zero, IntPtr.Zero);
-                    lastHwndForeground = hwndForeground;
-                    lastHwndFocus = hwndFocus;
-                    lastSystemInputFrame = default;
-                    continue;
-                }
-
-                // (B) 즉시 전환: 검색 창 등에서 일반 앱으로 직접 변경된 경우
-                //     시스템 입력 간 전환(시작 메뉴 ↔ 검색)은 제외.
-                //     인디가 이미 숨겨진 경우(A에 의해)에는 fall-through하여 새 앱에 즉시 표시.
-                if (leavingSystemInput
-                    && !DefaultConfig.IsSystemInputProcess(lastForegroundProcessName))
-                {
-                    if (_indicatorVisible)
-                    {
-                        User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
-                            IntPtr.Zero, IntPtr.Zero);
-                        // lastHwndForeground 미갱신 → 다음 틱에서 foreground 변경 감지 → 새 앱에 인디 표시
-                        lastHwndFocus = hwndFocus;
-                        lastSystemInputFrame = default;
-                        continue;
-                    }
-                }
-
-                // 시스템 입력 프로세스(시작 메뉴 ↔ 검색 창)는 하나의 HWND를 모드별로 재사용하면서
-                // rect만 바꾸기 때문에 hwnd 비교만으로는 전환을 감지할 수 없다. 같은 hwnd라도
-                // 시각적 프레임이 달라졌다면 포그라운드 변경으로 취급해 위치를 갱신한다.
-                if (DefaultConfig.IsSystemInputProcess(lastForegroundProcessName)
-                    && Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT currentFrame))
-                {
-                    if (currentFrame.Left != lastSystemInputFrame.Left
-                        || currentFrame.Top != lastSystemInputFrame.Top
-                        || currentFrame.Right != lastSystemInputFrame.Right
-                        || currentFrame.Bottom != lastSystemInputFrame.Bottom)
-                    {
-                        foregroundChanged = true;
-                        lastSystemInputFrame = currentFrame;
-                    }
-                }
-
-                // 창 기준 모드: 포그라운드 창 rect 변화 감지 → 이동 중 인디 숨김, 안정화 시 재표시.
-                // 시스템 입력 프로세스는 위의 전용 블록에서 처리하므로 제외.
-                // appConfig 로 틱 스냅샷 일관성 유지 — 같은 틱 안에서 _config 가 교체돼도 경계 조건 안전.
-                if (appConfig.PositionMode == PositionMode.Window
-                    && !DefaultConfig.IsSystemInputProcess(lastForegroundProcessName)
-                    && !foregroundChanged
-                    && Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT windowFrame))
-                {
-                    bool rectChanged = windowFrame.Left != lastWindowFrame.Left
-                        || windowFrame.Top != lastWindowFrame.Top
-                        || windowFrame.Right != lastWindowFrame.Right
-                        || windowFrame.Bottom != lastWindowFrame.Bottom;
-
-                    if (rectChanged)
-                    {
-                        if (_indicatorVisible && !windowMoving)
-                            User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
-                                IntPtr.Zero, IntPtr.Zero);
-                        windowMoving = true;
-                        lastWindowFrame = windowFrame;
-                    }
-                    else if (windowMoving)
-                    {
-                        // 창 이동 멈춤 → 새 위치에서 인디 재표시
-                        windowMoving = false;
-                        foregroundChanged = true;
-                    }
-                }
-
-                // 3. 포그라운드 변경 시 위치 갱신
-                if (foregroundChanged)
-                {
-                    User32.PostMessageW(_hwndMain, AppMessages.WM_POSITION_UPDATED,
-                        hwndForeground, IntPtr.Zero);
-                    lastHwndForeground = hwndForeground;
-                }
-
-                // 4. IME 상태 감지
-                ImeState currentIme = ImeStatus.Detect(hwndFocus, threadId, appConfig.DetectionMethod);
-                if (currentIme != lastImeState || foregroundChanged)
-                {
-                    lastImeState = currentIme;
-                    User32.PostMessageW(_hwndMain, AppMessages.WM_IME_STATE_CHANGED,
-                        (IntPtr)(int)currentIme, IntPtr.Zero);
-                }
-
-                // 5. 포커스 변경 감지
-                if (hwndFocus != lastHwndFocus || foregroundChanged)
-                {
-                    lastHwndFocus = hwndFocus;
-                    User32.PostMessageW(_hwndMain, AppMessages.WM_FOCUS_CHANGED,
-                        hwndFocus, IntPtr.Zero);
-                }
-
+                ProcessDetectionTick(ref state);
             }
             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
                 or InvalidOperationException
@@ -1007,6 +830,267 @@ internal static partial class Program
                 // 로직 버그(NullRef 등)는 전파되어 감지 스레드 종료로 드러난다.
                 Logger.Warning($"Detection loop error: {ex.Message}");
             }
+        }
+    }
+
+    /// <summary>
+    /// 감지 루프의 한 틱. 각 단계가 tick 종료(continue) 를 요청하면 즉시 반환.
+    /// </summary>
+    private static void ProcessDetectionTick(ref DetectionState state)
+    {
+        state.PollCount++;
+
+        // 0. config.json 변경 감지 (~5초마다)
+        if (state.PollCount % DefaultConfig.ConfigCheckIntervalPolls == 0)
+            Settings.CheckConfigFileChange(_hwndMain);
+
+        // 1. 포그라운드 윈도우 확인 — 자기 자신 무시
+        IntPtr hwndForeground = User32.GetForegroundWindow();
+        if (hwndForeground == _hwndMain || hwndForeground == _hwndOverlay)
+            return;
+
+        // 모달 게이트용 PID 와 GUITHREADINFO 용 threadId 를 한 번에 확보.
+        uint threadId = User32.GetWindowThreadProcessId(hwndForeground, out uint fgPid);
+
+        if (TryHandleModalGate(ref state, fgPid)) return;
+
+        IntPtr hwndFocus = ResolveFocusWindow(threadId, hwndForeground);
+
+        if (TryHandleFilter(ref state, hwndForeground, hwndFocus, out AppConfig appConfig)) return;
+
+        bool leavingSystemInput = UpdateForegroundProcessCache(ref state, hwndForeground);
+
+        // 필터 해소 또는 포그라운드 변경 → 위치/포커스 갱신
+        bool foregroundChanged = (hwndForeground != state.LastHwndForeground) || state.LastFiltered;
+        state.LastFiltered = false;
+
+        if (TryHandleSystemInputClose(ref state, hwndForeground, hwndFocus, leavingSystemInput))
+            return;
+
+        TrackSystemInputFrame(ref state, hwndForeground, ref foregroundChanged);
+        TrackWindowMove(ref state, hwndForeground, appConfig, ref foregroundChanged);
+
+        EmitStateChanges(ref state, hwndForeground, hwndFocus, threadId, appConfig, foregroundChanged);
+    }
+
+    /// <summary>
+    /// 모달 대화상자 활성 + 포그라운드가 자기 프로세스일 때만 인디를 숨긴다.
+    /// Win32 다이얼로그는 소유자 기준 모달일 뿐이라 Alt+Tab 으로 외부 앱에 포커스가
+    /// 넘어가면 해당 앱에서는 인디가 정상 표시돼야 한다. PID 비교는 자체 대화상자 +
+    /// MessageBoxW (HWND 가 user32 내부 소유라 ActiveDialog HWND 로 식별 불가) 를
+    /// 모두 커버하는 유일한 견고 해법 — Environment.ProcessId 는 .NET BCL 속성이라
+    /// P/Invoke 불필요. lastFiltered=true 로 모달 종료 후 원 앱 foreground 복귀 첫
+    /// 틱에서 foregroundChanged=true 를 유도 → 자연 재표시.
+    /// </summary>
+    /// <returns>tick 종료 필요 시 true.</returns>
+    private static bool TryHandleModalGate(ref DetectionState state, uint fgPid)
+    {
+        if (!ModalDialogLoop.IsActive || fgPid != (uint)Environment.ProcessId)
+            return false;
+
+        if (!state.LastFiltered && _indicatorVisible)
+            User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
+                IntPtr.Zero, IntPtr.Zero);
+        state.LastFiltered = true;
+        return true;
+    }
+
+    /// <summary>
+    /// GUITHREADINFO 로 hwndFocus 를 획득한다. 콘솔 호스트(conhost)는
+    /// hwndFocus=0 이므로 포그라운드 윈도우로 대체.
+    /// </summary>
+    private static IntPtr ResolveFocusWindow(uint threadId, IntPtr hwndForeground)
+    {
+        GUITHREADINFO gti = default;
+        gti.cbSize = (uint)Marshal.SizeOf<GUITHREADINFO>();
+        User32.GetGUIThreadInfo(threadId, ref gti);
+        IntPtr hwndFocus = gti.hwndFocus;
+
+        if (hwndFocus == IntPtr.Zero)
+        {
+            string fgClass = WindowProcessInfo.GetClassName(hwndForeground);
+            if (fgClass.Equals(Win32Constants.ConsoleWindowClass, StringComparison.OrdinalIgnoreCase))
+                hwndFocus = hwndForeground;
+        }
+        return hwndFocus;
+    }
+
+    /// <summary>
+    /// 앱별 프로필 + 시스템 필터 평가. 매 폴링 재평가 — 단순함이 정확성을 보장하고,
+    /// 같은 앱으로 복귀(데스크톱 → 같은 앱) 시 인디가 다시 보이도록 한다.
+    /// 필터링된 경우 숨김 메시지 전송 후 true 반환(continue).
+    /// </summary>
+    private static bool TryHandleFilter(ref DetectionState state, IntPtr hwndForeground, IntPtr hwndFocus,
+        out AppConfig appConfig)
+    {
+        AppConfig? resolved = Settings.ResolveForApp(_config, hwndForeground);
+        bool currentlyFiltered = (resolved is null)
+            || SystemFilter.ShouldHide(hwndForeground, hwndFocus, resolved);
+
+        if (currentlyFiltered)
+        {
+            // 필터 진입 시에만 숨김 메시지 전송 (중복 메시지 억제)
+            if (!state.LastFiltered && _indicatorVisible)
+                User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
+                    IntPtr.Zero, IntPtr.Zero);
+            state.LastHwndForeground = hwndForeground;
+            state.LastHwndFocus = hwndFocus;
+            state.LastFiltered = true;
+            state.LastSystemInputFrame = default;
+            appConfig = default!;
+            return true;
+        }
+
+        appConfig = resolved!;
+        return false;
+    }
+
+    /// <summary>
+    /// hwnd 변경 시에만 프로세스 이름 캐시 갱신 (폴링당 Process.GetProcessById 호출 회피).
+    /// </summary>
+    /// <returns>시스템 입력 프로세스(검색 창 등)에서 일반 앱으로 전환되었는지 — 갱신 전 이름 기준.</returns>
+    private static bool UpdateForegroundProcessCache(ref DetectionState state, IntPtr hwndForeground)
+    {
+        if (hwndForeground == state.LastHwndForeground)
+            return false;
+
+        bool leavingSystemInput = DefaultConfig.IsSystemInputProcess(state.LastForegroundProcessName);
+        state.LastForegroundProcessName = WindowProcessInfo.GetProcessName(hwndForeground);
+        state.LastSystemInputFrame = default;
+        state.LastWindowFrame = default;
+        state.WindowMoving = false;
+        return leavingSystemInput;
+    }
+
+    /// <summary>
+    /// 시스템 입력 프로세스 닫힘 감지.
+    /// 시작 메뉴(StartMenuExperienceHost)와 검색 창(SearchHost)은 SystemFilter 블랙리스트에
+    /// 없어 인디케이터를 표시하지만, ESC로 닫힌 뒤에도 숨김 전환이 발생하지 않는 문제가 있다.
+    /// 두 프로세스의 ESC 후 동작이 다르므로 두 가지 체크가 필요하다:
+    /// <para>
+    /// (A) SMEH: ESC 후 foreground를 유지한 채 DWM cloaked 상태가 됨 (수 초간 지속).
+    ///     IsWindowVisible=true, hwndFocus≠0이라 ShouldHide 8조건을 모두 통과한다.
+    ///     → IsCloaked로 감지하여 숨김.
+    /// </para>
+    /// <para>
+    /// (B) SearchHost: ESC 후 cloaked 없이 foreground가 즉시 다른 앱으로 변경됨.
+    ///     non-filtered→non-filtered 전환이라 기존 숨김 로직이 동작하지 않음.
+    ///     → leavingSystemInput 플래그로 감지하여 숨김.
+    /// </para>
+    /// </summary>
+    private static bool TryHandleSystemInputClose(ref DetectionState state, IntPtr hwndForeground,
+        IntPtr hwndFocus, bool leavingSystemInput)
+    {
+        // (A) HWND 유지 + cloaked: 시작 메뉴 ESC 후 foreground가 아직 안 바뀐 경우
+        if (!leavingSystemInput
+            && DefaultConfig.IsSystemInputProcess(state.LastForegroundProcessName)
+            && Dwmapi.IsCloaked(hwndForeground))
+        {
+            if (_indicatorVisible)
+                User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
+                    IntPtr.Zero, IntPtr.Zero);
+            state.LastHwndForeground = hwndForeground;
+            state.LastHwndFocus = hwndFocus;
+            state.LastSystemInputFrame = default;
+            return true;
+        }
+
+        // (B) 즉시 전환: 검색 창 등에서 일반 앱으로 직접 변경된 경우
+        //     시스템 입력 간 전환(시작 메뉴 ↔ 검색)은 제외.
+        //     인디가 이미 숨겨진 경우(A에 의해)에는 fall-through하여 새 앱에 즉시 표시.
+        if (leavingSystemInput
+            && !DefaultConfig.IsSystemInputProcess(state.LastForegroundProcessName)
+            && _indicatorVisible)
+        {
+            User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
+                IntPtr.Zero, IntPtr.Zero);
+            // lastHwndForeground 미갱신 → 다음 틱에서 foreground 변경 감지 → 새 앱에 인디 표시
+            state.LastHwndFocus = hwndFocus;
+            state.LastSystemInputFrame = default;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 시스템 입력 프로세스(시작 메뉴 ↔ 검색 창)는 하나의 HWND를 모드별로 재사용하면서
+    /// rect만 바꾸기 때문에 hwnd 비교만으로는 전환을 감지할 수 없다. 같은 hwnd라도
+    /// 시각적 프레임이 달라졌다면 포그라운드 변경으로 취급해 위치를 갱신한다.
+    /// </summary>
+    private static void TrackSystemInputFrame(ref DetectionState state, IntPtr hwndForeground,
+        ref bool foregroundChanged)
+    {
+        if (DefaultConfig.IsSystemInputProcess(state.LastForegroundProcessName)
+            && Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT currentFrame)
+            && !RectsEqual(currentFrame, state.LastSystemInputFrame))
+        {
+            foregroundChanged = true;
+            state.LastSystemInputFrame = currentFrame;
+        }
+    }
+
+    /// <summary>
+    /// 창 기준 모드: 포그라운드 창 rect 변화 감지 → 이동 중 인디 숨김, 안정화 시 재표시.
+    /// 시스템 입력 프로세스는 전용 블록에서 처리하므로 제외.
+    /// appConfig 로 틱 스냅샷 일관성 유지 — 같은 틱 안에서 _config 가 교체돼도 경계 조건 안전.
+    /// </summary>
+    private static void TrackWindowMove(ref DetectionState state, IntPtr hwndForeground,
+        AppConfig appConfig, ref bool foregroundChanged)
+    {
+        if (appConfig.PositionMode != PositionMode.Window
+            || DefaultConfig.IsSystemInputProcess(state.LastForegroundProcessName)
+            || foregroundChanged
+            || !Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT windowFrame))
+            return;
+
+        bool rectChanged = !RectsEqual(windowFrame, state.LastWindowFrame);
+
+        if (rectChanged)
+        {
+            if (_indicatorVisible && !state.WindowMoving)
+                User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
+                    IntPtr.Zero, IntPtr.Zero);
+            state.WindowMoving = true;
+            state.LastWindowFrame = windowFrame;
+        }
+        else if (state.WindowMoving)
+        {
+            // 창 이동 멈춤 → 새 위치에서 인디 재표시
+            state.WindowMoving = false;
+            foregroundChanged = true;
+        }
+    }
+
+    /// <summary>
+    /// 포그라운드/IME/포커스 변경을 메인 스레드로 PostMessage.
+    /// </summary>
+    private static void EmitStateChanges(ref DetectionState state, IntPtr hwndForeground,
+        IntPtr hwndFocus, uint threadId, AppConfig appConfig, bool foregroundChanged)
+    {
+        // 3. 포그라운드 변경 시 위치 갱신
+        if (foregroundChanged)
+        {
+            User32.PostMessageW(_hwndMain, AppMessages.WM_POSITION_UPDATED,
+                hwndForeground, IntPtr.Zero);
+            state.LastHwndForeground = hwndForeground;
+        }
+
+        // 4. IME 상태 감지
+        ImeState currentIme = ImeStatus.Detect(hwndFocus, threadId, appConfig.DetectionMethod);
+        if (currentIme != state.LastImeState || foregroundChanged)
+        {
+            state.LastImeState = currentIme;
+            User32.PostMessageW(_hwndMain, AppMessages.WM_IME_STATE_CHANGED,
+                (IntPtr)(int)currentIme, IntPtr.Zero);
+        }
+
+        // 5. 포커스 변경 감지
+        if (hwndFocus != state.LastHwndFocus || foregroundChanged)
+        {
+            state.LastHwndFocus = hwndFocus;
+            User32.PostMessageW(_hwndMain, AppMessages.WM_FOCUS_CHANGED,
+                hwndFocus, IntPtr.Zero);
         }
     }
 

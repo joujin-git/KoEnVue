@@ -332,7 +332,9 @@ internal static class Tray
             pt.X, pt.Y, 0, hwndMain, IntPtr.Zero);
         User32.PostMessageW(hwndMain, Win32Constants.WM_NULL, IntPtr.Zero, IntPtr.Zero);
 
-        // --- 정리 (DestroyMenu은 서브메뉴도 자동 파괴) ---
+        // --- 정리 (DestroyMenu 은 부모에 MF_POPUP 로 부착된 서브메뉴만 자동 파괴한다) ---
+        // 위의 AppendMenuW(MF_POPUP) 호출이 모두 성공해 부착된 전제하에 안전.
+        // P/Invoke 는 예외를 던지지 않고 BOOL 로 실패 신호만 주므로 중단 경로가 없어 현 구현은 누수가 없다.
         User32.DestroyMenu(hMenu);
     }
 

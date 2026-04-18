@@ -56,6 +56,17 @@ internal sealed class LayeredOverlayBase : IDisposable
     private bool _cachedFontIsBold;
     private double _cachedFontDpiScale;
 
+    // 라벨 폭 계산 캐시 키 — (레이블 3종 + 폰트 서명 + DPI + 패딩 + 최소폭) 이 불변이면
+    // GetTextExtentPoint32W 3회 호출을 생략한다. 각 EnsureResources 진입마다 같은 키로
+    // 재진입하는 것이 일반적이므로 체감 이득은 크다.
+    private (string Hangul, string English, string NonKorean) _cachedLabelMeasureKey;
+    private int _cachedLabelPaddingLogicalPx = -1;
+    private int _cachedLabelMinWidthLogicalPx = -1;
+    private double _cachedLabelDpiScale;
+    private string _cachedLabelFontFamily = "";
+    private int _cachedLabelFontSize;
+    private bool _cachedLabelFontIsBold;
+
     // CreateDIBSection 실패 시 Logger.Warning 을 한 번만 남기기 위한 래치.
     // 빠른 IME 토글/DPI 전환 시 매 호출마다 기록되면 로그 스팸이 되므로 초회 1회만 남기고
     // 이후 실패는 조용히 fall-through — 기존 _ppvBits / _currentBitmap 은 보존된다.
@@ -271,6 +282,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         _currentWidth = 0;
         _currentHeight = 0;
         _fixedLabelWidth = 0;
+        _cachedLabelDpiScale = 0; // 라벨 측정 캐시도 함께 무효화
         _lastRenderedStyle = null;
     }
 
@@ -725,10 +737,30 @@ internal sealed class LayeredOverlayBase : IDisposable
     /// 3종 라벨의 텍스트 폭을 측정해 <c>_fixedLabelWidth</c>를 고정한다. 상태 전환 시 라벨 폭이
     /// 변동하면 DIB 재생성이 일어나 깜빡임이 발생하므로 3종 중 최대 폭 + 패딩으로 고정.
     /// 고정 폭이 현재 DIB 폭과 다르면 DIB를 재생성한다.
+    /// <para>
+    /// 캐시 키(레이블 3종 + 폰트 서명 + DPI + 패딩 + 최소폭) 가 불변이면 GetTextExtentPoint32W
+    /// 3회를 생략한다. 설정 리로드/DPI 전환/리사이즈 같은 경로에서만 재측정이 필요하다.
+    /// </para>
     /// </summary>
     private void CalculateFixedLabelWidth(OverlayStyle style)
     {
         if (_currentFont is null) return;
+
+        // 캐시 히트 조건: 키 전부 일치 + _fixedLabelWidth 이미 계산됨.
+        // 폰트 서명은 EnsureFont 가 방금 갱신한 _cachedFont* 를 그대로 비교한다.
+        if (_fixedLabelWidth > 0
+            && _cachedLabelMeasureKey == style.MeasureLabels
+            && _cachedLabelPaddingLogicalPx == style.PaddingXLogicalPx
+            && _cachedLabelMinWidthLogicalPx == style.LabelWidthLogicalPx
+            && Math.Abs(_cachedLabelDpiScale - _currentDpiScale) < 0.001
+            && _cachedLabelFontFamily == _cachedFontFamily
+            && _cachedLabelFontSize == _cachedFontSize
+            && _cachedLabelFontIsBold == _cachedFontIsBold)
+        {
+            // EnsureDib 은 EnsureResources 에서 이미 _fixedLabelWidth 기준으로 호출되어
+            // _currentWidth 가 일치하는 상태다 — 추가 DIB 재생성 불필요.
+            return;
+        }
 
         IntPtr oldFont = Gdi32.SelectObject(_memDC, _currentFont.DangerousGetHandle());
 
@@ -746,6 +778,14 @@ internal sealed class LayeredOverlayBase : IDisposable
         int calculated = maxTextWidth + padding;
         int minWidth = DpiHelper.Scale(style.LabelWidthLogicalPx, _currentDpiScale);
         _fixedLabelWidth = Math.Max(calculated, minWidth);
+
+        _cachedLabelMeasureKey = style.MeasureLabels;
+        _cachedLabelPaddingLogicalPx = style.PaddingXLogicalPx;
+        _cachedLabelMinWidthLogicalPx = style.LabelWidthLogicalPx;
+        _cachedLabelDpiScale = _currentDpiScale;
+        _cachedLabelFontFamily = _cachedFontFamily;
+        _cachedLabelFontSize = _cachedFontSize;
+        _cachedLabelFontIsBold = _cachedFontIsBold;
 
         if (_fixedLabelWidth != _currentWidth)
         {

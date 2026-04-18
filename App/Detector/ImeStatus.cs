@@ -15,6 +15,9 @@ namespace KoEnVue.App.Detector;
 /// </summary>
 internal static class ImeStatus
 {
+    // 메인 스레드 전용. OnImeChange (WINEVENT_OUTOFCONTEXT 콜백) 만이 읽고 쓰며,
+    // 훅은 RegisterHook 을 호출한 스레드(=메인)의 메시지 루프에서 발화하므로 동기화 불필요.
+    // 감지 스레드의 Detect() 는 _lastState 를 건드리지 않는다.
     private static ImeState _lastState = ImeState.English;
     private static IntPtr _hEventHook;
     private static IntPtr _hwndMain;

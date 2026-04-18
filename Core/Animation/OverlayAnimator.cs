@@ -200,36 +200,24 @@ public sealed class OverlayAnimator : IDisposable
             if (highlightTrigger && _config.ChangeHighlight)
                 StartHighlight();
 
-            if (_currentAlpha != _targetAlpha)
-            {
-                _currentAlpha = _targetAlpha;
-                _onAlphaChange(_targetAlpha);
-            }
+            SnapToTargetAlpha();
         }
         else if (_phase == AnimPhase.Idle)
         {
-            StartFade(_currentAlpha, _targetAlpha, _config.FadeInMs);
-            _phase = AnimPhase.FadingIn;
-            User32.SetTimer(_hwndTimer, _timerIds.Fade, _config.AnimationFrameMs, IntPtr.Zero);
+            BeginFadeIn(_currentAlpha);
 
             TryStartSlide(prevX, prevY, newX, newY);
 
             if (highlightTrigger && _config.ChangeHighlight)
                 StartHighlight();
 
-            if (_currentAlpha != _targetAlpha)
-            {
-                _currentAlpha = _targetAlpha;
-                _onAlphaChange(_targetAlpha);
-            }
+            SnapToTargetAlpha();
         }
         else if (_phase == AnimPhase.FadingOut)
         {
             User32.KillTimer(_hwndTimer, _timerIds.Fade);
             _forceHidden = false; // TriggerHide(forceHidden)가 남긴 플래그 초기화
-            StartFade(_currentAlpha, _targetAlpha, _config.FadeInMs);
-            _phase = AnimPhase.FadingIn;
-            User32.SetTimer(_hwndTimer, _timerIds.Fade, _config.AnimationFrameMs, IntPtr.Zero);
+            BeginFadeIn(_currentAlpha);
 
             TryStartSlide(prevX, prevY, newX, newY);
 
@@ -240,9 +228,7 @@ public sealed class OverlayAnimator : IDisposable
         {
             if (_config.AnimationEnabled)
             {
-                StartFade(0, _targetAlpha, _config.FadeInMs);
-                _phase = AnimPhase.FadingIn;
-                User32.SetTimer(_hwndTimer, _timerIds.Fade, _config.AnimationFrameMs, IntPtr.Zero);
+                BeginFadeIn(0);
             }
             else
             {
@@ -258,6 +244,32 @@ public sealed class OverlayAnimator : IDisposable
         }
 
         return wasHidden;
+    }
+
+    /// <summary>
+    /// 페이드인 시작: StartFade + _phase=FadingIn + Fade 타이머 등록을 원자적으로 묶은 헬퍼.
+    /// 4-분기 TriggerShow 중 3 곳(Idle/FadingOut/Hidden-animated)에서 공유.
+    /// </summary>
+    private void BeginFadeIn(byte fromAlpha)
+    {
+        StartFade(fromAlpha, _targetAlpha, _config.FadeInMs);
+        _phase = AnimPhase.FadingIn;
+        User32.SetTimer(_hwndTimer, _timerIds.Fade, _config.AnimationFrameMs, IntPtr.Zero);
+    }
+
+    /// <summary>
+    /// 현재 alpha 를 즉시 target 으로 스냅. Holding/FadingIn 재진입 시 + Idle 탈출 시 사용.
+    /// (Idle 탈출의 경우 BeginFadeIn 이 FadingIn 으로 전이시키지만 본 호출이 현재 alpha 를
+    ///  target 에 맞춰 둠으로써 다음 HandleFadeTimer 프레임까지의 깜빡임을 억제한다 —
+    ///  원본 동작 보존.)
+    /// </summary>
+    private void SnapToTargetAlpha()
+    {
+        if (_currentAlpha != _targetAlpha)
+        {
+            _currentAlpha = _targetAlpha;
+            _onAlphaChange(_targetAlpha);
+        }
     }
 
     // ================================================================

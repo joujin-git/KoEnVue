@@ -49,12 +49,6 @@ internal static partial class User32
     internal static unsafe partial bool EnumChildWindows(
         IntPtr hWndParent, delegate* unmanaged<IntPtr, IntPtr, int> lpEnumFunc, IntPtr lParam);
 
-    // === 좌표 변환 ===
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static partial bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
-
     // === 모니터 ===
 
     [LibraryImport("user32.dll")]
@@ -91,11 +85,6 @@ internal static partial class User32
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static partial bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight,
-        [MarshalAs(UnmanagedType.Bool)] bool bRepaint);
 
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -214,11 +203,6 @@ internal static partial class User32
     [LibraryImport("user32.dll")]
     internal static partial int GetSystemMetricsForDpi(int nIndex, uint dpi);
 
-    [LibraryImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static partial bool SystemParametersInfoW(
-        uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
-
     [LibraryImport("user32.dll")]
     internal static partial uint GetSysColor(int nIndex);
 
@@ -227,9 +211,6 @@ internal static partial class User32
     internal delegate void WinEventProc(
         IntPtr hWinEventHook, uint eventType, IntPtr hwnd,
         int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
-
-    // WndProc 대리자 (NativeAOT에서는 [UnmanagedCallersOnly] + 함수 포인터 방식 권장)
-    internal delegate IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
     // === 윈도우 관계 ===
 
@@ -271,10 +252,6 @@ internal static partial class User32
     internal static partial IntPtr SendMessageW(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
     [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static partial bool IsWindow(IntPtr hWnd);
-
-    [LibraryImport("user32.dll")]
     internal static partial IntPtr SetFocus(IntPtr hWnd);
 
     [LibraryImport("user32.dll")]
@@ -306,11 +283,6 @@ internal static partial class User32
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool GetScrollInfo(IntPtr hwnd, int nBar, ref SCROLLINFO lpsi);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static partial bool InvalidateRect(IntPtr hWnd, IntPtr lpRect,
-        [MarshalAs(UnmanagedType.Bool)] bool bErase);
 
     // ScrollWindowEx: dx/dy 픽셀만큼 클라이언트를 BitBlt 복사 후 자식까지 자동 이동(SW_SCROLLCHILDREN)
     // 하고 노출 영역만 무효화(SW_INVALIDATE|SW_ERASE) 한다. 다이얼로그 스크롤에서 수십~수백개의

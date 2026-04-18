@@ -41,12 +41,18 @@ internal static class Settings
     // 상태
     // ================================================================
 
-    private static AppSettingsManager? _manager;
+    // 감지 스레드(CheckConfigFileChange)와 메인 스레드(Load/Save)가 공유. volatile로 가시성 확보.
+    private static volatile AppSettingsManager? _manager;
 
     // 앱 프로필 LRU 캐시 (감지 스레드 읽기 + 메인 스레드 클리어)
     private static readonly Dictionary<string, AppConfig?> _profileCache = new();
     private static readonly LinkedList<string> _profileLruOrder = new();
     private static readonly object _profileCacheLock = new();
+
+    // MergeProfile 고속 경로: 직렬화된 global 의 스냅샷을 캐시. global 인스턴스 바뀌면 무효화.
+    // 감지 스레드 전용 — 메인 스레드는 ClearProfileCache 에서만 touch.
+    private static AppConfig? _cachedGlobalForJson;
+    private static string? _cachedGlobalJson;
 
     // ================================================================
     // Public 속성
@@ -240,6 +246,7 @@ internal static class Settings
 
     /// <summary>
     /// LRU 캐시 전체 초기화. config 리로드 시 호출.
+    /// MergeProfile 의 globalJson 스냅샷도 함께 무효화한다.
     /// </summary>
     public static void ClearProfileCache()
     {
@@ -247,6 +254,8 @@ internal static class Settings
         {
             _profileCache.Clear();
             _profileLruOrder.Clear();
+            _cachedGlobalForJson = null;
+            _cachedGlobalJson = null;
         }
     }
 
@@ -334,10 +343,33 @@ internal static class Settings
     /// </summary>
     private static AppConfig MergeProfile(AppConfig global, JsonElement profile)
     {
+        // 고속 경로: 프로필에 실질 키가 0개 (예: {} 또는 {"enabled": true}) — 전역과 동일하므로 JSON roundtrip 생략.
+        // IsDisabledProfile 은 호출 전 판정되므로 여기서는 enabled:true 만 걸러낸다.
+        if (profile.ValueKind == JsonValueKind.Object)
+        {
+            bool hasOverride = false;
+            foreach (var prop in profile.EnumerateObject())
+            {
+                if (prop.NameEquals("enabled")) continue;
+                hasOverride = true;
+                break;
+            }
+            if (!hasOverride) return global;
+        }
+
         try
         {
-            // 1. global → JSON
-            string globalJson = JsonSerializer.Serialize(global, AppConfigJsonContext.Default.AppConfig);
+            // 1. global → JSON (같은 global 인스턴스면 캐시 재사용)
+            string globalJson;
+            lock (_profileCacheLock)
+            {
+                if (!ReferenceEquals(_cachedGlobalForJson, global) || _cachedGlobalJson is null)
+                {
+                    _cachedGlobalJson = JsonSerializer.Serialize(global, AppConfigJsonContext.Default.AppConfig);
+                    _cachedGlobalForJson = global;
+                }
+                globalJson = _cachedGlobalJson;
+            }
             using var globalDoc = JsonDocument.Parse(globalJson);
 
             // 2. Utf8JsonWriter로 머지

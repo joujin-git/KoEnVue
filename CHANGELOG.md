@@ -3,19 +3,35 @@
 이 프로젝트의 주요 변경 사항을 기록합니다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/)를 따릅니다.
 
-## [Unreleased]
+## [0.9.1.8] — 2026-04-19
 
 ### 수정
 
 - **`drag_modifier` 의 크로스 프로세스 클릭 투과 기능 미구현 확정 + 문서 정직화** — 0.9.1.4 도입 당시 커밋 메시지·사용자 가이드·PRD 가 `"ctrl"`/`"alt"`/`"ctrl_alt"` 모드에서 "모디파이어 미누름 시 클릭이 아래 창으로 투과" 된다고 기술했으나, 실제로는 동작하지 않음을 확인. 원인: (1) 오버레이 반투명 칩 배경이 알파 > 0 이라 레이어드 윈도우의 `alpha == 0` 자동 투과 영역에 해당하지 않음, (2) `WM_NCHITTEST → HTTRANSPARENT` 반환은 MS 문서상 "같은 스레드 내 창" 으로만 포워딩되므로 메모장/브라우저 등 타 프로세스 창에는 전달되지 않음. 진짜 투과를 구현하려면 `WS_EX_TRANSPARENT` 확장 스타일 동적 토글이 필요한데, 이를 위한 WM_TIMER 폴러(30 Hz 웨이크업) 또는 WH_KEYBOARD_LL 훅(NativeAOT `[UnmanagedCallersOnly]` 경로 리스크, 300 ms 콜백 타임아웃 누적 시 OS 가 훅 비활성화) 의 런타임 비용·복잡도 대비 이득이 작아 도입 보류. 본 옵션은 **"드래그 개시 게이트"** 로 재정의 — 모디파이어 미누름 시 좌클릭이 오버레이에 도달하지만 `WM_LBUTTONDOWN` 핸들러가 없어 무반응 (드래그만 개시되지 않음). `WM_NCHITTEST` 반환값을 `HTTRANSPARENT` → `HTCLIENT` 로 변경해 시맨틱스 명시화 (사용자 체감 동일, 유휴 비용 0 유지)
+- **Fixed 모드 드래그 종료 저장 경로 off-screen 좌표 방어** — `Program.HandleOverlayDragEnd` 의 고정 모드 분기가 드래그 최종 좌표를 `_hwndPositions` / `_config.IndicatorPositions` 에 그대로 기록했음. 정상 드래그는 OS 가 커서를 화면에 가두므로 문제없지만, 멀티 모니터 언플러그 직후처럼 작업 영역이 급변하는 경계에서 쓰기 경로에 off-screen 좌표가 영구 기록될 여지가 있었음. 저장 직전 `ClampToVisibleArea(x, y)` 를 적용해 config.json 값 품질을 쓰기 시점에 보증. 읽기 경로(`GetAppPositionFixed`) 의 "저장 값은 덮어쓰지 않음" 불변식은 그대로 유지 — 원 모니터 복귀 시 원 위치 복원 시나리오는 영향 없음. Window 모드는 상대 오프셋이 창 프레임 기준이라 저장 시점 클램프 대상이 아님
+- **`Settings._manager` 크로스 스레드 가시성 공백** — 감지 스레드(`CheckConfigFileChange` 5초 폴링)와 메인 스레드(`Load` / `Save` / `Get` / `Update`) 가 같은 `AppSettingsManager?` 필드를 공유함에도 `volatile` 수식자가 없어 초기화 직후 한 스레드의 할당이 다른 스레드에 지연 가시될 수 있는 구조였음. `volatile AppSettingsManager?` 로 교체해 JIT 재배치·CPU 캐시 지연 없이 null → 인스턴스 전이가 즉시 관측되도록 메모리 배리어 명시. 부팅 직후 짧은 창에서 `CheckConfigFileChange` 가 `_manager is null` 을 관측해 조용히 no-op 하던 레이스 완화
+- **`Tray.ShowMenu` 의 `DestroyMenu` 주석 과도 일반화 정정** — 기존 `// 정리 (DestroyMenu은 서브메뉴도 자동 파괴)` 주석이 "무조건 자동" 인 듯한 인상을 주어 추후 `AppendMenuW(MF_POPUP)` 부착이 실패하는 리팩터가 들어오면 누수 위험이 잠재했음. MS 문서 기준 `DestroyMenu` 는 **부모 메뉴에 `MF_POPUP` 로 부착된** 서브메뉴만 자동 파괴한다는 정확한 전제와 P/Invoke 가 예외 없이 BOOL 로만 실패를 알린다는 현 구현 안전성 근거를 주석으로 명시
 
-### 문서
+### 개선
 
-- **`drag_modifier` 관련 전 문서 정직화** — [docs/User_Guide.md](docs/User_Guide.md) "주요 기능"·"트레이 메뉴" 2곳, [docs/KoEnVue_PRD.md](docs/KoEnVue_PRD.md) "인디케이터 위치 -- 드래그 활성 키" 섹션, [docs/implementation-notes.md](docs/implementation-notes.md) "Drag modifier" 섹션, [README.md](README.md) 설정 표, [App/Models/DragModifier.cs](App/Models/DragModifier.cs) XML doc, [App/Models/AppConfig.cs](App/Models/AppConfig.cs) 필드 주석에서 "투과"·"pass through"·"click-through" 기대 문구 제거. 대신 "드래그 개시 게이트" 로 통일하고, 크로스 프로세스 투과 미지원 사유(레이어드 칩 배경 알파 > 0 + `HTTRANSPARENT` 스레드 제약 + `WS_EX_TRANSPARENT` 토글 비용 판단) 를 섹션별로 명시
+- **`OverlayAnimator.TriggerShow` 4-분기 DRY 추출** — Idle/FadingOut/Hidden-animated 세 분기가 반복하던 `StartFade + _phase = FadingIn + SetTimer(Fade)` 3-라이너를 `BeginFadeIn(fromAlpha)` private 헬퍼로 통합. Holding/Idle 두 분기가 공유하던 `if (_currentAlpha != _targetAlpha) { _currentAlpha = _targetAlpha; _onAlphaChange(...) }` alpha-snap 블록은 `SnapToTargetAlpha()` 로 추출. 호출 매트릭스(FadingOut/Hidden 은 snap 없음) 와 Idle 분기의 `BeginFadeIn` 직후 `SnapToTargetAlpha` 중복 호출(HandleFadeTimer 첫 프레임까지의 깜빡임 억제 목적) 은 원본 동작 보존. Core 경계·공개 시그니처·상태 기계 전이 불변
+- **`LayeredOverlayBase.CalculateFixedLabelWidth` 측정 캐시** — `EnsureResources → CalculateFixedLabelWidth` 는 렌더 루프에서 자주 재진입하지만 입력(`MeasureLabels` 튜플 + `PaddingXLogicalPx` + `LabelWidthLogicalPx` + `_currentDpiScale` + `_cachedFontFamily/Size/IsBold`) 이 불변인 경우가 대다수. 7-키 캐시 일치 + `_fixedLabelWidth > 0` 이면 `GetTextExtentPoint32W` 3회 호출 + `Max` 계산 + `EnsureDib` 재호출을 생략한다 (`EnsureResources` 가 이미 `_fixedLabelWidth` 기준으로 `EnsureDib` 를 선행 호출한 상태라 추가 리사이즈 불필요). 캐시 무효화 지점은 `HandleDpiChanged` 1곳(`_cachedLabelDpiScale = 0` 으로 DPI-match 강제 미스) — 폰트 서명은 `EnsureFont` 가 먼저 갱신한 `_cachedFont*` 를 그대로 비교하므로 별도 무효화 불필요
+- **`Program.RectsEqual(in RECT, in RECT)` 헬퍼 추출** — `DetectionLoop` 의 `lastSystemInputFrame` 비교 블록과 `lastWindowFrame` 비교 블록이 `Left/Top/Right/Bottom` 4필드를 각자 전개하던 패턴을 단일 expression-bodied 메서드로 통합. 호출부가 단일 표현식 1줄로 축약. `in` 파라미터로 구조체 복사 회피
+- **`Program.DetectionLoop` 8-헬퍼 분할 + `DetectionState` 구조체** — 247줄 단일 `while` 본문이 단위 테스트 불가 + 변경 발생 시 전체 스캔이 불가피한 구조였음. 지역 변수 9개(`lastHwndFocus` / `lastHwndForeground` / `lastForegroundProcessName` / `lastSystemInputFrame` / `lastWindowFrame` / `windowMoving` / `lastFiltered` / `lastImeState` / `pollCount`)를 `DetectionState` struct 로 묶어 tick 간 상태를 단일 컨테이너로 전달하고, 루프 본문을 목적별 private 헬퍼 8개(`ProcessDetectionTick` / `TryFilterForeground` / `ResolveCurrentProcessName` / `UpdateSystemInputFrame` / `UpdateWindowMoving` / `EmitForegroundChange` / `EmitImeStateChange` / `EmitFocusChange`) 로 분할. `ref DetectionState` 로 공유하므로 복사 비용 없음. 감지 스레드 전용 상태라 동기화 불필요. `catch(Win32Exception or InvalidOperationException or COMException or ArgumentException)` 예외 필터 · `_stopping` volatile · polling 간격 규율 모두 불변
+- **`Settings.MergeProfile` 빈-override 단축 + `globalJson` 직렬화 캐시** — 감지 스레드가 포그라운드 프로세스 전환마다 호출하는 `MergeProfile(global, profile)` 가 프로필 키가 `enabled` 뿐이거나 `{}` 인 경우에도 매번 (1) `JsonSerializer.Serialize(global)` + (2) `JsonDocument.Parse` + (3) `Utf8JsonWriter` 머지 + (4) `JsonSerializer.Deserialize` 4단계 roundtrip 을 반복하는 비효율이 있었음. (a) 프로필 object 를 순회해 `enabled` 외 키가 없으면 `global` 을 그대로 반환하는 고속 경로 추가, (b) 동일 `global` 인스턴스에 대한 직렬화 결과를 `_cachedGlobalJson` 에 보관해 `ReferenceEquals` 로 재사용 — 동일 설정 하에서 포그라운드 전환 연쇄 시 2회차부터 `Serialize` 생략. `ClearProfileCache` 에서 함께 무효화 (감지 스레드 전용 필드이지만 메인 스레드에서 리로드 시 touch 하므로 동일 lock 영역 사용)
+- **`ImeStatus._lastState` 스레드 소유권 주석** — 감지 스레드(`Detect`) 와 메인 스레드(`OnImeChange`) 둘 다 `ImeStatus` 클래스를 쓰지만 `_lastState` 필드는 **오직 메인 스레드의 `OnImeChange` (`WINEVENT_OUTOFCONTEXT` 콜백) 만이 읽고 쓴다**. 훅이 `RegisterHook` 을 호출한 스레드(메인) 의 메시지 루프에서 발화하기 때문. 이 불변식을 필드 위 3줄 주석으로 명시해 향후 `Detect` 경로에 쓰기 추가 등 회귀 방지. 동기화 수식자는 불필요 (기존 동작 불변)
 
 ### 제거
 
 - **`Win32Constants.HTTRANSPARENT` 상수 삭제** — `Program.WM_NCHITTEST` 가 `HTCLIENT` 로 바뀌어 호출처 0건. `HTCLIENT = 1` 상수 신규 추가
+- **`Program.DetectionLoop` 의 `lastAppConfig` 지역 변수** — 스냅샷 저장 후 읽는 경로가 없는 dead code. `appConfig` 1 스냅샷 규율은 동일 틱 내 교체 방어의 정식 메커니즘이므로 잔여 미사용 변수를 제거해 의도 혼선 축소
+- **`App.UI.Animation.HandleConfigChanged` 공개 메서드 삭제** — 호출처 0건 dead API. `TriggerShow` / `TriggerHide` 가 진입 시마다 `_animator.UpdateConfig(BuildAnimationConfig(config))` 를 자동 호출하므로 외부에서 별도로 config 갱신을 알릴 경로가 불필요. "향후 외부 호출 대비" 라는 주석성 공개 API 는 YAGNI 원칙 위반이라 물리적 제거
+- **`Core/Native/User32.cs` 미사용 P/Invoke 6종 + `WndProc` 델리게이트 삭제** — `ClientToScreen`, `MoveWindow`, `SystemParametersInfoW`, `IsWindow`, `InvalidateRect`, `WndProc` 델리게이트 및 관련 섹션 헤더 주석(`// === 좌표 변환 ===`, `// WndProc 대리자 (NativeAOT에서는 [UnmanagedCallersOnly] + 함수 포인터 방식 권장)`). 전역 grep 결과 호출처 0건 (`InvalidateRect` 는 `ScrollableDialogHelper` · `User32.cs` 2곳의 설명 주석에만 등장). NativeAOT 환경은 P/Invoke 대리자 대신 `[UnmanagedCallersOnly]` + 함수 포인터 방식을 이미 사용 중(`WndProc` 델리게이트 자체가 dead code). `[LibraryImport]` surface 28줄 축소. `WinEventProc` 델리게이트는 `SetWinEventHook` 파라미터 + `ImeStatus._imeChangeCallback` 필드에서 사용 중이므로 보존
+
+### 문서
+
+- **`docs/implementation-notes.md` "Off-screen position clamp" 섹션 정합** — 읽기 경로 불변식("saved value is never rewritten") 범위를 명시하고, `HandleOverlayDragEnd` Fixed 모드 저장 경로의 쓰기 시점 클램프 추가 동작을 같은 섹션에 반영. 두 경로의 역할 구분(읽기=기존 저장값 보존 + 표시만 보정, 쓰기=신규 저장값의 off-screen 기록 방어) 을 명시화
+- **`docs/implementation-notes.md` "Label DIB flip-flop prevention" 섹션** — `_fixedLabelWidth` 측정 캐시 도입 1문단 추가. 캐시 키 구성과 `HandleDpiChanged` 무효화 경로 언급
 
 ## [0.9.1.7] — 2026-04-19
 

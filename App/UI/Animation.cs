@@ -128,20 +128,6 @@ internal static class Animation
     }
 
     // ================================================================
-    // 설정 변경 훅 (Program.cs는 호출하지 않음 — TriggerShow/TriggerHide가 진입 시 UpdateConfig)
-    // ================================================================
-
-    /// <summary>
-    /// 설정 변경 시 엔진의 AnimationConfig 스냅샷 갱신.
-    /// 현재 Program.cs는 이 메서드를 호출하지 않는다. <see cref="TriggerShow"/>/<see cref="TriggerHide"/>가
-    /// 진입 시마다 자동으로 갱신한다. 향후 외부 호출이 필요할 경우를 대비한 공개 API.
-    /// </summary>
-    public static void HandleConfigChanged(AppConfig config)
-    {
-        _animator?.UpdateConfig(BuildAnimationConfig(config));
-    }
-
-    // ================================================================
     // AppConfig → AnimationConfig 변환
     // ================================================================
 
