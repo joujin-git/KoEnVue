@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.9.1.7] — 2026-04-19
+
 ### 수정
 
 - **트레이 아이콘 캐럿+점 시각 중심 보정** — `TrayIcon.DrawCaretDot` 의 `caretY = (iconH - caretH) / 2` 는 `iconH - caretH` 가 홀수일 때 정수 나눗셈 절사로 상단 1px 편중이 발생했음 (24×24 @ 150% DPI: `(24-15)/2=4` → top 4 / bottom 5 — 기하 중심에서 0.5px 위). 추가로 캐럿 하단에 점이 붙는 구도는 시각 무게중심이 기하 중심보다 아래라 사용자 지각 상으로도 아이콘이 떠 보이는 현상이 누적. `(iconH - caretH + 1) / 2 + CaretYOffsetPx` (신규 상수 `CaretYOffsetPx = 1`) 로 변경해 홀수 차이에서는 하단 방향 반올림, 모든 사이즈에서 1px 아래로 시각 보정. 결과: 16×16 top3/bot3→top4/bot2, 24×24 top4/bot5→top6/bot3, 32×32 top6/bot6→top7/bot5 — 전 DPI 범위에서 하단 편중 일관화. `dotY = caretY + caretH - dotSize` 는 업데이트된 `caretY` 를 그대로 참조하므로 점 상대 위치 불변
