@@ -317,6 +317,10 @@ Detection loop only updates `lastHwndForeground` **after** `ShouldHide` passes. 
 
 `ImeStatus.TryTier1` 의 `IMC_GETOPENSTATUS` 결과가 `0` (IME 비활성) 일 때 `ImeState.English` 로 단정하지 않고 `null` 을 돌려 Tier 2 → Tier 3 체인으로 위임한다. 한국어 IME 환경에서는 "IME 비활성 = 영문 입력" 이 맞지만, 비-한국어 로케일(일본어/중국어) 에서도 동일한 `openResult = 0` 이 나오므로 Tier 1 에서 `English` 로 확정하면 Tier 3 의 `GetKeyboardLayout` → langId 기반 `NonKorean` 판별 기회를 완전히 잃는다. 대부분의 비-한국어 IME 연관 창은 `ImmGetContext = 0` 이라 Tier 2 도 null 로 패스-스루되어 Tier 3 가 `langId != LANGID_KOREAN` → `NonKorean` 을 반환한다. 한국어 사용자 경로는 Tier 2 의 `ImmGetConversionStatus` 가 `IME_CMODE_HANGUL = 0` 을 돌려 `English` 를 반환하거나, 연관 컨텍스트가 없는 창에서는 Tier 3 가 `LANGID_KOREAN` → `English` 를 반환해 최종 결과는 기존과 동일. explicit `DetectionMethod.ImeDefault` 경로는 `TryTier1(hwndFocus) ?? ImeState.English` 폴백으로 감싸져 있어 변경 영향 없음.
 
+#### Tier 3 HKL IME device signature gate
+
+`ImeStatus.TryTier3` 는 `langId != LANGID_KOREAN(0x0412)` 를 곧바로 `NonKorean` 으로 분류하지 않고, HKL 상위 니블 `0xE` (IME 디바이스 시그니처, `HKL_IME_DEVICE_MASK = 0xF0000000` / `HKL_IME_DEVICE_SIG = 0xE0000000`) 가 일치할 때만 `NonKorean` 을 반환한다. 콘솔 호스트(`conhost.exe`) 처럼 IME 가 아직 스레드에 붙지 않은 프로세스는 Tier 1 (`ImmGetDefaultIMEWnd`) / Tier 2 (`ImmGetContext`) 가 `null` 로 떨어지고 Tier 3 가 기본 키보드 레이아웃(예: en-US `0x0409_0409` — `langId=0x0409`, 상위 니블 `0x0`) 을 보게 되는데, 이를 `NonKorean` 으로 분류하면 `Animation.TriggerShow` 의 `NonKoreanImeMode.Hide` 가드(기본값) 가 `TriggerHide(forceHidden: true)` 로 인디를 강제 숨김해 "플래시 후 사라짐" 증상을 유발한다. IME 장착 HKL(한글 `0xE001_0412` · 일본어 `0xE001_0411` · 중국어 `0xE00E_0804`) 은 상위 니블이 `0xE` 로 시그니처를 가지므로 이 검사로 구분된다. "IME 미장착 스레드 = IME 미활성" 으로 간주해 `English` 로 폴백 — 한/영 토글 1회 시 한글 IME 가 스레드에 결합되면서 `langId == LANGID_KOREAN` 분기로 안착해 동일 결과에 수렴. 콘솔 호스트 외에도 Emacs/mintty 등 비-네이티브 Win32 창 전반에서 동일 증상 해소.
+
 ### System filter (9 conditions)
 
 1. Secure desktop (no hwnd)

@@ -489,6 +489,11 @@ internal static class Win32Constants
     public const ushort LANGID_KOREAN    = 0x0412;
     public const long HKL_LANGID_MASK   = 0xFFFF;  // LOWORD 추출 마스크
 
+    // HIWORD(HKL) 최상위 니블이 0xE = IME 디바이스. 0x0409_0409 같은 단순
+    // 키보드 레이아웃과 0xE001_0412(한글), 0xE001_0411(일본어 IME) 등을 구분.
+    public const uint HKL_IME_DEVICE_MASK = 0xF0000000;
+    public const uint HKL_IME_DEVICE_SIG  = 0xE0000000;
+
     // --- LOWORD/HIWORD 마스크 ---
     public const uint LOWORD_MASK       = 0xFFFF;
 

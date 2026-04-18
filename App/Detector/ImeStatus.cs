@@ -174,6 +174,14 @@ internal static class ImeStatus
     /// <summary>
     /// Tier 3: GetKeyboardLayout. 항상 성공.
     /// 한국어 IME의 한/영 세부 구분은 불가 — NonKorean 판별용.
+    /// <para>
+    /// IME 장착 여부(HKL 상위 니블 0xE) 로 NonKorean 을 좁게 판정한다. 콘솔 호스트처럼
+    /// IME 미장착 스레드는 단순 키보드 레이아웃(예: 0x0409_0409 en-US) 로 떨어지는데
+    /// 이를 NonKorean 으로 분류하면 <c>Animation.TriggerShow</c> 의
+    /// <c>NonKoreanImeMode.Hide</c> 가드(기본값) 가 작동해 인디가 표시 직후 강제 숨김된다.
+    /// 사용자 체감: conhost 포커스 진입 → 인디 플래시 → 즉시 사라짐 → 한/영 토글 1회 후
+    /// 정상화(토글로 한글 IME 가 스레드에 붙으면서 langId==0x0412 → English 분기).
+    /// </para>
     /// </summary>
     private static ImeState TryTier3(uint threadId)
     {
@@ -183,7 +191,11 @@ internal static class ImeStatus
         if (langId == Win32Constants.LANGID_KOREAN)
             return ImeState.English;  // 한국어 IME이지만 한/영 구분 불가
 
-        return ImeState.NonKorean;
+        // IME 디바이스 시그니처가 있을 때만 NonKorean. 그 외(단순 키보드 레이아웃) 는
+        // "IME 미활성" 상태로 보고 English 로 폴백해 conhost 플래시-숨김을 회피.
+        bool isIme = ((uint)(long)hkl & Win32Constants.HKL_IME_DEVICE_MASK)
+                     == Win32Constants.HKL_IME_DEVICE_SIG;
+        return isIme ? ImeState.NonKorean : ImeState.English;
     }
 
     // ================================================================

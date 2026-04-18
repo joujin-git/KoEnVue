@@ -3,6 +3,12 @@
 이 프로젝트의 주요 변경 사항을 기록합니다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/)를 따릅니다.
 
+## [0.9.1.9] — 2026-04-19
+
+### 수정
+
+- **콘솔 호스트 포커스 시 인디 플래시 후 즉시 사라짐 (한/영 토글 1회 전까지 반복)** — `ImeStatus.TryTier3` 가 스레드 키보드 레이아웃 `langId != 0x0412(한국어)` 를 모두 `NonKorean` 으로 분류했던 것이 원인. 콘솔 호스트는 자체 IME 컨텍스트가 없어 Tier 1 (`ImmGetDefaultIMEWnd`) / Tier 2 (`ImmGetContext`) 가 null 로 떨어지고, 신규 스레드는 한글 IME 가 아직 붙지 않은 기본 레이아웃(en-US `0x0409_0409`) 상태라 Tier 3 가 `NonKorean` 을 반환 → `Animation.TriggerShow` 의 `NonKoreanImeMode.Hide` 가드(기본값) 가 `TriggerHide(forceHidden: true)` 로 인디를 강제 숨김. 1 틱 안에 `WM_POSITION_UPDATED`(이전 `_lastImeState=English` 로 표시) → `WM_IME_STATE_CHANGED`(`NonKorean` 으로 숨김) 이 순차 처리돼 "플래시 후 사라짐" 으로 체감. 한/영 토글 1회 후 한글 IME 가 스레드에 결합되면서 `langId == 0x0412 → English` 분기로 떨어져 증상 해소. HKL 상위 니블 `0xE` (IME 디바이스 시그니처) 를 확인해 **단순 키보드 레이아웃은 `English` 로 폴백** 하고 IME 장착 시에만 `NonKorean` 을 반환하도록 좁힘 — 일본어/중국어 IME(`0xE001_0411` · `0xE00E_0804` 등) 판별은 그대로 유지. 콘솔 호스트 외에도 IME 미장착 스레드(Emacs/mintty 등 비-네이티브 Win32 창) 전반에서 발생하던 동일 증상 함께 해소
+
 ## [0.9.1.8] — 2026-04-19
 
 ### 수정
