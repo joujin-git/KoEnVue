@@ -307,12 +307,14 @@ internal static partial class Program
             case Win32Constants.WM_NCHITTEST:
                 if (hwnd == _hwndOverlay)
                 {
-                    // DragModifier=None: 기존 동작 (항상 드래그 가능, 모든 클릭 소비).
+                    // DragModifier=None: 항상 드래그 가능 (기본 동작, 모든 클릭 소비).
                     // 모디파이어 설정 시 해당 키가 눌려 있을 때만 HTCAPTION 반환 → 드래그 시작.
-                    // 안 눌렸으면 HTTRANSPARENT 반환 → 클릭/휠이 아래 창으로 투과.
+                    // 안 눌렸으면 HTCLIENT 반환 → 오버레이가 클릭을 받지만 WM_LBUTTONDOWN 핸들러가 없어
+                    // 무반응 (클릭 소비만 함). 크로스 프로세스 투과는 WS_EX_TRANSPARENT 가 필요한데
+                    // 그 토글을 관리하는 메커니즘(타이머·훅)을 들이지 않기로 결정 → 드래그 게이트 용도만.
                     return IsDragModifierPressed(_config.DragModifier)
                         ? Win32Constants.HTCAPTION
-                        : Win32Constants.HTTRANSPARENT;
+                        : Win32Constants.HTCLIENT;
                 }
                 return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
 

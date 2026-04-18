@@ -67,19 +67,23 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 The indicator is a separate TOPMOST window, not tied to any foreground window's geometry. `WM_NCHITTEST → HTCAPTION` enables native drag. `WM_ENTERSIZEMOVE` / `WM_EXITSIZEMOVE` track drag lifecycle.
 
-### Drag modifier (click-through gate)
+### Drag modifier (drag initiation gate)
 
-`config.drag_modifier` (`DragModifier` enum: `None` / `Ctrl` / `Alt` / `CtrlAlt`) controls whether mouse clicks on the indicator are consumed or pass through to the underlying window.
+`config.drag_modifier` (`DragModifier` enum: `None` / `Ctrl` / `Alt` / `CtrlAlt`) gates whether a left-click on the indicator starts a drag. The gate is purely reactive — `WM_NCHITTEST` itself reads `GetAsyncKeyState(VK_CONTROL / VK_MENU)` at click time and returns either `HTCAPTION` (drag) or `HTCLIENT` (click consumed by overlay, no-op because there is no `WM_LBUTTONDOWN` handler). No timer, no hook, no cached ex-style.
 
-- **None (default)** — `WM_NCHITTEST` returns `HTCAPTION` unconditionally. Every left-click hits the indicator as a "title bar" and starts (or no-ops as a 0-px) drag; right-click and wheel are also consumed. Matches pre-existing behavior.
-- **Ctrl / Alt / CtrlAlt** — `WM_NCHITTEST` queries `GetAsyncKeyState` on the main thread and returns `HTCAPTION` only when the exact modifier combo is held. Otherwise returns `HTTRANSPARENT`, which makes Windows route the mouse event (click, right-click, `WM_MOUSEWHEEL`) to the next window underneath the indicator. The matching is strict: `Ctrl` mode requires Ctrl pressed **and** Alt released, so Ctrl+Alt cannot accidentally trigger `Ctrl` mode.
+- **None (default)** — `IsDragModifierPressed(None) → true`, so `WM_NCHITTEST` always returns `HTCAPTION`. Every left-click starts (or no-ops as a 0-px) drag. Matches pre-existing behavior.
+- **Ctrl / Alt / CtrlAlt** — `IsDragModifierPressed` checks the exact state (`Ctrl` mode requires `Ctrl ∧ ¬Alt` so `Ctrl+Alt` cannot accidentally fire `Ctrl`). Modifier held → `HTCAPTION` (drag). Modifier released → `HTCLIENT`; the click lands on the overlay but is silently dropped because no client-area mouse handler exists.
+
+**Cross-process click-through is not supported.** The overlay renders a translucent chip background (alpha > 0 over most of its rect), so the per-pixel-alpha auto-transparency that layered windows apply to `alpha == 0` regions does not cover the chip. `HTTRANSPARENT` is also insufficient — per Microsoft's `WM_NCHITTEST` documentation, hit-test forwarding via `HTTRANSPARENT` only reaches windows **in the same thread**, not cross-process targets such as Notepad or a browser. Achieving real click-through would require toggling `WS_EX_TRANSPARENT` dynamically based on modifier state, which in turn demands either a 30 Hz `WM_TIMER` poller (steady-state wakeups) or a `WH_KEYBOARD_LL` hook (NativeAOT callback risk, 300 ms per-event OS timeout that silently disables hooks on breach). The cost/complexity was judged not worth the payoff, so the feature is scoped to drag-initiation gating only.
+
+Why just `GetAsyncKeyState` at hit-test time: the check runs only when the OS delivers `WM_NCHITTEST` to the overlay (typically once per click), costs microseconds, has zero steady-state overhead, and cannot get out of sync with the user's real key state. This is the minimum possible implementation for a drag gate — idle cost is literally zero.
 
 Key properties:
 
-- The indicator is layered (`WS_EX_LAYERED`) and `WS_EX_NOACTIVATE`, so `HTTRANSPARENT` works cleanly — no window-style toggling, no flicker.
-- Once drag begins, Windows enters a modal `WM_ENTERSIZEMOVE` loop with mouse capture. Releasing the modifier mid-drag does not abort the drag — `NCHITTEST` is not re-queried inside that loop.
+- Hot reload of `drag_modifier` costs nothing extra — the next `WM_NCHITTEST` reads the current `_config.DragModifier` and is already accurate. `HandleConfigChanged` and the tray-menu `updateConfig` callback touch no additional state.
+- Once a drag begins, Windows enters a modal `WM_ENTERSIZEMOVE` loop with mouse capture. Releasing the modifier mid-drag does not abort the drag — `SetCapture` persists until mouse-up / `WM_EXITSIZEMOVE`.
 - `Shift` is reserved for axis-lock during an active drag (see [`LayeredOverlayBase.HandleMoving`](../Core/Windowing/LayeredOverlayBase.cs)) and is not offered as a drag-gate choice.
-- In a non-`None` mode, clicking through the indicator delivers the click to the underlying window — this can change the foreground window, which the detection thread picks up and triggers `HandlePositionUpdated` (normal path). Expected behavior, but worth noting as a behavioral difference from `None`.
+- Clicks outside the chip's alpha-nonzero pixels (e.g., the sparse corners of a rounded rectangle if the caller configures no padding) are still skipped by the OS due to per-pixel alpha — this is `WS_EX_LAYERED` behavior, unrelated to `drag_modifier`.
 
 UI exposure: tray menu "드래그 활성 키" radio submenu (4 items) and settings dialog combo in the "다중 모니터" section.
 

@@ -238,7 +238,6 @@ internal static class Win32Constants
 {
     // --- 윈도우 확장 스타일 (dwExStyle) ---
     public const uint WS_EX_LAYERED      = 0x00080000;
-    public const uint WS_EX_TRANSPARENT  = 0x00000020;
     public const uint WS_EX_TOPMOST      = 0x00000008;
     public const uint WS_EX_TOOLWINDOW   = 0x00000080;
     public const uint WS_EX_NOACTIVATE   = 0x08000000;
@@ -275,7 +274,6 @@ internal static class Win32Constants
 
     // --- GetWindowLongW 인덱스 ---
     public const int GWL_STYLE           = -16;
-    public const int GWL_EXSTYLE         = -20;
 
     // --- GetWindow 관계 ---
     public const uint GW_OWNER           = 4;
@@ -296,8 +294,8 @@ internal static class Win32Constants
 
     // --- Hit Test ---
     public const uint WM_NCHITTEST       = 0x0084;
+    public const nint HTCLIENT           = 1;
     public const nint HTCAPTION          = 2;
-    public const nint HTTRANSPARENT      = -1;
 
     // --- 윈도우 이동/리사이즈 ---
     public const uint WM_MOVING          = 0x0216;

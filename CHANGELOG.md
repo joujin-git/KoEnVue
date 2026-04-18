@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### 수정
+
+- **`drag_modifier` 의 크로스 프로세스 클릭 투과 기능 미구현 확정 + 문서 정직화** — 0.9.1.4 도입 당시 커밋 메시지·사용자 가이드·PRD 가 `"ctrl"`/`"alt"`/`"ctrl_alt"` 모드에서 "모디파이어 미누름 시 클릭이 아래 창으로 투과" 된다고 기술했으나, 실제로는 동작하지 않음을 확인. 원인: (1) 오버레이 반투명 칩 배경이 알파 > 0 이라 레이어드 윈도우의 `alpha == 0` 자동 투과 영역에 해당하지 않음, (2) `WM_NCHITTEST → HTTRANSPARENT` 반환은 MS 문서상 "같은 스레드 내 창" 으로만 포워딩되므로 메모장/브라우저 등 타 프로세스 창에는 전달되지 않음. 진짜 투과를 구현하려면 `WS_EX_TRANSPARENT` 확장 스타일 동적 토글이 필요한데, 이를 위한 WM_TIMER 폴러(30 Hz 웨이크업) 또는 WH_KEYBOARD_LL 훅(NativeAOT `[UnmanagedCallersOnly]` 경로 리스크, 300 ms 콜백 타임아웃 누적 시 OS 가 훅 비활성화) 의 런타임 비용·복잡도 대비 이득이 작아 도입 보류. 본 옵션은 **"드래그 개시 게이트"** 로 재정의 — 모디파이어 미누름 시 좌클릭이 오버레이에 도달하지만 `WM_LBUTTONDOWN` 핸들러가 없어 무반응 (드래그만 개시되지 않음). `WM_NCHITTEST` 반환값을 `HTTRANSPARENT` → `HTCLIENT` 로 변경해 시맨틱스 명시화 (사용자 체감 동일, 유휴 비용 0 유지)
+
+### 문서
+
+- **`drag_modifier` 관련 전 문서 정직화** — [docs/User_Guide.md](docs/User_Guide.md) "주요 기능"·"트레이 메뉴" 2곳, [docs/KoEnVue_PRD.md](docs/KoEnVue_PRD.md) "인디케이터 위치 -- 드래그 활성 키" 섹션, [docs/implementation-notes.md](docs/implementation-notes.md) "Drag modifier" 섹션, [README.md](README.md) 설정 표, [App/Models/DragModifier.cs](App/Models/DragModifier.cs) XML doc, [App/Models/AppConfig.cs](App/Models/AppConfig.cs) 필드 주석에서 "투과"·"pass through"·"click-through" 기대 문구 제거. 대신 "드래그 개시 게이트" 로 통일하고, 크로스 프로세스 투과 미지원 사유(레이어드 칩 배경 알파 > 0 + `HTTRANSPARENT` 스레드 제약 + `WS_EX_TRANSPARENT` 토글 비용 판단) 를 섹션별로 명시
+
+### 제거
+
+- **`Win32Constants.HTTRANSPARENT` 상수 삭제** — `Program.WM_NCHITTEST` 가 `HTCLIENT` 로 바뀌어 호출처 0건. `HTCLIENT = 1` 상수 신규 추가
+
 ## [0.9.1.7] — 2026-04-19
 
 ### 수정

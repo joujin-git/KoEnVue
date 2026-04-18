@@ -140,9 +140,10 @@ internal sealed record AppConfig
     public int SnapGapPx { get; init; } = 2;
 
     // [인디케이터 위치 -- 드래그 활성 키]
-    // None  = 항상 드래그 가능 (기존 동작). 오버레이가 모든 마우스 이벤트 소비.
-    // Ctrl / Alt / CtrlAlt = 해당 키 누른 상태에서만 드래그. 키를 놓으면 클릭/휠이
-    // 아래 창으로 투과 (WM_NCHITTEST → HTTRANSPARENT). Shift는 축 고정에 선점되어 제외.
+    // 드래그 개시 게이트. None = 모든 좌클릭이 드래그 개시. Ctrl/Alt/CtrlAlt = 해당 키를
+    // 정확히 일치하는 조합으로 누른 상태에서만 개시. 키 미누름 시 오버레이가 클릭을 소비만
+    // 하고 반응 없음 (크로스 프로세스 투과는 WS_EX_TRANSPARENT 동적 토글이 필요해 미구현).
+    // Shift 는 드래그 중 축 고정에 선점되어 제외.
     public DragModifier DragModifier { get; init; } = DragModifier.None;
 
     // [고급]
