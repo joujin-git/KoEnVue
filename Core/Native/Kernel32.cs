@@ -4,9 +4,6 @@ namespace KoEnVue.Core.Native;
 
 internal static partial class Kernel32
 {
-    [LibraryImport("kernel32.dll")]
-    internal static partial uint GetLastError();
-
     [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
     internal static partial IntPtr CreateMutexW(IntPtr lpMutexAttributes,
         [MarshalAs(UnmanagedType.Bool)] bool bInitialOwner, string lpName);

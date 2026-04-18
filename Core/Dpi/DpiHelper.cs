@@ -36,7 +36,7 @@ internal static class DpiHelper
     {
         int hr = Shcore.GetDpiForMonitor(hMonitor, Win32Constants.MDT_EFFECTIVE_DPI,
             out uint dpiX, out uint _);
-        if (hr != 0 || dpiX == 0) return 1.0;  // 실패 시 100% 기본값
+        if (hr != Win32Constants.S_OK || dpiX == 0) return 1.0;  // 실패 시 100% 기본값
         return dpiX / (double)BASE_DPI;
     }
 
@@ -60,7 +60,7 @@ internal static class DpiHelper
     {
         int hr = Shcore.GetDpiForMonitor(hMonitor, Win32Constants.MDT_EFFECTIVE_DPI,
             out uint dpiX, out uint dpiY);
-        if (hr != 0 || dpiX == 0) return ((uint)BASE_DPI, (uint)BASE_DPI);
+        if (hr != Win32Constants.S_OK || dpiX == 0) return ((uint)BASE_DPI, (uint)BASE_DPI);
         return (dpiX, dpiY);
     }
 

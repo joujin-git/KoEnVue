@@ -720,15 +720,6 @@ internal static partial class Program
             });
     }
 
-    private static void UpdateConfigAndNotify(Func<AppConfig, AppConfig> transform)
-    {
-        _config = transform(_config);
-        Overlay.HandleConfigChanged(_config);
-        if (_config.TrayEnabled)
-            Tray.UpdateState(_lastImeState, _config);
-        Settings.Save(_config);
-    }
-
     private static void HandlePowerResume()
     {
         Logger.Info("Power resumed");
@@ -951,7 +942,8 @@ internal static partial class Program
 
                 // 창 기준 모드: 포그라운드 창 rect 변화 감지 → 이동 중 인디 숨김, 안정화 시 재표시.
                 // 시스템 입력 프로세스는 위의 전용 블록에서 처리하므로 제외.
-                if (_config.PositionMode == PositionMode.Window
+                // appConfig 로 틱 스냅샷 일관성 유지 — 같은 틱 안에서 _config 가 교체돼도 경계 조건 안전.
+                if (appConfig.PositionMode == PositionMode.Window
                     && !DefaultConfig.IsSystemInputProcess(lastForegroundProcessName)
                     && !foregroundChanged
                     && Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT windowFrame))

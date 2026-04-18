@@ -143,7 +143,11 @@ internal static class Tray
     /// </summary>
     internal static void Recreate(ImeState state, AppConfig config)
     {
-        if (_hwndMain == IntPtr.Zero) return;
+        // TaskbarCreated 가 Initialize 이전에 도착하는 레이스(트레이 브로드캐스트 → Program 수신 선행)
+        // 에서는 _hwndMain 만 세팅된 상태일 수 있다. _initialized 까지 확인해 Remove 가 NIM_DELETE
+        // 없이 내부 상태만 초기화하는 경로를 타도록 가드 — 초기화 절반만 이뤄진 채 Initialize 가
+        // 재호출되면 _currentIcon 참조가 유실돼 핸들 누수로 이어진다.
+        if (_hwndMain == IntPtr.Zero || !_initialized) return;
 
         IntPtr hwndMain = _hwndMain;
         Remove();

@@ -8,11 +8,31 @@
 ### 수정
 
 - **트레이 아이콘 캐럿+점 시각 중심 보정** — `TrayIcon.DrawCaretDot` 의 `caretY = (iconH - caretH) / 2` 는 `iconH - caretH` 가 홀수일 때 정수 나눗셈 절사로 상단 1px 편중이 발생했음 (24×24 @ 150% DPI: `(24-15)/2=4` → top 4 / bottom 5 — 기하 중심에서 0.5px 위). 추가로 캐럿 하단에 점이 붙는 구도는 시각 무게중심이 기하 중심보다 아래라 사용자 지각 상으로도 아이콘이 떠 보이는 현상이 누적. `(iconH - caretH + 1) / 2 + CaretYOffsetPx` (신규 상수 `CaretYOffsetPx = 1`) 로 변경해 홀수 차이에서는 하단 방향 반올림, 모든 사이즈에서 1px 아래로 시각 보정. 결과: 16×16 top3/bot3→top4/bot2, 24×24 top4/bot5→top6/bot3, 32×32 top6/bot6→top7/bot5 — 전 DPI 범위에서 하단 편중 일관화. `dotY = caretY + caretH - dotSize` 는 업데이트된 `caretY` 를 그대로 참조하므로 점 상대 위치 불변
+- **상세 설정 `position_mode` 핫 리로드 torn read** — `Program.MainLoop` 에서 디텍션 스레드가 관측한 `AppConfig` 스냅샷을 `appConfig` 지역변수로 잡은 뒤에도 동일 틱에서 `_config.PositionMode` 를 다시 읽어 비교하던 분기가 있었음. 동일 틱 중 핫 리로드가 `_config` 필드를 교체하면 같은 로직 안에서 이전 스냅샷(PositionMode=Fixed)과 새 스냅샷(Window)이 섞여 인디 위치 산출이 튈 수 있었음. `appConfig.PositionMode` 로 교체해 한 틱 내 단일 스냅샷 규율 복원
+- **`Tray.Recreate` 미초기화 상태 가드** — `TaskbarCreated` 브로드캐스트 메시지가 `Initialize` 보다 먼저 도달할 때 (예: 부팅 초기 레이스) 기존 가드 `_hwndMain == IntPtr.Zero` 만으로는 걸러지지 않아 `Remove` 단계가 skip 되고 `Initialize` 만 실행되어 중복 등록 또는 미초기화 상태에서 `NIM_ADD` 가 호출될 수 있었음. `|| !_initialized` 조건 추가
+- **`LayeredOverlayBase.EnsureDib` 실패 로그 부재** — `CreateDIBSection` 이 `0` 을 돌려주면 아무 로그 없이 조기 반환되어 렌더 공백의 원인 추적이 어려웠음. `_dibFailureLogged` 래치로 최초 1회만 `Logger.Warning` 출력 후 후속 실패는 스팸 회피를 위해 silent 유지
+- **드래그 진입/종료 시 `GetWindowRect` 실패 무시** — `BeginDrag`/`EndDrag` 의 `GetWindowRect` 반환값을 검사하지 않고 `rc=default(RECT)` 로 진행하던 흐름. 실패 시 `_dragStartX/Y=0` 으로 드래그가 좌상단 (0,0) 에서 시작되는 시각 튐. 반환값이 `false` 이면 조기 반환
+- **`Program.HandleConfigChanged` 핫 리로드 이외 경로의 `UpdateConfigAndNotify` 사각지대** — `Program.UpdateConfigAndNotify` 호출처가 0건(dead code). 삭제로 동일 의도의 재진입 경로 혼선 제거
+- **`Core/Native/Kernel32.GetLastError` P/Invoke 미사용** — 호출처 0건. 선언 삭제로 `[LibraryImport]` surface 축소
+
+### 개선
+
+- **`LayeredOverlayBase.PaintDib` 의 `_ppvBits` 방어 가드** — `Span<byte>((void*)_ppvBits, ...)` 진입 전 `_ppvBits == IntPtr.Zero` 방어적 조기 반환. `EnsureDib` 실패와 `PaintDib` 호출 순서 이상 시 null 포인터 접근 차단
+- **`Logger` 레벨별 메서드 중복 제거** — `Debug`/`Info`/`Warning`/`Error` 4종이 `level < _logLevel` 가드 + 포맷팅을 각자 복사하던 구조를 `Write(LogLevel, string prefix, string message)` private 헬퍼 1곳으로 통합. 공개 메서드 4종은 expression-bodied delegator. "[WARN]" 약자 형식을 유지하기 위해 prefix 를 `ToString` 이 아닌 명시 파라미터로 전달
+- **`JsonSettingsManager` 예외 필터 패턴 추출** — `IsExpectedLoadException`/`IsExpectedSaveException`/`IsExpectedIoException` 3종 private static 헬퍼로 추출. Load/Save/CheckReload 가 동일한 `IOException or UnauthorizedAccessException [or JsonException] [or NotSupportedException]` 조합을 재사용. 훅(Validate/Migrate/PostDeserializeFixup) 의 로직 버그는 여전히 전파되는 정책 유지
+- **`Win32DialogHelper.ApplyFont` AggressiveInlining** — 1-liner `SendMessageW(WM_SETFONT)` wrapper 에 `[MethodImpl(MethodImplOptions.AggressiveInlining)]` 어트리뷰트 추가로 NativeAOT 호출 오버헤드 제거
+- **`Win32Constants.S_OK` HRESULT 상수 도입** — `DpiHelper.GetScale`/`GetRawDpi` 의 `hr != 0` 비교를 `hr != Win32Constants.S_OK` 로 교체해 HRESULT 의미 명시화. 기존 raw 0 비교는 winerror.h 의미와 동일하나 가독성/일관성 향상
 
 ### 제거
 
 - **핫키 기능** — `hotkeys_enabled` / `hotkey_toggle_visibility` config 키, 트레이 메뉴 등록 없이 오직 `Ctrl+Alt+H`(또는 사용자 지정) 으로만 인디 표시/숨김 토글하던 기능 전체 제거. 트레이 좌클릭이 `tray_click_action` 으로 동일 토글을 제공하므로 기능 중복. 관련 삭제: `Program.Bootstrap.RegisterHotkeys`/`UnregisterHotkeys`/`ParseHotkey` (~75 줄), `Program.HandleHotkey` + `WM_HOTKEY` 분기, `Core/Native/User32.RegisterHotKey`/`UnregisterHotKey` P/Invoke, `Win32Constants.WM_HOTKEY`/`MOD_*`/`VK_F1..F12` 상수, `AppConfig.HotkeysEnabled`/`HotkeyToggleVisibility`, 상세 설정 다이얼로그 "핫키" 섹션 2필드
 - **`TrayIconStyle` enum 및 `tray_icon_style` config 키** — 캐럿+점(`caret_dot`) 디자인 고정으로 단순화. `Static` 변종은 트레이 아이콘으로 IME 상태를 보여주지 않는 옵션이었으나 사용 사례가 불분명. `App/Models/TrayIconStyle.cs` 파일 삭제, `AppConfig.TrayIconStyle` 필드, `TrayIcon.CreateIcon` 의 Static 정규화 분기, `Tray.UpdateState` 의 스타일 전환 설명, 상세 설정 다이얼로그 "트레이 > 아이콘 스타일" 콤보 제거. `TrayIcon.CreateIcon` 은 항상 IME 상태에 따라 `HangulBg`/`EnglishBg`/`NonKoreanBg` 로 캐럿+점을 그린다
+
+### 문서
+
+- **사용자 가이드 "단축키" 섹션 삭제** — `Ctrl+Alt+H` 핫키 제거 (a6f9ac7) 에 맞춰 `docs/User_Guide.md` 의 단축키 표·관련 문단 제거. 트레이 좌클릭 `tray_click_action` 으로 동일 기능 안내는 잔여 섹션에 유지
+- **README 상세 설정 필드 수 서술 수정** — "전체 62개 설정 필드" 라는 실측과 어긋나는 숫자 고정 문구 대신, 13개 섹션 이름만 열거하는 서술로 교체. 필드 수 변동마다 문서 업데이트 누락 리스크 제거
+- **`.gitignore` 에 `.claude/` 추가** — 로컬 개발 설정(플랜/메모리) 이 `git status` 에 뜨지 않도록 차단
 
 ## [0.9.1.6] — 2026-04-18
 

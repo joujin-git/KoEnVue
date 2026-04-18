@@ -80,7 +80,7 @@ internal class JsonSettingsManager<T>
                 Logger.Info($"Config loaded from {_filePath}");
                 return config;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException)
+            catch (Exception ex) when (IsExpectedLoadException(ex))
             {
                 // 파일은 존재하지만 파싱 실패 — 사용자 복구 가능성을 위해 덮어쓰지 않음.
                 // mtime은 갱신해서 5초 폴링이 WM_CONFIG_CHANGED를 무한 재발송하는 스팸을 차단.
@@ -88,7 +88,7 @@ internal class JsonSettingsManager<T>
                 // 의 로직 버그(NullRef 등)는 propagate 시켜 표면화하도록 한다.
                 Logger.Warning($"Failed to load config from {_filePath}: {ex.Message}. Using defaults without overwriting.");
                 try { _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath); }
-                catch (Exception innerEx) when (innerEx is IOException or UnauthorizedAccessException) { }
+                catch (Exception innerEx) when (IsExpectedIoException(innerEx)) { }
                 return new T();
             }
         }
@@ -118,7 +118,7 @@ internal class JsonSettingsManager<T>
             _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
             Logger.Debug($"Config saved to {_filePath}");
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception ex) when (IsExpectedSaveException(ex))
         {
             // NF-25: 저장 실패 시 로그 경고 + 인메모리 유지.
             // 정책 항목 1(타입 좁히기): 로직 버그(NullRef 등)는 전파되어 표면화되도록 한다.
@@ -151,7 +151,7 @@ internal class JsonSettingsManager<T>
                 return true;
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (IsExpectedIoException(ex))
         {
             // 파일 잠금(아토믹 replace 에디터의 delete→rename 중간 상태) 또는 권한 오류는 흡수.
             Logger.Debug($"CheckReload mtime probe failed: {ex.Message}");
@@ -159,6 +159,16 @@ internal class JsonSettingsManager<T>
 
         return false;
     }
+
+    // 정책 항목 1(타입 좁히기): I/O·권한·JSON·소스젠 비지원 타입만 포획. 훅 로직 버그는 propagate.
+    private static bool IsExpectedLoadException(Exception ex) =>
+        ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException;
+
+    private static bool IsExpectedSaveException(Exception ex) =>
+        ex is IOException or UnauthorizedAccessException or JsonException;
+
+    private static bool IsExpectedIoException(Exception ex) =>
+        ex is IOException or UnauthorizedAccessException;
 
     // ================================================================
     // Protected virtual hooks — App 레이어 override 지점

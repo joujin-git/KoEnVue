@@ -430,6 +430,9 @@ internal static class Win32Constants
     public const uint COINIT_APARTMENTTHREADED = 0x2;
     public const uint CLSCTX_INPROC_SERVER = 0x1;
 
+    // --- HRESULT ---
+    /// <summary>HRESULT 성공값. winerror.h S_OK = 0x00000000.</summary>
+    public const int S_OK = 0;
 
     // --- DPI ---
     public const uint MDT_EFFECTIVE_DPI  = 0;

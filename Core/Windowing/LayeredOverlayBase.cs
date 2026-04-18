@@ -56,6 +56,11 @@ internal sealed class LayeredOverlayBase : IDisposable
     private bool _cachedFontIsBold;
     private double _cachedFontDpiScale;
 
+    // CreateDIBSection 실패 시 Logger.Warning 을 한 번만 남기기 위한 래치.
+    // 빠른 IME 토글/DPI 전환 시 매 호출마다 기록되면 로그 스팸이 되므로 초회 1회만 남기고
+    // 이후 실패는 조용히 fall-through — 기존 _ppvBits / _currentBitmap 은 보존된다.
+    private bool _dibFailureLogged;
+
     // DT_VCENTER가 셀 중앙(tmAscent+tmDescent의 중점)을 기준으로 정렬하기 때문에 발생하는
     // 시각적 하향 치우침 보정값. 양수일수록 텍스트를 위로 끌어올린다(픽셀 단위).
     // EnsureFont에서 GetTextMetricsW로 한 번 측정해 캐시하며, 폰트 캐시 키가 무효화될 때만
@@ -206,6 +211,11 @@ internal sealed class LayeredOverlayBase : IDisposable
         int w = _currentWidth;
         int h = _currentHeight;
         if (w == 0 || h == 0) return false;
+        // EnsureDib 가 CreateDIBSection 실패 후 옛 _currentBitmap 을 유지하는 경로에서는
+        // _ppvBits 가 이전 성공 할당의 유효 포인터다. 이론적으로 실패 한 번도 없이 첫 PaintDib
+        // 이 호출되면 _ppvBits == Zero 지만 _currentWidth/Height 역시 0 이라 위 가드로 선차단.
+        // 방어적 잔여 가드 — 예측 못한 상태 전이에서도 Span((void*)0, N) 으로 터지지 않도록.
+        if (_ppvBits == IntPtr.Zero) return false;
 
         // 픽셀 버퍼 0 클리어
         unsafe
@@ -284,9 +294,9 @@ internal sealed class LayeredOverlayBase : IDisposable
     public void BeginDrag(bool snapToWindows)
     {
         _isDragging = true;
-        if (_hwndOverlay != IntPtr.Zero)
+        if (_hwndOverlay != IntPtr.Zero
+            && User32.GetWindowRect(_hwndOverlay, out RECT rc))
         {
-            User32.GetWindowRect(_hwndOverlay, out RECT rc);
             _dragStartX = rc.Left;
             _dragStartY = rc.Top;
 
@@ -314,9 +324,9 @@ internal sealed class LayeredOverlayBase : IDisposable
         _isDragging = false;
         s_activeSnapRects.Clear();
         s_activeOwnerHwnd = IntPtr.Zero;
-        if (_hwndOverlay != IntPtr.Zero)
+        if (_hwndOverlay != IntPtr.Zero
+            && User32.GetWindowRect(_hwndOverlay, out RECT rc))
         {
-            User32.GetWindowRect(_hwndOverlay, out RECT rc);
             _lastX = rc.Left;
             _lastY = rc.Top;
         }
@@ -689,8 +699,17 @@ internal sealed class LayeredOverlayBase : IDisposable
             IntPtr.Zero, ref bmi, Win32Constants.DIB_RGB_COLORS,
             out IntPtr ppvBits, IntPtr.Zero, 0);
 
-        if (hBitmap == IntPtr.Zero) return;
+        if (hBitmap == IntPtr.Zero)
+        {
+            if (!_dibFailureLogged)
+            {
+                _dibFailureLogged = true;
+                Logger.Warning($"CreateDIBSection failed: {width}x{height}. Keeping previous DIB.");
+            }
+            return;
+        }
 
+        _dibFailureLogged = false;
         _ppvBits = ppvBits;
 
         Gdi32.SelectObject(_memDC, hBitmap);

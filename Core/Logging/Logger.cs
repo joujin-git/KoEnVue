@@ -86,54 +86,18 @@ internal static class Logger
         StopDrainThread();
     }
 
-    public static void Debug(string message)
-    {
-        if (LogLevel.Debug >= _logLevel)
-        {
-            string formatted = $"[DEBUG] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} {message}";
-            Trace.WriteLine(formatted);
-            EnqueueToFile(formatted);
-        }
-    }
+    public static void Debug(string message) => Write(LogLevel.Debug, "[DEBUG]", message);
+    public static void Info(string message) => Write(LogLevel.Info, "[INFO]", message);
+    public static void Warning(string message) => Write(LogLevel.Warning, "[WARN]", message);
+    public static void Error(string message) => Write(LogLevel.Error, "[ERROR]", message);
+    public static void Error(string message, Exception ex) => Write(LogLevel.Error, "[ERROR]", $"{message}: {ex.Message}");
 
-    public static void Info(string message)
+    private static void Write(LogLevel level, string prefix, string message)
     {
-        if (LogLevel.Info >= _logLevel)
-        {
-            string formatted = $"[INFO] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} {message}";
-            Trace.WriteLine(formatted);
-            EnqueueToFile(formatted);
-        }
-    }
-
-    public static void Warning(string message)
-    {
-        if (LogLevel.Warning >= _logLevel)
-        {
-            string formatted = $"[WARN] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} {message}";
-            Trace.WriteLine(formatted);
-            EnqueueToFile(formatted);
-        }
-    }
-
-    public static void Error(string message)
-    {
-        if (LogLevel.Error >= _logLevel)
-        {
-            string formatted = $"[ERROR] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} {message}";
-            Trace.WriteLine(formatted);
-            EnqueueToFile(formatted);
-        }
-    }
-
-    public static void Error(string message, Exception ex)
-    {
-        if (LogLevel.Error >= _logLevel)
-        {
-            string formatted = $"[ERROR] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} {message}: {ex.Message}";
-            Trace.WriteLine(formatted);
-            EnqueueToFile(formatted);
-        }
+        if (level < _logLevel) return;
+        string formatted = $"{prefix} {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} {message}";
+        Trace.WriteLine(formatted);
+        EnqueueToFile(formatted);
     }
 
     // ================================================================

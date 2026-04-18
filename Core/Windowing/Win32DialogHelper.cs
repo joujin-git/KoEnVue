@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using KoEnVue.Core.Native;
 
@@ -56,6 +57,7 @@ internal static class Win32DialogHelper
     /// wParam = hFont, lParam = TRUE (다시 그리기 요청).
     /// CleanupDialog/ScaleInputDialog/SettingsDialog 공용 단일 라인 헬퍼.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void ApplyFont(IntPtr hwnd, IntPtr hFont)
     {
         User32.SendMessageW(hwnd, Win32Constants.WM_SETFONT, hFont, (IntPtr)1);
