@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+## [0.9.1.5] — 2026-04-18
+
+### 수정
+
+- **`config.json` 저장 원자화** — `JsonSettingsFile.WriteAllText` 가 기존에는 `File.WriteAllText(path, json)` 단일 호출이라 쓰기 도중 전원 차단·프로세스 강제 종료·OS 크래시가 발생하면 config 파일이 절단된 반쪽 상태로 남을 수 있었음. `path + ".tmp"` 에 전체를 먼저 기록한 뒤 `File.Move(tmpPath, path, overwrite: true)` 로 교체하도록 변경 — Windows 동일 볼륨에서 `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` 는 원자적 rename 을 보장하므로 쓰기 중 크래시가 와도 원본 파일 또는 새 파일 중 하나는 항상 온전한 상태로 남는다 (truncate 된 반쪽 파일 불가능). `Settings.CheckConfigFileChange` 의 mtime 폴링은 타겟 경로만 관찰하므로 `.tmp` 파일이 핫 리로드를 트리거하지 않음
+- **`LayeredOverlayBase.EnsureFont` 의 `CreateFontW` 실패 가드** — 기존 흐름은 `_currentFont.Dispose() → CreateFontW → new SafeFontHandle(hFont)` 를 무조건 순차 실행하고 캐시 키를 갱신했기 때문에, GDI 핸들 고갈·잘못된 폰트 패밀리 등으로 `CreateFontW` 가 `0` 을 돌려주면 (1) 이전 유효 폰트가 이미 해제된 뒤고, (2) 빈 HFONT 가 캐시에 고착되어 동일 파라미터로는 영원히 재진입 없이 렌더가 실패하는 상태에 빠질 수 있었음. `CreateFontW` 결과를 먼저 검사해 `IntPtr.Zero` 이면 `Logger.Warning(family/size/bold)` + 조기 반환 — 이전 `_currentFont` 와 캐시 키를 모두 보존해 다음 `EnsureFont` 호출에서 재시도가 가능하도록 수정. 성공 경로에서만 Dispose → wrap → 캐시 갱신 순서로 진행
+- **IME 감지 Tier 1 이 `openResult = 0` 인 경우 `ImeState.English` 대신 `null` 반환** — `ImeStatus.TryTier1` 의 `IMC_GETOPENSTATUS` 결과가 "IME 비활성" 을 의미하는 `0` 일 때 한국어 IME 환경에서는 영문 입력이지만, 비-한국어 로케일(일본어/중국어) 에서도 동일한 결과가 나오므로 여기서 `English` 로 단정하면 Tier 3 의 `GetKeyboardLayout` 기반 `NonKorean` 판별 기회를 잃는다. `null` 을 돌려 Tier 2 → Tier 3 체인에 위임하도록 변경 — 대부분의 비-한국어 IME 윈도우는 `ImmGetContext = 0` 이라 Tier 2 도 자연스럽게 null 로 패스-스루되어 Tier 3 가 `langId` 로 로케일을 확인한다. 한국어 사용자 경로는 Tier 2/3 모두 `English` 를 반환하므로 동작 불변. explicit `DetectionMethod.ImeDefault` 경로는 `TryTier1 ?? ImeState.English` 폴백으로 기존 동작 유지
+- **`TrayIconStyle.Static` 팬텀 enum 실체화** — enum 값(`[JsonStringEnumMemberName("static")]`)과 AppConfig 필드, 상세 설정 다이얼로그 "아이콘 스타일" 콤보박스가 모두 이미 존재했지만 실제 렌더링 경로에서 값을 전혀 참조하지 않아 사용자가 "Static / 고정" 을 선택해도 IME 전환마다 색상이 바뀌는 `CaretDot` 동작 그대로였음. `TrayIcon.CreateIcon` 진입점에서 `config.TrayIconStyle == TrayIconStyle.Static` 이면 `state = ImeState.English` 로 정규화해 항상 `EnglishBg` 로 렌더링하도록 수정. `Tray.UpdateState` 는 state/config 변경 구분 없이 항상 재렌더하는 정책을 유지해 CaretDot↔Static 스타일 전환이 즉시 반영됨 (NIM_MODIFY 비용 μs 수준). 툴팁은 `TrayTooltip` 플래그가 별도 제어하므로 영향 없음
+
 ## [0.9.1.4] — 2026-04-17
 
 ### 추가

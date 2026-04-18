@@ -49,6 +49,10 @@ Negative `biHeight` in the BITMAPINFO so `(0, 0)` is top-left. Keeps the pixel a
 
 `LayeredOverlayBase` 생성자는 `CreateCompatibleDC` 반환값이 `IntPtr.Zero`이면 `InvalidOperationException`을 던져 null DC로 후속 GDI 작업이 진행되는 것을 방지한다. `EnsureDib`의 `CreateDIBSection` 호출은 `out IntPtr ppvBits` 로컬 변수로 수신한 뒤 성공 시에만 `_ppvBits` 필드를 갱신한다. 실패 시 기존 유효 비트맵과 `_ppvBits`가 보존되어 해제된 메모리를 참조하는 위험을 제거한다.
 
+### EnsureFont resource safety
+
+`LayeredOverlayBase.EnsureFont` 는 `CreateFontW` 호출 결과를 먼저 검사해 `IntPtr.Zero` 이면 `Logger.Warning(family/size/bold)` + 조기 반환한다. 기존 `_currentFont` 와 캐시 키(`_cachedFontFamily/Size/IsBold/DpiScale`) 는 갱신하지 않아 다음 `EnsureFont` 호출에서 동일 파라미터로 재시도가 가능. 이 순서가 중요한 이유는 **먼저** Dispose 한 뒤 Create 하던 이전 흐름이 실패 시 (1) 이전 유효 폰트를 잃고 (2) 빈 HFONT 가 래핑된 `SafeFontHandle` 이 캐시에 고착되어, `_cachedFont*` 필드가 이미 "현재와 동일" 을 가리키므로 이후 호출이 조기 return 하여 영원히 재진입 없이 렌더가 실패하는 상태에 빠지는 회귀를 막기 위함이다. 성공 경로에서만 `_currentFont?.Dispose() → new SafeFontHandle(hFont, true) → 캐시 키 갱신 → GetTextMetricsW` 순서로 진행. 렌더러 측 3개 호출 지점(`Overlay.OnRenderToDib` 등)은 모두 `if (_currentFont is not null)` 가드를 가지고 있어 실패 경로에서 `_currentFont` 가 null 이거나 이전 값이더라도 크래시 없이 한 프레임을 스킵하고 다음 틱에서 자연 재시도한다.
+
 ### Label DIB flip-flop prevention
 
 `_fixedLabelWidth` is cached inside `LayeredOverlayBase` after measuring all three labels (`OverlayStyle.MeasureLabels` tuple) and taking the max. This prevents the DIB from churning in width on state transitions (한→En, En→EN, etc.) because all three labels are computed at the same width.
@@ -299,6 +303,10 @@ Detection loop only updates `lastHwndForeground` **after** `ShouldHide` passes. 
 - `GetKeyboardLayout` LANGID check (for non-Korean IME identification)
 - `EVENT_OBJECT_IME_CHANGE` WinEvent hook as supplementary signal
 
+#### Tier 1 pass-through on `openResult = 0`
+
+`ImeStatus.TryTier1` 의 `IMC_GETOPENSTATUS` 결과가 `0` (IME 비활성) 일 때 `ImeState.English` 로 단정하지 않고 `null` 을 돌려 Tier 2 → Tier 3 체인으로 위임한다. 한국어 IME 환경에서는 "IME 비활성 = 영문 입력" 이 맞지만, 비-한국어 로케일(일본어/중국어) 에서도 동일한 `openResult = 0` 이 나오므로 Tier 1 에서 `English` 로 확정하면 Tier 3 의 `GetKeyboardLayout` → langId 기반 `NonKorean` 판별 기회를 완전히 잃는다. 대부분의 비-한국어 IME 연관 창은 `ImmGetContext = 0` 이라 Tier 2 도 null 로 패스-스루되어 Tier 3 가 `langId != LANGID_KOREAN` → `NonKorean` 을 반환한다. 한국어 사용자 경로는 Tier 2 의 `ImmGetConversionStatus` 가 `IME_CMODE_HANGUL = 0` 을 돌려 `English` 를 반환하거나, 연관 컨텍스트가 없는 창에서는 Tier 3 가 `LANGID_KOREAN` → `English` 를 반환해 최종 결과는 기존과 동일. explicit `DetectionMethod.ImeDefault` 경로는 `TryTier1(hwndFocus) ?? ImeState.English` 폴백으로 감싸져 있어 변경 영향 없음.
+
 ### System filter (9 conditions)
 
 1. Secure desktop (no hwnd)
@@ -354,6 +362,10 @@ Read twice on startup — once inside `Overlay.Initialize` (so the very first `P
 
 Locking the file to forbid deletion was rejected because atomic-replace editors (VSCode, Notepad++) rely on `delete → rename` during save.
 
+### Atomic save (tmp + rename)
+
+`JsonSettingsFile.WriteAllText` 는 단순 `File.WriteAllText(path, json)` 대신 `path + ".tmp"` 에 전체를 먼저 기록한 뒤 `File.Move(tmpPath, path, overwrite: true)` 로 교체한다. Windows 동일 볼륨에서 `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` 는 원자적 rename 을 보장하므로 쓰기 도중 전원 차단/프로세스 강제 종료/크래시가 발생해도 원본 파일 또는 새 파일 중 하나는 항상 온전한 상태로 남는다 (truncate 된 반쪽 파일 불가능). `CheckConfigFileChange` 의 5 초 mtime 폴링은 타겟 경로 한 곳만 관찰하므로 `.tmp` 파일이 핫 리로드를 유발하지 않으며, 프로세스가 `.tmp` 쓰기 직후·Move 직전에 죽어 잔여물이 남더라도 다음 정상 저장에서 같은 이름에 덮어쓰기 때문에 누적되지 않는다. 원자성은 **동일 볼륨** 에 한정된 보장 — config 파일이 exe 옆에 고정되어 있으므로(§ Config file location) 볼륨을 건너뛸 수 없다.
+
 ### Corrupted config spam prevention
 
 `Settings.Load()`'s catch block updates `_lastConfigMtime` to the broken file's mtime even when `LoadFromFile` throws. Without this, the 5-second poll sees `mtime ≠ cached value`, re-posts `WM_CONFIG_CHANGED`, `Load()` fails with the same parse error, and the warning log spams forever.
@@ -385,6 +397,10 @@ Exclusively read from and written to `AppContext.BaseDirectory` (the exe's own f
 ### NIF_SHOWTIP
 
 `NOTIFYICON_VERSION_4` (set via `NIM_SETVERSION`) suppresses the standard `szTip` tooltip by default on Windows 7+. Both `NIM_ADD` and `NIM_MODIFY` calls must include `NIF_SHOWTIP` (0x00000080) alongside `NIF_TIP` in `uFlags`. Without `NIF_SHOWTIP`, `szTip` is correctly populated but the shell silently discards it and renders nothing on hover.
+
+### TrayIconStyle.Static normalization
+
+`TrayIconStyle.Static` (설정 다이얼로그 "아이콘 스타일" 콤보 두 번째 항목, config 키 `"tray_icon_style": "static"`) 은 "IME 상태를 트레이 아이콘 색으로 노출하지 않음" 을 의미한다. 실제 효과는 `TrayIcon.CreateIcon` 진입점에서 단 한 줄: `if (config.TrayIconStyle == TrayIconStyle.Static) state = ImeState.English;` — 이후 색상 결정 `switch` 가 `EnglishBg` 로 귀결된다. `Tray.UpdateState` 는 스타일·상태 변경 구분 없이 매번 `CreateIcon + NIM_MODIFY` 를 수행하므로 CaretDot↔Static 런타임 전환이 즉시 반영된다 (NIM_MODIFY 비용은 수 μs 수준이라 IME 변경마다 동일 아이콘을 재생성해도 체감 오버헤드 없음). 툴팁은 `config.TrayTooltip` 이 별도로 제어하므로 Static 이어도 사용자가 원하면 `"한글 모드"/"English"` 등의 상태 텍스트를 호버로 확인 가능.
 
 ### NIM_ADD / NIM_SETVERSION return value check
 

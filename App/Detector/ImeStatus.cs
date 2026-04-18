@@ -118,7 +118,12 @@ internal static class ImeStatus
             out IntPtr openResult);
 
         if (ret == IntPtr.Zero) return null;  // 타임아웃 또는 에러
-        if (openResult == IntPtr.Zero) return ImeState.English;  // IME 비활성 → 영문
+        // IME 비활성(openResult=0): 한국어 로케일이면 "영문 입력"이지만, 비-한국어
+        // 로케일(일본어/중국어)에서도 openResult=0 이므로 여기서 English 로 단정하면
+        // Tier 3 의 NonKorean 판별 기회를 잃는다. null 을 돌려 Tier 2→Tier 3 체인에
+        // 위임 — 대부분의 비-한국어 IME 윈도우는 ImmGetContext=0 이라 Tier 2 도 null
+        // 로 패스-스루되어 Tier 3 가 GetKeyboardLayout 으로 langId 를 확인한다.
+        if (openResult == IntPtr.Zero) return null;
 
         // 2. IME 오픈 상태 → 변환 모드로 한/영 판별
         //    (GETOPENSTATUS만으로는 한국어 IME 내 한/영 전환을 구분할 수 없음)

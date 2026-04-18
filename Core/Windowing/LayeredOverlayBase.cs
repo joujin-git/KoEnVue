@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using KoEnVue.Core.Dpi;
+using KoEnVue.Core.Logging;
 using KoEnVue.Core.Native;
 
 namespace KoEnVue.Core.Windowing;
@@ -626,8 +627,6 @@ internal sealed class LayeredOverlayBase : IDisposable
             && Math.Abs(_currentDpiScale - _cachedFontDpiScale) < 0.001)
             return;
 
-        _currentFont?.Dispose();
-
         // MulDiv로 정수 정밀도를 유지하며 DPI 곱셈 — 단순 round 대체 금지 (라벨 폭 1px 회귀 위험).
         int fontHeight = -Kernel32.MulDiv(scaledFontSize, (int)_currentDpiY, 72);
         IntPtr hFont = Gdi32.CreateFontW(
@@ -641,6 +640,16 @@ internal sealed class LayeredOverlayBase : IDisposable
             Win32Constants.DEFAULT_PITCH,
             style.FontFamily);
 
+        // CreateFontW 실패 시 기존 폰트/캐시를 유지해 다음 EnsureFont 호출에서 재시도를 유도.
+        // 실패 후에도 캐시를 갱신하면 같은 파라미터로는 캐시 히트되어 영원히 재진입 없이
+        // 빈 HFONT로 DrawText 가 실패하는 상태에 고착된다. Dispose 도 실패 경로에서는 생략.
+        if (hFont == IntPtr.Zero)
+        {
+            Logger.Warning($"CreateFontW failed: family='{style.FontFamily}' size={scaledFontSize} bold={style.IsBold}");
+            return;
+        }
+
+        _currentFont?.Dispose();
         _currentFont = new SafeFontHandle(hFont, true);
         _cachedFontFamily = style.FontFamily;
         _cachedFontSize = scaledFontSize;

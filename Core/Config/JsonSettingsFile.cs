@@ -23,13 +23,22 @@ internal static class JsonSettingsFile
 
     /// <summary>
     /// 상위 디렉터리가 없으면 생성한 뒤 UTF-8 로 전체를 덮어쓴다.
+    /// <para>
+    /// 원자적 저장: 먼저 <c>path + ".tmp"</c> 에 전체를 기록한 뒤 <see cref="File.Move(string,string,bool)"/>
+    /// 로 대상 경로에 덮어쓴다. Windows 동일 볼륨에서 MoveFileExW(MOVEFILE_REPLACE_EXISTING) 는
+    /// 원자적 rename 을 보장하므로 쓰기 중 전원 차단/크래시가 발생해도 원본 파일 또는 새 파일 중
+    /// 하나는 항상 온전한 상태로 남는다 (truncate 된 반쪽 파일이 생기지 않음).
+    /// </para>
     /// </summary>
     public static void WriteAllText(string path, string json)
     {
         string? dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
             Directory.CreateDirectory(dir);
-        File.WriteAllText(path, json, Encoding.UTF8);
+
+        string tmpPath = path + ".tmp";
+        File.WriteAllText(tmpPath, json, Encoding.UTF8);
+        File.Move(tmpPath, path, overwrite: true);
     }
 
     /// <summary>
