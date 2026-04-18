@@ -836,14 +836,17 @@ internal static partial class Program
                 if (hwndForeground == _hwndMain || hwndForeground == _hwndOverlay)
                     continue;
 
-                // 모달 대화상자(크기 직접 지정 / 위치 기록 정리 / 상세 설정) 활성 중에는
-                // 인디케이터를 숨긴다. 대화상자 HWND 는 _hwndMain 과 별개 top-level 이라
-                // 위 skip 에 걸리지 않아, 가드 없이 두면 감지 스레드가 대화상자를 일반
-                // 포그라운드 앱으로 오인식해 인디 위치가 대화상자 근처로 튄다.
-                //
-                // lastFiltered=true 로 설정해 대화상자 종료 후 원 앱 foreground 복귀
-                // 첫 틱에서 foregroundChanged=true 를 유도 → 자연 재표시.
-                if (ModalDialogLoop.IsActive)
+                // 모달 게이트용 PID 와 GUITHREADINFO 용 threadId 를 한 번에 확보.
+                uint threadId = User32.GetWindowThreadProcessId(hwndForeground, out uint fgPid);
+
+                // 모달 대화상자 활성 + 포그라운드가 자기 프로세스일 때만 인디를 숨긴다.
+                // Win32 다이얼로그는 소유자 기준 모달일 뿐이라 Alt+Tab 으로 외부 앱에 포커스가
+                // 넘어가면 해당 앱에서는 인디가 정상 표시돼야 한다. PID 비교는 자체 대화상자 +
+                // MessageBoxW (HWND 가 user32 내부 소유라 ActiveDialog HWND 로 식별 불가) 를
+                // 모두 커버하는 유일한 견고 해법 — Environment.ProcessId 는 .NET BCL 속성이라
+                // P/Invoke 불필요. lastFiltered=true 로 모달 종료 후 원 앱 foreground 복귀 첫
+                // 틱에서 foregroundChanged=true 를 유도 → 자연 재표시.
+                if (ModalDialogLoop.IsActive && fgPid == (uint)Environment.ProcessId)
                 {
                     if (!lastFiltered && _indicatorVisible)
                         User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
@@ -851,8 +854,6 @@ internal static partial class Program
                     lastFiltered = true;
                     continue;
                 }
-
-                uint threadId = User32.GetWindowThreadProcessId(hwndForeground, out _);
 
                 // GUITHREADINFO로 hwndFocus 획득
                 GUITHREADINFO gti = default;

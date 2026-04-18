@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### 수정
+
+- **모달 대화상자 활성 중 외부 앱 포커스에서는 인디 표시** — 기존 `ModalDialogLoop.IsActive` 게이트는 대화상자가 떠 있는 동안 포그라운드가 어느 앱이든 무조건 인디를 숨겼음. Win32 다이얼로그는 **소유자 기준 모달**일 뿐 시스템 전체 모달이 아니어서, 사용자가 Alt+Tab 으로 다른 앱에 포커스를 옮기면 해당 앱에서는 인디가 표시돼야 정상. `DetectionLoop` 의 모달 게이트를 `User32.GetWindowThreadProcessId(hwndForeground, out fgPid); if (ModalDialogLoop.IsActive && fgPid == (uint)Environment.ProcessId)` 조건으로 축소 — 자기 프로세스 윈도우 (대화상자, `MessageBoxW`) 가 포그라운드일 때만 숨김 메시지 전송, 외부 앱 포커스 시에는 fall-through 로 정상 감지 경로 진입. `ModalDialogLoop.ActiveDialog` HWND 비교만으로는 `MessageBoxW` (HWND 가 `user32` 내부 소유라 우리가 알 수 없음) 를 커버할 수 없어 PID 비교가 유일한 견고 해법. `Environment.ProcessId` 는 .NET BCL 속성이라 P/Invoke 추가 없음. `GetWindowThreadProcessId` 호출을 게이트 상단으로 hoist 해 후속 `GUITHREADINFO` 용 `threadId` 와 한 번에 확보 — 중복 호출 없음
+- `lastFiltered` 상태 기계는 기존대로 유지되어 자기-프로세스 모달 종료 후 원 앱 포그라운드 복귀 첫 틱에서 `foregroundChanged=true` 자연 재표시가 그대로 작동 — 외부 앱 ↔ 대화상자 ↔ 다른 외부 앱 반복 전환에도 중복 hide 없이 정합
+
 ## [0.9.1.5] — 2026-04-18
 
 ### 수정
