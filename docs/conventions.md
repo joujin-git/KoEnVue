@@ -30,6 +30,7 @@ Centralized modules enforced across the codebase:
 | Structs / constants | [Core/Native/Win32Types.cs](../Core/Native/Win32Types.cs) (`Win32Constants` class — SM/WS/DWMWA/etc.) |
 | Win32 dialog metrics | [Core/Windowing/Win32DialogHelper](../Core/Windowing/Win32DialogHelper.cs) |
 | Modal dialog loop | [Core/Windowing/ModalDialogLoop](../Core/Windowing/ModalDialogLoop.cs) |
+| Dialog scroll helpers | [Core/Windowing/ScrollableDialogHelper](../Core/Windowing/ScrollableDialogHelper.cs) |
 | Layered overlay engine | [Core/Windowing/LayeredOverlayBase](../Core/Windowing/LayeredOverlayBase.cs) |
 | Overlay animation | [Core/Animation/OverlayAnimator](../Core/Animation/OverlayAnimator.cs) |
 | JSON settings pipeline | [Core/Config/JsonSettingsManager\<T\>](../Core/Config/JsonSettingsManager.cs) |
@@ -198,7 +199,7 @@ The `SafeFontHandle` `using` pattern is critical — early release would crash `
 
 - Log messages in English (P2). Config keys in English (P2)
 - UI text in Korean default + English fallback via [I18n.cs](../App/Localization/I18n.cs) — bool flag + ternary pattern (NativeAOT-friendly, zero allocation)
-- Logger is async — `ConcurrentQueue` + `ManualResetEventSlim` + dedicated drain thread. Single `.log → .log.old` rotation at `LogMaxSizeMb`
+- Logger is async — `ConcurrentQueue` + `ManualResetEventSlim` + dedicated drain thread. Single `.log → .log.old` rotation at `LogMaxSizeMb`. Queue is capped at `MaxQueueSize = 10_000` to defend against rotation failures that could otherwise grow the backing queue indefinitely; oldest messages are dropped and a single summary warning is written once writing resumes
 - Initialize with primitives: `Logger.Initialize(enabled, path, maxSizeMb)` (since Stage 3-A). `LogLevel` set separately via `SetLevel`
 - Default log path: `Path.Combine(AppContext.BaseDirectory, "koenvue.log")` — next to the exe, matching the portable config policy
 

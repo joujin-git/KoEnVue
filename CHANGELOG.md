@@ -38,6 +38,7 @@
 - **사용자 가이드 "단축키" 섹션 삭제** — `Ctrl+Alt+H` 핫키 제거 (a6f9ac7) 에 맞춰 `docs/User_Guide.md` 의 단축키 표·관련 문단 제거. 트레이 좌클릭 `tray_click_action` 으로 동일 기능 안내는 잔여 섹션에 유지
 - **README 상세 설정 필드 수 서술 수정** — "전체 62개 설정 필드" 라는 실측과 어긋나는 숫자 고정 문구 대신, 13개 섹션 이름만 열거하는 서술로 교체. 필드 수 변동마다 문서 업데이트 누락 리스크 제거
 - **`.gitignore` 에 `.claude/` 추가** — 로컬 개발 설정(플랜/메모리) 이 `git status` 에 뜨지 않도록 차단
+- **2차 리팩터 반영 문서 정합** — `docs/architecture.md` Core 트리·모듈 표에 `ScrollableDialogHelper` 신규 행 추가, `Logger` 에 `MaxQueueSize` 동작, `ModalDialogLoop` 에 `Volatile.Read/Write` 교차 스레드 가시성 언급 추가. `docs/conventions.md` P4 권위 모듈 표에 `ScrollableDialogHelper`, Logging 섹션에 큐 cap 설명 추가. `docs/implementation-notes.md` 의 `SettingsDialog` 스크롤 섹션 끝에 "3 메서드는 `CleanupDialog` 와 공유되어 `ScrollableDialogHelper` 로 추출" 문단 추가. 실측 불일치였던 "62 fields"/"64 → 62 fields" 하드코드 숫자는 `BuildRowDefs` 참조/"3 rows dropped" 설명으로 교체 (필드 수 변동마다 문서 업데이트 누락 리스크 제거)
 
 ## [0.9.1.6] — 2026-04-18
 

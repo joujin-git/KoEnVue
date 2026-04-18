@@ -454,7 +454,7 @@ The three opacity presets (진하게/보통/연하게) apply mode-aware config c
 
 ### Three-toggle duplication with settings dialog
 
-`SnapToWindows`, `AnimationEnabled`, and `ChangeHighlight` are toggleable from both the tray menu and `SettingsDialog`. The settings dialog drops these three rows to avoid duplication (64 → 62 fields). `SlideAnimation` is deliberately **not** added to the tray because usage frequency is low and keeping the menu short is a UX goal.
+`SnapToWindows`, `AnimationEnabled`, and `ChangeHighlight` are toggleable from both the tray menu and `SettingsDialog`. The settings dialog drops these three rows to avoid duplication. `SlideAnimation` is deliberately **not** added to the tray because usage frequency is low and keeping the menu short is a UX goal.
 
 The duplication is kept as vertical copy rather than extracted to a helper because `HandleMenuCommand`'s per-field `with`-expression getters/setters can't be mechanically abstracted without a delegate map or reflection (conflicts with NativeAOT + P1).
 
@@ -487,7 +487,7 @@ Parsing uses `double.TryParse` + `CultureInfo.InvariantCulture`, so `"2.3"` work
 
 ### SettingsDialog
 
-62 fields across 13 sections. Split across 3 partial class files:
+13 sections of settings (정확한 필드 수는 [SettingsDialog.Fields.cs](../App/UI/Dialogs/SettingsDialog.Fields.cs) 의 `BuildRowDefs` 참조). Split across 3 partial class files:
 
 - **`SettingsDialog.cs`** (modal state, `Show`, `TryCommit`, dialog WndProc)
 - **`SettingsDialog.Fields.cs`** (`FieldType` enum, `FieldDef`/`RowDef` records, `BuildRowDefs` 13-section spec, 6 factory methods: `Bool`/`Int`/`Dbl`/`Str`/`ColorField`/`Combo`)
@@ -496,6 +496,8 @@ Parsing uses `double.TryParse` + `CultureInfo.InvariantCulture`, so `"2.3"` work
 `partial class` shares all static state at compile time. No call-site changes — `SettingsDialog.Show(hwndMain, config, updateConfig)` is the same public entry point.
 
 **Scroll implementation**: `ScrollTo` 는 스크롤 델타 `dy = _scrollPos - newPos` 를 계산한 뒤 `SetScrollInfo` 로 썸 위치를 갱신하고, `ScrollWindowEx(viewport, 0, dy, ..., SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE)` 한 번으로 모든 자식을 OS 가 BitBlt 로 이동시킨다. 노출된 띠 영역만 무효화 + 배경 지움 처리되므로, 기존 "N 개 자식에 대한 `SetWindowPos` 루프 + 전체 `InvalidateRect(viewport, null, true)`" 방식 대비 휠 틱당 작업량이 O(N) → O(1) 로 줄어 휠 스크롤 반응성이 크게 향상된다. 뷰포트는 `WS_CLIPCHILDREN` + `WS_EX_COMPOSITED` 조합으로 DWM off-screen 합성을 사용해 스크롤 중 플리커도 없다. 자식 윈도우 크기는 `ScrollWindowEx` 가 보존하므로 COMBOBOX 의 `rowH + ComboDropExtra = 220` 드롭다운 높이는 영향 없음.
+
+`ScrollTo` / `ResolveVScrollPosition` / `CalculateWheelScrollPos` 3조합은 `CleanupDialog` 와 동일해 [Core/Windowing/ScrollableDialogHelper](../Core/Windowing/ScrollableDialogHelper.cs) 로 추출했다. 호출부는 expression-bodied 1-라이너로 축약되고 `WheelLineStep = 3` 상수도 헬퍼에서 소유 (P4 공통모듈 규칙).
 
 **Validation failure handling**: `TryCommit` shows a MessageBox, calls `ScrollFieldIntoView` to bring the offending field into view, refocuses the control, and for EDITs selects all text via `EM_SETSEL`.
 
