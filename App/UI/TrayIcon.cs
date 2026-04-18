@@ -27,6 +27,7 @@ internal static class TrayIcon
     private const int DotSizeRatio = 4;        // 점 크기 = iconW / 4
     private const int DotMinSize = 3;          // 점 최소 크기 (px)
     private const int DotGapMinPx = 1;         // 점-캐럿 최소 간격 (px)
+    private const int CaretYOffsetPx = 1;      // 시각 보정: 캐럿+점이 위로 떠 보이는 현상을 1px 아래로 보정
 
     /// <summary>
     /// ImeState별 배경색으로 캐럿+점 아이콘을 생성한다.
@@ -142,7 +143,7 @@ internal static class TrayIcon
             int caretW = Math.Max(iconW / CaretWidthRatio, CaretMinWidth);
             int caretH = iconH * CaretHeightNum / CaretHeightDen;
             int caretX = (iconW - caretW) / 2 - iconW / CaretOffsetRatio;
-            int caretY = (iconH - caretH) / 2;
+            int caretY = (iconH - caretH + 1) / 2 + CaretYOffsetPx;
             Gdi32.Rectangle(hdc, caretX, caretY, caretX + caretW, caretY + caretH);
 
             // 점 (dot): 캐럿 오른쪽 하단에 작은 원
