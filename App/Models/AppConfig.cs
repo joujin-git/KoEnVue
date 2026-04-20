@@ -74,7 +74,9 @@ internal sealed record AppConfig
     public bool HideInFullscreen { get; init; } = true;
     public bool HideWhenNoFocus { get; init; } = true;
     public bool HideOnLockScreen { get; init; } = true;
-    public string[] SystemHideClasses { get; init; } = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow_WASDK"];
+    // 변경 시 Settings.EnsureSubObjects 의 null 폴백 배열도 동일하게 유지 — 이 레코드 기본값은
+    // MergeWithDefaults 경로에서, 폴백 배열은 JSON 에 명시적 null 이 들어온 경우에만 작동.
+    public string[] SystemHideClasses { get; init; } = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow_WASDK", "TopLevelWindowForOverflowXamlIsland", "ControlCenterWindow"];
     public string[] SystemHideClassesUser { get; init; } = [];
     public string[] SystemHideProcesses { get; init; } = ["ShellExperienceHost"];
     public string[] SystemHideProcessesUser { get; init; } = [];
@@ -152,7 +154,7 @@ internal sealed record AppConfig
     // [버전]
     // 반드시 Settings.CurrentVersion 과 일치. 새 config 파일은 이 값으로 생성되며,
     // Settings.Migrate 가 구버전 파일을 CurrentVersion 으로 갱신한다.
-    public int ConfigVersion { get; init; } = 4;
+    public int ConfigVersion { get; init; } = 1;
 }
 
 // === 중첩 설정 레코드 ===

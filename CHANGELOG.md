@@ -5,7 +5,13 @@
 
 ## [Unreleased]
 
-## [0.9.2.1] — 2026-04-20
+### 수정
+
+- **Win11 트레이 오버플로우 플라이아웃 · 빠른 설정 플라이아웃에서 인디케이터가 표시되던 문제** — 트레이 `∧`(숨겨진 아이콘) 화살표 클릭 시 노출되는 `TopLevelWindowForOverflowXamlIsland`(프로세스 `explorer`) 와 `Win+A`/볼륨·Wi-Fi·배터리 아이콘 클릭 시 노출되는 `ControlCenterWindow`(프로세스 `ShellHost`) 가 기본 `system_hide_classes` 목록에 없어 `SystemFilter.ShouldHide` 의 8-조건 단락 평가를 모두 통과, 사용자가 트레이 조작 중임에도 인디가 떠 있는 증상. (알림센터 `Win+N` 은 Win11 24H2 기준 포그라운드 창을 바꾸지 않아 애초에 걸리지 않으므로 대상 외.) `Settings.EnsureSubObjects` 기본 배열에 두 클래스를 추가. 프로세스명 블랙리스트(`ShellHost`) 대신 클래스명 기준으로 좁힌 이유: `ShellHost` 는 Win11 의 다양한 shell 파생 창에서 공유될 수 있어 과차단 리스크가 있고, 두 클래스명은 해당 플라이아웃 전용이라 대소문자 무관 정확 일치만으로 안전
+
+### 제거
+
+- **`Settings.Migrate` 체인 전부 제거, `config_version` 을 1 로 리셋** — 프리-릴리스 단계(단독 사용자)라 구버전 config 를 마주칠 가능성이 없어, 누적된 v2→v3(`system_edit_focus_classes` 필드 제거) / v3→v4(`XamlExplorerHostIslandWindow_WASDK` append) 마이그레이션 블록이 실질 dead code. `Migrate` 를 `return config with { ConfigVersion = CurrentVersion };` 한 줄로 축약하고 `CurrentVersion` 5→1, `AppConfig.ConfigVersion` 기본값 5→1 로 리셋. 기본값 배열은 이미 현시점 필요한 클래스(`Progman`, `WorkerW`, `Shell_TrayWnd`, `Shell_SecondaryTrayWnd`, `XamlExplorerHostIslandWindow_WASDK`, `TopLevelWindowForOverflowXamlIsland`, `ControlCenterWindow`) 를 모두 포함하므로 `EnsureSubObjects` 의 null 폴백 경로 하나만으로 신규 config 파일 커버 가능. 향후 공개 배포로 전환 시 `version < N` 블록을 재개해 스키마 진화 트랙 복구
 
 ### 수정
 

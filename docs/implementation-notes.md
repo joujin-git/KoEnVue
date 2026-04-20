@@ -330,7 +330,7 @@ IME 감지 경로는 두 가지다 — (1) 디텍션 스레드 80ms 폴링 (`Det
 1. Secure desktop (no hwnd)
 2. Invisible / minimized window
 3. Other virtual desktop
-4. Class name blacklist (`Progman`, `WorkerW`, `Shell_TrayWnd`, `Shell_SecondaryTrayWnd`, `XamlExplorerHostIslandWindow_WASDK` + user-specified)
+4. Class name blacklist (`Progman`, `WorkerW`, `Shell_TrayWnd`, `Shell_SecondaryTrayWnd`, `XamlExplorerHostIslandWindow_WASDK`, `TopLevelWindowForOverflowXamlIsland`, `ControlCenterWindow` + user-specified) — last two cover the Win11 tray overflow flyout and Quick Settings (`Win+A` / volume / Wi-Fi / battery)
 4-b. Owner chain blacklist — walks `GetWindow(GW_OWNER)` up to 5 levels; hides only when owner class is in hide list **and** dialog/owner share the same process. This catches desktop-initiated system dialogs (e.g. Recycle Bin empty confirm: `#32770` owned by `Progman`, both `explorer.exe`) while allowing app-initiated Common File Dialogs (e.g. Notepad Save As: `#32770` owned by `Progman` but process `Notepad` ≠ `explorer`)
 5. Process name blacklist (`ShellExperienceHost` + user-specified) — hides taskbar/desktop right-click context menus on Win11 where the popup becomes the foreground window with a null owner chain
 6. No focus (`hide_when_no_focus`)
