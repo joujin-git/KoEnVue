@@ -1014,7 +1014,7 @@ internal static class Tray
         }
 
         // 전체 항목에 실행 중 여부 접미사 추가
-        string runningSuffix = I18n.IsKorean ? " (실행 중)" : " (running)";
+        string runningSuffix = I18n.RunningSuffix;
         var displayItems = new List<string>();
         var originalNames = new List<string>();
         foreach (string name in allKeys)

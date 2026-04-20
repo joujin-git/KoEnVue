@@ -54,6 +54,11 @@ internal static partial class Program
     // 라이프사이클 (감지 스레드에서 읽고 OnProcessExit에서 씀 → volatile)
     private static volatile bool _stopping;
 
+    // 세션 잠금 상태 — WM_WTSSESSION_CHANGE 핸들러(메인 스레드)가 쓰고 감지 스레드가 읽음.
+    // HideOnLockScreen 이 켜져 있고 이 플래그가 true 이면 감지 루프가 한 틱을 skip 해서
+    // LogonUI 가 필터를 뚫어도 인디가 다시 켜지지 않도록 보장한다.
+    private static volatile bool _sessionLocked;
+
     // 윈도우 클래스명 (P3: 매직 스트링 금지)
     private const string MainClassName = "KoEnVueMain";
 
@@ -152,6 +157,11 @@ internal static partial class Program
             // 무력화되고, 첫 NIM_ADD 가 레이스로 실패한 케이스(ONLOGON 등)에서 복구 불가.
             Logger.Warning($"ChangeWindowMessageFilterEx(TaskbarCreated) failed: error={Marshal.GetLastPInvokeError()}");
         }
+
+        // 8b. 세션 잠금/해제 알림 등록 — HideOnLockScreen 이 동작하려면 필수.
+        //     실패해도 앱 부팅은 계속 (잠금 화면 숨김만 비활성). Wtsapi32.dll 은 Windows 기본 탑재.
+        if (!Wtsapi32.WTSRegisterSessionNotification(_hwndMain, Win32Constants.NOTIFY_FOR_THIS_SESSION))
+            Logger.Warning($"WTSRegisterSessionNotification failed: error={Marshal.GetLastPInvokeError()}");
 
         // 9. 오버레이 윈도우 생성
         Logger.Debug("Creating overlay window");
@@ -304,6 +314,10 @@ internal static partial class Program
 
             case Win32Constants.WM_DPICHANGED:
                 HandleDpiChanged(wParam, lParam);
+                return IntPtr.Zero;
+
+            case Win32Constants.WM_WTSSESSION_CHANGE:
+                HandleSessionChange((uint)wParam);
                 return IntPtr.Zero;
 
             case Win32Constants.WM_COMMAND:
@@ -790,6 +804,26 @@ internal static partial class Program
         Overlay.HandleDpiChanged();
     }
 
+    /// <summary>
+    /// WM_WTSSESSION_CHANGE — 잠금 시 인디 즉시 숨김. 해제 시 감지 스레드가 다음 포그라운드
+    /// 이벤트로 자연 복원하므로 별도 show 호출 없음. LOCK/UNLOCK 외 이벤트(로그오프 등)는 무시.
+    /// </summary>
+    private static void HandleSessionChange(uint sessionEvent)
+    {
+        if (sessionEvent == Win32Constants.WTS_SESSION_LOCK)
+        {
+            _sessionLocked = true;
+            Logger.Info("Session locked");
+            if (_config.HideOnLockScreen && _indicatorVisible)
+                HideOverlay();
+        }
+        else if (sessionEvent == Win32Constants.WTS_SESSION_UNLOCK)
+        {
+            _sessionLocked = false;
+            Logger.Info("Session unlocked");
+        }
+    }
+
     // ================================================================
     // 2-스레드 모델
     // ================================================================
@@ -882,6 +916,14 @@ internal static partial class Program
     /// </summary>
     private static void ProcessDetectionTick(ref DetectionState state)
     {
+        // 세션 잠금 중이고 HideOnLockScreen 활성 상태면 상태 전파 자체를 건너뜀.
+        // LastFiltered=true 로 세팅해 잠금 해제 후 첫 정상 틱에서 foregroundChanged 가 유도되도록 한다.
+        if (_sessionLocked && _config.HideOnLockScreen)
+        {
+            state.LastFiltered = true;
+            return;
+        }
+
         state.PollCount++;
 
         // 0. config.json 변경 감지 (~5초마다)

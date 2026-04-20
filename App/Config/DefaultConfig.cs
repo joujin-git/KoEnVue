@@ -100,11 +100,6 @@ internal static class DefaultConfig
     /// </summary>
     public const int DetectionBackoffMaxMs = 2000;
 
-    // === DPI ===
-
-    /// <summary>DPI 기준값. DpiHelper.Scale에서 사용.</summary>
-    public const int BASE_DPI = 96;
-
     // === 앱 식별 ===
 
     /// <summary>

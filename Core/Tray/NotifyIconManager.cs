@@ -84,7 +84,8 @@ internal sealed class NotifyIconManager
         nid.hIcon = hIcon;
         nid.guidItem = _iconGuid;
 
-        Shell32.Shell_NotifyIconW(Win32Constants.NIM_MODIFY, ref nid);
+        if (!Shell32.Shell_NotifyIconW(Win32Constants.NIM_MODIFY, ref nid))
+            Logger.Debug("Shell_NotifyIconW NIM_MODIFY (icon) failed");
     }
 
     /// <summary>
@@ -103,7 +104,8 @@ internal sealed class NotifyIconManager
 
         CopyTooltip(ref nid, tip);
 
-        Shell32.Shell_NotifyIconW(Win32Constants.NIM_MODIFY, ref nid);
+        if (!Shell32.Shell_NotifyIconW(Win32Constants.NIM_MODIFY, ref nid))
+            Logger.Debug("Shell_NotifyIconW NIM_MODIFY (tooltip) failed");
     }
 
     /// <summary>
@@ -125,7 +127,8 @@ internal sealed class NotifyIconManager
 
         CopyTooltip(ref nid, tip);
 
-        Shell32.Shell_NotifyIconW(Win32Constants.NIM_MODIFY, ref nid);
+        if (!Shell32.Shell_NotifyIconW(Win32Constants.NIM_MODIFY, ref nid))
+            Logger.Debug("Shell_NotifyIconW NIM_MODIFY (icon+tooltip) failed");
     }
 
     /// <summary>

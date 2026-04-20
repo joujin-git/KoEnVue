@@ -33,7 +33,6 @@ internal sealed class LayeredOverlayBase : IDisposable
     private SafeBitmapHandle? _currentBitmap;
     private SafeFontHandle? _currentFont;
     private IntPtr _ppvBits;
-    private IntPtr _nullPen;
 
     // DPI 캐시
     private double _currentDpiScale = 1.0;
@@ -120,7 +119,6 @@ internal sealed class LayeredOverlayBase : IDisposable
         _memDC = Gdi32.CreateCompatibleDC(IntPtr.Zero);
         if (_memDC == IntPtr.Zero)
             throw new InvalidOperationException("CreateCompatibleDC failed");
-        _nullPen = Gdi32.GetStockObject(Win32Constants.NULL_PEN);
     }
 
     public void Dispose()

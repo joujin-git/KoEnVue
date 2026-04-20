@@ -153,6 +153,12 @@ internal static class I18n
     public static string TrayPositionHistoryEmpty =>
         _isKorean ? "저장된 위치 기록이 없습니다." : "No saved position history.";
 
+    /// <summary>
+    /// 위치 기록 정리 다이얼로그에서 "실행 중" 프로세스 옆에 표시되는 접미사.
+    /// 선행 공백 포함 (원본 프로세스명 뒤에 바로 이어 붙이므로).
+    /// </summary>
+    public static string RunningSuffix => _isKorean ? " (실행 중)" : " (running)";
+
     // ================================================================
     // 트레이 툴팁
     // ================================================================

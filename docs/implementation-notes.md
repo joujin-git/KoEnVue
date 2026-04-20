@@ -87,7 +87,7 @@ Key properties:
 - `Shift` is reserved for axis-lock during an active drag (see [`LayeredOverlayBase.HandleMoving`](../Core/Windowing/LayeredOverlayBase.cs)) and is not offered as a drag-gate choice.
 - Clicks outside the chip's alpha-nonzero pixels (e.g., the sparse corners of a rounded rectangle if the caller configures no padding) are still skipped by the OS due to per-pixel alpha — this is `WS_EX_LAYERED` behavior, unrelated to `drag_modifier`.
 
-UI exposure: tray menu "드래그 활성 키" radio submenu (4 items) and settings dialog combo in the "다중 모니터" section.
+UI exposure: tray menu "드래그 활성 키" radio submenu (4 items) and settings dialog combo in the "인디케이터 조작" section.
 
 ### Position modes
 
@@ -341,6 +341,20 @@ IME 감지 경로는 두 가지다 — (1) 디텍션 스레드 80ms 폴링 (`Det
 
 **Per-tick 프로세스명 메모이제이션**: `ShouldHide` 본문에 `string? hwndProcess = null; string ResolveHwndProcess() => hwndProcess ??= WindowProcessInfo.GetProcessName(hwnd);` 로컬 클로저를 둔다. 조건 4-b 의 owner 루프(루트까지 최대 5단계 상승)가 각 노드마다 동일 hwnd 의 프로세스명을 재조회하고, 조건 5 직접 비교 + 조건 8 blacklist 조회가 또 한 번 호출하던 중복을 제거 — `GetProcessName` 은 내부적으로 `OpenProcess` + `QueryFullProcessImageNameW` + `Path.GetFileNameWithoutExtension` 체인이라 호출당 NT 핸들 오픈 + 커널 모드 전환이 발생하는 무거운 경로이다. 감지 스레드 80ms 핫패스에서 1 tick 당 평균 3~5회의 P/Invoke 체인을 절감한다. cross-tick 캐시는 불필요 — `DetectionState.LastForegroundProcessName` 이 이미 foreground 전환 레벨의 cross-tick 캐시 역할을 담당하므로, `ResolveHwndProcess` 는 1 tick 내부 국소 최적화 한정이다.
 
+### Lock screen hiding (WTS session notification)
+
+`hide_on_lock_screen` (기본 `true`) 은 **WTS Session Notification** 으로 구현된다. `Program.MainImpl` 이 메인 윈도우 생성 직후 `Wtsapi32.WTSRegisterSessionNotification(_hwndMain, NOTIFY_FOR_THIS_SESSION)` 을 호출해 `WM_WTSSESSION_CHANGE` (0x02B1) 메시지를 받도록 등록하고, `OnProcessExit` 가 `DestroyWindow` 전에 `WTSUnRegisterSessionNotification` 으로 해제한다(wtsapi32 내부 핸들 매핑 누수 방지).
+
+메인 스레드의 `HandleSessionChange(uint wParam)` 가 `WTS_SESSION_LOCK` / `WTS_SESSION_UNLOCK` 두 이벤트만 처리:
+
+- **LOCK**: `volatile bool _sessionLocked = true` 설정 + (HideOnLockScreen 활성 && 인디 표시 중이면) 즉시 `HideOverlay()`
+- **UNLOCK**: `_sessionLocked = false` 해제. 별도 show 호출 없음 — 잠금 해제 직후 사용자가 창을 포커스하면 감지 스레드의 foreground-changed 경로가 자연스럽게 인디를 다시 켠다
+- 로그오프 / 콘솔 접속 전환 등 그 외 이벤트는 무시
+
+감지 스레드(`ProcessDetectionTick`) 는 진입 직후 `if (_sessionLocked && _config.HideOnLockScreen) { state.LastFiltered = true; return; }` 가드로 한 틱을 통째로 스킵한다. 이유: `SystemFilter` 의 기본 클래스 블랙리스트가 LogonUI 의 창 클래스(`CredentialDialogXamlHost` / `LockAppHost`) 를 포함하지 않아 잠금 화면 동안에도 필터가 뚫려 인디가 다시 표시될 수 있기 때문이다. WTS 이벤트는 LogonUI 보다 **먼저** 도착하므로 이 플래그가 감지 루프를 잠금 구간 동안 확실히 침묵시킨다. `LastFiltered = true` 는 잠금 해제 후 첫 정상 틱이 `foregroundChanged` 판정을 유도하도록 하는 sentinel.
+
+`Wtsapi32` P/Invoke 는 `Core/Native/Wtsapi32.cs` 에 `[LibraryImport]` 로 분리되어 있고 상수 4종 (`NOTIFY_FOR_THIS_SESSION = 0`, `WM_WTSSESSION_CHANGE = 0x02B1`, `WTS_SESSION_LOCK = 0x7`, `WTS_SESSION_UNLOCK = 0x8`) 은 `Core/Native/Win32Types.cs` 의 `Win32Constants` 블록에 있다(P3 매직 숫자 금지).
+
 ---
 
 ## CAPS LOCK detection
@@ -374,7 +388,7 @@ Read twice on startup — once inside `Overlay.Initialize` (so the very first `P
 1. **Deserialize** — reads and deserializes the JSON
 2. **`ApplyNullSafetyNet`** (EnsureSubObjects) — guards against null `AppProfiles` / `Advanced` etc. from malformed config
 3. **`PostDeserializeFixup`** (MergeWithDefaults) — serializes default `AppConfig` to JSON, overlays user keys, deserializes back. Works around STJ source-gen init-default loss (see [conventions.md](conventions.md#net-10-compatibility-notes))
-4. **`Migrate`** — version upgrades (when `config_version` changes)
+4. **`Migrate`** — `JsonSettingsManager<T>` 의 pass-through virtual 훅. 현재 단독 사용자 단계라 `AppSettingsManager` 는 override 하지 않으며, 파일에 version 필드도 저장하지 않는다. 향후 공개 배포 전환 시 override 부활 예정
 5. **`Validate`** — range clamping and normalization
 6. **`ApplyTheme`** — theme preset overlay (if `theme != custom`). 프리셋 적용 시 기존 커스텀 색상을 `custom_backup_*` 필드에 백업하고, `custom` 복귀 시 복원 후 백업 소멸. `updateConfig` 콜백에서도 즉시 실행되어 상세 설정 변경이 앱 재시작 없이 반영됨
 
@@ -525,7 +539,7 @@ Parsing uses `double.TryParse` + `CultureInfo.InvariantCulture`, so `"2.3"` work
 
 **`controlColW` dynamic cap**: capped to `innerContentW - labelColW - colGap` so input boxes never encroach on the vertical scrollbar reserve area — a fixed `controlColW` would get clipped under the scrollbar at the default dialog width.
 
-**Excludes**: fields already toggleable from the tray menu (opacity, indicator_scale, default_indicator_position, startup_with_windows, snap_to_windows, animation_enabled, change_highlight, indicator_positions, tray_enabled), complex collection fields (app_profiles, app_filter_list, system_hide_classes, system_hide_processes, ime_fallback_chain), and internal-only fields (overlay_class_name, config_version).
+**Excludes**: fields already toggleable from the tray menu (opacity, indicator_scale, default_indicator_position, snap_to_windows, animation_enabled, change_highlight, indicator_positions, tray_enabled) and "시작 프로그램 등록" (schtasks 기반 — config 필드 아님), complex collection fields (app_profiles, app_filter_list, system_hide_classes, system_hide_processes), and internal-only fields (overlay_class_name).
 
 ### Decimal indicator scale
 

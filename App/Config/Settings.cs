@@ -24,9 +24,6 @@ internal static class Settings
     // 상수
     // ================================================================
 
-    /// <summary>현재 config 스키마 버전.</summary>
-    public const int CurrentVersion = 1;
-
     /// <summary>앱 프로필 LRU 캐시 최대 크기.</summary>
     private const int ProfileCacheMaxSize = 50;
 
@@ -169,17 +166,6 @@ internal static class Settings
 
     private static RelativePositionConfig? ValidateRelativePosition(RelativePositionConfig? pos)
         => pos is null ? null : pos with { Corner = EnumOrDefault(pos.Corner, Corner.TopRight) };
-
-    // ================================================================
-    // Migrate — config_version 체인 (앱 프로필 머지 등에서 직접 호출됨)
-    // ================================================================
-
-    /// <summary>
-    /// config_version 기반 마이그레이션 체인. 현재는 단독 사용자이므로 마이그레이션 단계 없음 —
-    /// 프리-릴리스 DB 를 그대로 유지. 향후 배포 확산 시 <c>version &lt; N</c> 블록을 추가해 재개.
-    /// </summary>
-    public static AppConfig Migrate(AppConfig config)
-        => config with { ConfigVersion = CurrentVersion };
 
     // ================================================================
     // CheckConfigFileChange — 5초 mtime 체크
@@ -508,8 +494,6 @@ internal sealed partial class AppSettingsManager : JsonSettingsManager<AppConfig
 
         return config;
     }
-
-    protected override AppConfig Migrate(AppConfig config) => Settings.Migrate(config);
 
     protected override AppConfig Validate(AppConfig config) => Settings.Validate(config);
 

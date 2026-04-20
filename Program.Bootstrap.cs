@@ -154,6 +154,10 @@ internal static partial class Program
         // 1. IME 훅 해제
         ImeStatus.UnregisterHook();
 
+        // 1a. 세션 알림 해제 — DestroyWindow 전에 풀어야 wtsapi32 내부 핸들 매핑이 깔끔히 정리됨.
+        if (_hwndMain != IntPtr.Zero)
+            Wtsapi32.WTSUnRegisterSessionNotification(_hwndMain);
+
         // 2. CAPS LOCK 폴링 타이머 명시적 해제
         if (_hwndMain != IntPtr.Zero)
             User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_CAPS);

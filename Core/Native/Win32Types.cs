@@ -357,6 +357,14 @@ internal static class Win32Constants
     // --- 전원 관리 ---
     public const uint PBT_APMRESUMESUSPEND = 0x0007;
 
+    // --- 세션 알림 (Wtsapi32) ---
+    // WTSRegisterSessionNotification dwFlags: 현재 세션만 수신.
+    public const uint NOTIFY_FOR_THIS_SESSION = 0;
+    // 세션 상태 변경 메시지 — wParam 이 WTS_SESSION_* 이벤트 ID.
+    public const uint WM_WTSSESSION_CHANGE   = 0x02B1;
+    public const uint WTS_SESSION_LOCK       = 0x7;
+    public const uint WTS_SESSION_UNLOCK     = 0x8;
+
     // --- 메뉴 ---
     public const uint MF_STRING          = 0x0000;
     public const uint MF_SEPARATOR       = 0x0800;

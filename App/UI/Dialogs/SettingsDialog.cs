@@ -217,8 +217,9 @@ internal static partial class SettingsDialog
         int labelX = contentPadInner;
         int controlX = contentPadInner + labelColW + colGap;
         int innerContentW = vpW - contentPadInner * 2 - viewportScrollReserve;
-        // 입력 컨트롤 너비가 스크롤 예약 영역을 침범하지 않도록 가용 폭으로 보정
-        controlColW = Math.Min(controlColW, innerContentW - labelColW - colGap);
+        // 입력 컨트롤 너비가 스크롤 예약 영역을 침범하지 않도록 가용 폭으로 보정.
+        // 매우 좁은 클라이언트(DPI 고배율 + 작은 다이얼로그)에서 음수가 나오지 않도록 최소 1px 보장.
+        controlColW = Math.Max(1, Math.Min(controlColW, innerContentW - labelColW - colGap));
         int sectionContentW = Math.Max(innerContentW, labelColW + colGap + controlColW);
 
         int y = contentPadInner;
@@ -382,7 +383,8 @@ internal static partial class SettingsDialog
             var (result, error) = field.Commit(newCfg, hwnd, field.Label);
             if (error != null || result == null)
             {
-                User32.MessageBoxW(_hwndDialog, error ?? "Error", I18n.SettingsDialogTitle, 0);
+                ModalDialogLoop.RunExternal(_hwndDialog, () =>
+                    User32.MessageBoxW(_hwndDialog, error ?? "Error", I18n.SettingsDialogTitle, 0));
                 ScrollFieldIntoView(i);
                 User32.SetFocus(hwnd);
                 if (field.Type is FieldType.Int or FieldType.Double

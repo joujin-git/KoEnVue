@@ -217,8 +217,9 @@ internal static class ScaleInputDialog
         if (!double.TryParse(text, System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out double value))
         {
-            User32.MessageBoxW(_hwndScaleDlg, I18n.ScaleDialogInvalidInput,
-                I18n.ScaleDialogTitle, 0);
+            ModalDialogLoop.RunExternal(_hwndScaleDlg, () =>
+                User32.MessageBoxW(_hwndScaleDlg, I18n.ScaleDialogInvalidInput,
+                    I18n.ScaleDialogTitle, 0));
             User32.SetFocus(_hwndScaleEdit);
             User32.SendMessageW(_hwndScaleEdit, Win32Constants.EM_SETSEL, IntPtr.Zero, (IntPtr)(-1));
             return false;
@@ -226,8 +227,9 @@ internal static class ScaleInputDialog
 
         if (value < ScaleMinValue - ScaleTolerance || value > ScaleMaxValue + ScaleTolerance)
         {
-            User32.MessageBoxW(_hwndScaleDlg, I18n.ScaleDialogOutOfRange,
-                I18n.ScaleDialogTitle, 0);
+            ModalDialogLoop.RunExternal(_hwndScaleDlg, () =>
+                User32.MessageBoxW(_hwndScaleDlg, I18n.ScaleDialogOutOfRange,
+                    I18n.ScaleDialogTitle, 0));
             User32.SetFocus(_hwndScaleEdit);
             User32.SendMessageW(_hwndScaleEdit, Win32Constants.EM_SETSEL, IntPtr.Zero, (IntPtr)(-1));
             return false;

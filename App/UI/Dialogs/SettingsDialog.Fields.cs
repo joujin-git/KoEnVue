@@ -10,7 +10,7 @@ namespace KoEnVue.App.UI.Dialogs;
 /// <summary>
 /// SettingsDialog 의 필드 정의/팩토리/빌더 분할.
 /// FieldDef/RowDef 메타데이터, 6개 팩토리(Bool/Int/Dbl/Str/ColorField/Combo),
-/// BuildRowDefs(12 섹션 × 59 필드), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
+/// BuildRowDefs(12 섹션), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
 /// </summary>
 internal static partial class SettingsDialog
 {
@@ -227,8 +227,6 @@ internal static partial class SettingsDialog
                : ["Toggle visibility", "Open settings", "None"],
             c => (int)c.TrayClickAction,
             (c, i) => c with { TrayClickAction = (TrayClickAction)Math.Clamp(i, 0, 2) }));
-        Add(Bool("상태 변경 알림", "Show state-change notification",
-            c => c.TrayShowNotification, (c, v) => c with { TrayShowNotification = v }));
         Add(Dbl("빠른 투명도 1 (진하게)", "Quick opacity 1 (High)", 0.1, 1.0,
             c => GetPresetAt(c.TrayQuickOpacityPresets, 0, 0.95),
             (c, v) => c with { TrayQuickOpacityPresets = SetPresetAt(c.TrayQuickOpacityPresets, 0, v) }));
@@ -243,10 +241,6 @@ internal static partial class SettingsDialog
         // 10. 시스템
         // ================================================================
         Sec("시스템", "System");
-        Add(Bool("최소화 상태로 시작", "Start minimized",
-            c => c.StartupMinimized, (c, v) => c with { StartupMinimized = v }));
-        Add(Bool("단일 인스턴스", "Single instance",
-            c => c.SingleInstance, (c, v) => c with { SingleInstance = v }));
         Add(Combo("언어", "Language",
             ko ? ["자동", "한국어", "English"] : ["Auto", "Korean", "English"],
             c => LanguageToIndex(c.Language),
@@ -265,13 +259,9 @@ internal static partial class SettingsDialog
             c => c.UpdateCheckEnabled, (c, v) => c with { UpdateCheckEnabled = v }));
 
         // ================================================================
-        // 11. 다중 모니터
+        // 11. 인디케이터 조작
         // ================================================================
-        Sec("다중 모니터", "Multi-Monitor");
-        Add(Bool("모니터별 DPI 스케일", "Per-monitor DPI scaling",
-            c => c.PerMonitorScale, (c, v) => c with { PerMonitorScale = v }));
-        Add(Bool("작업 영역 안으로 제한", "Clamp to work area",
-            c => c.ClampToWorkArea, (c, v) => c with { ClampToWorkArea = v }));
+        Sec("인디케이터 조작", "Indicator Interaction");
         Add(Int("창 스냅 간격 (px)", "Snap gap (px)", 0, 10,
             c => c.SnapGapPx, (c, v) => c with { SnapGapPx = v }));
         Add(Combo("드래그 활성 키", "Drag modifier",
@@ -287,9 +277,6 @@ internal static partial class SettingsDialog
         Add(Int("TOPMOST 강제 주기 (ms)", "Force topmost interval (ms)", 0, 60000,
             c => c.Advanced.ForceTopmostIntervalMs,
             (c, v) => c with { Advanced = c.Advanced with { ForceTopmostIntervalMs = v } }));
-        Add(Bool("절전 방지", "Prevent sleep",
-            c => c.Advanced.PreventSleep,
-            (c, v) => c with { Advanced = c.Advanced with { PreventSleep = v } }));
 
         return rows;
     }

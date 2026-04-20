@@ -44,13 +44,15 @@ internal static class DpiHelper
     /// 스크린 좌표에서 해당 모니터의 작업 영역(rcWork)을 조회한다.
     /// MonitorFromPoint -> GetMonitorInfoW -> rcWork.
     /// 작업표시줄 제외된 실제 사용 가능 영역.
+    /// 실패 시 primary 모니터로 1회 폴백 — 기본 모니터 조회도 실패하면 default RECT.
     /// </summary>
     public static RECT GetWorkArea(IntPtr hMonitor)
     {
-        var monitorInfo = new MONITORINFOEXW();
-        monitorInfo.cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFOEXW>();
-        User32.GetMonitorInfoW(hMonitor, ref monitorInfo);
-        return monitorInfo.rcWork;
+        if (TryGetMonitorInfo(hMonitor, out MONITORINFOEXW info))
+            return info.rcWork;
+        if (TryGetPrimaryMonitorInfo(hMonitor, out info))
+            return info.rcWork;
+        return default;
     }
 
     /// <summary>
@@ -75,12 +77,33 @@ internal static class DpiHelper
 
     /// <summary>
     /// 모니터의 전체 영역(rcMonitor)을 반환한다.
+    /// 실패 시 primary 모니터로 1회 폴백 — 기본 모니터 조회도 실패하면 default RECT.
     /// </summary>
     public static RECT GetMonitorRect(IntPtr hMonitor)
     {
-        var monitorInfo = new MONITORINFOEXW();
-        monitorInfo.cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFOEXW>();
-        User32.GetMonitorInfoW(hMonitor, ref monitorInfo);
-        return monitorInfo.rcMonitor;
+        if (TryGetMonitorInfo(hMonitor, out MONITORINFOEXW info))
+            return info.rcMonitor;
+        if (TryGetPrimaryMonitorInfo(hMonitor, out info))
+            return info.rcMonitor;
+        return default;
+    }
+
+    private static bool TryGetMonitorInfo(IntPtr hMonitor, out MONITORINFOEXW info)
+    {
+        info = new MONITORINFOEXW();
+        info.cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFOEXW>();
+        return hMonitor != IntPtr.Zero && User32.GetMonitorInfoW(hMonitor, ref info);
+    }
+
+    private static bool TryGetPrimaryMonitorInfo(IntPtr failedMonitor, out MONITORINFOEXW info)
+    {
+        IntPtr primary = User32.MonitorFromPoint(
+            new POINT(0, 0), Win32Constants.MONITOR_DEFAULTTOPRIMARY);
+        if (primary == IntPtr.Zero || primary == failedMonitor)
+        {
+            info = default;
+            return false;
+        }
+        return TryGetMonitorInfo(primary, out info);
     }
 }

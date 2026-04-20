@@ -176,7 +176,7 @@ internal static class Logger
                 old.Dispose();
 
                 string oldPath = _filePath + ".old";
-                if (File.Exists(oldPath)) File.Delete(oldPath);
+                File.Delete(oldPath);
                 File.Move(_filePath, oldPath);
                 _fileWriter = new StreamWriter(_filePath, append: false, Encoding.UTF8)
                     { AutoFlush = true };

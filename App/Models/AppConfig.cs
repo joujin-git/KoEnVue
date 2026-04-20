@@ -91,13 +91,9 @@ internal sealed record AppConfig
     public bool TrayEnabled { get; init; } = true;
     public bool TrayTooltip { get; init; } = true;
     public TrayClickAction TrayClickAction { get; init; } = TrayClickAction.Toggle;
-    public bool TrayShowNotification { get; init; } = false;
     public double[] TrayQuickOpacityPresets { get; init; } = [0.95, 0.85, 0.6];
 
     // [시스템]
-    public bool StartupWithWindows { get; init; } = false;
-    public bool StartupMinimized { get; init; } = true;
-    public bool SingleInstance { get; init; } = true;
     public LogLevel LogLevel { get; init; } = LogLevel.Info;
     public string Language { get; init; } = "auto";
     public bool LogToFile { get; init; } = true;
@@ -108,10 +104,6 @@ internal sealed record AppConfig
     // 부팅 시 GitHub Releases API 1회 조회. 새 버전이 있으면 트레이 메뉴 상단에 "새 버전 있음 ..." 항목 노출.
     // false 로 두면 네트워크 호출 자체가 발생하지 않음 (오프라인/사내망 친화).
     public bool UpdateCheckEnabled { get; init; } = true;
-
-    // [다중 모니터]
-    public bool PerMonitorScale { get; init; } = true;
-    public bool ClampToWorkArea { get; init; } = true;
 
     // [인디케이터 위치 -- 모드]
     public PositionMode PositionMode { get; init; } = PositionMode.Window;
@@ -150,11 +142,6 @@ internal sealed record AppConfig
 
     // [고급]
     public AdvancedConfig Advanced { get; init; } = new();
-
-    // [버전]
-    // 반드시 Settings.CurrentVersion 과 일치. 새 config 파일은 이 값으로 생성되며,
-    // Settings.Migrate 가 구버전 파일을 CurrentVersion 으로 갱신한다.
-    public int ConfigVersion { get; init; } = 1;
 }
 
 // === 중첩 설정 레코드 ===
@@ -168,9 +155,7 @@ internal sealed record EventTriggersConfig
 internal sealed record AdvancedConfig
 {
     public int ForceTopmostIntervalMs { get; init; } = 5000;
-    public string[] ImeFallbackChain { get; init; } = ["ime_default_wnd", "ime_context", "keyboard_layout"];
     public string OverlayClassName { get; init; } = "KoEnVueOverlay";
-    public bool PreventSleep { get; init; } = false;
 }
 
 /// <summary>
