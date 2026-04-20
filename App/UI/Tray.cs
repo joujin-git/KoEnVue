@@ -647,7 +647,7 @@ internal static class Tray
             }
             updateConfig(config with { DefaultIndicatorPosition = anchor });
             Logger.Info($"Default indicator position saved: corner={anchor.Corner}, "
-                      + $"delta=({anchor.DeltaX}, {anchor.DeltaY})");
+                      + $"delta=({anchor.DeltaX}, {anchor.DeltaY}) logical px");
         }
     }
 

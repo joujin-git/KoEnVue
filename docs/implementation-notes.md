@@ -123,16 +123,16 @@ The `lastWindowFrame` and `windowMoving` state are reset on foreground window ch
 
 ### Default position
 
-Two nullable config fields store per-mode defaults for apps without a saved position:
+Two nullable config fields store per-mode defaults for apps without a saved position. In both modes `DeltaX` / `DeltaY` are **logical pixels** (96 DPI baseline); the resolver multiplies by the target monitor's DPI scale (`DpiHelper.Scale` with `Math.Round`) before anchoring.
 
-- **Fixed mode**: `config.default_indicator_position` (`DefaultPositionConfig` record) — `Corner` + `DeltaX` + `DeltaY` resolved against the **foreground window's monitor work area**
-- **Window mode**: `config.default_indicator_position_relative` (`RelativePositionConfig` record) — `Corner` + `DeltaX` + `DeltaY` resolved against the **foreground window's DWM frame**
+- **Fixed mode**: `config.default_indicator_position` (`DefaultPositionConfig` record) — `Corner` + `DeltaX` + `DeltaY` (logical px) resolved against the **foreground window's monitor work area** via `Overlay.ResolveAnchor(workArea, anchor, dpiScale)` (`dpiScale = DpiHelper.GetScale(hMonitor)`)
+- **Window mode**: `config.default_indicator_position_relative` (`RelativePositionConfig` record) — `Corner` + `DeltaX` + `DeltaY` (logical px) resolved against the **foreground window's DWM frame** via `Overlay.ResolveRelativePosition(frame, rel, dpiScale)`
 
-Null fallbacks:
-- Fixed: `DefaultConfig.DefaultIndicatorOffsetX = -200, Y = 10` (top-right of work area)
-- Window: `DefaultConfig.DefaultRelativeCorner = TopRight, X = -50, Y = 10` (inside top-right of window, logical pixels at 96 DPI — the hardcoded fallback now honors its `DPI 스케일링 전 px` doc contract because `ResolveRelativePosition` scales delta to target-monitor DPI)
+Null fallbacks (hardcoded, also logical px — scaled at apply time):
+- Fixed: `DefaultConfig.DefaultIndicatorOffsetX = -200, Y = 10` (top-right of work area, scaled by target-monitor DPI before anchoring)
+- Window: `DefaultConfig.DefaultRelativeCorner = TopRight, X = -50, Y = 10` (inside top-right of window, scaled by target-monitor DPI before anchoring)
 
-Multi-monitor / resolution stability: offsets are stored relative to a `Corner` anchor, not as absolute pixel coordinates. Window-mode deltas are additionally DPI-normalized to 96 DPI logical pixels, so the indicator's visual position is invariant across monitors of differing DPI scale (see "Window-relative position memory" above for the save/apply math).
+Multi-monitor / resolution stability: offsets are stored relative to a `Corner` anchor, not as absolute pixel coordinates, and both Fixed-mode default-anchor and Window-mode relative deltas are DPI-normalized to 96 DPI logical pixels. The indicator's visual position relative to the anchor (work area corner for Fixed default, window frame corner for Window) is invariant across monitors of differing DPI scale. See "Window-relative position memory" above for the save/apply math — Fixed-mode default anchor follows the same pattern via `ComputeAnchorFromCurrentPosition` (divide by source monitor scale) and `ResolveAnchor` (multiply by target monitor scale).
 
 Tray menu:
 - **"현재 위치로 설정"**: branches on current mode — Fixed calls `Overlay.ComputeAnchorFromCurrentPosition()` (work area corners), Window calls `Overlay.ComputeRelativeFromCurrentPosition(hwndForeground)` (window frame corners). Both use Manhattan distance to pick the nearest corner

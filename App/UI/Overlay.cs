@@ -256,24 +256,29 @@ internal static class Overlay
             // 캐시도 없는 경우 → 일반 기본 위치로 폴스루
         }
 
+        // anchor.DeltaX/Y · DefaultIndicatorOffset*: 논리 px (96 DPI 기준).
+        // 타겟 모니터 DPI 스케일로 승산해 물리 px 로 복원한다.
+        double dpiScale = DpiHelper.GetScale(hMonitor);
         if (_config.DefaultIndicatorPosition is { } anchor)
-            return ResolveAnchor(workArea, anchor);
+            return ResolveAnchor(workArea, anchor, dpiScale);
 
-        return (workArea.Right + DefaultConfig.DefaultIndicatorOffsetX,
-                workArea.Top + DefaultConfig.DefaultIndicatorOffsetY);
+        return (workArea.Right + DpiHelper.Scale(DefaultConfig.DefaultIndicatorOffsetX, dpiScale),
+                workArea.Top + DpiHelper.Scale(DefaultConfig.DefaultIndicatorOffsetY, dpiScale));
     }
 
     /// <summary>
-    /// Corner anchor + delta를 work area 기준 절대 좌표로 변환.
+    /// Corner anchor + 논리 px delta 를 타겟 모니터 DPI 스케일로 승산해 work area 기준 물리 px 절대 좌표로 변환.
     /// </summary>
-    private static (int x, int y) ResolveAnchor(RECT workArea, DefaultPositionConfig anchor)
+    private static (int x, int y) ResolveAnchor(RECT workArea, DefaultPositionConfig anchor, double dpiScale)
     {
+        int physicalDx = DpiHelper.Scale(anchor.DeltaX, dpiScale);
+        int physicalDy = DpiHelper.Scale(anchor.DeltaY, dpiScale);
         int x = anchor.Corner is Corner.TopLeft or Corner.BottomLeft
-            ? workArea.Left + anchor.DeltaX
-            : workArea.Right + anchor.DeltaX;
+            ? workArea.Left + physicalDx
+            : workArea.Right + physicalDx;
         int y = anchor.Corner is Corner.TopLeft or Corner.TopRight
-            ? workArea.Top + anchor.DeltaY
-            : workArea.Bottom + anchor.DeltaY;
+            ? workArea.Top + physicalDy
+            : workArea.Bottom + physicalDy;
         return (x, y);
     }
 
@@ -282,6 +287,10 @@ internal static class Overlay
     /// DefaultPositionConfig로 환산. 트레이 "기본 위치 → 현재 위치로 설정"에서 호출.
     /// 모니터는 현재 위치 기준으로 판정하므로 사용자가 멀티모니터 중 어느 화면에
     /// 인디를 뒀든 해당 화면의 work area가 anchor 기준이 된다.
+    /// <para>
+    /// Delta 는 <b>논리 픽셀</b>(96 DPI 기준) 로 저장된다. 서로 다른 DPI 모니터 간 이동 시에도
+    /// 모서리 대비 시각적 상대 위치가 보존되도록, 저장 시점 모니터의 DPI 스케일로 나눠 정규화한다.
+    /// </para>
     /// 인디가 한 번도 표시된 적이 없어 좌표가 (0,0)이면 null.
     /// </summary>
     public static DefaultPositionConfig? ComputeAnchorFromCurrentPosition()
@@ -294,7 +303,7 @@ internal static class Overlay
         IntPtr hMonitor = User32.MonitorFromPoint(pt, Win32Constants.MONITOR_DEFAULTTONEAREST);
         RECT workArea = DpiHelper.GetWorkArea(hMonitor);
 
-        // 4개 모서리까지의 맨해튼 거리를 각각 계산하여 최소값 선택.
+        // 4개 모서리까지의 맨해튼 거리를 각각 계산하여 최소값 선택 (물리 px 기준 비교).
         (Corner corner, int dx, int dy) best = (Corner.TopRight, 0, 0);
         long bestDist = long.MaxValue;
 
@@ -315,11 +324,13 @@ internal static class Overlay
         Consider(Corner.BottomLeft, workArea.Left, workArea.Bottom);
         Consider(Corner.BottomRight, workArea.Right, workArea.Bottom);
 
+        // 물리 delta 를 저장 시점 모니터 DPI 스케일로 나눠 논리 px 로 정규화해 저장.
+        double dpiScale = DpiHelper.GetScale(hMonitor);
         return new DefaultPositionConfig
         {
             Corner = best.corner,
-            DeltaX = best.dx,
-            DeltaY = best.dy,
+            DeltaX = (int)Math.Round(best.dx / dpiScale),
+            DeltaY = (int)Math.Round(best.dy / dpiScale),
         };
     }
 
