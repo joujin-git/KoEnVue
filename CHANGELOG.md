@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### 수정
+
+- **`CoInitializeEx failed: 0x80010106` Warning 상시 출력 + VDM / WinEventHook 기능 사일런트 degrade** — `Main` 에 `[STAThread]` 속성이 없어 NativeAOT CLR 이 메인 스레드를 기본값(MTA) 로 초기화한 뒤 `MainImpl` 의 명시적 `Ole32.CoInitializeEx(COINIT_APARTMENTTHREADED)` 호출이 `RPC_E_CHANGED_MODE` 로 거부되던 구조. v0.9.2.1 이하에서는 HRESULT 를 확인하지 않아 조용히 무시됐고 v0.9.2.2 에서 HRESULT 가드를 넣으면서 매 기동마다 Warning 이 파일 로그에 쌓이게 됐음. 실제 파급효과는 VDM(`IVirtualDesktopManager`) · WinEventHook 등 STA 를 요구하는 COM 경로가 계속 제한된 채 실행되던 것. `Main` 에 `[STAThread]` 추가 → CLR 이 Main 진입 전 `CoInitializeEx(STA)` 를 호출하고 프로세스 종료 시 짝 맞춰 `CoUninitialize` 도 수행. 앱 측 명시적 `CoInitializeEx` / `CoUninitialize` 호출 + `volatile bool _comInitialized` 추적 필드 제거. 겸사겸사 `OnProcessExit` 가 finalizer 스레드에서 돌며 메인 스레드 apartment 와 매칭되지 않는 `CoUninitialize` 를 부르던 잠재 결함도 같은 수정으로 제거. 관련 dead 선언 3종(`Ole32.CoInitializeEx` · `Ole32.CoUninitialize` P/Invoke + `Win32Constants.COINIT_APARTMENTTHREADED`) 일괄 정리. `Ole32.CoCreateInstance` 는 `SystemFilter` 의 VDM 생성 경로가 계속 사용하므로 유지
+
 ## [0.9.2.2] — 2026-04-20
 
 ### 수정

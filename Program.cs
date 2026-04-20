@@ -54,10 +54,6 @@ internal static partial class Program
     // 라이프사이클 (감지 스레드에서 읽고 OnProcessExit에서 씀 → volatile)
     private static volatile bool _stopping;
 
-    // COM 초기화 성공 여부. CoInitializeEx HRESULT >= 0 일 때만 CoUninitialize 호출 (짝 맞춤).
-    // 메인 스레드 부트스트랩에서 쓰고 OnProcessExit(메인 or finalizer 스레드)에서 읽음 → volatile.
-    private static volatile bool _comInitialized;
-
     // 윈도우 클래스명 (P3: 매직 스트링 금지)
     private const string MainClassName = "KoEnVueMain";
 
@@ -67,6 +63,7 @@ internal static partial class Program
     // 진입점
     // ================================================================
 
+    [STAThread]
     static void Main()
     {
         try
@@ -120,16 +117,12 @@ internal static partial class Program
         I18n.Load(_config.Language);
         Logger.Info("KoEnVue starting");
 
-        // 5. 메인 스레드 COM STA 초기화 (메시지 루프 + WinEventHook + SystemFilter VDM)
-        //    HRESULT 추적: S_OK(0) / S_FALSE(1) 은 성공 — CoUninitialize 짝을 반드시 호출.
-        //    RPC_E_CHANGED_MODE 등 음수는 실패 — CoUninitialize 호출 시 참조카운트 언더플로우 위험.
-        //    _comInitialized 플래그로 OnProcessExit 에서 짝 맞춤 판단.
-        int comHr = Ole32.CoInitializeEx(IntPtr.Zero, Win32Constants.COINIT_APARTMENTTHREADED);
-        _comInitialized = comHr >= 0;
-        if (!_comInitialized)
-            Logger.Warning($"CoInitializeEx failed: 0x{comHr:X8} — VDM / WinEventHook 기능이 제한될 수 있음");
+        // 5. 메인 스레드 COM STA 는 [STAThread] 로 CLR 이 Main 진입 전에 CoInitializeEx 를 부른
+        //    상태로 보장된다 (종료 시 CoUninitialize 짝 호출도 CLR 책임). 여기서 별도 호출을 하면
+        //    CLR 호출 위에 참조카운트만 쌓여 종료 경로에서 짝 맞춤이 어긋날 뿐, STA 모드 자체는
+        //    이미 활성이므로 생략한다. 메시지 루프 · WinEventHook · SystemFilter VDM 모두 이 STA 를 공유.
 
-        // 6. SystemFilter static constructor 강제 실행 (메인 스레드에서 VDM COM 생성)
+        // 6. SystemFilter static constructor 강제 실행 (메인 스레드 STA 에서 VDM COM 생성)
         _ = SystemFilter.ShouldHide(IntPtr.Zero, IntPtr.Zero, _config);
 
         // 7. 윈도우 클래스 등록

@@ -383,7 +383,7 @@ internal static class Win32Constants
     public const int VK_CAPITAL          = 0x14;
 
     // --- COM ---
-    public const uint COINIT_APARTMENTTHREADED = 0x2;
+    // Apartment 모드 초기화는 Main 의 [STAThread] 로 CLR 이 수행 — COINIT_APARTMENTTHREADED 상수 불필요.
     public const uint CLSCTX_INPROC_SERVER = 0x1;
 
     // --- HRESULT ---

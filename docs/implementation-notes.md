@@ -649,9 +649,11 @@ Static field retention for P/Invoke callbacks (e.g., `_imeChangeCallback` in [Im
 
 ### COM init ordering
 
-Main thread pre-initializes COM STA + forces `SystemFilter` static constructor before the detection thread starts, so the `IVirtualDesktopManager` COM object is usable from either thread.
+`Main` 에 `[STAThread]` 를 붙여 CLR 이 메인 스레드를 STA 로 초기화하도록 위임한다 (NativeAOT 도 이 속성을 존중한다). CLR 이 `Main` 진입 전 `CoInitializeEx(COINIT_APARTMENTTHREADED)` 를 부르고 프로세스 종료 시 짝을 맞춰 `CoUninitialize` 도 수행하므로, 앱 코드에서는 별도의 명시적 초기화/해제 호출이 없다.
 
-`CoInitializeEx(IntPtr.Zero, COINIT_APARTMENTTHREADED)` 의 HRESULT 는 `volatile bool _comInitialized` 에 반환값 `>= 0` (S_OK/S_FALSE) 일 때만 `true` 로 기록하고, 실패 시 `Logger.Warning` 을 남긴다. `OnProcessExit` 의 `CoUninitialize()` 호출은 `if (_comInitialized)` 가드로 감싸 짝 호출 규약을 지킨다 — `RPC_E_CHANGED_MODE`(다른 apartment 로 이미 초기화된 스레드) 같은 실패 HRESULT 에서 `CoUninitialize` 가 나가면 다른 COM 컴포넌트의 apartment 참조카운트를 언더플로우시킬 수 있기 때문이다. COM 초기화 실패 시에도 VDM / WinEventHook 기능이 제한되는 수준의 degradation 으로 프로세스는 정상 기동 — 메인 로직은 STA COM 에 하드 의존하지 않는다.
+이전 구조는 `Ole32.CoInitializeEx` 를 앱이 직접 불렀는데, CLR 기본 설정(MTA)과 충돌해 `RPC_E_CHANGED_MODE`(0x80010106) 로 실패하고 VDM / WinEventHook 이 사일런트하게 degrade 되는 버그가 있었다. `[STAThread]` 로 CLR 이 먼저 STA 를 잡아주게 하면 이 경로 전체가 사라진다. 또한 `ProcessExit` 가 finalizer 스레드에서 돌아 `CoUninitialize` 를 메인 스레드 apartment 와 매칭되지 않은 곳에서 부르던 잠재 결함도 함께 제거됐다.
+
+메인 스레드 STA 초기화가 보장된 직후 `SystemFilter.ShouldHide` 를 1회 호출해 static constructor 를 강제 실행하고 `IVirtualDesktopManager` COM 객체를 생성해둔다 — 이후 메인·감지 스레드 양쪽에서 안전하게 사용 가능.
 
 ### Overlay window class
 
@@ -676,8 +678,9 @@ Separately registered (shared WndProc with main window). `WM_DESTROY` guard chec
 5. 오버레이 + 메인 윈도우 명시적 파괴 (`DestroyWindow`)
 6. 트레이 아이콘 제거 (`NIM_DELETE`)
 7. Mutex 해제 (`Dispose` only — `ReleaseMutex`는 소유 스레드에서만 가능하나 `ProcessExit`는 다른 스레드일 수 있음)
-8. COM 해제 (`if (_comInitialized) CoUninitialize()` — 짝 호출 가드)
-9. 종료 로그 기록 + 로거 종료 (`Logger.Info` → `Logger.Shutdown`)
+8. 종료 로그 기록 + 로거 종료 (`Logger.Info` → `Logger.Shutdown`)
+
+COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자동 수행하므로 `ProcessExit` 에서는 건드리지 않는다. `ProcessExit` 는 finalizer 스레드에서 돌기 때문에 여기서 `CoUninitialize` 를 불러도 메인 스레드 apartment 와 매칭되지 않는다.
 
 `Logger.Shutdown`은 반드시 마지막에 호출하여 이전 단계의 로그가 모두 기록되도록 보장한다. 타이머 해제와 윈도우 파괴는 리소스 해제(5단계) 이후에 수행하여 타이머 콜백이 해제된 리소스를 참조하는 것을 방지한다.
 
