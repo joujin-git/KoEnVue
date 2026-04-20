@@ -18,7 +18,7 @@ When CAPS LOCK is toggled on, two vertical bars (reusing the per-state `fg` colo
 
 The right bar has an additional `CapsLockRightCompensationPx = 1` physical-px visual correction. The math is symmetric, but `RoundRect`'s right/bottom-exclusive semantics combined with `DrawTextW` AA weighting and premultiplied alpha compositing make the right gap look 1 px narrower without it.
 
-All three constants (`CapsLockBarWidthLogicalPx`, `CapsLockBarInsetLogicalPx`, `CapsLockRightCompensationPx`) live as `private const` in [Overlay.cs](../App/UI/Overlay.cs) next to `SystemInputGapPx`. The bars are drawn via `FillRect` with `fg` color inside the existing `hBrush` try/finally block.
+All three constants (`CapsLockBarWidthLogicalPx`, `CapsLockBarInsetLogicalPx`, `CapsLockRightCompensationPx`) live as `private const` in [Overlay.cs](../App/UI/Overlay.cs) next to `SystemInputGapLogicalPx`. The bars are drawn via `FillRect` with `fg` color inside the existing `hBrush` try/finally block.
 
 See [CAPS LOCK detection](#caps-lock-detection) below for the polling mechanism.
 
@@ -155,7 +155,7 @@ Path 3 (default position) is not clamped because `GetDefaultPosition` already co
 `StartMenuExperienceHost` / `SearchHost` / `SearchApp` (`DefaultConfig.SystemInputProcesses`) are special. TOPMOST z-band cannot rise above these shell UI surfaces, so any saved position that ends up under them becomes unreachable.
 
 - Drag is ignored (position never saved)
-- `GetDefaultPosition` places the indicator just above the window's visual top-left corner: `(frame.Left, frame.Top - labelH - SystemInputGapPx)`, clamped to `workArea.Top`
+- `GetDefaultPosition` places the indicator just above the window's visual top-left corner: `(frame.Left, frame.Top - labelH - DpiHelper.Scale(SystemInputGapLogicalPx, monitorDpiScale))`, clamped to `workArea.Top` — the gap constant is logical px (96 DPI baseline), multiplied by the target monitor's DPI scale so the visual spacing is invariant across monitors
 - The "visual" frame is obtained via `Dwmapi.TryGetVisibleFrame` → `DwmGetWindowAttribute(DWMWA_EXTENDED_FRAME_BOUNDS)` to exclude the invisible resize border
 - **Full-screen DWM frame guard + cached frame reuse**: CoreWindow hosts (e.g., `StartMenuExperienceHost`) return DWM extended frame bounds covering the entire screen, not the visible panel. When the frame encloses the full work area (`Left ≤ workArea.Left && Top ≤ workArea.Top && Right ≥ workArea.Right && Bottom ≥ workArea.Bottom`), the static `_lastValidSystemInputFrame` cache is consulted — if a recent non-full-screen system input frame exists (typically from `SearchHost`, which always appears before `StartMenuExperienceHost` in the Win11 Start Menu opening sequence), that cached frame is used for positioning. Only when no cached frame is available does the code fall through to the general default position
 

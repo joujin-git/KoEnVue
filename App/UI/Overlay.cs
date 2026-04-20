@@ -171,8 +171,8 @@ internal static class Overlay
     // GetDefaultPosition + ComputeAnchorFromCurrentPosition (system input 특수 로직 포함)
     // ================================================================
 
-    /// <summary>시스템 입력 프로세스 기본 위치의 창 상단 여백(px).</summary>
-    private const int SystemInputGapPx = 4;
+    /// <summary>시스템 입력 프로세스 기본 위치의 창 상단 여백 (DPI 스케일링 전 px).</summary>
+    private const int SystemInputGapLogicalPx = 4;
 
     /// <summary>
     /// 직전 시스템 입력 프로세스에서 관찰된 유효(비전체화면) DWM 프레임.
@@ -239,6 +239,7 @@ internal static class Overlay
 
             if (!isFullScreen)
             {
+                double monitorDpiScale = DpiHelper.GetScale(hMonitor);
                 (int _, int labelH) = _engine.GetBaseSize();
                 if (labelH <= 0)
                 {
@@ -246,10 +247,11 @@ internal static class Overlay
                     double scale = _config.IndicatorScale;
                     labelH = DpiHelper.Scale(
                         (int)Math.Round(_config.LabelHeight * scale),
-                        DpiHelper.GetScale(hMonitor));
+                        monitorDpiScale);
                 }
                 int x = frame.Left;
-                int y = frame.Top - labelH - SystemInputGapPx;
+                int y = frame.Top - labelH
+                    - DpiHelper.Scale(SystemInputGapLogicalPx, monitorDpiScale);
                 if (y < workArea.Top) y = workArea.Top;
                 return (x, y);
             }
