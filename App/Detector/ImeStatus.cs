@@ -26,6 +26,12 @@ internal static class ImeStatus
     // 로컬/람다로 생성하면 GC 수집 → access violation crash.
     private static User32.WinEventProc? _imeChangeCallback;
 
+    // WinEvent 콜백(OnImeChange)은 AppConfig 인스턴스에 접근할 수 없으므로 사용자 설정
+    // DetectionMethod 를 정적 필드로 보관한다. RegisterHook 시점에 주입되고
+    // HandleConfigChanged 시 UpdateDetectionMethod 로 갱신된다. 메인 스레드가 쓰고
+    // 동일 스레드의 콜백이 읽으므로 락 불필요 — volatile 은 향후 스레드 변경 방어.
+    private static volatile DetectionMethod _detectionMethod = DetectionMethod.Auto;
+
     // ================================================================
     // Public API
     // ================================================================
@@ -64,10 +70,13 @@ internal static class ImeStatus
     /// <summary>
     /// SetWinEventHook으로 IME 변경 이벤트를 등록한다.
     /// 반드시 메인 스레드(메시지 루프 보유)에서 호출해야 한다.
+    /// <paramref name="method"/> 는 WinEvent 콜백이 사용할 감지 방식의 초기값.
+    /// 설정 변경 시 <see cref="UpdateDetectionMethod"/> 로 갱신.
     /// </summary>
-    public static void RegisterHook(IntPtr hwndMain)
+    public static void RegisterHook(IntPtr hwndMain, DetectionMethod method)
     {
         _hwndMain = hwndMain;
+        _detectionMethod = method;
         _imeChangeCallback = OnImeChange;
 
         _hEventHook = User32.SetWinEventHook(
@@ -83,6 +92,12 @@ internal static class ImeStatus
         else
             Logger.Info("IME change hook registered");
     }
+
+    /// <summary>
+    /// WinEvent 콜백이 참조하는 감지 방식을 갱신한다.
+    /// config.json 핫 리로드 또는 설정 다이얼로그 저장 시 메인 스레드에서 호출.
+    /// </summary>
+    public static void UpdateDetectionMethod(DetectionMethod method) => _detectionMethod = method;
 
     /// <summary>
     /// SetWinEventHook을 해제한다.
@@ -214,7 +229,7 @@ internal static class ImeStatus
         if (hwndFg == IntPtr.Zero) return;
 
         uint threadId = User32.GetWindowThreadProcessId(hwndFg, out _);
-        ImeState newState = Detect(hwndFg, threadId);
+        ImeState newState = Detect(hwndFg, threadId, _detectionMethod);
 
         if (newState != _lastState)
         {

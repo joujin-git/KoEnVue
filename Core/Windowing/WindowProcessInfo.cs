@@ -18,12 +18,16 @@ internal static class WindowProcessInfo
     [ThreadStatic] private static string? t_resolvedUwpName;
     [ThreadStatic] private static uint t_frameHostPid;
 
+    // GetClassName 호출당 char[256] 신규 할당을 피하기 위한 스레드별 재사용 버퍼.
+    // GetClassName 도 메인/감지 스레드 양쪽에서 호출되므로 [ThreadStatic].
+    [ThreadStatic] private static char[]? t_classNameBuffer;
+
     /// <summary>
     /// 윈도우 클래스명 조회.
     /// </summary>
     public static string GetClassName(IntPtr hwnd)
     {
-        char[] buffer = new char[Win32Constants.MAX_CLASS_NAME];
+        char[] buffer = t_classNameBuffer ??= new char[Win32Constants.MAX_CLASS_NAME];
         int len = User32.GetClassNameW(hwnd, buffer, Win32Constants.MAX_CLASS_NAME);
         return len > 0 ? new string(buffer, 0, len) : string.Empty;
     }

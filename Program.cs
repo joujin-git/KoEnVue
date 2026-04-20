@@ -173,8 +173,8 @@ internal static partial class Program
         // 10. 감지 스레드 시작
         StartDetectionThread();
 
-        // 11. IME 이벤트 훅 등록
-        ImeStatus.RegisterHook(_hwndMain);
+        // 11. IME 이벤트 훅 등록 — WinEvent 콜백이 사용자 설정 DetectionMethod 를 존중하도록 주입.
+        ImeStatus.RegisterHook(_hwndMain, _config.DetectionMethod);
 
         // 12. 업데이트 체크 (백그라운드 1회) — UpdateCheckEnabled=false 면 네트워크 호출 없음.
         //     hwndMain 을 로컬로 스냅샷해 lambda closure 에 캡처: UpdateChecker.CheckInBackground 는
@@ -596,6 +596,7 @@ internal static partial class Program
         Logger.Initialize(_config.LogToFile, _config.LogFilePath, _config.LogMaxSizeMb);
         I18n.Load(_config.Language);
         Settings.ClearProfileCache();
+        ImeStatus.UpdateDetectionMethod(_config.DetectionMethod);
         Overlay.HandleConfigChanged(_config);
         // 인디가 가시 상태라면 애니메이터 config 갱신 + 새 alpha/크기/색상 즉시 반영
         if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
@@ -714,6 +715,7 @@ internal static partial class Program
             updateConfig: newConfig =>
             {
                 _config = ThemePresets.Apply(newConfig);
+                ImeStatus.UpdateDetectionMethod(_config.DetectionMethod);
                 Overlay.HandleConfigChanged(_config);
                 // 인디가 가시 상태라면 애니메이터 config 갱신 + 새 alpha/크기/색상이 즉시 반영되도록
                 // TriggerShow로 전체 갱신. TriggerShow는 UpdateConfig + Overlay.Show를 포함한다.

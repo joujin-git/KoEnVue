@@ -321,6 +321,10 @@ Detection loop only updates `lastHwndForeground` **after** `ShouldHide` passes. 
 
 `ImeStatus.TryTier3` 는 `langId != LANGID_KOREAN(0x0412)` 를 곧바로 `NonKorean` 으로 분류하지 않고, HKL 상위 니블 `0xE` (IME 디바이스 시그니처, `HKL_IME_DEVICE_MASK = 0xF0000000` / `HKL_IME_DEVICE_SIG = 0xE0000000`) 가 일치할 때만 `NonKorean` 을 반환한다. 콘솔 호스트(`conhost.exe`) 처럼 IME 가 아직 스레드에 붙지 않은 프로세스는 Tier 1 (`ImmGetDefaultIMEWnd`) / Tier 2 (`ImmGetContext`) 가 `null` 로 떨어지고 Tier 3 가 기본 키보드 레이아웃(예: en-US `0x0409_0409` — `langId=0x0409`, 상위 니블 `0x0`) 을 보게 되는데, 이를 `NonKorean` 으로 분류하면 `Animation.TriggerShow` 의 `NonKoreanImeMode.Hide` 가드(기본값) 가 `TriggerHide(forceHidden: true)` 로 인디를 강제 숨김해 "플래시 후 사라짐" 증상을 유발한다. IME 장착 HKL(한글 `0xE001_0412` · 일본어 `0xE001_0411` · 중국어 `0xE00E_0804`) 은 상위 니블이 `0xE` 로 시그니처를 가지므로 이 검사로 구분된다. "IME 미장착 스레드 = IME 미활성" 으로 간주해 `English` 로 폴백 — 한/영 토글 1회 시 한글 IME 가 스레드에 결합되면서 `langId == LANGID_KOREAN` 분기로 안착해 동일 결과에 수렴. 콘솔 호스트 외에도 Emacs/mintty 등 비-네이티브 Win32 창 전반에서 동일 증상 해소.
 
+#### WinEvent hook honors `detection_method`
+
+IME 감지 경로는 두 가지다 — (1) 디텍션 스레드 80ms 폴링 (`DetectionLoop`), (2) 메인 스레드 `EVENT_OBJECT_IME_CHANGE` WinEvent 훅 (`ImeStatus.OnImeChange`). 둘 다 사용자가 `config.json` 의 `"detection_method"` 로 선택한 단일-tier 경로(`ime_default` / `ime_context` / `keyboard_layout`) 를 따라야 하지만, 훅은 `WINEVENT_OUTOFCONTEXT` 콜백이라 `AppConfig` 인스턴스에 직접 접근할 수 없다. 해결: `ImeStatus` 가 `volatile DetectionMethod _detectionMethod` 정적 필드를 보유하고, 메인 스레드가 `RegisterHook(hwndMain, config.DetectionMethod)` 로 초기값 주입 + `UpdateDetectionMethod(config.DetectionMethod)` 로 핫 리로드 갱신(설정 다이얼로그 저장 + `config.json` 외부 편집 + 트레이 메뉴 전환 3경로). `OnImeChange` 가 `Detect(hwndFg, threadId, _detectionMethod)` 3-파라미터 오버로드를 호출해 폴링 경로와 동일한 분기. `volatile` 은 메인 스레드가 쓰고 동일 스레드의 콜백이 읽어 현재 구조에서는 불필요하지만 향후 스레드 변경 방어.
+
 ### System filter (9 conditions)
 
 1. Secure desktop (no hwnd)

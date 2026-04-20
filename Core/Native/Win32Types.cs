@@ -204,32 +204,6 @@ internal struct SCROLLINFO
     public int nTrackPos;
 }
 
-/// <summary>
-/// WM_GETTITLEBARINFOEX 응답 구조체.
-/// rgstate[6] + rgrect[6]: [0]=타이틀바, [1]=예약, [2]=최소화, [3]=최대화, [4]=도움말, [5]=닫기
-/// rgrect는 스크린 좌표.
-/// </summary>
-[StructLayout(LayoutKind.Sequential)]
-internal struct TITLEBARINFOEX
-{
-    public uint cbSize;
-    public RECT rcTitleBar;
-    // rgstate[CCHILDREN_TITLEBAR + 1] — 6개
-    public uint stateTitleBar;
-    public uint stateReserved;
-    public uint stateMinimize;
-    public uint stateMaximize;
-    public uint stateHelp;
-    public uint stateClose;
-    // rgrect[CCHILDREN_TITLEBAR + 1] — 6개 (스크린 좌표)
-    public RECT rectTitleBar;
-    public RECT rectReserved;
-    public RECT rectMinimize;
-    public RECT rectMaximize;
-    public RECT rectHelp;
-    public RECT rectClose;
-}
-
 // ================================================================
 // 상수
 // ================================================================
@@ -251,11 +225,9 @@ internal static class Win32Constants
     public const uint WS_VISIBLE        = 0x10000000;
     public const uint WS_TABSTOP        = 0x00010000;
     public const uint WS_CLIPCHILDREN   = 0x02000000;
-    public const uint WS_OVERLAPPEDWINDOW = 0x00CF0000;
 
     // --- 버튼/체크박스 스타일 ---
     public const uint BS_AUTOCHECKBOX   = 0x00000003;
-    public const uint BS_PUSHBUTTON     = 0x00000000;
     public const uint BS_DEFPUSHBUTTON  = 0x00000001;
     public const uint BM_GETCHECK       = 0x00F0;
     public const uint BM_SETCHECK       = 0x00F1;
@@ -313,8 +285,6 @@ internal static class Win32Constants
 
     // --- WinEvent 상수 ---
     public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
-    public const uint EVENT_OBJECT_IME_SHOW   = 0x8027;
-    public const uint EVENT_OBJECT_IME_HIDE   = 0x8028;
     public const uint EVENT_OBJECT_IME_CHANGE = 0x8029;  // Windows SDK WinUser.h 정의
 
     // --- MonitorFromPoint / MonitorFromWindow 플래그 ---
@@ -351,7 +321,6 @@ internal static class Win32Constants
     public const uint DT_CENTER          = 0x0001;
     public const uint DT_VCENTER         = 0x0004;
     public const uint DT_SINGLELINE      = 0x0020;
-    public const uint DT_CALCRECT        = 0x0400;
 
     // --- Shell_NotifyIconW ---
     public const uint NIM_ADD            = 0x00000000;
@@ -378,16 +347,9 @@ internal static class Win32Constants
     public const uint WM_SETTINGCHANGE   = 0x001A;
     public const uint WM_SETFONT         = 0x0030;
     public const uint WM_DPICHANGED     = 0x02E0;
-    public const uint WM_GETTITLEBARINFOEX = 0x033F;
-    public const uint WM_RBUTTONUP       = 0x0205;
     public const uint WM_LBUTTONUP       = 0x0202;
     public const uint WM_APP             = 0x8000;
     public const uint WM_USER            = 0x0400;
-
-    // --- TITLEBARINFOEX 상태 플래그 ---
-    public const uint STATE_SYSTEM_INVISIBLE   = 0x8000;
-    public const uint STATE_SYSTEM_OFFSCREEN   = 0x10000;
-    public const uint STATE_SYSTEM_UNAVAILABLE = 0x0001;
 
     // --- 전원 관리 ---
     public const uint PBT_APMRESUMESUSPEND = 0x0007;
@@ -400,7 +362,6 @@ internal static class Win32Constants
     public const uint MF_UNCHECKED       = 0x0000;
     public const uint MF_GRAYED          = 0x0001;
     public const uint MF_BYCOMMAND       = 0x0000;
-    public const uint MF_BYPOSITION      = 0x0400;
     public const uint TPM_BOTTOMALIGN    = 0x0020;
     public const uint TPM_LEFTALIGN      = 0x0000;
     public const uint TPM_RIGHTBUTTON    = 0x0002;
@@ -413,16 +374,10 @@ internal static class Win32Constants
     public const uint SWP_NOACTIVATE     = 0x0010;
 
     // --- 입력 ---
-    public const int VK_LBUTTON          = 0x01;
     public const int VK_SHIFT            = 0x10;
     public const int VK_CONTROL          = 0x11;
     public const int VK_MENU             = 0x12;  // Alt 키
     public const int VK_CAPITAL          = 0x14;
-
-    // --- MessageBox ---
-    public const uint MB_YESNO           = 0x00000004;
-    public const uint MB_ICONQUESTION    = 0x00000020;
-    public const int IDYES               = 6;
 
     // --- COM ---
     public const uint COINIT_APARTMENTTHREADED = 0x2;
@@ -441,9 +396,7 @@ internal static class Win32Constants
     /// <summary>창의 cloaked 상태(가상 데스크톱 숨김, UWP suspend 등). 0이 아니면 화면에 표시되지 않음.</summary>
     public const uint DWMWA_CLOAKED      = 14;
 
-    // --- 고대비 ---
-    public const uint SPI_GETHIGHCONTRAST = 0x0042;
-    public const uint HCF_HIGHCONTRASTON  = 0x00000001;
+    // --- 시스템 색상 ---
     public const int COLOR_HIGHLIGHT      = 13;
     public const int COLOR_BTNFACE        = 15;
 
@@ -452,7 +405,6 @@ internal static class Win32Constants
 
     // --- 스크롤바 ---
     public const uint WS_VSCROLL          = 0x00200000;
-    public const int  SB_HORZ             = 0;
     public const int  SB_VERT             = 1;
     public const uint SIF_RANGE           = 0x0001;
     public const uint SIF_PAGE            = 0x0002;
@@ -469,7 +421,6 @@ internal static class Win32Constants
     public const int  SB_THUMBTRACK       = 5;
     public const int  SB_TOP              = 6;
     public const int  SB_BOTTOM           = 7;
-    public const int  SB_ENDSCROLL        = 8;
     public const int  WHEEL_DELTA         = 120;
 
     // ScrollWindowEx flags

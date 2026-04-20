@@ -124,7 +124,7 @@ internal static class HttpClientLite
 
     private static unsafe string? ReadResponseBody(IntPtr hRequest)
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         const int chunkSize = 8192;
         byte[] buffer = new byte[chunkSize];
 

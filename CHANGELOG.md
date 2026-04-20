@@ -3,6 +3,21 @@
 이 프로젝트의 주요 변경 사항을 기록합니다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/)를 따릅니다.
 
+## [0.9.2.0] — 2026-04-20
+
+### 수정
+
+- **`ImeStatus.OnImeChange` 가 사용자 설정 `detection_method` 를 무시하던 버그** — WinEvent 훅 콜백이 `EVENT_OBJECT_IME_CHANGE` 수신 시 항상 2-파라미터 `Detect(hwndFocus, threadId)` 3-tier Auto 경로로 떨어져 사용자가 `config.json` 에서 `"detection_method": "ime_default" | "ime_context" | "keyboard_layout"` 로 강제 선택한 단일-tier 동작이 폴링 경로(디텍션 스레드 `DetectionLoop`) 에서는 존중되지만 훅 경로(메인 스레드, 하이브리드 구조의 빠른 반응 경로) 에서는 무시되는 불일치가 있었음. 증상: 사용자가 `keyboard_layout` 을 선택해 Tier 1·Tier 2 를 우회하도록 설정해도 한/영 토글 직후 `OnImeChange` 가 발화하면 Tier 1 (`SendMessageTimeoutW` 100ms) 이 먼저 실행되어 사용자 의도가 반영되지 않음. `ImeStatus` 정적 클래스에 `volatile DetectionMethod _detectionMethod` 필드를 추가하고 `RegisterHook(IntPtr, DetectionMethod)` 시그니처로 초기 주입, `UpdateDetectionMethod(DetectionMethod)` 로 핫 리로드 갱신. `OnImeChange` 가 `Detect(hwndFg, threadId, _detectionMethod)` 3-파라미터 오버로드를 호출해 폴링 경로와 동일한 분기 로직 사용. `Program.Bootstrap` 의 `RegisterHook` 호출에 `_config.DetectionMethod` 전달, `HandleConfigChanged` + `HandleMenuCommand` 의 설정 업데이트 콜백에 `ImeStatus.UpdateDetectionMethod` 호출 추가해 설정 다이얼로그 저장·`config.json` 외부 편집·트레이 메뉴 전환 3경로 모두에서 훅이 최신 선택을 반영. `volatile` 은 메인 스레드가 쓰고 동일 스레드의 콜백이 읽어 현재 구조에서는 불필요하지만 향후 스레드 변경 방어 목적으로 선명성 유지
+
+### 개선
+
+- **`WindowProcessInfo.GetClassName` 의 `char[256]` 재할당 제거** — 메인 스레드(포커스 변경 처리) 와 감지 스레드(80ms 폴링) 양쪽에서 호출되는 핫패스였으나 매 호출마다 `new char[Win32Constants.MAX_CLASS_NAME]` 를 생성해 GC 압력을 증가시켰음. `[ThreadStatic] private static char[]? t_classNameBuffer` 를 추가하고 `char[] buffer = t_classNameBuffer ??= new char[Win32Constants.MAX_CLASS_NAME]` 패턴으로 스레드별 1회 할당 후 영구 재사용. `GetClassNameW` 는 길이를 반환하므로 버퍼 재사용이 안전하며 스레드별 격리로 동기화 불필요. 감지 스레드 기준 `80ms × 2 호출 = 25 회/초` 의 512 바이트 할당 제거 (연간 누적 약 40 MB GC 압력 감소). 기존 `[ThreadStatic] t_resolvedUwpName`/`t_frameHostPid` 와 같은 파일에서 동일한 스레드-로컬 캐시 패턴 유지
+- **`Core/Http/HttpClientLite.ReadResponseBody` `using var ms`** — `MemoryStream` 은 `MemoryStream.Dispose` 가 의미적으로 no-op 에 가까워(버퍼 크기 = 0 으로 설정) 현 구현에서도 누수는 없지만 동일 파일 내 타 함수(`DisposeRequest` finally, JSON 파싱 경로)의 IDisposable 규율과 스타일 정합을 위해 `using var` 추가. 예외 발생 시 finally 경로 명시성 확보
+
+### 제거
+
+- **`Win32Constants` 미사용 상수 17종 + `TITLEBARINFOEX` 구조체 + `SendMessageTimeoutTitleBarInfo` P/Invoke** — 프로젝트 전역 grep 결과 호출처 0건인 dead 선언 일괄 정리. 상수: `WS_OVERLAPPEDWINDOW`, `BS_PUSHBUTTON`, `EVENT_OBJECT_IME_SHOW`, `EVENT_OBJECT_IME_HIDE`, `MF_BYPOSITION`, `WM_GETTITLEBARINFOEX`, `WM_RBUTTONUP`, `VK_LBUTTON`, `SB_HORZ`, `SB_ENDSCROLL`, `MB_YESNO`, `MB_ICONQUESTION`, `IDYES`, `HCF_HIGHCONTRASTON`, `SPI_GETHIGHCONTRAST`, `DT_CALCRECT`, `STATE_SYSTEM_INVISIBLE`/`OFFSCREEN`/`UNAVAILABLE` 3종(TITLEBARINFOEX 전용 플래그). 구조체 `TITLEBARINFOEX` (WM_GETTITLEBARINFOEX 응답용) + 전용 P/Invoke 오버로드 `User32.SendMessageTimeoutTitleBarInfo` (dead chain — WM_GETTITLEBARINFOEX 가 제거되면서 함께 고아화). `// --- 고대비 ---` 섹션 헤더를 `// --- 시스템 색상 ---` 으로 개명(`COLOR_HIGHLIGHT` · `COLOR_BTNFACE` 만 잔존). 빌드 바이너리 변화 없음(const 는 inline), 소스 라인 ~50줄 축소. `WM_RBUTTONUP` 은 `docs/implementation-notes.md` 의 "WM_CONTEXTMENU (not WM_RBUTTONUP)" 설계 주석에 역사적 맥락으로 단어 레벨 잔존 (상수 정의 자체는 삭제)
+
 ## [0.9.1.9] — 2026-04-19
 
 ### 수정
