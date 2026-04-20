@@ -109,11 +109,11 @@ On foreground change, lookup order is: runtime hwnd → config process name → 
 
 ### Window-relative position memory (Window mode)
 
-`config.indicator_positions_relative` stores per-process-name entries as `int[3]`: `[(int)Corner, DeltaX, DeltaY]`. On foreground change, `GetAppPositionWindow` decodes the array, validates `Corner` via `Enum.IsDefined`, obtains the current window's DWM frame via `Dwmapi.TryGetVisibleFrame`, and resolves absolute coordinates with `Overlay.ResolveRelativePosition(frame, relConfig)`. Result is clamped to the visible area.
+`config.indicator_positions_relative` stores per-process-name entries as `int[3]`: `[(int)Corner, DeltaX, DeltaY]`. `DeltaX` / `DeltaY` are **logical pixels** (96 DPI baseline), not physical pixels. On foreground change, `GetAppPositionWindow` decodes the array, validates `Corner` via `Enum.IsDefined`, obtains the current window's DWM frame via `Dwmapi.TryGetVisibleFrame`, queries the target monitor's DPI scale via `DpiHelper.GetScale(User32.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST))`, and resolves absolute coordinates with `Overlay.ResolveRelativePosition(frame, relConfig, dpiScale)`. The resolver multiplies the logical delta by the target monitor's DPI scale (via `DpiHelper.Scale` with `Math.Round`) before adding to the frame corner, so the indicator lands at the same logical-pixel offset from the window corner on every monitor regardless of DPI. Result is clamped to the visible area.
 
 This design naturally handles the "same app, multiple windows" case: a single process-name entry (e.g., `"notepad": [1, -50, 10]`) produces different absolute coordinates for each window because each window has a different rect on screen. No runtime per-hwnd cache is needed.
 
-On drag end, `Overlay.ComputeRelativeFromCurrentPosition(hwndForeground)` computes the nearest of the 4 DWM frame corners by Manhattan distance and stores the delta as the new relative offset.
+On drag end, `Overlay.ComputeRelativeFromCurrentPosition(hwndForeground)` computes the nearest of the 4 DWM frame corners by Manhattan distance in physical pixels, then divides by the foreground window's monitor DPI scale to normalize the delta into the 96 DPI logical baseline before storing. This save-time normalization plus the apply-time multiplication keeps the indicator's visual position invariant across monitors with different DPI.
 
 ### Window movement tracking (Window mode)
 
@@ -130,9 +130,9 @@ Two nullable config fields store per-mode defaults for apps without a saved posi
 
 Null fallbacks:
 - Fixed: `DefaultConfig.DefaultIndicatorOffsetX = -200, Y = 10` (top-right of work area)
-- Window: `DefaultConfig.DefaultRelativeCorner = TopRight, X = -50, Y = 10` (inside top-right of window)
+- Window: `DefaultConfig.DefaultRelativeCorner = TopRight, X = -50, Y = 10` (inside top-right of window, logical pixels at 96 DPI — the hardcoded fallback now honors its `DPI 스케일링 전 px` doc contract because `ResolveRelativePosition` scales delta to target-monitor DPI)
 
-Multi-monitor / resolution stability: offsets are stored relative to a `Corner` anchor, not as absolute pixel coordinates.
+Multi-monitor / resolution stability: offsets are stored relative to a `Corner` anchor, not as absolute pixel coordinates. Window-mode deltas are additionally DPI-normalized to 96 DPI logical pixels, so the indicator's visual position is invariant across monitors of differing DPI scale (see "Window-relative position memory" above for the save/apply math).
 
 Tray menu:
 - **"현재 위치로 설정"**: branches on current mode — Fixed calls `Overlay.ComputeAnchorFromCurrentPosition()` (work area corners), Window calls `Overlay.ComputeRelativeFromCurrentPosition(hwndForeground)` (window frame corners). Both use Manhattan distance to pick the nearest corner

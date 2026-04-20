@@ -68,6 +68,11 @@ internal static class Tray
     private const int SchtasksQueryTimeoutMs = 3000;
     private const int SchtasksCommandTimeoutMs = 5000;
 
+    // NIM_ADD 재시도 — startup 레이스 대비 (explorer 트레이 초기화 전에 task 가 먼저 기동).
+    // 1s 간격 × 30회 = 최대 30초 대기. 그 안에 explorer 가 안 떠 있으면 포기.
+    private const uint TrayAddRetryIntervalMs = 1000;
+    private const int TrayAddRetryMaxAttempts = 30;
+
     // ================================================================
     // 내부 상태
     // ================================================================
@@ -76,6 +81,12 @@ internal static class Tray
     private static IntPtr _hwndMain;
     private static SafeIconHandle? _currentIcon;
     private static NotifyIconManager? _notifyIcon;
+
+    // NIM_ADD 재시도 상태. 첫 Add 실패 시 WM_TIMER 로 폴백 → HandleTrayAddRetry 가 소비.
+    private static bool _addPending;
+    private static int _addRetryCount;
+    private static ImeState _pendingInitialState;
+    private static AppConfig? _pendingConfig;
 
     // UpdateChecker 가 발견한 새 버전 정보. null 이면 메뉴에 업데이트 항목 미표시.
     // 메인 스레드 전용 (Program.HandleUpdateFound → OnUpdateFound 경로) 이라 volatile 불필요.
@@ -88,6 +99,9 @@ internal static class Tray
     /// <summary>
     /// 트레이 아이콘 등록 (NIM_ADD + NIM_SETVERSION).
     /// config.TrayEnabled == false 이면 건너뛴다.
+    /// NIM_ADD 실패 시 WM_TIMER 로 1초 간격 재시도 — 부팅 레이스(explorer 의 트레이 초기화
+    /// 전에 scheduled task 로 기동된 경우) 대비. TaskbarCreated 브로드캐스트를 못 받는
+    /// 환경(예: 재시작 없이 느리게 준비된 explorer) 에서도 복구 가능.
     /// </summary>
     internal static void Initialize(IntPtr hwndMain, ImeState initialState, AppConfig config)
     {
@@ -103,10 +117,64 @@ internal static class Tray
         _currentIcon = TrayIcon.CreateIcon(initialState, config);
 
         _notifyIcon = new NotifyIconManager(hwndMain, AppMessages.WM_TRAY_CALLBACK, DefaultConfig.AppGuid);
-        _notifyIcon.Add(_currentIcon.DangerousGetHandle(), BuildTooltip(initialState, config));
+        bool added = _notifyIcon.Add(_currentIcon.DangerousGetHandle(), BuildTooltip(initialState, config));
 
         _initialized = true;
-        Logger.Info("Tray icon initialized");
+
+        if (!added)
+        {
+            _addPending = true;
+            _addRetryCount = 0;
+            _pendingInitialState = initialState;
+            _pendingConfig = config;
+            User32.SetTimer(hwndMain, AppMessages.TIMER_ID_TRAY_ADD_RETRY,
+                TrayAddRetryIntervalMs, IntPtr.Zero);
+            Logger.Warning("Tray icon NIM_ADD failed; retry timer scheduled");
+        }
+        else
+        {
+            Logger.Info("Tray icon initialized");
+        }
+    }
+
+    /// <summary>
+    /// WM_TIMER(TIMER_ID_TRAY_ADD_RETRY) 핸들러. 첫 NIM_ADD 가 실패한 경우에 한해
+    /// 1초 간격으로 재시도한다. 성공하거나 최대 시도 횟수에 도달하면 타이머 해제.
+    /// TaskbarCreated 브로드캐스트가 선행 도착하면 Recreate 경로에서 _addPending 을
+    /// 정리하므로 본 타이머도 자연스럽게 stop 된다.
+    /// </summary>
+    internal static void HandleAddRetryTimer()
+    {
+        if (!_addPending || _notifyIcon is null || _currentIcon is null || _pendingConfig is null)
+        {
+            StopAddRetryTimer();
+            return;
+        }
+
+        _addRetryCount++;
+        // _pendingConfig 는 Initialize 실패 경로에서 반드시 설정됨 — null 이면 위의 가드에
+        // 걸려 이 지점에 도달하지 않는다.
+        bool added = _notifyIcon.Add(_currentIcon.DangerousGetHandle(),
+            BuildTooltip(_pendingInitialState, _pendingConfig!));
+
+        if (added)
+        {
+            Logger.Info($"Tray icon NIM_ADD recovered after {_addRetryCount} retry(s)");
+            StopAddRetryTimer();
+        }
+        else if (_addRetryCount >= TrayAddRetryMaxAttempts)
+        {
+            Logger.Warning($"Tray icon NIM_ADD gave up after {_addRetryCount} retries");
+            StopAddRetryTimer();
+        }
+    }
+
+    private static void StopAddRetryTimer()
+    {
+        if (_hwndMain != IntPtr.Zero)
+            User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_TRAY_ADD_RETRY);
+        _addPending = false;
+        _pendingConfig = null;
     }
 
     /// <summary>
@@ -122,6 +190,14 @@ internal static class Tray
         // 이전 아이콘 해제 후 교체 — 소유권은 Tray.cs 측에 남는다 (NotifyIconManager 는 해제 금지).
         _currentIcon?.Dispose();
         _currentIcon = newIcon;
+
+        // Add 재시도 중이면 pending 상태도 최신화 — 재시도 성공 시 툴팁이 오래된 초기 상태로
+        // 남는 걸 방지. 아이콘 자체는 _currentIcon 참조로 이미 최신이라 별도 처리 불필요.
+        if (_addPending)
+        {
+            _pendingInitialState = state;
+            _pendingConfig = config;
+        }
     }
 
     /// <summary>
@@ -161,6 +237,10 @@ internal static class Tray
     internal static void Remove()
     {
         if (!_initialized) return;
+
+        // 재시도 타이머가 남아 있으면 먼저 정리 — Remove 후 Initialize 가 재호출되는 Recreate
+        // 경로에서 이전 retry 상태가 새 초기화에 섞이지 않도록.
+        StopAddRetryTimer();
 
         bool removed = _notifyIcon?.Remove() ?? true;
         if (!removed)
@@ -555,7 +635,7 @@ internal static class Tray
             }
             updateConfig(config with { DefaultIndicatorPositionRelative = rel });
             Logger.Info($"Default relative position saved: corner={rel.Corner}, "
-                      + $"delta=({rel.DeltaX}, {rel.DeltaY})");
+                      + $"delta=({rel.DeltaX}, {rel.DeltaY}) logical px");
         }
         else
         {
@@ -703,6 +783,11 @@ internal static class Tray
                 // 등록 안 돼 있거나 쿼리 실패 — 정상 케이스 (대부분 사용자는 startup 안 씀)
                 return;
             }
+
+            // /tr "\"path\"" 로 등록했기 때문에 Command 필드에는 양 끝에 리터럴 큰따옴표가 포함된다.
+            // Path.GetFullPath 는 " 를 잘못된 문자로 보고 ArgumentException 을 던져 PathsEqual 이
+            // 원본 문자열 비교로 폴백하므로, 비교 전 감싼 따옴표를 제거해 매 부팅마다 재등록되는 것을 막는다.
+            registeredPath = registeredPath.Trim('"');
 
             string? currentPath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
             if (string.IsNullOrEmpty(currentPath)) return;

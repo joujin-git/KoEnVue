@@ -3,6 +3,18 @@
 이 프로젝트의 주요 변경 사항을 기록합니다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/)를 따릅니다.
 
+## [Unreleased]
+
+### 수정
+
+- **창 기준 모드에서 모니터 DPI 차이에 따라 인디케이터가 시각적으로 다른 위치에 표시되던 버그** — `RelativePositionConfig.DeltaX/DeltaY` 는 `Overlay.ComputeRelativeFromCurrentPosition` 이 창 모서리 대비 현재 인디 위치의 물리 픽셀 차를 그대로 저장하고 `ResolveRelativePosition` 이 타겟 창 프레임에 또한 물리 픽셀 그대로 가산했음. `PerMonitorV2` DPI 인식 앱이라 창 프레임은 각 모니터의 물리 픽셀로 보고되는데 delta 는 저장 시점 모니터의 DPI 에 고정돼 있어, 예컨대 100% 모니터에서 저장한 `(-69, -58)` 을 150% 모니터에 적용하면 인디 크기(32→48 px) 는 커지는 반면 offset 은 그대로라 창 우엣지와의 간격이 `37 px → 21 px` 로 좁혀져 모서리에 붙은 것처럼 보이는 증상. Delta 의 저장 단위를 **논리 픽셀(96 DPI 기준)** 로 통일 — `ComputeRelativeFromCurrentPosition` 에서 `DpiHelper.GetScale(MonitorFromWindow(hwndForeground, MONITOR_DEFAULTTONEAREST))` 로 포그라운드 창의 모니터 DPI 스케일을 조회해 물리 delta 를 나눠 저장, `ResolveRelativePosition(frame, rel, dpiScale)` 은 시그니처에 `double dpiScale` 추가 후 `DpiHelper.Scale(rel.DeltaX, dpiScale)`(내부 `Math.Round`) 로 승산해 물리 픽셀 복원. 호출부 2곳(`Program.GetAppPositionWindow` + `Overlay.GetDefaultRelativePosition`) 모두 타겟 창 모니터 기준 DPI 스케일을 계산해 전달. 기존 `config.json` 에 저장된 값은 "논리 픽셀" 로 재해석됨 — 100% 모니터에서 저장한 값은 동작 불변, 非-100% 모니터에서 저장한 값은 최초 1회 `1/saveTimeDpiScale` 만큼 시각적으로 이동(의도된 재정렬). 사용자는 "기본 위치 → 현재 위치로 설정" 재실행으로 픽셀 정밀 복원 가능. 저장 로그는 `(x, y) logical px` 로 단위 명시화
+
+- **`SyncStartupPathCore` 가 매 부팅마다 schtasks 태스크를 재등록하던 버그** — `/create /tr "\"<path>\""` 로 등록한 태스크의 `<Command>` XML 필드에는 양 끝 리터럴 큰따옴표가 포함돼 저장됨. 비교 시점에 `PathsEqual` 이 `Path.GetFullPath(""D:\...exe"")` 를 시도하다 `ArgumentException`(`"` 는 경로 금지 문자) 을 만나 원본 문자열 비교로 폴백 → 따옴표 유무 차이로 "경로 변경됨" 오판 → 실제로 exe 가 같은 위치인데도 매 로그온마다 `schtasks /create /f` 가 재실행돼 백그라운드 스레드가 100~300ms 블로킹. 비교 전 `registeredPath.Trim('"')` 로 감싼 따옴표를 벗겨내 포터블 모드 경로 이동 감지 본래 의도는 보존하면서 허위 재등록을 제거
+
+- **시작 프로그램 등록 후 첫 부팅에서 트레이 아이콘이 보이지 않던 문제** — 두 가지 원인 동시 개입. (1) 스케줄된 태스크가 Explorer 의 트레이 초기화보다 먼저 기동되는 레이스가 있어 `NIM_ADD` 가 조용히 실패. (2) 앱이 `requireAdministrator` (High IL) 로 실행되는데 Explorer (Medium IL) 의 `TaskbarCreated` 브로드캐스트가 UIPI 기본 정책으로 차단당해 shell-재시작 복구 경로까지 무력화. (1) 대응으로 `NotifyIconManager.Add` 가 `bool` 을 반환하도록 변경, 실패 시 `Tray` 가 `TIMER_ID_TRAY_ADD_RETRY` (1s × 30 회, 총 30초 한계) 로 재시도. (2) 대응으로 `Program.MainImpl` 가 메인 윈도우 생성 직후 `ChangeWindowMessageFilterEx(hwndMain, _taskbarCreatedMsgId, MSGFLT_ALLOW, IntPtr.Zero)` 로 UIPI 필터 화이트리스트 등록. `OnProcessExit` 는 `Tray.Remove()` 를 `DestroyWindow(_hwndMain)` 보다 앞에 두도록 순서 조정 — `StopAddRetryTimer` 의 `KillTimer` 가 유효한 hwnd 에서 실행되도록 보장
+
+- **포그라운드 창 전환 시 `PositionUpdated` 로그가 중복으로 찍히던 현상** — `UpdateForegroundProcessCache` 가 포커스 hwnd 변경 시 `state.LastWindowFrame = default`(0,0,0,0) 로 초기화해, 다음 감지 틱의 `TrackWindowMove` 가 현재 프레임과 `default` 를 비교해 "창이 움직였다"고 오판정 → 동일 내용의 `WM_POSITION_UPDATED` 가 80ms 간격으로 연속 포스트되는 증상. 초기화 시점에 `Dwmapi.TryGetVisibleFrame` 으로 현재 프레임을 즉시 주입해 첫 비교가 안정 상태(`rectChanged=false`) 로 시작되게 수정
+
 ## [0.9.2.0] — 2026-04-20
 
 ### 수정

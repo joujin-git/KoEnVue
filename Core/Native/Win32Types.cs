@@ -322,6 +322,9 @@ internal static class Win32Constants
     public const uint DT_VCENTER         = 0x0004;
     public const uint DT_SINGLELINE      = 0x0020;
 
+    // --- ChangeWindowMessageFilterEx 액션 (UIPI 필터) ---
+    public const uint MSGFLT_ALLOW       = 1;
+
     // --- Shell_NotifyIconW ---
     public const uint NIM_ADD            = 0x00000000;
     public const uint NIM_MODIFY         = 0x00000001;

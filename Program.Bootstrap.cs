@@ -158,18 +158,20 @@ internal static partial class Program
         if (_hwndMain != IntPtr.Zero)
             User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_CAPS);
 
-        // 3. 애니메이션 + 렌더링 리소스 해제 (윈도우 파괴 전)
+        // 3. 트레이 아이콘 제거 — 내부의 StopAddRetryTimer 가 KillTimer(_hwndMain, …) 를 호출하므로
+        //    DestroyWindow 전에 실행해 죽은 hwnd 에 Win32 호출이 나가는 걸 방지.
+        //    NIM_DELETE 자체는 NIF_GUID 기반이라 hwnd 유효성과 무관하지만 타이머 정리 경로가 있음.
+        Tray.Remove();
+
+        // 4. 애니메이션 + 렌더링 리소스 해제 (윈도우 파괴 전)
         Animation.Dispose();
         Overlay.Dispose();
 
-        // 4. 오버레이 + 메인 윈도우 파괴
+        // 5. 오버레이 + 메인 윈도우 파괴
         if (_hwndOverlay != IntPtr.Zero)
             User32.DestroyWindow(_hwndOverlay);
         if (_hwndMain != IntPtr.Zero)
             User32.DestroyWindow(_hwndMain);
-
-        // 5. 트레이 아이콘 제거
-        Tray.Remove();
 
         // 6. Mutex 해제 (Dispose만 — 프로세스 종료 시 OS가 자동 해제.
         //    ReleaseMutex는 소유 스레드에서만 호출 가능하나 ProcessExit는 다른 스레드일 수 있음)

@@ -141,6 +141,14 @@ internal static partial class Program
         _taskbarCreatedMsgId = User32.RegisterWindowMessageW("TaskbarCreated");
         if (_taskbarCreatedMsgId == 0)
             Logger.Warning("RegisterWindowMessageW(TaskbarCreated) failed — Explorer-restart tray recovery disabled");
+        else if (!User32.ChangeWindowMessageFilterEx(_hwndMain, _taskbarCreatedMsgId,
+                     Win32Constants.MSGFLT_ALLOW, IntPtr.Zero))
+        {
+            // requireAdministrator(High IL) 앱은 Medium IL 인 explorer 의 TaskbarCreated
+            // 브로드캐스트를 UIPI 로 차단당함. 필터 화이트리스트에 실패하면 shell 재시작 복구도
+            // 무력화되고, 첫 NIM_ADD 가 레이스로 실패한 케이스(ONLOGON 등)에서 복구 불가.
+            Logger.Warning($"ChangeWindowMessageFilterEx(TaskbarCreated) failed: error={Marshal.GetLastPInvokeError()}");
+        }
 
         // 9. 오버레이 윈도우 생성
         Logger.Debug("Creating overlay window");
@@ -270,6 +278,8 @@ internal static partial class Program
             case Win32Constants.WM_TIMER:
                 if ((nuint)(nint)wParam == AppMessages.TIMER_ID_CAPS)
                     HandleCapsLockTimer();
+                else if ((nuint)(nint)wParam == AppMessages.TIMER_ID_TRAY_ADD_RETRY)
+                    Tray.HandleAddRetryTimer();
                 else
                     HandleTimer(wParam);
                 return IntPtr.Zero;
@@ -467,7 +477,7 @@ internal static partial class Program
                     _config = _config with { IndicatorPositionsRelative = positions };
                     Settings.Save(_config);
                     Logger.Debug($"Saved relative position for {_currentProcessName}: "
-                        + $"corner={rel.Corner}, delta=({rel.DeltaX}, {rel.DeltaY})");
+                        + $"corner={rel.Corner}, delta=({rel.DeltaX}, {rel.DeltaY}) logical px");
                 }
             }
         }
@@ -549,7 +559,10 @@ internal static partial class Program
                 DeltaX = rel[1],
                 DeltaY = rel[2],
             };
-            var (x, y) = Overlay.ResolveRelativePosition(frame, relConfig);
+            // Delta 는 논리 px — 타겟 창의 모니터 DPI 스케일로 승산해 물리 px 변환 후 적용.
+            double dpiScale = DpiHelper.GetScale(
+                User32.MonitorFromWindow(_lastForegroundHwnd, Win32Constants.MONITOR_DEFAULTTONEAREST));
+            var (x, y) = Overlay.ResolveRelativePosition(frame, relConfig, dpiScale);
             return ClampToVisibleArea(x, y);
         }
         // 2. 기본 상대 위치
@@ -959,7 +972,13 @@ internal static partial class Program
         bool leavingSystemInput = DefaultConfig.IsSystemInputProcess(state.LastForegroundProcessName);
         state.LastForegroundProcessName = WindowProcessInfo.GetProcessName(hwndForeground);
         state.LastSystemInputFrame = default;
-        state.LastWindowFrame = default;
+        // LastWindowFrame 을 default(all-zero) 로 리셋하면 다음 틱의 TrackWindowMove 가
+        // 현재 rect 와 0,0,0,0 을 비교해 "창이 이동했다"고 오판정 → 불필요한 hide/show
+        // 사이클 + PositionUpdated 로그 중복이 발생. 현재 프레임을 즉시 주입해 첫 비교가
+        // 안정 상태(rectChanged=false)로 시작되게 한다.
+        state.LastWindowFrame = Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT frame)
+            ? frame
+            : default;
         state.WindowMoving = false;
         return leavingSystemInput;
     }

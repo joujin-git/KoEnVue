@@ -224,6 +224,16 @@ internal static partial class User32
     [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
     internal static partial uint RegisterWindowMessageW(string lpString);
 
+    // ChangeWindowMessageFilterEx: UIPI(User Interface Privilege Isolation) 메시지 필터 수정.
+    // requireAdministrator 로 High IL 에서 실행되는 앱은 Medium IL 인 explorer 의
+    // TaskbarCreated 브로드캐스트를 UIPI 기본 정책으로 차단당해 수신 못 함.
+    // 본 API 로 특정 메시지를 화이트리스트에 올려 낮은 IL → 높은 IL 전달을 허용한다.
+    // pChangeFilterStruct 은 optional (IntPtr.Zero 로 전달).
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool ChangeWindowMessageFilterEx(IntPtr hwnd, uint message,
+        uint action, IntPtr pChangeFilterStruct);
+
     // === 윈도우 텍스트 ===
 
     [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]

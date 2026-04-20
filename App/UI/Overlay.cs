@@ -326,6 +326,10 @@ internal static class Overlay
     /// <summary>
     /// 현재 인디 위치에서 포그라운드 창의 가장 가까운 모서리를 찾아
     /// RelativePositionConfig로 환산. 트레이 "기본 위치 → 현재 위치로 설정"(창 기준 모드)에서 호출.
+    /// <para>
+    /// Delta 는 <b>논리 픽셀</b>(96 DPI 기준) 로 저장된다. 서로 다른 DPI 모니터 간 이동 시에도
+    /// 창 모서리 대비 시각적 상대 위치가 보존되도록, 저장 시점 모니터의 DPI 스케일로 나눠 정규화한다.
+    /// </para>
     /// 인디가 한 번도 표시된 적이 없거나 창 rect를 얻을 수 없으면 null.
     /// </summary>
     public static RelativePositionConfig? ComputeRelativeFromCurrentPosition(IntPtr hwndForeground)
@@ -355,26 +359,37 @@ internal static class Overlay
         Consider(Corner.BottomLeft, frame.Left, frame.Bottom);
         Consider(Corner.BottomRight, frame.Right, frame.Bottom);
 
+        // 물리 px → 논리 px 변환. 창이 걸친 모니터의 DPI 스케일로 나눈다.
+        // GetScale 이 실패해도 1.0 을 반환하므로 안전.
+        double dpiScale = DpiHelper.GetScale(
+            User32.MonitorFromWindow(hwndForeground, Win32Constants.MONITOR_DEFAULTTONEAREST));
         return new RelativePositionConfig
         {
             Corner = best.corner,
-            DeltaX = best.dx,
-            DeltaY = best.dy,
+            DeltaX = (int)Math.Round(best.dx / dpiScale),
+            DeltaY = (int)Math.Round(best.dy / dpiScale),
         };
     }
 
     /// <summary>
     /// RelativePositionConfig + 창 RECT → 절대 화면 좌표로 변환.
     /// ResolveAnchor의 창 기준 버전.
+    /// <para>
+    /// <paramref name="rel"/>.DeltaX/Y 는 논리 px 로 해석되며, 타겟 창의 모니터 DPI 스케일로
+    /// 승산해 물리 px 로 변환 후 창 프레임 모서리에 가산한다. 이를 통해 서로 다른 DPI 모니터에서도
+    /// 창 모서리 대비 시각적 상대 위치가 일정하게 유지된다.
+    /// </para>
     /// </summary>
-    public static (int x, int y) ResolveRelativePosition(RECT windowFrame, RelativePositionConfig rel)
+    public static (int x, int y) ResolveRelativePosition(RECT windowFrame, RelativePositionConfig rel, double dpiScale)
     {
+        int physicalDx = DpiHelper.Scale(rel.DeltaX, dpiScale);
+        int physicalDy = DpiHelper.Scale(rel.DeltaY, dpiScale);
         int x = rel.Corner is Corner.TopLeft or Corner.BottomLeft
-            ? windowFrame.Left + rel.DeltaX
-            : windowFrame.Right + rel.DeltaX;
+            ? windowFrame.Left + physicalDx
+            : windowFrame.Right + physicalDx;
         int y = rel.Corner is Corner.TopLeft or Corner.TopRight
-            ? windowFrame.Top + rel.DeltaY
-            : windowFrame.Bottom + rel.DeltaY;
+            ? windowFrame.Top + physicalDy
+            : windowFrame.Bottom + physicalDy;
         return (x, y);
     }
 
@@ -399,7 +414,9 @@ internal static class Overlay
             DeltaX = DefaultConfig.DefaultRelativeOffsetX,
             DeltaY = DefaultConfig.DefaultRelativeOffsetY,
         };
-        return ResolveRelativePosition(frame, anchor);
+        double dpiScale = DpiHelper.GetScale(
+            User32.MonitorFromWindow(hwndForeground, Win32Constants.MONITOR_DEFAULTTONEAREST));
+        return ResolveRelativePosition(frame, anchor, dpiScale);
     }
 
     // ================================================================

@@ -64,12 +64,13 @@ internal static class AppMessages
 
     // --- Timer IDs (WM_TIMER wParam) ---
 
-    public const nuint TIMER_ID_FADE      = 1;  // ~16ms, 페이드 애니메이션
-    public const nuint TIMER_ID_HOLD      = 2;  // one-shot, 유지 시간
-    public const nuint TIMER_ID_HIGHLIGHT = 3;  // ~16ms, 강조 스케일
-    public const nuint TIMER_ID_TOPMOST   = 4;  // 5000ms, TOPMOST 재적용
-    public const nuint TIMER_ID_SLIDE     = 5;  // ~16ms, 슬라이드 위치 보간
-    public const nuint TIMER_ID_CAPS      = 6;  // 200ms, CAPS LOCK 토글 폴링 (메인 스레드)
+    public const nuint TIMER_ID_FADE          = 1;  // ~16ms, 페이드 애니메이션
+    public const nuint TIMER_ID_HOLD          = 2;  // one-shot, 유지 시간
+    public const nuint TIMER_ID_HIGHLIGHT     = 3;  // ~16ms, 강조 스케일
+    public const nuint TIMER_ID_TOPMOST       = 4;  // 5000ms, TOPMOST 재적용
+    public const nuint TIMER_ID_SLIDE         = 5;  // ~16ms, 슬라이드 위치 보간
+    public const nuint TIMER_ID_CAPS          = 6;  // 200ms, CAPS LOCK 토글 폴링 (메인 스레드)
+    public const nuint TIMER_ID_TRAY_ADD_RETRY = 7; // 1000ms, NIM_ADD 재시도 (부팅 레이스 복구)
 
     // --- WM_USER 기반 ---
 

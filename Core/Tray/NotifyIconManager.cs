@@ -38,7 +38,9 @@ internal sealed class NotifyIconManager
     /// NOTIFYICON_VERSION_4 트레이 프로토콜을 활성화한다.
     /// hIcon 은 호출자 소유이며 본 클래스는 해제하지 않는다.
     /// </summary>
-    public unsafe void Add(IntPtr hIcon, string? tip)
+    /// <returns>NIM_ADD 성공 여부. 실패 시 호출자가 재시도를 결정한다
+    /// (boot 레이스: explorer 의 트레이 초기화 전에 scheduled task 가 먼저 기동된 경우 등).</returns>
+    public unsafe bool Add(IntPtr hIcon, string? tip)
     {
         NOTIFYICONDATAW nid = default;
         nid.cbSize = (uint)sizeof(NOTIFYICONDATAW);
@@ -54,7 +56,7 @@ internal sealed class NotifyIconManager
         if (!Shell32.Shell_NotifyIconW(Win32Constants.NIM_ADD, ref nid))
         {
             Logger.Warning("Shell_NotifyIconW NIM_ADD failed");
-            return;
+            return false;
         }
 
         // NOTIFYICON_VERSION_4 활성화 — WM_CONTEXTMENU 전달 + NIF_SHOWTIP 요구 사항의 전제.
@@ -63,6 +65,7 @@ internal sealed class NotifyIconManager
             Logger.Warning("Shell_NotifyIconW NIM_SETVERSION failed");
 
         _added = true;
+        return true;
     }
 
     /// <summary>
