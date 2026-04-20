@@ -537,7 +537,7 @@ Parsing uses `double.TryParse` + `CultureInfo.InvariantCulture`, so `"2.3"` work
 
 **Validation failure handling**: `TryCommit` shows a MessageBox, calls `ScrollFieldIntoView` to bring the offending field into view, refocuses the control, and for EDITs selects all text via `EM_SETSEL`.
 
-**`controlColW` dynamic cap**: capped to `innerContentW - labelColW - colGap` so input boxes never encroach on the vertical scrollbar reserve area — a fixed `controlColW` would get clipped under the scrollbar at the default dialog width.
+**`controlColW` dynamic cap**: capped to `innerContentW - labelColW - colGap` so input boxes never encroach on the vertical scrollbar reserve area — a fixed `controlColW` would get clipped under the scrollbar at the default dialog width. The cap 결과는 `Math.Max(1, ...)` 로 한 번 더 감싸 최소 1px 을 보장한다 — 고배율 DPI + 매우 좁은 다이얼로그 조합에서 우변이 음수가 되면 컨트롤 생성 시 GDI 가 혼란 상태에 빠질 수 있기 때문이다.
 
 **Excludes**: fields already toggleable from the tray menu (opacity, indicator_scale, default_indicator_position, snap_to_windows, animation_enabled, change_highlight, indicator_positions, tray_enabled) and "시작 프로그램 등록" (schtasks 기반 — config 필드 아님), complex collection fields (app_profiles, app_filter_list, system_hide_classes, system_hide_processes), and internal-only fields (overlay_class_name).
 

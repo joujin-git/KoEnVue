@@ -89,6 +89,17 @@ A. 트레이 → **상세 설정**에서 6개 테마(`custom` / `minimal` / `viv
 **Q. 설정을 직접 편집하고 싶어요.**
 A. exe와 같은 폴더의 `config.json`을 텍스트 에디터로 열어 수정 후 저장하면 즉시 반영됩니다(앱 재시작 불필요).
 
+일부 고급 옵션은 **상세 설정 대화상자에 나오지 않고 `config.json` 직접 편집으로만 조작**할 수 있습니다.
+
+| 키 | 설명 | 예시 |
+|----|------|------|
+| `tray_enabled` | 트레이 아이콘 자체 켜고 끔. **OFF 로 두면 우클릭 메뉴가 사라지므로 이후 설정 변경은 `config.json` 재편집 또는 앱 재시작으로만 가능** | `false` |
+| `system_hide_classes_user` | 기본 숨김 목록(바탕화면, 트레이 등) 외에 인디케이터를 숨기고 싶은 **윈도우 클래스명** 추가 목록 | `["MyAppWindow"]` |
+| `system_hide_processes_user` | 같은 용도의 **프로세스명** 추가 목록 (확장자 제외, 대소문자 무관) | `["MyTool"]` |
+| `app_filter_mode` + `app_filter_list` | 특정 앱에서만 인디케이터 표시/숨김. `"blacklist"` 는 목록 앱에서 숨김, `"whitelist"` 는 목록 앱에서만 표시 | `"blacklist"` + `["notepad"]` |
+| `app_profiles` | 앱별 프로필 맵 (색상/크기 오버라이드). Phase 06 에서 전용 UI 예정 | `{}` |
+| `advanced.overlay_class_name` | 오버레이 윈도우 클래스명 (내부 디버깅용). 변경 권장하지 않음 | `"KoEnVueOverlay"` |
+
 **Q. 완전히 삭제하려면?**
 A. 트레이 → **시작 프로그램 등록** 해제 → **종료** → exe가 들어 있는 폴더 통째로 삭제. 설정과 로그도 같은 폴더에 있으므로 다른 곳에 흔적이 남지 않습니다.
 

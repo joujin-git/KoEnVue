@@ -23,6 +23,14 @@ namespace KoEnVue.Core.Windowing;
 internal sealed class LayeredOverlayBase : IDisposable
 {
     // ================================================================
+    // 상수
+    // ================================================================
+
+    // DPI 스케일 비교용 허용 오차. 부동소수 double 이므로 exact 비교 대신
+    // |a-b| < tolerance 로 "사실상 같은 스케일" 을 판정한다.
+    private const double DpiScaleTolerance = 0.001;
+
+    // ================================================================
     // GDI 리소스 상태
     // ================================================================
 
@@ -519,7 +527,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         (uint dpiX, uint dpiY) = DpiHelper.GetRawDpi(hMonitor);
         double dpiScale = dpiX / (double)DpiHelper.BASE_DPI;
 
-        if (Math.Abs(dpiScale - _currentDpiScale) < 0.001) return;
+        if (Math.Abs(dpiScale - _currentDpiScale) < DpiScaleTolerance) return;
 
         // DPI 캐시 리셋 + 리소스 재생성
         _fixedLabelWidth = 0;
@@ -622,7 +630,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         (uint dpiX, uint dpiY) = DpiHelper.GetRawDpi(hMonitor);
         double dpiScale = dpiX / (double)DpiHelper.BASE_DPI;
 
-        if (Math.Abs(dpiScale - _currentDpiScale) > 0.001)
+        if (Math.Abs(dpiScale - _currentDpiScale) > DpiScaleTolerance)
         {
             _fixedLabelWidth = 0;
             _currentWidth = 0;
@@ -661,7 +669,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         if (style.FontFamily == _cachedFontFamily
             && scaledFontSize == _cachedFontSize
             && style.IsBold == _cachedFontIsBold
-            && Math.Abs(_currentDpiScale - _cachedFontDpiScale) < 0.001)
+            && Math.Abs(_currentDpiScale - _cachedFontDpiScale) < DpiScaleTolerance)
             return;
 
         // MulDiv로 정수 정밀도를 유지하며 DPI 곱셈 — 단순 round 대체 금지 (라벨 폭 1px 회귀 위험).
@@ -767,7 +775,7 @@ internal sealed class LayeredOverlayBase : IDisposable
             && _cachedLabelMeasureKey == style.MeasureLabels
             && _cachedLabelPaddingLogicalPx == style.PaddingXLogicalPx
             && _cachedLabelMinWidthLogicalPx == style.LabelWidthLogicalPx
-            && Math.Abs(_cachedLabelDpiScale - _currentDpiScale) < 0.001
+            && Math.Abs(_cachedLabelDpiScale - _currentDpiScale) < DpiScaleTolerance
             && _cachedLabelFontFamily == _cachedFontFamily
             && _cachedLabelFontSize == _cachedFontSize
             && _cachedLabelFontIsBold == _cachedFontIsBold)

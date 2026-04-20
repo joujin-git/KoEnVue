@@ -3,7 +3,7 @@
 이 프로젝트의 주요 변경 사항을 기록합니다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/)를 따릅니다.
 
-## [Unreleased]
+## [0.9.2.3] — 2026-04-20
 
 ### 수정
 
@@ -18,6 +18,8 @@
 - **`NotifyIconManager.UpdateIcon` · `UpdateTooltip` · `UpdateIconAndTooltip` 의 `Shell_NotifyIconW(NIM_MODIFY)` 반환값 검증** — `Add` (NIM_ADD) 에만 반환값 검사 + 재시도 타이머가 걸려 있었고 후속 업데이트(NIM_MODIFY) 3곳은 반환값을 버리던 구조. Explorer 의 tray shell 이 재시작 중이거나 상태가 불안정할 때 NIM_MODIFY 가 조용히 실패해 표시된 아이콘/툴팁이 업데이트되지 않는 상황을 진단 불가능하게 만들었음. 3메서드 모두 `if (!Shell_NotifyIconW(...)) Logger.Debug(...)` 로 가드 — 실패 시 진단 정보 확보(디버그 레벨 — 정상 상황에서도 드물게 발생 가능한 경합이라 Warning 까지 승격하지 않음). 재시도 로직은 NIM_ADD 경로에 이미 존재하므로 NIM_MODIFY 는 로깅만으로 충분
 - **`Tray.cs` 의 `runningSuffix` 하드코딩 → `I18n.RunningSuffix` 센트럴라이제이션** — 위치 기록 정리 다이얼로그의 "실행 중" 접미사가 `I18n.IsKorean ? " (실행 중)" : " (running)"` 인라인 삼항 조건 형태로 호출 지점에 남아 있었음. v0.9.2.1 의 I18n 센트럴라이제이션 패스에서 2건을 정리했으나 이 1건이 누락. `I18n.cs` 의 "트레이 메시지 박스" 섹션에 `RunningSuffix` 프로퍼티 추가 후 호출부를 `I18n.RunningSuffix` 로 교체. 사용자 체감 동일, I18n 경계 일관성 완전 복원
 - **`Logger.RollIfExceeded` 의 불필요한 `File.Exists` 검사 제거** — 기존 코드 `if (File.Exists(oldPath)) File.Delete(oldPath);` 는 `File.Delete` 가 이미 존재하지 않는 파일에 대해 no-op 로 처리되는 .NET 동작과 이중 검사가 되어 race window 만 늘리는 구조. `File.Delete(oldPath)` 한 줄로 축약 — TOCTOU 마진 제거, 동작 불변
+- **`LayeredOverlayBase` DPI 스케일 비교 매직 넘버 `0.001` 4건 → `DpiScaleTolerance` 상수 추출** — DPI 스케일 부동소수 비교 tolerance 가 `UpdateScaledSize` · `HandleDpiChanged` · `EnsureFont` · `EnsureLabels` 4곳에 동일한 리터럴 `0.001` 로 흩어져 있어 향후 tolerance 조정 시 한 곳을 빠뜨릴 위험과 의도(= DPI 스케일 1‰ 미만 차이는 동일 취급) 의 자기-문서화 부족. 클래스 상단에 `private const double DpiScaleTolerance = 0.001;` 신설하고 4곳 일괄 교체. P3(매직 넘버 금지) 정합성 복원, NativeAOT 컴파일러가 const 를 인라인 폴딩하므로 publish exe 사이즈 변화 0 bytes
+- **`docs/architecture.md` · `docs/KoEnVue_PRD.md` · `docs/User_Guide.md` · `docs/implementation-notes.md` 문서 현행화** — (1) `architecture.md` §3 Reusable Core modules 표에 v0.9.2.2 신규 추가된 `Core/Native/Wtsapi32.cs` 행 누락 → WTS Session Notification (`WTSRegisterSessionNotification` / `WTSUnRegisterSessionNotification` + `WM_WTSSESSION_CHANGE`) 항목 추가. (2) `KoEnVue_PRD.md` §4.7 상세 설정 대화상자 "제외 항목" 문구를 3분류(트레이 메뉴 직접 조작 / `config.json` 직접 편집 전용 컬렉션 / `config.json` 직접 편집 전용 hidden 옵션) 로 재구성. `tray_enabled` · `app_profiles` · `app_filter_mode` + `app_filter_list` · `system_hide_classes_user` · `system_hide_processes_user` · `advanced.overlay_class_name` 6개 키가 어느 분류인지 명시화하고 컬렉션 필드군은 향후 전용 UI 도입 예정 표기 (`app_profiles` 만 Phase 06 근거 있음). (3) `User_Guide.md` 자주 묻는 질문 "설정을 직접 편집하고 싶어요" 답변에 `config.json` 직접 편집 전용 키 6종을 표 형태(키 / 설명 / 예시) 로 추가해 사용자가 어떤 옵션이 어디에 있는지 즉시 분간 가능. (4) `implementation-notes.md` 의 `controlColW dynamic cap` 설명에 `Math.Max(1, ...)` 음수 진입 방어(line 17 의 SettingsDialog 수정과 짝) 동기·근거 보강
 
 ### 제거
 

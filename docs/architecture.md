@@ -70,6 +70,7 @@ Every file in `Core/` is reusable in another Windows desktop project; every file
 | Module | Purpose | Public surface |
 |--------|---------|----------------|
 | [Core/Native/*](../Core/Native/) | Raw P/Invoke surface. `Win32Types.cs` centralizes every struct + the `Win32Constants` class (SM/WS/DWMWA/etc.). `SafeGdiHandles.cs` hosts `SafeFontHandle`, `SafeIconHandle`, etc. `WinHttp.cs` hosts `SafeWinHttpHandle : SafeHandleZeroOrMinusOneIsInvalid` | `[LibraryImport]` only, no `[DllImport]` |
+| [Core/Native/Wtsapi32.cs](../Core/Native/Wtsapi32.cs) | WTS session notification for polling-free lock/unlock/logoff detection via `WM_WTSSESSION_CHANGE` — backbone of `HideOnLockScreen` | `WTSRegisterSessionNotification`, `WTSUnRegisterSessionNotification` |
 | [Core/Color/ColorHelper](../Core/Color/ColorHelper.cs) | Hex ↔ COLORREF ↔ RGB conversion. Malformed hex returns 0 / `(0,0,0)` instead of throwing, so a bad `config.json` doesn't leak GDI handles on the render hot path | `TryNormalizeHex`, `HexToColorRef`, `HexToRgb`, `ColorRefToRgb`, `RgbToHex` |
 | [Core/Dpi/DpiHelper](../Core/Dpi/DpiHelper.cs) | Per-monitor DPI queries. `BASE_DPI = 96` is inlined as a `const int` so the module has no `Config` dependency | `GetScale`, `GetWorkArea`, `GetRawDpi`, `GetMonitorFromPoint` |
 | [Core/Http/HttpClientLite](../Core/Http/HttpClientLite.cs) | Synchronous HTTPS GET wrapper backed by WinHTTP. NativeAOT publish impact ~40 KB (vs ~2.5 MB for `System.Net.Http.HttpClient`). Response body cap 256 KB, all failure paths return `null` | `GetString(userAgent, host, path, extraHeaders?, timeoutMs = 10_000) → string?` |
@@ -91,7 +92,7 @@ Every file in `Core/` is reusable in another Windows desktop project; every file
 | Module | Purpose |
 |--------|---------|
 | [App/Models/](../App/Models/) | `AppConfig` immutable record + all enums (`DisplayMode`, `DetectionMethod`, `ImeState`, `FontWeight`, `Theme`, `NonKoreanImeMode`, `AppProfileMatch`, `AppFilterMode`, `TrayClickAction`, `Corner`, `PositionMode`, `DragModifier`) |
-| [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) | Magic-number constants: animation timings, pixel offsets, `DetectionBackoff{Step,Max}Ms`, `AppVersion = "0.9.2.2"`, `UpdateRepoOwner/Name`, system-input process list |
+| [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) | Magic-number constants: animation timings, pixel offsets, `DetectionBackoff{Step,Max}Ms`, `AppVersion = "0.9.2.3"`, `UpdateRepoOwner/Name`, system-input process list |
 | [App/Config/Settings.cs](../App/Config/Settings.cs) | Static facade delegating to `AppSettingsManager : JsonSettingsManager<AppConfig>`. Handles `Load`/`Save`/`CheckReload`/`ResolveForApp` (per-app profile merge) |
 | [App/Config/ThemePresets.cs](../App/Config/ThemePresets.cs) | 6 theme presets: `Custom`, `Minimal`, `Vivid`, `Pastel`, `Dark`, `System` (Windows accent color). 프리셋 전환 시 커스텀 색상 자동 백업/복원 (`custom_backup_*` 필드) |
 | [App/Detector/ImeStatus.cs](../App/Detector/ImeStatus.cs) | `WM_IME_CONTROL` + `GetKeyboardLayout` IME state detection + `EVENT_OBJECT_IME_CHANGE` WinEvent hook |
