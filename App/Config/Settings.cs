@@ -100,7 +100,8 @@ internal static class Settings
     // ================================================================
 
     /// <summary>
-    /// 모든 수치 설정값을 유효 범위로 클램핑. 에러 아닌 조용한 보정.
+    /// 모든 수치 설정값을 유효 범위로 클램핑하고 enum 필드는 정의된 멤버인지 검증해 기본값으로
+    /// 폴백한다. 에러 아닌 조용한 보정.
     /// </summary>
     public static AppConfig Validate(AppConfig config)
     {
@@ -138,8 +139,36 @@ internal static class Settings
 
             // 시스템
             LogMaxSizeMb = Math.Clamp(config.LogMaxSizeMb, 1, 100),
+
+            // Enum — config.json 수작업 편집이나 구버전 스키마로 정의되지 않은 정수가 들어오면
+            // 기본값으로 폴백. STJ 소스 생성기가 integer enum 을 (EnumType)raw 캐스트로
+            // 역직렬화하므로 BCL 레벨 범위 체크가 부재한다.
+            DisplayMode = EnumOrDefault(config.DisplayMode, DisplayMode.Always),
+            FontWeight = EnumOrDefault(config.FontWeight, FontWeight.Bold),
+            Theme = EnumOrDefault(config.Theme, Theme.Custom),
+            DetectionMethod = EnumOrDefault(config.DetectionMethod, DetectionMethod.Auto),
+            NonKoreanIme = EnumOrDefault(config.NonKoreanIme, NonKoreanImeMode.Hide),
+            AppProfileMatch = EnumOrDefault(config.AppProfileMatch, AppProfileMatch.Process),
+            AppFilterMode = EnumOrDefault(config.AppFilterMode, AppFilterMode.Blacklist),
+            TrayClickAction = EnumOrDefault(config.TrayClickAction, TrayClickAction.Toggle),
+            LogLevel = EnumOrDefault(config.LogLevel, LogLevel.Info),
+            PositionMode = EnumOrDefault(config.PositionMode, PositionMode.Window),
+            DragModifier = EnumOrDefault(config.DragModifier, DragModifier.None),
+
+            // 중첩 record 의 Corner — null 이면 건너뜀.
+            DefaultIndicatorPosition = ValidateDefaultPosition(config.DefaultIndicatorPosition),
+            DefaultIndicatorPositionRelative = ValidateRelativePosition(config.DefaultIndicatorPositionRelative),
         };
     }
+
+    private static T EnumOrDefault<T>(T value, T fallback) where T : struct, Enum
+        => Enum.IsDefined(value) ? value : fallback;
+
+    private static DefaultPositionConfig? ValidateDefaultPosition(DefaultPositionConfig? pos)
+        => pos is null ? null : pos with { Corner = EnumOrDefault(pos.Corner, Corner.TopRight) };
+
+    private static RelativePositionConfig? ValidateRelativePosition(RelativePositionConfig? pos)
+        => pos is null ? null : pos with { Corner = EnumOrDefault(pos.Corner, Corner.TopRight) };
 
     // ================================================================
     // Migrate — config_version 체인 (앱 프로필 머지 등에서 직접 호출됨)

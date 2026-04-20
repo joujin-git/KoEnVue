@@ -138,6 +138,22 @@ internal static class I18n
             : "Value must be between 1.0 and 5.0.";
 
     // ================================================================
+    // 트레이 메시지 박스
+    // ================================================================
+
+    /// <summary>
+    /// 현재 위치 저장 시 오버레이 좌표를 얻지 못한 경우 노출되는 에러 메시지.
+    /// </summary>
+    public static string TrayPositionUnavailable =>
+        _isKorean
+            ? "인디케이터 위치를 확인할 수 없습니다. 잠시 후 다시 시도하세요."
+            : "Cannot determine current indicator position. Please try again shortly.";
+
+    /// <summary>위치 기록 정리 시 저장된 항목이 없을 때 노출되는 안내 메시지.</summary>
+    public static string TrayPositionHistoryEmpty =>
+        _isKorean ? "저장된 위치 기록이 없습니다." : "No saved position history.";
+
+    // ================================================================
     // 트레이 툴팁
     // ================================================================
 

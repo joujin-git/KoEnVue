@@ -114,7 +114,7 @@ internal static class DefaultConfig
     /// 둘 중 하나만 올리면 바이너리 메타데이터와 런타임 비교 값이 불일치한다.
     /// </para>
     /// </summary>
-    public const string AppVersion = "0.9.2.0";
+    public const string AppVersion = "0.9.2.1";
 
     /// <summary>UpdateChecker 가 조회할 GitHub 레포 owner.</summary>
     public const string UpdateRepoOwner = "joujin-git";
@@ -172,10 +172,5 @@ internal static class DefaultConfig
 
     /// <summary>SendMessageTimeout 타임아웃 (ms)</summary>
     public const uint ImeMessageTimeoutMs = 100;
-
-    // === TOPMOST 재적용 ===
-
-    /// <summary>TOPMOST 재적용 간격 (다른 TOPMOST 앱과 충돌 시)</summary>
-    public const int ForceTopmostIntervalMs = 5000;
 
 }

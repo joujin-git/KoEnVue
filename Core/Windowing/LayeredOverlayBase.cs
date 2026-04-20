@@ -234,17 +234,28 @@ internal sealed class LayeredOverlayBase : IDisposable
             new Span<byte>((void*)_ppvBits, w * h * 4).Clear();
         }
 
-        // 폰트 선택 → 콜백 → 폰트 복원
+        // 폰트 선택 → 콜백 → 폰트 복원.
+        // 콜백은 외부(파사드)에서 주입되며 예외 전파 경로가 완전히 검증되지 않으므로
+        // try/finally 로 SelectObject 복원을 보장한다. 복원을 놓치면 _memDC 에 SafeFontHandle
+        // 의 HFONT 가 영구 선택된 상태가 되어, 다음 EnsureFont 에서 _currentFont.Dispose()
+        // 가 GDI 리소스를 삭제해도 DC 안의 selected object 가 stale GDI 핸들로 남는다.
         IntPtr oldFont = IntPtr.Zero;
         if (_currentFont is not null)
             oldFont = Gdi32.SelectObject(_memDC, _currentFont.DangerousGetHandle());
 
-        OverlayMetrics metrics = BuildMetrics(style, w, h);
-        _renderToDib(_memDC, style, metrics);
+        try
+        {
+            OverlayMetrics metrics = BuildMetrics(style, w, h);
+            _renderToDib(_memDC, style, metrics);
+        }
+        finally
+        {
+            if (oldFont != IntPtr.Zero)
+                Gdi32.SelectObject(_memDC, oldFont);
+        }
 
-        if (oldFont != IntPtr.Zero)
-            Gdi32.SelectObject(_memDC, oldFont);
-
+        // 콜백 예외 시 아래는 실행되지 않아 _lastRenderedStyle 캐시가 갱신되지 않는다.
+        // → 다음 Render 호출이 flip-flop 가드를 타지 않고 재시도 가능.
         ApplyPremultipliedAlpha(w, h);
 
         _lastRenderedStyle = style;
@@ -534,15 +545,21 @@ internal sealed class LayeredOverlayBase : IDisposable
             new Span<byte>((void*)_ppvBits, w * h * 4).Clear();
         }
 
+        // PaintDib 과 동일 이유로 SelectObject 복원을 finally 로 보장 (콜백 예외 전파 경로 대비).
         IntPtr oldFont = IntPtr.Zero;
         if (_currentFont is not null)
             oldFont = Gdi32.SelectObject(_memDC, _currentFont.DangerousGetHandle());
 
-        OverlayMetrics metrics = BuildMetrics(style, w, h);
-        _renderToDib(_memDC, style, metrics);
-
-        if (oldFont != IntPtr.Zero)
-            Gdi32.SelectObject(_memDC, oldFont);
+        try
+        {
+            OverlayMetrics metrics = BuildMetrics(style, w, h);
+            _renderToDib(_memDC, style, metrics);
+        }
+        finally
+        {
+            if (oldFont != IntPtr.Zero)
+                Gdi32.SelectObject(_memDC, oldFont);
+        }
 
         ApplyPremultipliedAlpha(w, h);
         _lastRenderedStyle = style;

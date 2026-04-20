@@ -228,7 +228,7 @@ Timer IDs (injected via `AnimationTimerIds` record so Core stays ID-agnostic):
 | `Fade` | Fade-in / fade-out frame tick | `DefaultConfig.AnimationFrameMs = 16` (~60 fps) |
 | `Hold` | Holding → next phase. OnEvent: FadingOut → Hidden. Always: FadeToIdle (→ IdleOpacity) | OnEvent: `config.EventDisplayDurationMs`, Always: `config.AlwaysIdleTimeoutMs` |
 | `Highlight` | IME-change zoom (1.3× → 1.0×) | `config.HighlightDurationMs` |
-| `Topmost` | Periodic `ForceTopmost` re-assert | `DefaultConfig.ForceTopmostIntervalMs = 5000` |
+| `Topmost` | Periodic `ForceTopmost` re-assert | `config.Advanced.ForceTopmostIntervalMs` (default 5000) |
 | `Slide` | Ease-out cubic position interpolation | `config.SlideSpeedMs` |
 
 ### NonKoreanImeMode Dim
