@@ -104,7 +104,7 @@ Both have single-line try bodies so wide catch poses no masking risk.
 `JsonSettingsManager.Load`'s outer catch and all four `Tray.cs` schtasks-related catches (`IsStartupRegistered` had a *bare* catch violating rule 1, `ToggleStartupRegistration`, `SyncStartupPathCore`) were narrowed to:
 
 - **`Load` outer catch**: `IOException or UnauthorizedAccessException or JsonException or NotSupportedException`
-- **schtasks catches**: `Win32Exception or InvalidOperationException or PlatformNotSupportedException or FileNotFoundException`
+- **schtasks catches**: `Win32Exception or InvalidOperationException or PlatformNotSupportedException or FileNotFoundException`. `ToggleStartupRegistration` and `SyncStartupPathCore` additionally include `IOException or UnauthorizedAccessException` because the XML-based registration path writes a temp file (`%TEMP%\koenvue-task-{pid}.xml`) before handing it to `schtasks /xml`.
 
 Logic bugs in pipeline hooks (`Migrate`/`Validate`/`ApplyTheme`) and in path normalization helpers now propagate instead of being absorbed.
 

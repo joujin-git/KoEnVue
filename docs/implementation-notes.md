@@ -428,16 +428,18 @@ Exclusively read from and written to `AppContext.BaseDirectory` (the exe's own f
 
 Handled in [Program.cs](../Program.cs) (not `Tray.cs`) because it needs `_indicatorVisible` access for the tray click-action toggle.
 
-### Startup task path auto-sync
+### Startup task registration & path/delay auto-sync
+
+Registration uses `schtasks /create /xml` with an embedded `<LogonTrigger><Delay>PT15S</Delay></LogonTrigger>` (constant `Tray.StartupTaskDelay`). The 15-second logon delay avoids the "Shell_NotifyIconW NIM_ADD failed" race at boot where the task fires before `explorer.exe` has initialized the tray — the `NIM_ADD` retry timer still recovers if the delay is ever absent, but the delay prevents the warn log line from appearing on every boot. `RegisterStartupTaskWithXml` writes the XML to `%TEMP%\koenvue-task-{pid}.xml` as UTF-16 LE with BOM (the encoding schtasks expects) and deletes it in `finally`.
 
 `Tray.SyncStartupPathAsync()` runs on a background thread immediately after `Tray.Initialize` in `Program.cs`. It:
 
 1. Invokes `schtasks.exe /query /tn ... /xml ONE`
-2. Extracts the `<Command>` element with plain string `IndexOf` (no `XmlDocument` — NativeAOT-friendly). Manually unescapes `&amp;` / `&quot;` / etc.
+2. Extracts the `<Command>` and `<Delay>` elements with plain string `IndexOf` (no `XmlDocument` — NativeAOT-friendly) via `ExtractTagFromXml`. Manually unescapes `&amp;` / `&quot;` / etc. for `Command` (Delay is raw ISO 8601 so no unescape).
 3. Normalizes both paths via `Path.GetFullPath` + `OrdinalIgnoreCase`
-4. Re-registers the task with `/create /f` if the stored path differs from `Environment.ProcessPath`
+4. Re-registers the task via XML if either the stored path differs from `Environment.ProcessPath`, OR the stored `<Delay>` is missing/different from `PT15S` (this also migrates older `/tr`-registered tasks to the new XML form on the next launch)
 
-Handles the "user moved the exe" case: the first boot after a move still misses because Task Scheduler launches the old path, but on the next manual launch the sync runs and subsequent boots pick up the corrected path. `QueryRegisteredTaskCommand` wraps `Process.Start` in try/catch so schtasks being absent or non-zero exit is silently ignored.
+Handles the "user moved the exe" case: the first boot after a move still misses because Task Scheduler launches the old path, but on the next manual launch the sync runs and subsequent boots pick up the corrected path. `QueryRegisteredTask` wraps `Process.Start` in try/catch so schtasks being absent or non-zero exit is silently ignored.
 
 ### Tray menu structure
 

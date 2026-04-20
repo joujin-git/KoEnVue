@@ -63,6 +63,11 @@ internal static class Tray
     // schtasks 작업 이름
     private const string TaskName = "KoEnVue";
 
+    // 시작 프로그램 로그온 지연 (ISO 8601 duration).
+    // 부팅 자동 실행 시 explorer 트레이 초기화 전에 앱이 떠서 Shell_NotifyIconW NIM_ADD 가 실패하는
+    // 레이스를 회피한다. 재시도로 복구되긴 하지만 매 부팅마다 warn 로그가 남는 문제 해소 목적.
+    private const string StartupTaskDelay = "PT15S";
+
     // P3: 매직 넘버 금지
     private const double OpacityTolerance = 0.001;
     private const int SchtasksQueryTimeoutMs = 3000;
@@ -746,17 +751,83 @@ internal static class Tray
             {
                 // 등록
                 string exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? "";
-                RunSchtasks($"/create /tn \"{TaskName}\" /tr \"\\\"{exePath}\\\"\" /sc ONLOGON /rl HIGHEST /f");
+                RegisterStartupTaskWithXml(exePath);
                 Logger.Info("Startup registration created");
             }
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
-            or PlatformNotSupportedException or FileNotFoundException)
+            or PlatformNotSupportedException or FileNotFoundException
+            or IOException or UnauthorizedAccessException)
         {
-            // 정책 항목 1(타입 좁히기): schtasks.exe 실행 실패만 잡음.
+            // 정책 항목 1(타입 좁히기): schtasks.exe 실행 실패 + 임시 XML 파일 write 실패만 잡음.
             Logger.Warning($"Failed to toggle startup registration: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// LogonTrigger.Delay 를 포함한 Task Scheduler 2.0 XML 을 생성해 schtasks /xml 로 등록한다.
+    /// /tr 방식과 달리 초 단위 지연이 지정 가능 — Shell(explorer) 트레이 초기화 레이스 회피.
+    /// </summary>
+    private static void RegisterStartupTaskWithXml(string exePath)
+    {
+        string xml = BuildStartupTaskXml(exePath);
+        // 프로세스별 유니크 이름으로 동시 등록 충돌 방지. %TEMP% 는 per-user 이므로 다른 사용자 간
+        // 충돌도 없다.
+        string tempPath = Path.Combine(Path.GetTempPath(), $"koenvue-task-{Environment.ProcessId}.xml");
+        try
+        {
+            // schtasks /xml 은 UTF-16 LE + BOM 을 기대한다. Encoding.Unicode 가 정확히 그 포맷.
+            File.WriteAllText(tempPath, xml, System.Text.Encoding.Unicode);
+            RunSchtasks($"/create /tn \"{TaskName}\" /xml \"{tempPath}\" /f");
+        }
+        finally
+        {
+            try { File.Delete(tempPath); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _ = ex; }
+        }
+    }
+
+    /// <summary>
+    /// schtasks /xml 에 전달할 Task Scheduler 2.0 XML 을 조립한다. LogonTrigger.Delay 에
+    /// <see cref="StartupTaskDelay"/> 삽입. 최소 필드만 쓰고 나머지는 schtasks 기본값에 위임.
+    /// </summary>
+    private static string BuildStartupTaskXml(string exePath)
+    {
+        string userId = EscapeXml($"{Environment.UserDomainName}\\{Environment.UserName}");
+        // /tr 방식의 기존 Command 형식("\"path\"")을 XML 에서도 동일하게 유지 — QueryRegisteredTask 의
+        // Trim('"') 로직이 두 방식 모두 호환되어 마이그레이션 후에도 경로 비교가 안정적.
+        string command = EscapeXml($"\"{exePath}\"");
+        return $"""
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <Delay>{StartupTaskDelay}</Delay>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>{userId}</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Actions Context="Author">
+    <Exec>
+      <Command>{command}</Command>
+    </Exec>
+  </Actions>
+</Task>
+""";
+    }
+
+    private static string EscapeXml(string s) =>
+        s.Replace("&", "&amp;")
+         .Replace("<", "&lt;")
+         .Replace(">", "&gt;")
+         .Replace("\"", "&quot;")
+         .Replace("'", "&apos;");
 
     /// <summary>
     /// 등록된 시작 프로그램 태스크의 exe 경로가 현재 실행 파일 경로와 다르면 재등록한다.
@@ -777,34 +848,40 @@ internal static class Tray
     {
         try
         {
-            string? registeredPath = QueryRegisteredTaskCommand();
-            if (registeredPath is null)
+            var (registeredCommand, registeredDelay) = QueryRegisteredTask();
+            if (registeredCommand is null)
             {
                 // 등록 안 돼 있거나 쿼리 실패 — 정상 케이스 (대부분 사용자는 startup 안 씀)
                 return;
             }
 
-            // /tr "\"path\"" 로 등록했기 때문에 Command 필드에는 양 끝에 리터럴 큰따옴표가 포함된다.
-            // Path.GetFullPath 는 " 를 잘못된 문자로 보고 ArgumentException 을 던져 PathsEqual 이
+            // 구 버전(/tr 방식) 및 신 버전(/xml + "\"path\"" 보존) 모두 Command 양끝에 리터럴 큰따옴표가
+            // 있다. Path.GetFullPath 는 " 를 잘못된 문자로 보고 ArgumentException 을 던져 PathsEqual 이
             // 원본 문자열 비교로 폴백하므로, 비교 전 감싼 따옴표를 제거해 매 부팅마다 재등록되는 것을 막는다.
-            registeredPath = registeredPath.Trim('"');
+            string registeredPath = registeredCommand.Trim('"');
 
             string? currentPath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
             if (string.IsNullOrEmpty(currentPath)) return;
 
-            if (PathsEqual(registeredPath, currentPath))
+            bool pathMatches = PathsEqual(registeredPath, currentPath);
+            // 구 버전(/tr 방식)은 <Delay> 요소가 없어 null. 이 경우도 마이그레이션 대상.
+            bool delayMatches = string.Equals(registeredDelay, StartupTaskDelay, StringComparison.Ordinal);
+
+            if (pathMatches && delayMatches)
             {
-                Logger.Debug("Startup task path already in sync");
+                Logger.Debug("Startup task already in sync (path + delay)");
                 return;
             }
 
-            Logger.Info($"Startup task path moved: '{registeredPath}' -> '{currentPath}', re-registering");
-            RunSchtasks($"/create /tn \"{TaskName}\" /tr \"\\\"{currentPath}\\\"\" /sc ONLOGON /rl HIGHEST /f");
+            Logger.Info(
+                $"Startup task out of sync (path='{registeredPath}' delay='{registeredDelay ?? "<none>"}'), re-registering with delay {StartupTaskDelay}");
+            RegisterStartupTaskWithXml(currentPath);
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
-            or PlatformNotSupportedException or FileNotFoundException)
+            or PlatformNotSupportedException or FileNotFoundException
+            or IOException or UnauthorizedAccessException)
         {
-            // 정책 항목 1(타입 좁히기): schtasks.exe 실행 실패만 잡음.
+            // 정책 항목 1(타입 좁히기): schtasks.exe 실행 실패 + 임시 XML 파일 write 실패만 잡음.
             Logger.Warning($"Failed to sync startup task path: {ex.Message}");
         }
     }
@@ -812,7 +889,7 @@ internal static class Tray
     /// <summary>
     /// 등록된 시작 프로그램 태스크의 실행 명령 경로를 반환. 미등록 또는 실패 시 null.
     /// </summary>
-    private static string? QueryRegisteredTaskCommand()
+    private static (string? Command, string? Delay) QueryRegisteredTask()
     {
         try
         {
@@ -824,11 +901,12 @@ internal static class Tray
                 RedirectStandardError = true,
             };
             using var proc = Process.Start(psi);
-            if (proc is null) return null;
+            if (proc is null) return (null, null);
             string xml = proc.StandardOutput.ReadToEnd();
             proc.WaitForExit(SchtasksQueryTimeoutMs);
-            if (proc.ExitCode != 0) return null;
-            return ExtractCommandFromXml(xml);
+            if (proc.ExitCode != 0) return (null, null);
+            return (ExtractTagFromXml(xml, "Command", unescape: true),
+                    ExtractTagFromXml(xml, "Delay", unescape: false));
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
             or InvalidOperationException
@@ -839,30 +917,36 @@ internal static class Tray
             // schtasks.exe 실행/stdout 파이프 읽기 실패만 흡수 → null(미등록으로 취급).
             // 로직 버그는 전파.
             _ = ex;
-            return null;
+            return (null, null);
         }
     }
 
     /// <summary>
-    /// schtasks XML 출력에서 &lt;Command&gt;...&lt;/Command&gt; 내용을 추출하고 XML 엔티티를 복원한다.
+    /// schtasks XML 출력에서 지정한 단일 태그의 내용을 추출한다.
+    /// <paramref name="unescape"/>가 true 면 XML 엔티티(&amp;amp; 등)를 복원한다 —
+    /// Command 경로엔 필요하지만 Delay(ISO 8601) 같은 순수 텍스트에는 불필요.
     /// </summary>
-    private static string? ExtractCommandFromXml(string xml)
+    private static string? ExtractTagFromXml(string xml, string tagName, bool unescape)
     {
-        const string openTag = "<Command>";
-        const string closeTag = "</Command>";
+        string openTag = $"<{tagName}>";
+        string closeTag = $"</{tagName}>";
         int start = xml.IndexOf(openTag, StringComparison.Ordinal);
         if (start < 0) return null;
         start += openTag.Length;
         int end = xml.IndexOf(closeTag, start, StringComparison.Ordinal);
         if (end < 0) return null;
 
-        return xml[start..end]
-            .Replace("&amp;", "&")
-            .Replace("&quot;", "\"")
-            .Replace("&apos;", "'")
-            .Replace("&lt;", "<")
-            .Replace("&gt;", ">")
-            .Trim();
+        string content = xml[start..end];
+        if (unescape)
+        {
+            content = content
+                .Replace("&amp;", "&")
+                .Replace("&quot;", "\"")
+                .Replace("&apos;", "'")
+                .Replace("&lt;", "<")
+                .Replace("&gt;", ">");
+        }
+        return content.Trim();
     }
 
     /// <summary>
