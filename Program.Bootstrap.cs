@@ -177,8 +177,10 @@ internal static partial class Program
         //    ReleaseMutex는 소유 스레드에서만 호출 가능하나 ProcessExit는 다른 스레드일 수 있음)
         _mutex?.Dispose();
 
-        // 7. COM 해제
-        Ole32.CoUninitialize();
+        // 7. COM 해제 — CoInitializeEx 가 성공했을 때만 짝 호출. 실패한 스레드에서 CoUninitialize
+        //    를 부르면 다른 컴포넌트의 참조카운트를 언더플로우시킬 수 있으므로 가드한다.
+        if (_comInitialized)
+            Ole32.CoUninitialize();
 
         // 8. 로거 종료 (Shutdown 전에 최종 로그 기록)
         Logger.Info("KoEnVue stopped");

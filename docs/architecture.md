@@ -91,13 +91,13 @@ Every file in `Core/` is reusable in another Windows desktop project; every file
 | Module | Purpose |
 |--------|---------|
 | [App/Models/](../App/Models/) | `AppConfig` immutable record + all enums (`DisplayMode`, `DetectionMethod`, `ImeState`, `FontWeight`, `Theme`, `NonKoreanImeMode`, `AppProfileMatch`, `AppFilterMode`, `TrayClickAction`, `Corner`, `PositionMode`, `DragModifier`) |
-| [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) | Magic-number constants: animation timings, pixel offsets, `AppVersion = "0.9.2.1"`, `UpdateRepoOwner/Name`, system-input process list |
+| [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) | Magic-number constants: animation timings, pixel offsets, `DetectionBackoff{Step,Max}Ms`, `AppVersion = "0.9.2.2"`, `UpdateRepoOwner/Name`, system-input process list |
 | [App/Config/Settings.cs](../App/Config/Settings.cs) | Static facade delegating to `AppSettingsManager : JsonSettingsManager<AppConfig>`. Handles `Load`/`Save`/`CheckReload`/`ResolveForApp` (per-app profile merge) |
 | [App/Config/ThemePresets.cs](../App/Config/ThemePresets.cs) | 6 theme presets: `Custom`, `Minimal`, `Vivid`, `Pastel`, `Dark`, `System` (Windows accent color). 프리셋 전환 시 커스텀 색상 자동 백업/복원 (`custom_backup_*` 필드) |
 | [App/Detector/ImeStatus.cs](../App/Detector/ImeStatus.cs) | `WM_IME_CONTROL` + `GetKeyboardLayout` IME state detection + `EVENT_OBJECT_IME_CHANGE` WinEvent hook |
-| [App/Detector/SystemFilter.cs](../App/Detector/SystemFilter.cs) | 9-condition hide logic (lock screen, virtual desktop, fullscreen, class/owner-chain blacklist, app filter list, etc.) |
+| [App/Detector/SystemFilter.cs](../App/Detector/SystemFilter.cs) | 9-condition hide logic (lock screen, virtual desktop, fullscreen, class/owner-chain blacklist, app filter list, etc.). `ShouldHide` 내부에 `ResolveHwndProcess()` 로컬 캐시(`??=`) 로 동일 틱 내 `WindowProcessInfo.GetProcessName(hwnd)` 중복 호출 제거 |
 | [App/Localization/I18n.cs](../App/Localization/I18n.cs) | Korean default, English fallback. Bool flag + ternary pattern (NativeAOT-friendly, zero allocation) |
-| [App/Update/](../App/Update/) | `UpdateChecker` (background thread, fire-once-per-boot GitHub Releases poll) + `GitHubRelease` (JSON DTO + source-gen context) + `UpdateInfo` (callback payload) |
+| [App/Update/](../App/Update/) | `UpdateChecker` (background thread, fire-once-per-boot GitHub Releases poll) + `GitHubRelease` (JSON DTO + source-gen context) + `UpdateInfo` (callback payload). HTTP 전송 실패는 `Logger.Debug`, 200 응답 후 JSON 파싱 실패는 `Logger.Warning` (API 스키마 변동 가시화) |
 | [App/UI/Overlay.cs](../App/UI/Overlay.cs) | Static facade over `LayeredOverlayBase`. Holds `private static AppConfig _config` + engine instance. **`BuildStyle(config, state)` is the sole `ImeState` → `OverlayStyle` conversion point** in the codebase |
 | [App/UI/Animation.cs](../App/UI/Animation.cs) | Static facade over `OverlayAnimator`. `BuildAnimationConfig(config)` extracts primitives; `SetDimMode` routes `NonKoreanImeMode.Dim && state == NonKorean` into a `bool` |
 | [App/UI/Tray.cs](../App/UI/Tray.cs) | Static facade over `NotifyIconManager`. Menu construction, schtasks startup registration, `_pendingUpdate` storage |

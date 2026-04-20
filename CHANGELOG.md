@@ -5,13 +5,24 @@
 
 ## [Unreleased]
 
+## [0.9.2.2] — 2026-04-20
+
 ### 수정
 
 - **Win11 트레이 오버플로우 플라이아웃 · 빠른 설정 플라이아웃에서 인디케이터가 표시되던 문제** — 트레이 `∧`(숨겨진 아이콘) 화살표 클릭 시 노출되는 `TopLevelWindowForOverflowXamlIsland`(프로세스 `explorer`) 와 `Win+A`/볼륨·Wi-Fi·배터리 아이콘 클릭 시 노출되는 `ControlCenterWindow`(프로세스 `ShellHost`) 가 기본 `system_hide_classes` 목록에 없어 `SystemFilter.ShouldHide` 의 8-조건 단락 평가를 모두 통과, 사용자가 트레이 조작 중임에도 인디가 떠 있는 증상. (알림센터 `Win+N` 은 Win11 24H2 기준 포그라운드 창을 바꾸지 않아 애초에 걸리지 않으므로 대상 외.) `Settings.EnsureSubObjects` 기본 배열에 두 클래스를 추가. 프로세스명 블랙리스트(`ShellHost`) 대신 클래스명 기준으로 좁힌 이유: `ShellHost` 는 Win11 의 다양한 shell 파생 창에서 공유될 수 있어 과차단 리스크가 있고, 두 클래스명은 해당 플라이아웃 전용이라 대소문자 무관 정확 일치만으로 안전
+- **`Program.MainImpl` 의 `CoInitializeEx` HRESULT 미확인으로 인한 `CoUninitialize` 언페어 호출 위험** — `CoInitializeEx(IntPtr.Zero, COINIT_APARTMENTTHREADED)` 의 반환값을 검사하지 않고 `OnProcessExit` 에서 무조건 `CoUninitialize()` 를 호출하던 구조. `RPC_E_CHANGED_MODE`(다른 Apartment 로 이미 초기화) 같은 실패 HRESULT 가 반환되면 이 스레드는 실제로 초기화를 완료하지 못한 상태인데도 종료 시 `CoUninitialize` 가 나가 다른 COM 컴포넌트의 apartment 참조카운트를 언더플로우시킬 가능성 잠재. `volatile bool _comInitialized` 필드를 도입해 `CoInitializeEx` 반환값이 `>= 0`(S_OK/S_FALSE) 일 때만 true, 그 외에는 false + `Logger.Warning` 기록. `OnProcessExit` 의 `CoUninitialize` 호출을 `if (_comInitialized)` 로 가드해 짝 호출 규율 복원. COM 초기화 실패 시에도 VDM / WinEventHook 기능이 제한되는 수준의 degradation 으로 프로세스는 정상 기동 — 메인 로직은 STA COM 에 하드 의존하지 않음
+- **`UpdateChecker` JSON 파싱 실패 로그가 Debug 레벨이라 GitHub API 스키마 변동이 사일런트하게 묻히던 문제** — `RunCheck` 의 `catch (JsonException or NotSupportedException or ArgumentException)` 블록이 파싱 오류를 `Logger.Debug("UpdateChecker: parse error — ...")` 로만 기록하고 있었음. 기본 `log_level = Info` 라 Debug 는 파일에 남지 않음. GitHub API 가 응답 스키마를 변경하거나 새 릴리즈 포맷(draft/prerelease 필드 rename 등) 이 도입되어 업데이트 체크가 사일런트하게 무력화돼도 사용자/개발자가 알 방법이 없는 구조. HTTP 200 응답을 받은 뒤 파싱에서 실패한 경우이므로 일시적 네트워크 이슈가 아닌 API 계약 변동 가능성이 매우 높아 `Logger.Warning` 으로 승격. HTTP 전송 실패(`null body`) 는 네트워크 변동이 주 원인이라 Debug 유지 — 파싱 실패와 의미가 다름
+
+### 개선
+
+- **`SystemFilter.ShouldHide` 의 `GetProcessName(hwnd)` 1-tick 메모이제이션** — 포그라운드 hwnd 의 프로세스명을 한 틱 안에서 최대 5회 반복 질의하던 구조(조건 4-b 의 owner 루프가 루트까지 최대 5회 상승하며 매 노드 재조회 + 조건 5 직접 비교 + 조건 8 blacklist 조회). 감지 스레드 80ms 핫패스에서 `WindowProcessInfo.GetProcessName` 은 `OpenProcess` + `QueryFullProcessImageNameW` + `Path.GetFileNameWithoutExtension` 체인이라 호출 1회당 NT 핸들 오픈 + 커널 모드 전환이 수반됨. 로컬 함수 `ResolveHwndProcess()` 를 도입하고 `??=` 연산자로 첫 호출에만 실제 질의하도록 변경 — 동일 틱 내 2회차부터는 캐시 반환. 1 틱당 평균 3~5회의 P/Invoke 체인 절감. cross-tick 캐시는 불필요(`_state.LastForegroundProcessName` 이 이미 foreground 레벨의 cross-tick 캐시 역할 담당) — 메모이제이션은 1 틱 내 국소 최적화 한정
+- **감지 스레드 예외 경로 지수 백오프 + 동일 오류 로그 스팸 억제** — `DetectionLoop` 의 `catch (Win32Exception or InvalidOperationException or COMException or ArgumentException)` 가 예외 후에도 `PollIntervalMs`(기본 80ms) 간격으로 즉시 재시도하고 동일 예외 메시지를 매 틱마다 Warning 로그로 찍던 구조였음. 드문 상황(UAC 전환 중 foreground hwnd 가 제한된 Apartment 에서 일시적 `COMException` 반환) 에서 초당 12건의 Warning 이 수십 초간 누적되어 로그 파일이 스팸 오염되는 시나리오. `DefaultConfig` 에 `DetectionBackoffStepMs = 200` · `DetectionBackoffMaxMs = 2000` 상수 추가하고 루프 바깥에 `int backoffMs = 0` · `string lastErrorMessage` 지역변수 도입. 예외 캐치 시 `backoffMs = Min(backoffMs + 200, 2000)` 누적, 동일 메시지 재발 시 `Logger.Debug` 로 강등해 디스크 쓰기 감축, 새 메시지 또는 첫 발생은 `Logger.Warning` 1회 기록. 성공 틱이 돌아오면 `backoffMs = 0` 리셋 + "recovered" Info 로그. `Thread.Sleep(PollIntervalMs + backoffMs)` 로 간격 제어. `_stopping` 신호 응답성 보장을 위해 백오프 상한을 2초로 캡 — 최악 경우 Shutdown 대기가 `PollIntervalMs 80ms + backoff 2000ms ≈ 2.08초` 이내 완료
 
 ### 제거
 
 - **`Settings.Migrate` 체인 전부 제거, `config_version` 을 1 로 리셋** — 프리-릴리스 단계(단독 사용자)라 구버전 config 를 마주칠 가능성이 없어, 누적된 v2→v3(`system_edit_focus_classes` 필드 제거) / v3→v4(`XamlExplorerHostIslandWindow_WASDK` append) 마이그레이션 블록이 실질 dead code. `Migrate` 를 `return config with { ConfigVersion = CurrentVersion };` 한 줄로 축약하고 `CurrentVersion` 5→1, `AppConfig.ConfigVersion` 기본값 5→1 로 리셋. 기본값 배열은 이미 현시점 필요한 클래스(`Progman`, `WorkerW`, `Shell_TrayWnd`, `Shell_SecondaryTrayWnd`, `XamlExplorerHostIslandWindow_WASDK`, `TopLevelWindowForOverflowXamlIsland`, `ControlCenterWindow`) 를 모두 포함하므로 `EnsureSubObjects` 의 null 폴백 경로 하나만으로 신규 config 파일 커버 가능. 향후 공개 배포로 전환 시 `version < N` 블록을 재개해 스키마 진화 트랙 복구
+
+## [0.9.2.1] — 2026-04-20
 
 ### 수정
 

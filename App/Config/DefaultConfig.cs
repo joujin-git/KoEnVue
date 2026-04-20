@@ -88,6 +88,18 @@ internal static class DefaultConfig
     /// <summary>감지 폴링 간격</summary>
     public const int PollingIntervalMs = 80;
 
+    /// <summary>
+    /// 감지 루프 지수 백오프 가산치 — 연속 실패 시 tick 간격에 누적으로 더한다.
+    /// 예: 실패 3회 후 Thread.Sleep(_config.PollIntervalMs + 600ms).
+    /// </summary>
+    public const int DetectionBackoffStepMs = 200;
+
+    /// <summary>
+    /// 감지 루프 지수 백오프 상한 — tick 간격 + backoff 합이 이 값을 넘지 않는다.
+    /// 종료 신호(<c>_stopping</c>) 응답성을 위해 2초로 캡.
+    /// </summary>
+    public const int DetectionBackoffMaxMs = 2000;
+
     // === DPI ===
 
     /// <summary>DPI 기준값. DpiHelper.Scale에서 사용.</summary>
@@ -114,7 +126,7 @@ internal static class DefaultConfig
     /// 둘 중 하나만 올리면 바이너리 메타데이터와 런타임 비교 값이 불일치한다.
     /// </para>
     /// </summary>
-    public const string AppVersion = "0.9.2.1";
+    public const string AppVersion = "0.9.2.2";
 
     /// <summary>UpdateChecker 가 조회할 GitHub 레포 owner.</summary>
     public const string UpdateRepoOwner = "joujin-git";

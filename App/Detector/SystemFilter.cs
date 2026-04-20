@@ -80,6 +80,12 @@ internal static class SystemFilter
         if (MatchesAny(className, config.SystemHideClasses, config.SystemHideClassesUser))
             return true;
 
+        // GetProcessName(hwnd) 1-tick 메모이제이션 — 감지 80ms 핫패스에서 조건 4-b(owner
+        // 루프 최대 5회) / 5 / 8 이 동일 hwnd 의 프로세스명을 각기 재조회하던 중복 제거.
+        // P/Invoke 호출자와 ToolHelp32 Snapshot 스캔 비용이 tick 당 1회로 수렴.
+        string? hwndProcess = null;
+        string ResolveHwndProcess() => hwndProcess ??= WindowProcessInfo.GetProcessName(hwnd);
+
         // 4-b. 소유자(owner) 창 클래스명 블랙리스트
         //      바탕화면(Progman/WorkerW) 등 숨김 대상 창에서 띄운 대화상자(#32770 등)도
         //      함께 숨긴다. 단, 소유자와 대화상자의 프로세스가 같은 경우만 (시스템 대화상자).
@@ -94,8 +100,7 @@ internal static class SystemFilter
             {
                 // 소유자와 대화상자가 같은 프로세스일 때만 숨김 (시스템 대화상자)
                 string ownerProcess = WindowProcessInfo.GetProcessName(hwndOwner);
-                string dialogProcess = WindowProcessInfo.GetProcessName(hwnd);
-                if (ownerProcess.Equals(dialogProcess, StringComparison.OrdinalIgnoreCase))
+                if (ownerProcess.Equals(ResolveHwndProcess(), StringComparison.OrdinalIgnoreCase))
                     return true;
             }
             hwndOwner = User32.GetWindow(hwndOwner, Win32Constants.GW_OWNER);
@@ -104,11 +109,9 @@ internal static class SystemFilter
         // 5. 프로세스명 블랙리스트 (기본: ShellExperienceHost — 작업 표시줄 컨텍스트 메뉴/팝업)
         //    클래스명과 달리 프로세스명 조회(GetProcessName)는 비용이 있으므로
         //    리스트가 비어 있으면 조회 자체를 건너뛴다.
-        string processName = string.Empty;
         if (config.SystemHideProcesses.Length > 0 || config.SystemHideProcessesUser.Length > 0)
         {
-            processName = WindowProcessInfo.GetProcessName(hwnd);
-            if (MatchesAny(processName, config.SystemHideProcesses, config.SystemHideProcessesUser))
+            if (MatchesAny(ResolveHwndProcess(), config.SystemHideProcesses, config.SystemHideProcessesUser))
                 return true;
         }
 
@@ -118,8 +121,8 @@ internal static class SystemFilter
         // 7. 전체화면 독점
         if (config.HideInFullscreen && IsFullscreenExclusive(hwnd)) return true;
 
-        // 8. 앱 필터 (블랙/화이트리스트) — 조건 5에서 이미 조회한 processName 재사용
-        if (!PassesAppFilter(hwnd, processName, config)) return true;
+        // 8. 앱 필터 (블랙/화이트리스트) — 동일 tick 의 hwndProcess 캐시 재사용
+        if (!PassesAppFilter(hwnd, hwndProcess, config)) return true;
 
         return false;
     }
@@ -198,15 +201,15 @@ internal static class SystemFilter
 
     /// <summary>
     /// 앱 필터 (블랙/화이트리스트) 판정.
-    /// processName이 비어 있으면(조건 5가 스킵된 경우) 여기서 조회한다.
+    /// <paramref name="processName"/>이 null 이면(상위 조건 4-b/5 모두 캐시를 요구하지 않은 경우)
+    /// 여기서 처음 조회한다 — tick 당 1회 보장.
     /// </summary>
-    private static bool PassesAppFilter(IntPtr hwnd, string processName, AppConfig config)
+    private static bool PassesAppFilter(IntPtr hwnd, string? processName, AppConfig config)
     {
         if (config.AppFilterList.Length == 0) return true;
 
-        if (processName.Length == 0)
-            processName = WindowProcessInfo.GetProcessName(hwnd);
-        bool inList = config.AppFilterList.Contains(processName, StringComparer.OrdinalIgnoreCase);
+        string name = processName ?? WindowProcessInfo.GetProcessName(hwnd);
+        bool inList = config.AppFilterList.Contains(name, StringComparer.OrdinalIgnoreCase);
 
         return config.AppFilterMode switch
         {

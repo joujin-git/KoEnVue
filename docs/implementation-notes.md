@@ -273,7 +273,9 @@ Main thread:
 
 ### Detection loop resilience
 
-`DetectionLoop`의 while 본문은 `try-catch(Exception)`으로 래핑되어 단일 폴링 예외(예: `WindowProcessInfo.GetProcessName` 실패)가 감지 스레드를 종료시키지 않는다. 예외 발생 시 `Logger.Warning`으로 기록하고 다음 폴링 주기에서 정상 재개한다. `Thread.Sleep`은 try 밖에 위치하여 예외 후에도 폴링 간격이 유지된다. `_stopping` 필드는 `volatile`로 선언되어 `OnProcessExit`에서의 쓰기가 감지 스레드에서 즉시 가시적이다.
+`DetectionLoop`의 while 본문은 `catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or COMException or ArgumentException)` 로 래핑되어 단일 폴링 예외(예: `WindowProcessInfo.GetProcessName` 실패, UAC 전환 중 일시적 `COMException`)가 감지 스레드를 종료시키지 않는다. 로직 버그(`NullReferenceException` 등) 는 이 필터에 걸리지 않아 표면화된다. `Thread.Sleep`은 try 밖에 위치하여 예외 후에도 폴링 간격이 유지된다. `_stopping` 필드는 `volatile`로 선언되어 `OnProcessExit`에서의 쓰기가 감지 스레드에서 즉시 가시적이다.
+
+**지수 백오프 + 중복 로그 스팸 억제**: 예외가 반복되면 `Thread.Sleep(PollIntervalMs + backoffMs)` 의 `backoffMs` 를 매 실패마다 `DefaultConfig.DetectionBackoffStepMs = 200` 씩 누적 (`DetectionBackoffMaxMs = 2000` 상한). 드문 COM apartment 과도기 상황에서 초당 12건의 Warning 이 수십 초간 누적되어 로그 파일을 오염시키던 시나리오를 차단한다. 동일 예외 메시지가 연속 발생하면 첫 발생만 `Logger.Warning` 으로 기록하고 이후는 `Logger.Debug` 로 강등, 새 메시지는 다시 Warning 1회. 성공 tick 이 돌아오면 `backoffMs = 0` 리셋 + "Detection loop recovered after backoff (prev=Nms)" Info 로그. 백오프 상한이 2초로 캡핑되어 있어 최악 경우 `OnProcessExit` 의 `_stopping = true` 신호가 `PollIntervalMs 80ms + backoff 2000ms ≈ 2.08초` 이내 전파된다.
 
 ### Foreground change detection
 
@@ -336,6 +338,8 @@ IME 감지 경로는 두 가지다 — (1) 디텍션 스레드 80ms 폴링 (`Det
 6. No focus (`hide_when_no_focus`)
 7. Fullscreen exclusive (covers monitor + no `WS_CAPTION`)
 8. App blacklist / whitelist (`app_filter_list` + `app_filter_mode`)
+
+**Per-tick 프로세스명 메모이제이션**: `ShouldHide` 본문에 `string? hwndProcess = null; string ResolveHwndProcess() => hwndProcess ??= WindowProcessInfo.GetProcessName(hwnd);` 로컬 클로저를 둔다. 조건 4-b 의 owner 루프(루트까지 최대 5단계 상승)가 각 노드마다 동일 hwnd 의 프로세스명을 재조회하고, 조건 5 직접 비교 + 조건 8 blacklist 조회가 또 한 번 호출하던 중복을 제거 — `GetProcessName` 은 내부적으로 `OpenProcess` + `QueryFullProcessImageNameW` + `Path.GetFileNameWithoutExtension` 체인이라 호출당 NT 핸들 오픈 + 커널 모드 전환이 발생하는 무거운 경로이다. 감지 스레드 80ms 핫패스에서 1 tick 당 평균 3~5회의 P/Invoke 체인을 절감한다. cross-tick 캐시는 불필요 — `DetectionState.LastForegroundProcessName` 이 이미 foreground 전환 레벨의 cross-tick 캐시 역할을 담당하므로, `ResolveHwndProcess` 는 1 tick 내부 국소 최적화 한정이다.
 
 ---
 
@@ -550,7 +554,7 @@ GitHub's unauthenticated API rate limit is 60/hour per IP, and users who leave t
 
 ### Silent failure
 
-Network error, HTTP non-200, empty body, unparseable JSON, draft/prerelease skip, or `current >= latest` version compare — all funnel to `Logger.Debug` and nothing else. The user never sees a "couldn't reach GitHub" popup because that would be intrusive for a passive indicator app.
+Network error, HTTP non-200, empty body, draft/prerelease skip, or `current >= latest` version compare — all funnel to `Logger.Debug` and nothing else. The user never sees a "couldn't reach GitHub" popup because that would be intrusive for a passive indicator app. **예외**: HTTP 200 응답을 받은 뒤 JSON 파싱에서 실패하는 경로 (`JsonException` / `NotSupportedException` / `ArgumentException`) 는 `Logger.Warning` 으로 승격 — 전송 자체는 성공했으므로 일시적 네트워크 이슈가 아닌 GitHub API 스키마 변동(응답 필드 rename, 새 릴리즈 포맷 도입 등) 가능성이 높고, Debug 로 묻히면 업데이트 체크가 사일런트하게 무력화된 상태를 사용자/개발자가 인지할 방법이 없다.
 
 `HttpClientLite.GetString` returns `null` on any failure. `UpdateChecker.RunCheck`'s catch is narrowed to `JsonException or NotSupportedException or ArgumentException` so logic bugs in version comparison propagate; `HttpClientLite.GetString` keeps a wide `catch (Exception)` because WinHTTP marshalling edge cases can't all be enumerated (single P/Invoke-chain try body).
 
@@ -647,6 +651,8 @@ Static field retention for P/Invoke callbacks (e.g., `_imeChangeCallback` in [Im
 
 Main thread pre-initializes COM STA + forces `SystemFilter` static constructor before the detection thread starts, so the `IVirtualDesktopManager` COM object is usable from either thread.
 
+`CoInitializeEx(IntPtr.Zero, COINIT_APARTMENTTHREADED)` 의 HRESULT 는 `volatile bool _comInitialized` 에 반환값 `>= 0` (S_OK/S_FALSE) 일 때만 `true` 로 기록하고, 실패 시 `Logger.Warning` 을 남긴다. `OnProcessExit` 의 `CoUninitialize()` 호출은 `if (_comInitialized)` 가드로 감싸 짝 호출 규약을 지킨다 — `RPC_E_CHANGED_MODE`(다른 apartment 로 이미 초기화된 스레드) 같은 실패 HRESULT 에서 `CoUninitialize` 가 나가면 다른 COM 컴포넌트의 apartment 참조카운트를 언더플로우시킬 수 있기 때문이다. COM 초기화 실패 시에도 VDM / WinEventHook 기능이 제한되는 수준의 degradation 으로 프로세스는 정상 기동 — 메인 로직은 STA COM 에 하드 의존하지 않는다.
+
 ### Overlay window class
 
 Separately registered (shared WndProc with main window). `WM_DESTROY` guard checks `hwnd == _hwndMain` so app exit doesn't trigger when the overlay is destroyed.
@@ -670,7 +676,7 @@ Separately registered (shared WndProc with main window). `WM_DESTROY` guard chec
 5. 오버레이 + 메인 윈도우 명시적 파괴 (`DestroyWindow`)
 6. 트레이 아이콘 제거 (`NIM_DELETE`)
 7. Mutex 해제 (`Dispose` only — `ReleaseMutex`는 소유 스레드에서만 가능하나 `ProcessExit`는 다른 스레드일 수 있음)
-8. COM 해제 (`CoUninitialize`)
+8. COM 해제 (`if (_comInitialized) CoUninitialize()` — 짝 호출 가드)
 9. 종료 로그 기록 + 로거 종료 (`Logger.Info` → `Logger.Shutdown`)
 
 `Logger.Shutdown`은 반드시 마지막에 호출하여 이전 단계의 로그가 모두 기록되도록 보장한다. 타이머 해제와 윈도우 파괴는 리소스 해제(5단계) 이후에 수행하여 타이머 콜백이 해제된 리소스를 참조하는 것을 방지한다.

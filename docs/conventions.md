@@ -110,7 +110,9 @@ Logic bugs in pipeline hooks (`Migrate`/`Validate`/`ApplyTheme`) and in path nor
 
 ### 8. Detection loop catch
 
-`DetectionLoop`의 while 본문은 `catch (Exception ex)` + `Logger.Warning`으로 래핑된다. 단일 폴링 예외(예: `WindowProcessInfo.GetProcessName` 내 `Process.GetProcessById` 실패)가 감지 스레드 전체를 종료시키지 않도록 보호하며, 다음 폴링 주기에서 정상 재개한다. `Thread.Sleep`은 try 바깥에 위치하여 예외 후에도 폴링 간격이 유지된다. Rule 2의 변형으로, P/Invoke + BCL 호출이 혼합된 긴 본문이므로 wide catch가 정당하며 `Logger.Warning` 레벨은 Rule 3의 "rare catastrophic" 기준에 해당한다.
+`DetectionLoop`의 while 본문은 `catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or COMException or ArgumentException)`으로 래핑된다. 단일 폴링 예외(예: `WindowProcessInfo.GetProcessName` 내 `OpenProcess` 실패, UAC 전환 중 `COMException`)가 감지 스레드 전체를 종료시키지 않도록 보호하며, 다음 폴링 주기에서 정상 재개한다. `Thread.Sleep`은 try 바깥에 위치하여 예외 후에도 폴링 간격이 유지된다. Rule 2의 변형으로, P/Invoke + BCL 호출이 혼합된 긴 본문이므로 4-타입 narrowing 이 정당하며 로직 버그(`NullReferenceException` 등)는 Rule 1 에 따라 propagate 된다.
+
+**지수 백오프 + 중복 로그 스팸 억제 (0.9.2.2 이후)**: 예외가 반복되면 `Thread.Sleep(PollIntervalMs + backoffMs)` 의 `backoffMs` 를 매 실패마다 `DefaultConfig.DetectionBackoffStepMs = 200` 씩 가산(`DetectionBackoffMaxMs = 2000` 상한, `_stopping` 신호 응답성 2초 이내 보장). 동일 예외 메시지가 연속 발생하면 첫 발생만 `Logger.Warning` 으로 기록하고 이후는 `Logger.Debug` 로 강등 — 드문 COM apartment 과도기 상황에서 초당 12건의 Warning 이 누적되어 로그 파일을 오염시키던 시나리오 차단. 성공 tick 이 돌아오면 `backoffMs = 0` 리셋 + "Detection loop recovered after backoff (prev=Nms)" Info 로그 1회.
 
 ---
 

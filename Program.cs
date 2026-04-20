@@ -54,6 +54,10 @@ internal static partial class Program
     // 라이프사이클 (감지 스레드에서 읽고 OnProcessExit에서 씀 → volatile)
     private static volatile bool _stopping;
 
+    // COM 초기화 성공 여부. CoInitializeEx HRESULT >= 0 일 때만 CoUninitialize 호출 (짝 맞춤).
+    // 메인 스레드 부트스트랩에서 쓰고 OnProcessExit(메인 or finalizer 스레드)에서 읽음 → volatile.
+    private static volatile bool _comInitialized;
+
     // 윈도우 클래스명 (P3: 매직 스트링 금지)
     private const string MainClassName = "KoEnVueMain";
 
@@ -117,7 +121,13 @@ internal static partial class Program
         Logger.Info("KoEnVue starting");
 
         // 5. 메인 스레드 COM STA 초기화 (메시지 루프 + WinEventHook + SystemFilter VDM)
-        Ole32.CoInitializeEx(IntPtr.Zero, Win32Constants.COINIT_APARTMENTTHREADED);
+        //    HRESULT 추적: S_OK(0) / S_FALSE(1) 은 성공 — CoUninitialize 짝을 반드시 호출.
+        //    RPC_E_CHANGED_MODE 등 음수는 실패 — CoUninitialize 호출 시 참조카운트 언더플로우 위험.
+        //    _comInitialized 플래그로 OnProcessExit 에서 짝 맞춤 판단.
+        int comHr = Ole32.CoInitializeEx(IntPtr.Zero, Win32Constants.COINIT_APARTMENTTHREADED);
+        _comInitialized = comHr >= 0;
+        if (!_comInitialized)
+            Logger.Warning($"CoInitializeEx failed: 0x{comHr:X8} — VDM / WinEventHook 기능이 제한될 수 있음");
 
         // 6. SystemFilter static constructor 강제 실행 (메인 스레드에서 VDM COM 생성)
         _ = SystemFilter.ShouldHide(IntPtr.Zero, IntPtr.Zero, _config);
@@ -828,12 +838,25 @@ internal static partial class Program
             LastImeState = ImeState.English,
         };
 
+        // 연속 실패 누적용 로컬 상태. 지수 백오프로 로그 홍수·CPU 낭비 차단.
+        // 동일 메시지 억제를 위한 마지막 오류 텍스트도 함께 추적한다.
+        int backoffMs = 0;
+        string lastErrorMessage = string.Empty;
+
         while (!_stopping)
         {
-            Thread.Sleep(_config.PollIntervalMs);
+            Thread.Sleep(_config.PollIntervalMs + backoffMs);
             try
             {
                 ProcessDetectionTick(ref state);
+
+                // 성공 — 이전 틱에서 백오프 중이었다면 복구 로그 + 카운터 리셋.
+                if (backoffMs > 0)
+                {
+                    Logger.Info($"Detection loop recovered after backoff (prev={backoffMs}ms)");
+                    backoffMs = 0;
+                    lastErrorMessage = string.Empty;
+                }
             }
             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
                 or InvalidOperationException
@@ -843,7 +866,20 @@ internal static partial class Program
                 // 감지 루프 본문은 P/Invoke(User32/Dwmapi/Imm32) + VDM COM + Process.GetProcessById
                 // 조합이므로 일시적 Win32/COM/프로세스 실패는 흡수하고 다음 폴링에서 재개한다.
                 // 로직 버그(NullRef 등)는 전파되어 감지 스레드 종료로 드러난다.
-                Logger.Warning($"Detection loop error: {ex.Message}");
+                //
+                // 지속 실패 대응: 200ms 씩 가산해 2000ms 까지 backoff. 동일 메시지 재발생은
+                // Debug 로 강등해 Warning 홍수 억제. 메시지가 바뀌거나 첫 발생은 Warning 유지.
+                backoffMs = Math.Min(backoffMs + DefaultConfig.DetectionBackoffStepMs,
+                    DefaultConfig.DetectionBackoffMaxMs);
+                if (ex.Message != lastErrorMessage)
+                {
+                    Logger.Warning($"Detection loop error: {ex.Message} (backoff={backoffMs}ms)");
+                    lastErrorMessage = ex.Message;
+                }
+                else
+                {
+                    Logger.Debug($"Detection loop error repeats: {ex.Message} (backoff={backoffMs}ms)");
+                }
             }
         }
     }

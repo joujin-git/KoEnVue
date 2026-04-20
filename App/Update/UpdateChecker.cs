@@ -91,7 +91,10 @@ internal static class UpdateChecker
         {
             // 정책 항목 1(타입 좁히기): JSON 파싱/소스젠/매핑 오류만 흡수.
             // 로직 버그(NullRef 등)는 propagate 시켜 표면화한다.
-            Logger.Debug($"UpdateChecker: parse error — {ex.Message}");
+            // HTTP 는 이미 200 응답을 받은 뒤 파싱에서 실패한 경우이므로, GitHub API 스키마
+            // 변동이나 새로운 릴리즈 포맷 도입일 가능성이 높아 Warning 으로 승격 — 사용자가
+            // 업데이트 체크 무력화 상태를 인지할 수 있도록 한다.
+            Logger.Warning($"UpdateChecker: parse error — {ex.Message}");
         }
 
         // 콜백 호출부는 파싱/HTTP try 블록 밖으로 분리한다.
