@@ -446,6 +446,29 @@ Exclusively read from and written to `AppContext.BaseDirectory` (the exe's own f
 
 Handled in [Program.cs](../Program.cs) (not `Tray.cs`) because it needs `_indicatorVisible` access for the tray click-action toggle.
 
+### Tray click actions (`tray_click_action`) and `UserHidden` persistence
+
+`HandleTrayCallback` in [Program.cs](../Program.cs) routes `WM_LBUTTONUP` through a switch on `_config.TrayClickAction`:
+
+- `Toggle` (default) → `HandleTrayToggle()` (see below).
+- `Settings` → `Tray.OpenConfigFile()` — `ShellExecuteW(0, "open", "notepad.exe", "\"{path}\"", ...)`. Notepad is hard-coded instead of dispatching through the `.json` default handler because typical end-user machines have no `.json` association and the default path triggers Windows' "choose an app" dialog or silent no-op. Notepad ships on every Windows SKU, displays UTF-8 JSON correctly, and its save is picked up by the mtime poller so hot reload still applies after the user edits. `lpParameters` wraps the path in quotes to survive spaces (e.g. `C:\Program Files\...`).
+- `None` — no-op.
+
+`HandleTrayToggle` flips `AppConfig.UserHidden`, calls `Settings.Save(_config)` immediately (so the state survives restart), rebuilds the tray icon via `Tray.UpdateState` (to add/remove the strikethrough overlay), and delegates overlay transition to the shared `ApplyUserHiddenTransition(wasHidden, isHidden)` helper:
+
+- `UserHidden: false → true` — invokes `HideOverlay()` (`Animation.TriggerHide(forceHidden: true)` + sets `_indicatorVisible = false`).
+- `UserHidden: true → false` — sets `_indicatorVisible = true` + calls `Animation.TriggerShow` with the current foreground app's resolved position so the indicator reappears immediately.
+
+The menu path (`IDM_USER_HIDDEN` → `updateConfig(config with { UserHidden = !config.UserHidden })`) reaches the same helper: the `HandleMenuCommand` lambda in [Program.cs](../Program.cs) captures `wasHidden = _config.UserHidden` before applying `newConfig`, then calls `ApplyUserHiddenTransition` when the bit actually flipped (otherwise falls through to the existing `_indicatorVisible`-based config-changed branch). This ensures the right-click "인디케이터 숨김" toggle produces identical overlay/tray-icon behavior as the left-click toggle, even when `tray_click_action` has been set to `"settings"` or `"none"` (in which case the right-click menu is the only GUI path back from `user_hidden = true`).
+
+Five event handlers gate on `_config.UserHidden` to prevent detection-thread events from re-showing a user-hidden indicator: `HandleImeStateChanged`, `HandleFocusChanged`, `HandlePositionUpdated`, `HandleConfigChanged` (only skips the `TriggerShow` branch — tray icon still rebuilds so a hot-reloaded strikethrough change renders), and `HandleActivateRequest`. The detection thread itself does **not** read `UserHidden` — `_indicatorVisible = false` is sufficient to suppress the `TriggerShow` path in main-thread handlers, and cost of the `_config.UserHidden` check is trivial compared to the `WindowProcessInfo.GetProcessName` P/Invoke chain in the detection tick.
+
+Reset paths: (1) right-click tray → "인디케이터 숨김" menu toggle, (2) left-click tray when `tray_click_action = "toggle"`, (3) delete `config.json` (STJ's default unmapped-member handling reinstates `user_hidden = false`), (4) hand-edit the field — mtime polling reapplies the new config at the next detection event. Persisting the state in config deliberately makes it "sticky" — restart/resume preserves the user's explicit hide intent.
+
+### Tray icon strikethrough (`TrayIcon.DrawStrikeThrough`)
+
+Drawn on top of the existing caret+dot when `config.UserHidden == true`. A single thick horizontal rectangle centered at `iconH / 2`, spanning X from `1` to `iconW - 1` (1-px edge inset on both sides). Thickness `Math.Max(iconH / 4, 3)` — 4 px at 16-px icons, 5 px at 20-px icons. `CreateIcon` resolves a state-keyed `fgHex` (`HangulFg` / `EnglishFg` / `NonKoreanFg`) via `ColorHelper.HexToColorRef` alongside `bgHex` and passes the resulting `fgColor` to both `DrawCaretDot` and `DrawStrikeThrough` — the strikethrough thus always matches the caret+dot color and inherits the theme-author's chosen contrast against the background. `try/finally` GDI cleanup pattern identical between the two draw methods. v0.9.2.4 shipped `DrawDoubleStrikeThrough` (two horizontal lines at `iconH * 1/3` and `iconH * 2/3`, thickness `iconH / 6`) but at 16-px tray size the combined vertical coverage (~6 px of 16 px) overdrew the caret+dot silhouette to the point of visual collapse; v0.9.2.5 traded the two-line symbolism for a single bolder cross-cut that leaves the caret+dot intact above and below. A hardcoded white overlay (same `WhiteColorRef` both draw methods used before) was dropped in the same pass because the `pastel` preset's light backgrounds (`#86EFAC` / `#FDE68A` / `#C4B5FD`) rendered the white strike as low-contrast noise; the theme's own `Fg` (e.g. `#14532D` dark green for pastel-Hangul) is dark on pastel and white on dark presets, so delegating to Fg solves both ends without branching. Gray-fill alternatives were rejected because `NonKoreanBg` defaults (`#6B7280` custom, `#9CA3AF` / `#D1D5DB` / `#374151` presets) already land in gray and would have collided semantically with the non-Korean IME state; pure RGB inversion was rejected because its contrast collapses on mid-gray backgrounds (inversion of `#6B7280` is `#948D7F`, both near L=127).
+
 ### Startup task registration & path/delay auto-sync
 
 Registration uses `schtasks /create /xml` with an embedded `<LogonTrigger><Delay>PT15S</Delay></LogonTrigger>` (constant `Tray.StartupTaskDelay`). The 15-second logon delay avoids the "Shell_NotifyIconW NIM_ADD failed" race at boot where the task fires before `explorer.exe` has initialized the tray — the `NIM_ADD` retry timer still recovers if the delay is ever absent, but the delay prevents the warn log line from appearing on every boot. `RegisterStartupTaskWithXml` writes the XML to `%TEMP%\koenvue-task-{pid}.xml` as UTF-16 LE with BOM (the encoding schtasks expects) and deletes it in `finally`.
@@ -477,12 +500,14 @@ Handles the "user moved the exe" case: the first boot after a move still misses 
 드래그 활성 키 ▸  ● 없음 / ○ Ctrl / ○ Alt / ○ Ctrl + Alt
 위치 기록 정리...
 ───
+☐ 인디케이터 숨김
+───
 상세 설정...
 ───
 종료
 ```
 
-Menu IDs live in [Tray.cs](../App/UI/Tray.cs) as `private const int IDM_*`. The `IDM_UPDATE_DOWNLOAD = 4008` item + separator are only appended when `_pendingUpdate != null`. Position mode submenu uses `IDM_POSITION_FIXED = 3301` / `IDM_POSITION_WINDOW = 3302` with `CheckMenuRadioItem`.
+Menu IDs live in [Tray.cs](../App/UI/Tray.cs) as `private const int IDM_*`. The `IDM_UPDATE_DOWNLOAD = 4008` item + separator are only appended when `_pendingUpdate != null`. Position mode submenu uses `IDM_POSITION_FIXED = 3301` / `IDM_POSITION_WINDOW = 3302` with `CheckMenuRadioItem`. `IDM_USER_HIDDEN = 4009` renders as `MF_CHECKED` when `config.UserHidden == true` — its handler calls `updateConfig(config with { UserHidden = !config.UserHidden })`, and the `Program.HandleMenuCommand` lambda routes the resulting transition through `ApplyUserHiddenTransition` (shared with `HandleTrayToggle`).
 
 ### Quick opacity presets (`ApplyQuickOpacity`)
 

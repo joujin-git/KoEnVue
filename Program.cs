@@ -386,6 +386,7 @@ internal static partial class Program
         if (_config.TrayEnabled)
             Tray.UpdateState(newState, _config);
 
+        if (_config.UserHidden) return;
         if (_lastForegroundHwnd == IntPtr.Zero) return;
 
         if (_config.DisplayMode == DisplayMode.Always || _config.EventTriggers.OnImeChange)
@@ -398,8 +399,7 @@ internal static partial class Program
 
     private static void HandleFocusChanged(IntPtr newHwndFocus)
     {
-        Logger.Debug($"Focus changed: 0x{newHwndFocus:X}");
-
+        if (_config.UserHidden) return;
         if (_lastForegroundHwnd == IntPtr.Zero) return;
 
         if (_config.DisplayMode == DisplayMode.Always || _config.EventTriggers.OnFocusChange)
@@ -422,6 +422,8 @@ internal static partial class Program
         if (foregroundChanged)
             _currentProcessName = WindowProcessInfo.GetProcessName(hwndForeground);
 
+        if (_config.UserHidden) return;
+
         // 시스템 입력 프로세스(시작 메뉴 ↔ 검색 창)는 하나의 HWND를 모드별로 재사용하면서
         // 시각적 rect만 바꾼다. 감지 스레드가 rect 변화 기반으로 이 메시지를 다시 보낸 경우
         // foregroundChanged가 false여도 위치를 재계산해 실제 시각 rect에 맞춰야 한다.
@@ -431,7 +433,7 @@ internal static partial class Program
         {
             _indicatorVisible = true;
             var (x, y) = GetAppPosition();
-            Logger.Info($"PositionUpdated: process={_currentProcessName}, pos=({x},{y}), saved={_config.IndicatorPositions.Count}");
+            Logger.Debug($"PositionUpdated: process={_currentProcessName}, pos=({x},{y}), saved={_config.IndicatorPositions.Count}");
             Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
         }
         // 같은 앱 내 윈도우 이동 — 플로팅 인디케이터는 위치 고정이므로 무시
@@ -629,7 +631,7 @@ internal static partial class Program
         ImeStatus.UpdateDetectionMethod(_config.DetectionMethod);
         Overlay.HandleConfigChanged(_config);
         // 인디가 가시 상태라면 애니메이터 config 갱신 + 새 alpha/크기/색상 즉시 반영
-        if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
+        if (!_config.UserHidden && _indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
         {
             var (x, y) = GetAppPosition();
             Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
@@ -670,6 +672,7 @@ internal static partial class Program
     private static void HandleActivateRequest()
     {
         Logger.Info("Activation request from second instance received");
+        if (_config.UserHidden) return;
         if (_lastForegroundHwnd == IntPtr.Zero) return;
 
         _indicatorVisible = true;
@@ -730,12 +733,64 @@ internal static partial class Program
                 Tray.ShowMenu(_hwndMain, _config);
                 break;
             case Win32Constants.WM_LBUTTONUP:
-                if (_config.TrayClickAction == TrayClickAction.Toggle)
+                switch (_config.TrayClickAction)
                 {
-                    _indicatorVisible = !_indicatorVisible;
-                    if (!_indicatorVisible) HideOverlay();
+                    case TrayClickAction.Toggle:
+                        HandleTrayToggle();
+                        break;
+                    case TrayClickAction.Settings:
+                        Tray.OpenConfigFile();
+                        break;
                 }
                 break;
+        }
+    }
+
+    /// <summary>
+    /// 트레이 좌클릭 토글: UserHidden 상태를 반전하고 인디를 즉시 숨김/표시.
+    /// UserHidden=true 로 전환: 인디 숨김 + 트레이 아이콘에 취소선 오버레이.
+    /// UserHidden=false 로 전환: 현재 포그라운드 앱에 인디 즉시 재표시 + 취소선 제거.
+    /// config.json 에 즉시 저장 — 재기동/포그라운드 전환에도 상태 유지.
+    /// </summary>
+    private static void HandleTrayToggle()
+    {
+        bool wasHidden = _config.UserHidden;
+        _config = _config with { UserHidden = !wasHidden };
+        Settings.Save(_config);
+        Logger.Info($"Tray toggle: UserHidden={_config.UserHidden}");
+
+        // 트레이 아이콘 재생성 — 취소선 표시/제거 반영
+        if (_config.TrayEnabled)
+            Tray.UpdateState(_lastImeState, _config);
+
+        ApplyUserHiddenTransition(wasHidden, _config.UserHidden);
+    }
+
+    /// <summary>
+    /// UserHidden 전환을 오버레이에 반영한다. HandleTrayToggle(좌클릭) 과
+    /// HandleMenuCommand 의 updateConfig 람다(메뉴 "인디케이터 숨김" 토글 + 향후
+    /// SettingsDialog 등) 양 경로에서 공유. 호출 전 <c>_config.UserHidden</c> 은 이미 새 값으로
+    /// 갱신돼 있어야 한다.
+    /// </summary>
+    private static void ApplyUserHiddenTransition(bool wasHidden, bool isHidden)
+    {
+        if (wasHidden == isHidden) return;
+
+        if (isHidden)
+        {
+            // 숨김 전환: 현재 가시 상태라면 즉시 숨김
+            if (_indicatorVisible)
+                HideOverlay();
+        }
+        else
+        {
+            // 표시 전환: 현재 포그라운드 앱에 즉시 인디 재표시
+            if (_lastForegroundHwnd != IntPtr.Zero)
+            {
+                _indicatorVisible = true;
+                var (x, y) = GetAppPosition();
+                Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
+            }
         }
     }
 
@@ -744,12 +799,19 @@ internal static partial class Program
         Tray.HandleMenuCommand(commandId, _config, _hwndMain, _lastForegroundHwnd,
             updateConfig: newConfig =>
             {
+                bool wasHidden = _config.UserHidden;
                 _config = ThemePresets.Apply(newConfig);
                 ImeStatus.UpdateDetectionMethod(_config.DetectionMethod);
                 Overlay.HandleConfigChanged(_config);
+
+                if (wasHidden != _config.UserHidden)
+                {
+                    // UserHidden 토글 — 좌클릭 HandleTrayToggle 과 동일한 표시/숨김 전환 적용
+                    ApplyUserHiddenTransition(wasHidden, _config.UserHidden);
+                }
                 // 인디가 가시 상태라면 애니메이터 config 갱신 + 새 alpha/크기/색상이 즉시 반영되도록
                 // TriggerShow로 전체 갱신. TriggerShow는 UpdateConfig + Overlay.Show를 포함한다.
-                if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
+                else if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
                 {
                     var (x, y) = GetAppPosition();
                     Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
@@ -975,8 +1037,10 @@ internal static partial class Program
             return false;
 
         if (!state.LastFiltered && _indicatorVisible)
+        {
             User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
                 IntPtr.Zero, IntPtr.Zero);
+        }
         state.LastFiltered = true;
         return true;
     }
@@ -1017,8 +1081,10 @@ internal static partial class Program
         {
             // 필터 진입 시에만 숨김 메시지 전송 (중복 메시지 억제)
             if (!state.LastFiltered && _indicatorVisible)
+            {
                 User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
+            }
             state.LastHwndForeground = hwndForeground;
             state.LastHwndFocus = hwndFocus;
             state.LastFiltered = true;
@@ -1079,8 +1145,10 @@ internal static partial class Program
             && Dwmapi.IsCloaked(hwndForeground))
         {
             if (_indicatorVisible)
+            {
                 User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
+            }
             state.LastHwndForeground = hwndForeground;
             state.LastHwndFocus = hwndFocus;
             state.LastSystemInputFrame = default;

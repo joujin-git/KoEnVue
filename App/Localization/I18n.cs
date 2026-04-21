@@ -73,6 +73,7 @@ internal static class I18n
     public static string MenuDragModifierAlt => _isKorean ? "Alt" : "Alt";
     public static string MenuDragModifierCtrlAlt => _isKorean ? "Ctrl + Alt" : "Ctrl + Alt";
     public static string MenuCleanup => _isKorean ? "위치 기록 정리..." : "Clean position history...";
+    public static string MenuUserHidden => _isKorean ? "인디케이터 숨김" : "Hide indicator";
     public static string MenuSettings => _isKorean ? "상세 설정..." : "Settings...";
     public static string MenuExit => _isKorean ? "종료" : "Exit";
 

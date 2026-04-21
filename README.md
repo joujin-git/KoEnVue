@@ -74,18 +74,19 @@ exe 폴더의 `config.json` 을 직접 편집하거나 트레이 **상세 설정
 | 키 | 기본값 | 설명 |
 |----|--------|------|
 | `display_mode` | `"always"` | `"always"` 항상 표시 / `"on_event"` 이벤트 시만 |
-| `indicator_scale` | `1.0` | 크기 배율 1.0~5.0 (0.1 단위) |
+| `indicator_scale` | `2.0` | 크기 배율 1.0~5.0 (0.1 단위) |
 | `opacity` | `0.85` | 활성 불투명도 |
-| `idle_opacity` | `0.4` | 유휴 불투명도 (Always 모드) |
+| `idle_opacity` | `0.55` | 유휴 불투명도 (Always 모드) |
 | `position_mode` | `"window"` | `"fixed"` 화면 고정 / `"window"` 창 기준 상대 위치 |
 | `snap_to_windows` | `true` | 드래그 중 창 엣지 자석 스냅 |
-| `snap_gap_px` | `2` | 창 엣지 스냅 시 간격 (px, 0 = 밀착) |
+| `snap_gap_px` | `10` | 창 엣지 스냅 시 간격 (px, 0 = 밀착) |
 | `drag_modifier` | `"none"` | 드래그 개시 게이트. `"none"` 항상 드래그 / `"ctrl"`·`"alt"`·`"ctrl_alt"` 해당 키 누른 상태에서만 드래그 개시 (나머지 클릭은 오버레이가 소비, 크로스 프로세스 투과는 미지원) |
 | `theme` | `"custom"` | `custom` / `minimal` / `vivid` / `pastel` / `dark` / `system` (6 프리셋) |
 | `poll_interval_ms` | `80` | IME 감지 폴링 간격 (ms) |
 | `hide_in_fullscreen` | `true` | 전체화면 앱에서 숨김 |
 | `hide_when_no_focus` | `true` | 포커스 없는 창에서 숨김 |
 | `tray_tooltip` | `true` | 트레이 아이콘 호버 툴팁 표시 |
+| `user_hidden` | `false` | 사용자가 인디케이터를 숨긴 상태. `true` 일 때 아이콘 위에 굵은 취소선 1줄 표시, 감지 이벤트가 인디를 다시 띄우지 못하게 차단. 재기동에도 유지. 토글 경로: 트레이 좌클릭(좌클릭 동작이 `toggle` 일 때) 또는 우클릭 메뉴 "인디케이터 숨김" |
 | `update_check_enabled` | `true` | 부팅 시 GitHub Releases 에서 새 버전 1회 확인 (발견 시 트레이 메뉴 최상단에 "새 버전 있음" 항목 표시) |
 
 전체 설정 필드는 트레이 "상세 설정" 대화상자에서 섹션별로 편집할 수 있습니다 (표시 모드·외관·애니메이션·감지·앱별 프로필·트레이·시스템·업데이트·인디케이터 조작·위치·단축 작업·고급 등).

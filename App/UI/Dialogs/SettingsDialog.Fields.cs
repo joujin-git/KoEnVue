@@ -224,7 +224,7 @@ internal static partial class SettingsDialog
             c => c.TrayTooltip, (c, v) => c with { TrayTooltip = v }));
         Add(Combo("좌클릭 동작", "Left-click action",
             ko ? ["표시 토글", "설정 파일 열기", "동작 없음"]
-               : ["Toggle visibility", "Open settings", "None"],
+               : ["Toggle visibility", "Open config file", "None"],
             c => (int)c.TrayClickAction,
             (c, i) => c with { TrayClickAction = (TrayClickAction)Math.Clamp(i, 0, 2) }));
         Add(Dbl("빠른 투명도 1 (진하게)", "Quick opacity 1 (High)", 0.1, 1.0,

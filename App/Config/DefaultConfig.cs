@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using KoEnVue.App.Models;
 
 namespace KoEnVue.App.Config;
@@ -51,11 +50,6 @@ internal static class DefaultConfig
     /// 인디케이터 엣지와 타겟 엣지의 거리가 이 값 이하면 스냅.
     /// </summary>
     public const int SnapThresholdPx = 10;
-
-    /// <summary>
-    /// 스냅 후보 창의 최소 크기 필터 (DPI 스케일링 전 px). 너무 작은 창(툴팁, 팝업 등) 제외.
-    /// </summary>
-    public const int SnapMinWindowSizePx = 80;
 
     // === 애니메이션 타이밍 (ms) ===
 
@@ -121,7 +115,7 @@ internal static class DefaultConfig
     /// 둘 중 하나만 올리면 바이너리 메타데이터와 런타임 비교 값이 불일치한다.
     /// </para>
     /// </summary>
-    public const string AppVersion = "0.9.2.3";
+    public const string AppVersion = "0.9.2.4";
 
     /// <summary>UpdateChecker 가 조회할 GitHub 레포 owner.</summary>
     public const string UpdateRepoOwner = "joujin-git";
@@ -129,10 +123,7 @@ internal static class DefaultConfig
     /// <summary>UpdateChecker 가 조회할 GitHub 레포 이름.</summary>
     public const string UpdateRepoName = "KoEnVue";
 
-    // === 오버레이 ===
-
-    /// <summary>오버레이 윈도우 클래스명</summary>
-    public const string OverlayClassName = "KoEnVueOverlay";
+    // === 시스템 입력 프로세스 ===
 
     /// <summary>
     /// 시스템 입력 프로세스 — 시작 메뉴, 작업 표시줄 검색 창.

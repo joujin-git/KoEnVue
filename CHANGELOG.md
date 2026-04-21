@@ -3,6 +3,37 @@
 이 프로젝트의 주요 변경 사항을 기록합니다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/)를 따릅니다.
 
+## [Unreleased]
+
+## [0.9.2.4] — 2026-04-21
+
+### 수정
+
+- **트레이 좌클릭 토글이 "보임 → 숨김" 방향에서 동작하지 않던 문제** — `HandleTrayCallback` 의 `WM_LBUTTONUP` 분기가 `_indicatorVisible = !_indicatorVisible; if (!_indicatorVisible) HideOverlay();` 형태로 짜여 있었고, 숨김 상태에서 재클릭 시 `_indicatorVisible = true` 로만 전환될 뿐 `Animation.TriggerShow` 호출이 빠져 있어 "숨김 → 보임" 경로가 무동작. 더 깊은 원인으로 `SystemFilter` 의 `Shell_TrayWnd` 블랙리스트가 트레이 아이콘 클릭 시 올라오는 작업 표시줄 자체를 필터링해 인디가 감지 루프에서 즉시 숨겨지면서 클릭 이벤트가 전달되기 전에 `_indicatorVisible = false` 로 떨어지던 비대칭 상태. `HandleTrayCallback` 을 `HandleTrayToggle` 로 분리해 (1) `UserHidden` 필드를 반전, (2) `Settings.Save(_config)` 로 config.json 에 즉시 영구 저장, (3) `Tray.UpdateState` 로 트레이 아이콘 재생성(취소선 반영), (4) 방향별 분기(`newHidden == true` → `HideOverlay`, `false` → `Animation.TriggerShow`) 로 재작성. 동시에 `HandleImeStateChanged` / `HandleFocusChanged` / `HandlePositionUpdated` / `HandleConfigChanged` / `HandleActivateRequest` 5개 이벤트 핸들러에 `if (_config.UserHidden) return;` 게이트 추가 — 사용자가 명시적으로 숨긴 상태에서는 감지 스레드 이벤트가 인디를 다시 띄우지 못하도록 물리적으로 차단
+- **트레이 좌클릭 동작 `tray_click_action = "settings"` 가 무동작이던 버그** — `SettingsDialog` "좌클릭 동작" 콤보박스와 `TrayClickAction` enum 에는 `Settings` / `None` 값이 노출돼 있었으나, `Program.HandleTrayCallback` 의 `WM_LBUTTONUP` 분기가 `Toggle` 한 가지만 처리하고 있어 `Settings` / `None` 은 silent no-op. `Tray.OpenConfigFile()` 추가 — `ShellExecuteW(0, "open", "notepad.exe", "\"{path}\"", ...)` 로 현재 활성 `config.json` 을 메모장으로 연다. 시스템 기본 `.json` 핸들러가 아니라 메모장을 고정 (일반 사용자 PC 는 `.json` 연결 앱이 없어 "앱 선택" 다이얼로그가 뜨거나 무반응으로 보이는 경우가 많음). 경로에 공백이 있을 수 있어 `lpParameters` 를 따옴표로 감싼다. `HandleTrayCallback` 의 `WM_LBUTTONUP` 은 `switch` 로 재작성해 `Settings` → `Tray.OpenConfigFile()`, `None` 은 묵시적 no-op 로 분기
+
+### 추가
+
+- **`AppConfig.UserHidden` 필드 (기본 `false`) — 트레이 좌클릭 토글 상태의 영구 저장** — 이전까지 트레이 숨김 상태는 `Program._indicatorVisible` 휘발성 필드로만 관리돼 앱 재기동·포그라운드 전환 시 즉시 손실. `AppConfig` 의 `[시스템 트레이]` 섹션에 `bool UserHidden { get; init; } = false;` 필드 추가 — `SnakeCaseLower` 매핑으로 `config.json` 에는 `"user_hidden": true/false` 로 직렬화. `HandleTrayToggle` 이 상태 반전 즉시 `Settings.Save` 호출 → 재기동 후에도 숨김 유지. 리셋 경로는 별도 UI 미제공 — `config.json` 삭제 시 STJ 의 기본 unmapped-member handling 이 폴백 기본값(`false`)을 자연 적용
+- **`TrayIcon.DrawStrikeThrough` — UserHidden 시 트레이 아이콘 가로 굵은 취소선 오버레이** — 캐럿+점 도형 위에 수평 단일선 1줄을 중첩해 "사용자가 명시적으로 숨김" 상태임을 시각 고지. Y 중심 `iconH / 2` (세로 중앙), 두께 `iconH / 4` (min 3 px) — 16 px 아이콘에서 4 px, 20 px 고DPI 에서 5 px, 좌우 1 px 엣지 여백. 초기 시안 2중선(두께 `iconH / 6` × 2줄, `iconH * 1/3` · `iconH * 2/3` Y 대칭) 은 16 px 에서 캐럿+점 실루엣 가독성을 세로 절반 이상 덮는 문제로 기각 — 단일 굵은선이 도형 형체 유지 + "취소선" 관용구 의미 전달 양쪽 균형. 대안으로 검토했던 회색 배경 desaturation 도 `NonKoreanBg` 기본값이 회색 계열(`#6B7280` custom · `#9CA3AF` / `#D1D5DB` / `#374151` 프리셋)이라 비한국어 IME 상태와 시각 충돌로 기각. `TrayIcon.CreateIcon` 이 `config.UserHidden == true` 일 때만 `DrawCaretDot` 직후 호출 — GDI DC / 브러시 공유(try/finally 누수 차단), `DrawCaretDot` 와 동일한 `uint fgColor` 전달로 Fg 색 정책 일관 적용
+- **트레이 우클릭 메뉴 "인디케이터 숨김" 체크 토글 (`IDM_USER_HIDDEN = 4009`)** — `tray_click_action` 을 `"settings"` / `"none"` 으로 바꾼 환경에서는 좌클릭 토글 경로가 막혀 `user_hidden = true` 가 dead-end 가 될 수 있던 문제를 해소. 메뉴는 "위치 기록 정리..." 와 "상세 설정..." 사이에 구분선으로 감싼 단독 블록 위치, `config.UserHidden` 값에 따라 `MF_CHECKED` / `MF_UNCHECKED` 가 그려진다. 핸들러는 `updateConfig(config with { UserHidden = !config.UserHidden })` 로 좌클릭 `HandleTrayToggle` 과 동일한 `ApplyUserHiddenTransition` 헬퍼를 거친다 — 오버레이 즉시 표시/숨김, 트레이 아이콘 취소선 즉시 반영, `Settings.Save` 로 config.json 영구 저장
+- **`I18n.MenuUserHidden` — "인디케이터 숨김" / "Hide indicator"** — 신설 메뉴 항목의 한국어/영어 라벨
+
+### 내부
+
+- **`Program.ApplyUserHiddenTransition(bool wasHidden, bool isHidden)` 헬퍼 추출** — 기존 `HandleTrayToggle` 내부의 방향 분기(숨김→표시 시 `TriggerShow`, 표시→숨김 시 `HideOverlay`) 로직을 별도 메서드로 분리. `HandleTrayToggle`(좌클릭) 과 `HandleMenuCommand` 의 `updateConfig` 람다(우클릭 메뉴 / SettingsDialog) 양 경로에서 공유 — P4 중복 구현 회피. `updateConfig` 람다는 `wasHidden = _config.UserHidden` 을 먼저 캡처해 새 config 적용 후 값이 바뀌었으면 `ApplyUserHiddenTransition` 호출, 안 바뀌었으면 기존 `_indicatorVisible` 기반 config-changed 분기로 폴백
+
+### 변경
+
+- **`AppConfig` 기본값 3종 상향 — `indicator_scale` 1.0 → 2.0 · `idle_opacity` 0.4 → 0.55 · `snap_gap_px` 2 → 10** — 신규 설치 환경에서의 가시성/여백 체감을 상향 조정. 1.0배 인디는 고DPI 모니터에서 시선 이동 비용 대비 존재감이 약했고, `idle_opacity` 0.4 는 어두운 벽지/테마와 겹칠 때 유휴 상태 식별이 어려웠으며, `snap_gap_px` 2 는 경계선이 사실상 맞닿아 스냅 후에도 창 테두리와 시각적으로 붙어 보였다. 세 값 모두 `config.json` 이 없는 초기 기동에서만 적용 — 기존 사용자의 저장 값과 트레이/설정 대화상자에서 직접 조정한 값은 영향 없음
+- **트레이 아이콘 도형 색: 흰색 고정 → 상태별 Fg** — 기존에는 `WhiteColorRef = 0x00FFFFFF` 상수를 `DrawCaretDot` · `DrawStrikeThrough` 양쪽에서 하드코딩으로 재사용했음. `pastel` 프리셋(`HangulBg #86EFAC` / `EnglishBg #FDE68A` / `NonKoreanBg #C4B5FD`) 처럼 배경이 밝은 테마에서 흰 캐럿+점이 배경과 녹아 들어 가독성이 저하되고, 같은 색 취소선도 함께 묻히는 문제. `CreateIcon` 에 `bgHex` 와 동형의 state switch 로 `fgHex`(`HangulFg` / `EnglishFg` / `NonKoreanFg`) 를 도출하고 `ColorHelper.HexToColorRef` 로 변환한 `uint fgColor` 를 두 draw 메서드에 파라미터로 전달하도록 시그니처 확장. 두 메서드 내부의 `hWhiteBrush` 변수명도 `hFgBrush` 로 개명해 의미 일관성 복원. `WhiteColorRef` 상수는 완전 제거(dead code). pastel 테마에서는 Fg 가 `#14532D`(한글 다크 그린) / `#78350F`(영문 다크 브라운) / `#3B0764`(비한국어 다크 퍼플) 로 세팅돼 있어 자동으로 배경 대비가 보장되고, vivid/custom 기본값처럼 Fg 가 이미 `#FFFFFF` 인 테마에서는 시각 변화 0. 대안으로 검토했던 순수 RGB 반전(`~bgColor & 0x00FFFFFF`) 은 Custom 기본 `NonKoreanBg #6B7280` 같은 중간 회색에서 반전값(`#948D7F`)이 원본과 luminance 차이 25에 불과해 대비가 수학적으로 붕괴하는 문제로 기각 — Fg 위임은 테마 제작자가 의도적으로 세팅한 대비를 존중하는 더 robust 한 경로. 연동 문서 3종(User_Guide.md · KoEnVue_PRD.md · implementation-notes.md) 의 "흰색" 문구를 "전경색/Fg" 로 동시 현행화
+
+### 제거
+
+- **진단용 `Logger.Info("DIAG: ...")` 10건 + `DiagFilterReason` 메서드 + `[CallerMemberName]` 경로 추적** — 이번 토글 버그 추적용으로 임시 추가했던 진단 로그(`HandleImeStateChanged` / `HandleFocusChanged` / `HideOverlay` / `HandleTrayCallback` x3 / `TryHandleModalGate` / `TryHandleFilter` / `TryHandleSystemInputClose` x2) 와 `SystemFilter.ShouldHide` 의 첫 true 조건을 재평가해 문자열 사유를 반환하던 `DiagFilterReason(hwnd, hwndFocus, config)` 진단 메서드 일괄 제거. `HideOverlay([CallerMemberName] string caller = "")` 시그니처의 `caller` 파라미터도 함께 제거 → `using System.Runtime.CompilerServices;` import 도 dead 가 되어 정리. `HandlePositionUpdated` 의 "PositionUpdated: process=..." 로그는 사용자 도움 진단용으로 유지하되 `Logger.Info` → `Logger.Debug` 로 강등(정상 경로 로그 홍수 방지)
+- **`DefaultConfig` 의 dead 중복 3종 일괄 정리** — (1) `SnapMinWindowSizePx = 80` App 레이어 상수: 실제 스냅 후보 필터는 `Core/Windowing/LayeredOverlayBase.cs` 의 `[UnmanagedCallersOnly]` 정적 콜백이 인스턴스 필드 접근 불가 제약으로 자체 `private const int SnapMinWindowSizePx = 80` 을 보관·참조하고, App 측 동명 상수는 전역 grep 호출처 0건의 완전 dead. 동일 의미·동일 이름 상수가 App/Core 양쪽에 산재하는 구조는 P4(중복 구현 금지) 위반이라 App 측 제거 — Core 상수를 유일 소스로 정리. (2) `OverlayClassName = "KoEnVueOverlay"` 파사드 상수: `AppConfig.Advanced.OverlayClassName` 이 이미 source of truth 로 존재하고 `Program.Bootstrap.cs` 의 윈도우 클래스 등록/생성 3지점 모두 `_config.Advanced.OverlayClassName` 을 직접 참조. DefaultConfig 의 파사드 const 는 호출처 0건의 dead weight. (3) `using System.IO;` 미사용 import: `Path` / `File` / `Directory` / `Stream` 사용 0건으로 상기 2종 제거 후 재검증에서 포착. 3항목 제거 후 `Core/Windowing/LayeredOverlayBase.cs` 의 `SnapMinWindowSizePx` 관련 주석 2곳에 남아 있던 "DefaultConfig 파사드" 문구도 동시 정리 — "[UnmanagedCallersOnly] 정적 콜백이라 인스턴스 필드 접근 불가" 사유만 유지
+- **`Tray.OpenConfigFile` 한국어 Logger.Warning 메시지 영문화** — `"OpenConfigFile: ConfigFilePath is null — Settings.Load 가 아직 호출되지 않았음"` 이 P2(UI 텍스트 한국어 · 로그 메시지 영문) 일관성에서 이탈한 유일한 로그. `"OpenConfigFile: ConfigFilePath is null (Settings.Load not yet called)"` 로 통일
+
 ## [0.9.2.3] — 2026-04-20
 
 ### 수정

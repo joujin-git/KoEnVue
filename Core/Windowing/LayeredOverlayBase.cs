@@ -602,9 +602,8 @@ internal sealed class LayeredOverlayBase : IDisposable
 
         int w = frame.Right - frame.Left;
         int h = frame.Bottom - frame.Top;
-        // 최소 크기 필터 — 파사드가 SnapMinWindowSizePx로 제공해야 하지만,
-        // [UnmanagedCallersOnly] 정적 콜백에서 인스턴스 필드 접근 불가.
-        // 원래 설계(상수 80px)를 Core 레이어에 인라인 상수로 복사해 유지한다.
+        // 최소 크기 필터 — [UnmanagedCallersOnly] 정적 콜백이라 인스턴스 필드 접근 불가.
+        // 상수 80px 을 Core 레이어 private const 로 직접 보관한다.
         if (w < SnapMinWindowSizePx || h < SnapMinWindowSizePx)
             return 1;
 
@@ -613,8 +612,8 @@ internal sealed class LayeredOverlayBase : IDisposable
     }
 
     /// <summary>
-    /// 스냅 후보 최소 크기 (DPI 미적용 px). [UnmanagedCallersOnly] 콜백에서 파사드 상수에
-    /// 접근할 수 없으므로 Core 레이어에 동일 값을 복사 유지한다.
+    /// 스냅 후보 최소 크기 (DPI 미적용 px). [UnmanagedCallersOnly] 정적 콜백에서
+    /// 인스턴스 필드 접근 불가라 Core 레이어 private const 로 직접 보관.
     /// </summary>
     private const int SnapMinWindowSizePx = 80;
 

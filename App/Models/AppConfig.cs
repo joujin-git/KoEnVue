@@ -26,7 +26,7 @@ internal sealed record AppConfig
     // [외관 -- 크기 배율] — LabelWidth/Height/FontSize/BorderRadius/BorderWidth + LABEL_PADDING_X에
     // 곱해지는 배율. 트레이 메뉴에서 1.0~5.0 범위, 소수점 1자리까지 조절.
     // DPI 스케일링과 독립적으로 적용된다.
-    public double IndicatorScale { get; init; } = 1.0;
+    public double IndicatorScale { get; init; } = 2.0;
 
     // [외관 -- 색상]
     public string HangulBg { get; init; } = "#16A34A";
@@ -36,7 +36,7 @@ internal sealed record AppConfig
     public string NonKoreanBg { get; init; } = "#6B7280";
     public string NonKoreanFg { get; init; } = "#FFFFFF";
     public double Opacity { get; init; } = 0.85;
-    public double IdleOpacity { get; init; } = 0.4;
+    public double IdleOpacity { get; init; } = 0.55;
     public double ActiveOpacity { get; init; } = 0.95;
     // [외관 -- 텍스트]
     public string FontFamily { get; init; } = "맑은 고딕";
@@ -81,7 +81,7 @@ internal sealed record AppConfig
     public string[] SystemHideProcesses { get; init; } = ["ShellExperienceHost"];
     public string[] SystemHideProcessesUser { get; init; } = [];
 
-    // [앱별 프로필] -- Phase 06에서 구현
+    // [앱별 프로필] -- config.json 직접 편집 전용 (사용 예시: docs/User_Guide.md)
     public Dictionary<string, JsonElement> AppProfiles { get; init; } = new();
     public AppProfileMatch AppProfileMatch { get; init; } = AppProfileMatch.Process;
     public AppFilterMode AppFilterMode { get; init; } = AppFilterMode.Blacklist;
@@ -92,6 +92,10 @@ internal sealed record AppConfig
     public bool TrayTooltip { get; init; } = true;
     public TrayClickAction TrayClickAction { get; init; } = TrayClickAction.Toggle;
     public double[] TrayQuickOpacityPresets { get; init; } = [0.95, 0.85, 0.6];
+
+    // 트레이 좌클릭 토글로 사용자가 명시 숨김한 상태. 재기동·포그라운드 전환 시에도 유지.
+    // 트레이 아이콘에는 취소선으로 시각 표시된다 (TrayIcon.DrawStrikeThrough).
+    public bool UserHidden { get; init; } = false;
 
     // [시스템]
     public LogLevel LogLevel { get; init; } = LogLevel.Info;
@@ -131,7 +135,7 @@ internal sealed record AppConfig
 
     // 창 엣지 스냅 시 인디케이터와 타겟 창 사이 간격 (DPI 스케일링 전 px).
     // 0 = 엣지에 밀착, 양수 = 경계선 겹침 방지 여백. 화면 엣지에는 적용 안 됨.
-    public int SnapGapPx { get; init; } = 2;
+    public int SnapGapPx { get; init; } = 10;
 
     // [인디케이터 위치 -- 드래그 활성 키]
     // 드래그 개시 게이트. None = 모든 좌클릭이 드래그 개시. Ctrl/Alt/CtrlAlt = 해당 키를

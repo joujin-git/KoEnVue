@@ -15,9 +15,6 @@ namespace KoEnVue.App.UI;
 /// </summary>
 internal static class TrayIcon
 {
-    // 캐럿+점 도형의 흰색 (P3: 매직 넘버 금지)
-    private const uint WhiteColorRef = 0x00FFFFFF; // COLORREF BGR
-
     // 캐럿+점 도형 비율/최소크기 (P3: 매직 넘버 금지)
     private const int CaretWidthRatio = 8;     // 캐럿 너비 = iconW / 8
     private const int CaretMinWidth = 2;       // 캐럿 최소 너비 (px)
@@ -28,6 +25,12 @@ internal static class TrayIcon
     private const int DotMinSize = 3;          // 점 최소 크기 (px)
     private const int DotGapMinPx = 1;         // 점-캐럿 최소 간격 (px)
     private const int CaretYOffsetPx = 1;      // 시각 보정: 캐럿+점이 위로 떠 보이는 현상을 1px 아래로 보정
+
+    // 단일 취소선 (UserHidden=true 시 캐럿+점 위에 중첩). 아이콘 세로 중앙 수평 1줄, 굵게.
+    // 16px 에서 4px, 20px 에서 5px — 캐럿+점 도형을 가로지르면서도 형체는 읽히는 두께.
+    private const int StrikeThicknessRatio = 4;  // 두께 = iconH / 4
+    private const int StrikeThicknessMinPx = 3;
+    private const int StrikeEdgeInsetPx = 1;     // 좌우 엣지 1px 여백
 
     /// <summary>
     /// ImeState별 배경색으로 캐럿+점 아이콘을 생성한다.
@@ -48,6 +51,17 @@ internal static class TrayIcon
             _ => config.EnglishBg,
         };
         uint bgColor = ColorHelper.HexToColorRef(bgHex);
+
+        // 상태별 전경색 — 캐럿+점과 취소선이 공유. 테마 프리셋이 배경 대비 가독성을 보장하는
+        // Fg 쌍을 세팅하므로 아이콘 내부 도형 색을 여기에 위임 (pastel 테마의 저대비 방지).
+        string fgHex = state switch
+        {
+            ImeState.Hangul => config.HangulFg,
+            ImeState.English => config.EnglishFg,
+            ImeState.NonKorean => config.NonKoreanFg,
+            _ => config.EnglishFg,
+        };
+        uint fgColor = ColorHelper.HexToColorRef(fgHex);
 
         // GDI 중간 객체 — try/finally로 누수 방지
         IntPtr memDC = IntPtr.Zero;
@@ -82,8 +96,12 @@ internal static class TrayIcon
             var rect = new RECT { Left = 0, Top = 0, Right = iconW, Bottom = iconH };
             User32.FillRect(memDC, ref rect, hBrush);
 
-            // 6. 캐럿+점 도형 (흰색)
-            DrawCaretDot(memDC, iconW, iconH);
+            // 6. 캐럿+점 도형 (Fg 색상)
+            DrawCaretDot(memDC, iconW, iconH, fgColor);
+
+            // 6a. 사용자 숨김 상태면 단일 취소선 중첩 (Fg 색상, 볼드)
+            if (config.UserHidden)
+                DrawStrikeThrough(memDC, iconW, iconH, fgColor);
 
             // 이전 비트맵 복원 (SelectObject 전 필수)
             Gdi32.SelectObject(memDC, hOldBitmap);
@@ -127,14 +145,14 @@ internal static class TrayIcon
     }
 
     /// <summary>
-    /// 캐럿(세로바) + 점 도형을 흰색으로 그린다.
+    /// 캐럿(세로바) + 점 도형을 Fg 색으로 그린다.
     /// 아이콘 중앙 부근에 배치.
     /// </summary>
-    private static void DrawCaretDot(IntPtr hdc, int iconW, int iconH)
+    private static void DrawCaretDot(IntPtr hdc, int iconW, int iconH, uint fgColor)
     {
-        IntPtr hWhiteBrush = Gdi32.CreateSolidBrush(WhiteColorRef);
+        IntPtr hFgBrush = Gdi32.CreateSolidBrush(fgColor);
         IntPtr hNullPen = Gdi32.GetStockObject(Win32Constants.NULL_PEN);
-        IntPtr hOldBrush = Gdi32.SelectObject(hdc, hWhiteBrush);
+        IntPtr hOldBrush = Gdi32.SelectObject(hdc, hFgBrush);
         IntPtr hOldPen = Gdi32.SelectObject(hdc, hNullPen);
 
         try
@@ -156,7 +174,37 @@ internal static class TrayIcon
         {
             Gdi32.SelectObject(hdc, hOldPen);
             Gdi32.SelectObject(hdc, hOldBrush);
-            Gdi32.DeleteObject(hWhiteBrush);
+            Gdi32.DeleteObject(hFgBrush);
+        }
+    }
+
+    /// <summary>
+    /// UserHidden=true 시 캐럿+점 위에 Fg 색 단일 수평 취소선을 중첩한다.
+    /// 아이콘 세로 중앙에 두껍게 1줄 — "숨김" 상태 시인성 확보.
+    /// </summary>
+    private static void DrawStrikeThrough(IntPtr hdc, int iconW, int iconH, uint fgColor)
+    {
+        IntPtr hFgBrush = Gdi32.CreateSolidBrush(fgColor);
+        IntPtr hNullPen = Gdi32.GetStockObject(Win32Constants.NULL_PEN);
+        IntPtr hOldBrush = Gdi32.SelectObject(hdc, hFgBrush);
+        IntPtr hOldPen = Gdi32.SelectObject(hdc, hNullPen);
+
+        try
+        {
+            int thick = Math.Max(iconH / StrikeThicknessRatio, StrikeThicknessMinPx);
+            int left = StrikeEdgeInsetPx;
+            int right = iconW - StrikeEdgeInsetPx;
+
+            // 단일선 — Y 중심 = iconH / 2
+            int centerY = iconH / 2;
+            int y = centerY - thick / 2;
+            Gdi32.Rectangle(hdc, left, y, right, y + thick);
+        }
+        finally
+        {
+            Gdi32.SelectObject(hdc, hOldPen);
+            Gdi32.SelectObject(hdc, hOldBrush);
+            Gdi32.DeleteObject(hFgBrush);
         }
     }
 }

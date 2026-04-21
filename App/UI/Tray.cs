@@ -58,6 +58,7 @@ internal static class Tray
     private const int IDM_ANIMATION_ENABLED  = 4006;
     private const int IDM_CHANGE_HIGHLIGHT   = 4007;
     private const int IDM_UPDATE_DOWNLOAD    = 4008;
+    private const int IDM_USER_HIDDEN        = 4009;
     private const int IDM_EXIT               = 4002;
 
     // schtasks 작업 이름
@@ -406,6 +407,9 @@ internal static class Tray
             (nuint)(nint)hDragModMenu, I18n.MenuDragModifier);
         User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_CLEANUP, I18n.MenuCleanup);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
+        uint userHiddenFlags = config.UserHidden ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
+        User32.AppendMenuW(hMenu, userHiddenFlags, (nuint)IDM_USER_HIDDEN, I18n.MenuUserHidden);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
         User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_SETTINGS, I18n.MenuSettings);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
         User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_EXIT, I18n.MenuExit);
@@ -558,6 +562,13 @@ internal static class Tray
                 CleanupPositions(config, updateConfig);
                 break;
 
+            // --- 인디케이터 숨김 토글 ---
+            // 좌클릭 동작이 Settings/None 이라 좌클릭 토글이 막혀 있어도 숨김 해제 경로를 보장.
+            case IDM_USER_HIDDEN:
+                updateConfig(config with { UserHidden = !config.UserHidden });
+                Logger.Info($"UserHidden toggled via menu: {!config.UserHidden}");
+                break;
+
             // --- 상세 설정 ---
             case IDM_SETTINGS:
                 SettingsDialog.Show(hwndMain, config, updateConfig);
@@ -615,6 +626,43 @@ internal static class Tray
             Logger.Warning($"ShellExecuteW failed for update URL (rc={(long)result})");
         else
             Logger.Info($"Opened update page: {info.HtmlUrl}");
+    }
+
+    /// <summary>
+    /// 현재 활성 config.json 을 메모장으로 연다 (트레이 좌클릭 "설정 파일 열기" 동작).
+    /// <para>
+    /// <b>메모장 고정 이유</b> — 일반 사용자 PC 에는 <c>.json</c> 에 연결된 기본 앱이 없어
+    /// <c>ShellExecuteW("open", "...json")</c> 가 "앱 선택" 다이얼로그를 띄우거나 무반응으로
+    /// 보일 확률이 높다. 메모장은 Windows 모든 버전에 기본 탑재되고 UTF-8 을 정상 표시하며
+    /// 저장 시 hot reload 파일 감시에 바로 감지된다.
+    /// </para>
+    /// <para>
+    /// 경로에 공백이 있을 수 있어(<c>C:\Program Files\...</c>) <c>lpParameters</c> 를
+    /// 따옴표로 감싼다. ShellExecuteW 반환값이 32 이하면 실패지만 사용자에게 알려도 할 일이
+    /// 없으므로 silent log.
+    /// </para>
+    /// </summary>
+    internal static void OpenConfigFile()
+    {
+        string? path = Settings.ConfigFilePath;
+        if (string.IsNullOrEmpty(path))
+        {
+            Logger.Warning("OpenConfigFile: ConfigFilePath is null (Settings.Load not yet called)");
+            return;
+        }
+
+        IntPtr result = Shell32.ShellExecuteW(
+            IntPtr.Zero,
+            "open",
+            "notepad.exe",
+            $"\"{path}\"",
+            null,
+            Win32Constants.SW_SHOWNORMAL);
+
+        if ((long)result <= 32)
+            Logger.Warning($"ShellExecuteW failed for notepad (rc={(long)result}, path={path})");
+        else
+            Logger.Info($"Opened config file in notepad: {path}");
     }
 
     // ================================================================
