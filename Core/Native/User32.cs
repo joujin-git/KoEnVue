@@ -173,6 +173,15 @@ internal static partial class User32
     internal static partial bool CheckMenuRadioItem(
         IntPtr hMenu, uint first, uint last, uint check, uint flags);
 
+    // SetMenuDefaultItem: 메뉴의 default 항목을 명시 지정. default 항목은 시스템이 굵게 렌더링.
+    // AppendMenu(MF_DEFAULT) 가 내부 default 비트는 세팅하지만 실제 볼드 렌더링은 본 함수의 명시
+    // 호출이 있어야 보장됨 (MSDN: ModifyMenu 페이지 "use SetMenuDefaultItem instead",
+    // SetMenuDefaultItem 페이지 "displayed in bold type"). fByPos = 0 → uItem 을 command ID 로,
+    // 0 이외 → position 으로 해석. 메뉴당 1개만 default 가능.
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetMenuDefaultItem(IntPtr hMenu, uint uItem, uint fByPos);
+
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool DestroyMenu(IntPtr hMenu);

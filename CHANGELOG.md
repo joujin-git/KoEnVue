@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+## [0.9.2.7] — 2026-05-05
+
+### 수정
+
+- **트레이 메뉴 최상단 헤더 라인 볼드 렌더링이 시각 적용되지 않던 문제** — v0.9.2.6 에서 `AppendMenuW(hMenu, MF_STRING | MF_DEFAULT, IDM_HOMEPAGE, label)` 로 헤더 라인을 박았으나 Windows 11 환경에서 헤더가 다른 메뉴 항목과 동일한 굵기로 렌더링되던 문제. 원인: `AppendMenu` / `ModifyMenu` 의 `MF_DEFAULT` 플래그는 메뉴 항목의 *내부 default 비트* 는 세팅하지만, 시각적 볼드 렌더링을 일관되게 적용하려면 [`SetMenuDefaultItem(hMenu, uItem, fByPos)`](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setmenudefaultitem) 의 명시 호출이 필요함 — MSDN 의 `ModifyMenu` 페이지에 "use SetMenuDefaultItem instead" 노트, `SetMenuDefaultItem` 페이지에 "displayed in bold type" 보장. `Core/Native/User32.cs` 에 `SetMenuDefaultItem(IntPtr hMenu, uint uItem, uint fByPos)` `[LibraryImport]` 추가, `Tray.ShowMenu` 의 헤더 `AppendMenuW` 직후에 `User32.SetMenuDefaultItem(hMenu, (uint)IDM_HOMEPAGE, 0)` 한 줄 박음 (`fByPos = 0` → `uItem` 을 command ID 로 해석). `MF_DEFAULT` 플래그는 `AppendMenuW` 호출에 그대로 유지 — 두 경로 동치이지만 호출 한 줄을 보고 "이건 default 항목" 이라는 의도를 즉시 인지할 수 있는 자기-문서화 효과. 메뉴당 default 는 1개만 가능하다는 시스템 제약상 다른 항목과 충돌 없음 (현 메뉴 전 항목 grep 결과 다른 MF_DEFAULT 사용 0건)
+
 ## [0.9.2.6] — 2026-05-05
 
 ### 변경

@@ -382,8 +382,12 @@ internal static class Tray
         // 헤더 라인 — 항상 메뉴 최상단에 노출되는 단일 라인. `_pendingUpdate` 상태에 따라 두 모드:
         //   평소           → "KoEnVue v{ver} — GitHub"
         //   새 버전 가용시 → "KoEnVue v{cur} → {newTag} — 다운로드"
-        // `MF_DEFAULT` 가 시스템 자동 볼드 처리(팝업 메뉴당 1개만 가능) → 헤더성을 부여하고,
-        // 바로 아래 separator 가 메뉴 구조를 시각 분할한다. 클릭 시 IDM_HOMEPAGE 핸들러가
+        // 시스템 자동 볼드 처리를 위해 (1) `AppendMenuW` 에 `MF_DEFAULT` 플래그 + (2) 직후
+        // `SetMenuDefaultItem` 명시 호출 둘 다 박는다. AppendMenu 의 MF_DEFAULT 플래그만으로는
+        // 내부 default 비트는 세팅되지만 Windows 11 의 일부 환경에서 볼드 렌더링이 시각 적용되지
+        // 않는 케이스가 있어, MSDN 권장 경로인 SetMenuDefaultItem 으로 보강. MF_DEFAULT 플래그는
+        // 의도 자기-문서화 목적으로 유지 (호출 한 줄 보고 "이건 default 항목" 임을 즉시 인지 가능).
+        // 바로 아래 separator 가 메뉴 구조를 시각 분할. 클릭 시 IDM_HOMEPAGE 핸들러가
         // `_pendingUpdate` 유무로 OpenUpdatePage / OpenHomepage 분기.
         // `_pendingUpdate.Version` 은 GitHub release tag (예: "v1.0.1") 라 prefix 가 이미 포함됨 →
         // `→ v{...}` 가 아니라 `→ {tag}` 로 합성해야 v 가 중복되지 않음.
@@ -393,6 +397,7 @@ internal static class Tray
         User32.AppendMenuW(hMenu,
             Win32Constants.MF_STRING | Win32Constants.MF_DEFAULT,
             (nuint)IDM_HOMEPAGE, headerLabel);
+        User32.SetMenuDefaultItem(hMenu, (uint)IDM_HOMEPAGE, 0); // 0 = by command ID (not position)
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
 
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hOpacityMenu, I18n.MenuOpacity);
