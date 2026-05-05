@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+## [0.9.2.8] — 2026-05-05
+
+### 수정
+
+- **다이얼로그를 두 번 이상 열 때 로그에 `[ERROR] RegisterClassExW failed for 'KoEnVueSettingsDlg': error=1410` 가 누적되던 문제** — v0.9.2.5 의 `Win32DialogHelper.RegisterStandardClass` 헬퍼 추출 부수 효과. 추출 전 다이얼로그 코드들은 `User32.RegisterClassExW(ref wc)` 반환값을 그냥 버려 결과적으로 idempotent re-registration 이 사일런트로 처리됐는데, 통합 헬퍼가 `atom == 0` 분기를 일괄 `Logger.Error` 로 처리하면서 같은 프로세스에서 다이얼로그를 두 번째 이상 열 때마다 정상 idempotent 경로가 에러로 보고됐음. 결함이 아닌 정상 동작 (`ERROR_CLASS_ALREADY_EXISTS` = 1410 — 첫 등록이 살아있어 `CreateWindowExW` 가 정상 동작) 이라 다이얼로그 자체는 잘 떴지만, 사용자가 로그 파일을 봤을 때 "에러" + "failed" 표현이 불필요한 불안을 유발. `Win32Constants.ERROR_CLASS_ALREADY_EXISTS = 1410` 신규 상수 추가 (P3 매직 넘버 회피), `Win32DialogHelper.RegisterStandardClass` 의 `atom == 0` 분기에서 `Marshal.GetLastPInvokeError()` 결과를 분기하도록 변경 — 1410 이면 `Logger.Debug($"Window class '{className}' already registered (reusing)")` 로 강등 (레벨 + "failed" 단어 둘 다 회피해 사용자 로그 가독성 보호), 다른 에러 코드는 기존 `Logger.Error("... failed ...")` 그대로 유지해 진짜 결함은 여전히 노출. 트리거 사례: `IDM_SETTINGS` 클릭 → `SettingsDialog.Show()` → `KoEnVueSettingsDlg` + `KoEnVueSettingsViewport` 두 클래스 등록 시도. `CleanupDialog` (`KoEnVueCleanupDlg` + `KoEnVueCleanupViewport`) · `ScaleInputDialog` (`KoEnVueScaleDlg`) 도 동일한 헬퍼를 거치므로 같은 결함이었으나 사용자 우클릭 메뉴에서 두 번 이상 호출되는 빈도가 낮아 로그에 덜 노출됐음 — 이번 수정으로 5개 다이얼로그 클래스 모두 같은 정합성 회복. 메인 윈도우 + 오버레이 클래스는 `Program.Bootstrap.RegisterWindowClasses` 에서 1회만 등록되므로 트리거 없음
+
 ## [0.9.2.7] — 2026-05-05
 
 ### 수정

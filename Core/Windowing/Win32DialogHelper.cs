@@ -156,9 +156,25 @@ internal static class Win32DialogHelper
         };
         ushort atom = User32.RegisterClassExW(ref wc);
         if (atom == 0)
-            Logger.Error($"RegisterClassExW failed for '{className}': error={Marshal.GetLastPInvokeError()}");
+        {
+            int err = Marshal.GetLastPInvokeError();
+            if (err == Win32Constants.ERROR_CLASS_ALREADY_EXISTS)
+            {
+                // 같은 프로세스에 이미 등록된 클래스 — 첫 등록이 살아있어 CreateWindowExW 가 정상
+                // 동작. 결함이 아닌 idempotent 경로라 Debug 레벨 + "failed" 단어 회피 (사용자가 로그를
+                // 봤을 때 불필요한 불안 유발 방지). 다이얼로그 Show() 가 매 호출마다 RegisterClassExW
+                // 를 호출하는 구조라 두 번째 이상의 오픈 시 자연스럽게 이 경로를 탄다.
+                Logger.Debug($"Window class '{className}' already registered (reusing)");
+            }
+            else
+            {
+                Logger.Error($"RegisterClassExW failed for '{className}': error={err}");
+            }
+        }
         else
+        {
             Logger.Debug($"Window class registered: '{className}' atom={atom}");
+        }
         return atom;
     }
 }

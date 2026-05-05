@@ -387,6 +387,11 @@ internal static class Win32Constants
     public const uint TPM_RIGHTBUTTON    = 0x0002;
     public const uint TPM_RETURNCMD      = 0x0100;
 
+    // --- Win32 시스템 에러 코드 ---
+    // 같은 프로세스에서 동일 클래스명을 두 번째 이상 RegisterClassExW 호출 시 반환.
+    // 첫 등록이 살아있어 CreateWindowExW 가 정상 동작하므로 결함이 아닌 idempotent 경로.
+    public const int ERROR_CLASS_ALREADY_EXISTS = 1410;
+
     // --- SetWindowPos ---
     public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
     public const uint SWP_NOMOVE         = 0x0002;
