@@ -20,7 +20,7 @@ Windows 한/영 IME 상태 인디케이터 — 드래그 가능한 플로팅 오
 
 [Releases](../../releases) 에서 `KoEnVue.exe` 를 받아 원하는 폴더에 두고 실행하면 됩니다. Windows 10/11 x64, 관리자 권한이 필요합니다 (`app.manifest requireAdministrator`).
 
-첫 공개 릴리스는 **v0.8.9.0** (2026-04-14) 입니다. 이 빌드부터 부팅 시 GitHub Releases 에서 새 버전을 1회 자동 확인해 트레이 메뉴 최상단에 "새 버전 있음" 항목을 띄웁니다(자동 설치는 아니며 사용자가 직접 새 exe 로 교체). 싫으면 `config.json` 에서 `update_check_enabled: false`.
+첫 공개 릴리스는 **v0.8.9.0** (2026-04-14) 입니다. 이 빌드부터 부팅 시 GitHub Releases 에서 새 버전을 1회 자동 확인해, 새 버전이 있으면 트레이 메뉴 최상단 헤더 라벨이 평소 `KoEnVue v{ver} — GitHub` 에서 `KoEnVue v{cur} → v{new} — 다운로드` 로 자동 전환됩니다(자동 설치는 아니며 사용자가 직접 새 exe 로 교체). 싫으면 `config.json` 에서 `update_check_enabled: false`.
 
 ---
 
@@ -62,7 +62,7 @@ dotnet publish -r win-x64 -c Release
    - Attach: `bin/Release/net10.0-windows/win-x64/publish/KoEnVue.exe`
    - **"Set as a pre-release" 체크 해제** — 0.x.x 버전이라고 GitHub 가 자동으로 권장하지만, 체크하면 `release.prerelease=true` 로 `UpdateChecker` 가 건너뛰어 사용자에게 노출되지 않음. 정식 릴리스로 내보낼 때는 반드시 해제
    - Publish release
-4. **검증 (선택)** — 이전 버전 exe 를 실행하면 트레이 메뉴 최상단에 "새 버전 있음 (vX.Y.Z.W) — 다운로드" 가 뜨는지 확인
+4. **검증 (선택)** — 이전 버전 exe 를 실행하면 트레이 메뉴 최상단 헤더 라벨이 `KoEnVue v{old} → v{new} — 다운로드` 로 자동 전환되는지 확인
 
 > PE 헤더의 `InformationalVersion` 에 `+{gitHash}` 자동 접미어가 붙지 않도록 csproj 에 `<IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>` 가 설정되어 있습니다. 태그로 빌드를 식별하므로 해시 중복 불필요.
 
@@ -88,7 +88,7 @@ exe 폴더의 `config.json` 을 직접 편집하거나 트레이 **상세 설정
 | `hide_when_no_focus` | `true` | 포커스 없는 창에서 숨김 |
 | `tray_tooltip` | `true` | 트레이 아이콘 호버 툴팁 표시 |
 | `user_hidden` | `false` | 사용자가 인디케이터를 숨긴 상태. `true` 일 때 아이콘 위에 굵은 취소선 1줄 표시, 감지 이벤트가 인디를 다시 띄우지 못하게 차단. 재기동에도 유지. 토글 경로: 트레이 좌클릭(좌클릭 동작이 `toggle` 일 때) 또는 우클릭 메뉴 "인디케이터 숨김" |
-| `update_check_enabled` | `true` | 부팅 시 GitHub Releases 에서 새 버전 1회 확인 (발견 시 트레이 메뉴 최상단에 "새 버전 있음" 항목 표시) |
+| `update_check_enabled` | `true` | 부팅 시 GitHub Releases 에서 새 버전 1회 확인 (발견 시 트레이 메뉴 최상단 헤더 라벨이 `KoEnVue v{cur} → v{new} — 다운로드` 로 자동 전환) |
 
 전체 설정 필드는 트레이 "상세 설정" 대화상자에서 섹션별로 편집할 수 있습니다 (표시 모드·외관·애니메이션·감지·앱별 프로필·트레이·시스템·업데이트·인디케이터 조작·위치·단축 작업·고급 등).
 

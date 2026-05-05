@@ -78,13 +78,11 @@ internal static class I18n
     public static string MenuExit => _isKorean ? "종료" : "Exit";
 
     /// <summary>
-    /// UpdateChecker 가 새 버전을 발견했을 때 트레이 메뉴 최상단에 띄우는 항목 라벨.
-    /// 예: "새 버전 있음 (v1.0.1) — 다운로드".
+    /// 트레이 메뉴 최상단 헤더의 행위 단어 — 새 버전이 가용한 상태에서만 라벨 끝에 붙는다.
+    /// 평소 헤더는 `KoEnVue v{ver} — GitHub` (브랜드/도메인 그대로), 업데이트 가용 시
+    /// `KoEnVue v{cur} → {tag} — 다운로드` 형태로 이 단어만 I18n 분기된다.
     /// </summary>
-    public static string FormatMenuUpdateAvailable(string version) =>
-        _isKorean
-            ? $"새 버전 있음 ({version}) — 다운로드"
-            : $"New version available ({version}) — Download";
+    public static string MenuDownload => _isKorean ? "다운로드" : "Download";
 
     // ================================================================
     // 상세 설정 대화상자

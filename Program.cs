@@ -655,7 +655,8 @@ internal static partial class Program
 
     /// <summary>
     /// 메인 스레드: 새 버전 알림을 트레이에 등록. Tray 가 메뉴 빌드 시점에 페이로드를 읽어
-    /// 메뉴 상단에 "새 버전 있음 ({version}) — 다운로드" 항목을 추가한다.
+    /// 최상단 헤더 라벨을 "KoEnVue v{cur} → {newTag} — 다운로드" 로 합성한다 (평소 라벨
+    /// "KoEnVue v{cur} — GitHub" 에서 같은 항목의 텍스트만 전환 — 메뉴 항목 추가 없음).
     /// </summary>
     private static void HandleUpdateFound()
     {

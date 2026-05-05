@@ -486,7 +486,8 @@ Handles the "user moved the exe" case: the first boot after a move still misses 
 ### Tray menu structure
 
 ```
-새 버전 있음 (v0.9.0) — 다운로드       ← only when UpdateChecker finds an update
+KoEnVue v0.9.2.5 — GitHub                       ← always-visible header (MF_DEFAULT bold)
+   or KoEnVue v0.9.2.5 → v0.9.3.0 — 다운로드    ← label flips when UpdateChecker finds update
 ───
 투명도 ▸       진하게 / 보통 / 연하게
 크기 ▸         1배 / 2배 / 3배 / 4배 / 5배 / 직접 지정...
@@ -508,7 +509,7 @@ Handles the "user moved the exe" case: the first boot after a move still misses 
 종료
 ```
 
-Menu IDs live in [Tray.cs](../App/UI/Tray.cs) as `private const int IDM_*`. The `IDM_UPDATE_DOWNLOAD = 4008` item + separator are only appended when `_pendingUpdate != null`. Position mode submenu uses `IDM_POSITION_FIXED = 3301` / `IDM_POSITION_WINDOW = 3302` with `CheckMenuRadioItem`. `IDM_USER_HIDDEN = 4009` renders as `MF_CHECKED` when `config.UserHidden == true` — its handler calls `updateConfig(config with { UserHidden = !config.UserHidden })`, and the `Program.HandleMenuCommand` lambda routes the resulting transition through `ApplyUserHiddenTransition` (shared with `HandleTrayToggle`).
+Menu IDs live in [Tray.cs](../App/UI/Tray.cs) as `private const int IDM_*`. The header uses `IDM_HOMEPAGE = 4010` with `MF_STRING | MF_DEFAULT` (system auto-bold, only one allowed per popup) — the `_pendingUpdate is not null` branch swaps the label, and the click handler dispatches to `OpenUpdatePage` or `OpenHomepage` accordingly. The `4008` slot is intentionally vacant (formerly `IDM_UPDATE_DOWNLOAD`, removed in v0.9.2.6 with the header unification). Position mode submenu uses `IDM_POSITION_FIXED = 3301` / `IDM_POSITION_WINDOW = 3302` with `CheckMenuRadioItem`. `IDM_USER_HIDDEN = 4009` renders as `MF_CHECKED` when `config.UserHidden == true` — its handler calls `updateConfig(config with { UserHidden = !config.UserHidden })`, and the `Program.HandleMenuCommand` lambda routes the resulting transition through `ApplyUserHiddenTransition` (shared with `HandleTrayToggle`).
 
 ### Quick opacity presets (`ApplyQuickOpacity`)
 
@@ -614,9 +615,14 @@ The main thread's WndProc picks up the message and calls `HandleUpdateFound` →
 
 `Tray.OnUpdateFound` stores the `UpdateInfo` in a `private static UpdateInfo? _pendingUpdate` field (non-volatile because main thread is the sole accessor after the `WM_APP_UPDATE_FOUND` message crossed the thread boundary).
 
-`Tray.ShowMenu` injects a `MF_STRING` item at the very top of the popup menu (ID `IDM_UPDATE_DOWNLOAD = 4008`, label from `I18n.FormatMenuUpdateAvailable(version)`) followed by a `MF_SEPARATOR`, then falls through to the normal "투명도" submenu. When no update is pending, neither the item nor the separator is appended, so the menu looks exactly as before.
+`Tray.ShowMenu` always emits a header line at the very top (`IDM_HOMEPAGE = 4010`, `MF_STRING | MF_DEFAULT`, separator below). The label has two modes:
 
-Click handler `OpenUpdatePage` calls `Shell32.ShellExecuteW(0, "open", info.HtmlUrl, null, null, SW_SHOWNORMAL)`. Return ≤ 32 is logged as `Logger.Warning` (per `ShellExecuteW` docs, ≤ 32 means launch failure).
+- **No update pending**: `KoEnVue v{DefaultConfig.AppVersion} — GitHub` — click opens the repo root via `OpenHomepage()` (URL composed from `DefaultConfig.UpdateRepoOwner` / `UpdateRepoName` compile-time constants, no prefix check needed).
+- **Update pending** (`_pendingUpdate is not null`): `KoEnVue v{cur} → {newTag} — {I18n.MenuDownload}` — click opens the release page via `OpenUpdatePage()` (uses `info.HtmlUrl` from GitHub API, validated against `https://github.com/{owner}/{name}/` prefix to defend against scheme injection through MITM/account-compromise tampering).
+
+`MF_DEFAULT` (only one allowed per popup) makes the system render this entry in bold, giving "menu header" structural emphasis without owner-draw. The separator below it visually separates the header from the rest of the menu. The `_pendingUpdate.Version` field carries the GitHub release `tag_name` directly (e.g., `"v1.0.1"`), so the label uses `→ {tag}` (not `→ v{tag}`) to avoid double-`v`.
+
+Both `OpenHomepage` and `OpenUpdatePage` call `Shell32.ShellExecuteW(0, "open", url, null, null, SW_SHOWNORMAL)`. Return ≤ 32 is logged as `Logger.Warning` (per `ShellExecuteW` docs, ≤ 32 means launch failure).
 
 ### Why no balloon/toast/tooltip prefix
 
@@ -639,7 +645,11 @@ Against v0.8.9.0 release (2026-04-14), both branches were exercised:
 - **"no update"**: `AppVersion = 0.8.9.0` matches release tag, UpdateChecker fires on boot, HTTP 200 + JSON in 47 ms round-trip, `IsNewer` returns false, `Logger.Debug("UpdateChecker: current=0.8.9.0 latest=v0.8.9.0 (no update)")`, tray menu stays unchanged
 - **"new version found"**: `AppVersion` temporarily patched to `0.8.8.0`, same run logs `Logger.Info("UpdateChecker: new version available — current=0.8.8.0 latest=v0.8.9.0")`, `_pendingUpdate` populated, `PostMessageW(WM_APP_UPDATE_FOUND)` dispatched, tray menu shows the update item, clicking opens the GitHub release page in the default browser via `ShellExecuteW`
 
-Every link in the chain (`WinHttpSetTimeouts` inheritance, `SafeWinHttpHandle` RAII, JSON source gen, `NormalizeVersion` `v` prefix handling, 4-part `Version.TryParse`, volatile `_pendingUpdate` cross-thread hop, tray menu dynamic injection, `ShellExecuteW` browser launch) confirmed operational.
+Every link in the chain (`WinHttpSetTimeouts` inheritance, `SafeWinHttpHandle` RAII, JSON source gen, `NormalizeVersion` `v` prefix handling, 4-part `Version.TryParse`, volatile `_pendingUpdate` cross-thread hop, tray menu header label switch, `ShellExecuteW` browser launch) confirmed operational.
+
+### Header label race window (acknowledged, unmitigated)
+
+While the tray popup is showing, `TrackPopupMenu` runs an internal message pump — `WM_APP_UPDATE_FOUND` can arrive mid-display, flipping `_pendingUpdate` from null to non-null. The label is already drawn (won't change visually), but the click handler reads `_pendingUpdate` at click time and dispatches based on the *current* value. Result: user clicked the "GitHub" label expecting `OpenHomepage`, gets `OpenUpdatePage`. UpdateChecker fires only once at boot, so the window is sub-second on cold launch only — practical probability ~0. Capturing a snapshot at menu-build time (e.g., into `MENUITEMINFO.dwItemData`) would close it but adds GCHandle / pinned-string lifetime concerns under NativeAOT for a near-zero-probability outcome that still ends at a legitimate GitHub URL. Decision: accept.
 
 ---
 

@@ -57,8 +57,12 @@ internal static class Tray
     private const int IDM_SETTINGS           = 4005;
     private const int IDM_ANIMATION_ENABLED  = 4006;
     private const int IDM_CHANGE_HIGHLIGHT   = 4007;
-    private const int IDM_UPDATE_DOWNLOAD    = 4008;
     private const int IDM_USER_HIDDEN        = 4009;
+    // IDM_HOMEPAGE: 메뉴 최상단 헤더 라인의 단일 진입점. `_pendingUpdate` 상태에 따라
+    // OpenUpdatePage(릴리스 페이지) / OpenHomepage(레포 루트) 로 동적 분기.
+    // 4008 슬롯은 v0.9.2.5 까지 IDM_UPDATE_DOWNLOAD 가 점유했으나 헤더 통합으로 dead 가 되어 제거 —
+    // 의미 충돌 방지 목적의 의도적 빈 자리로 둔다.
+    private const int IDM_HOMEPAGE           = 4010;
     private const int IDM_EXIT               = 4002;
 
     // schtasks 작업 이름
@@ -375,15 +379,21 @@ internal static class Tray
         // --- 메인 메뉴 ---
         IntPtr hMenu = User32.CreatePopupMenu();
 
-        // 업데이트 알림 항목 — UpdateChecker 가 새 버전을 발견했을 때만 메뉴 최상단에 표시.
-        // 클릭 시 GitHub 릴리스 페이지가 기본 브라우저에서 열린다.
-        if (_pendingUpdate is not null)
-        {
-            User32.AppendMenuW(hMenu, Win32Constants.MF_STRING,
-                (nuint)IDM_UPDATE_DOWNLOAD,
-                I18n.FormatMenuUpdateAvailable(_pendingUpdate.Version));
-            User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
-        }
+        // 헤더 라인 — 항상 메뉴 최상단에 노출되는 단일 라인. `_pendingUpdate` 상태에 따라 두 모드:
+        //   평소           → "KoEnVue v{ver} — GitHub"
+        //   새 버전 가용시 → "KoEnVue v{cur} → {newTag} — 다운로드"
+        // `MF_DEFAULT` 가 시스템 자동 볼드 처리(팝업 메뉴당 1개만 가능) → 헤더성을 부여하고,
+        // 바로 아래 separator 가 메뉴 구조를 시각 분할한다. 클릭 시 IDM_HOMEPAGE 핸들러가
+        // `_pendingUpdate` 유무로 OpenUpdatePage / OpenHomepage 분기.
+        // `_pendingUpdate.Version` 은 GitHub release tag (예: "v1.0.1") 라 prefix 가 이미 포함됨 →
+        // `→ v{...}` 가 아니라 `→ {tag}` 로 합성해야 v 가 중복되지 않음.
+        string headerLabel = _pendingUpdate is not null
+            ? $"KoEnVue v{DefaultConfig.AppVersion} → {_pendingUpdate.Version} — {I18n.MenuDownload}"
+            : $"KoEnVue v{DefaultConfig.AppVersion} — GitHub";
+        User32.AppendMenuW(hMenu,
+            Win32Constants.MF_STRING | Win32Constants.MF_DEFAULT,
+            (nuint)IDM_HOMEPAGE, headerLabel);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
 
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hOpacityMenu, I18n.MenuOpacity);
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hSizeMenu, I18n.MenuSize);
@@ -574,14 +584,17 @@ internal static class Tray
                 SettingsDialog.Show(hwndMain, config, updateConfig);
                 break;
 
-            // --- 업데이트 다운로드 — GitHub 릴리스 페이지 오픈 ---
-            case IDM_UPDATE_DOWNLOAD:
-                OpenUpdatePage();
-                break;
-
             // --- 종료 ---
             case IDM_EXIT:
                 User32.PostQuitMessage(0);
+                break;
+
+            // --- 메뉴 최상단 헤더 클릭 — 새 버전 가용 시 릴리스 페이지, 평소엔 레포 루트 ---
+            case IDM_HOMEPAGE:
+                if (_pendingUpdate is not null)
+                    OpenUpdatePage();
+                else
+                    OpenHomepage();
                 break;
         }
     }
@@ -626,6 +639,29 @@ internal static class Tray
             Logger.Warning($"ShellExecuteW failed for update URL (rc={(long)result})");
         else
             Logger.Info($"Opened update page: {info.HtmlUrl}");
+    }
+
+    /// <summary>
+    /// GitHub 레포 홈페이지를 기본 브라우저로 연다 (트레이 메뉴 하단 "KoEnVue v… — GitHub" 클릭).
+    /// URL 은 <see cref="DefaultConfig.UpdateRepoOwner"/> / <see cref="DefaultConfig.UpdateRepoName"/>
+    /// 컴파일 타임 상수에서 합성하므로 <see cref="OpenUpdatePage"/> 와 달리 외부 입력이 없어
+    /// prefix 검증이 필요 없다. ShellExecuteW 반환값이 32 이하면 실패로 silent 로깅.
+    /// </summary>
+    private static void OpenHomepage()
+    {
+        string url = $"https://github.com/{DefaultConfig.UpdateRepoOwner}/{DefaultConfig.UpdateRepoName}";
+        IntPtr result = Shell32.ShellExecuteW(
+            IntPtr.Zero,
+            "open",
+            url,
+            null,
+            null,
+            Win32Constants.SW_SHOWNORMAL);
+
+        if ((long)result <= 32)
+            Logger.Warning($"ShellExecuteW failed for homepage URL (rc={(long)result})");
+        else
+            Logger.Info($"Opened homepage: {url}");
     }
 
     /// <summary>

@@ -105,7 +105,8 @@ internal sealed record AppConfig
     public int LogMaxSizeMb { get; init; } = 10;
 
     // [업데이트]
-    // 부팅 시 GitHub Releases API 1회 조회. 새 버전이 있으면 트레이 메뉴 상단에 "새 버전 있음 ..." 항목 노출.
+    // 부팅 시 GitHub Releases API 1회 조회. 새 버전이 있으면 트레이 메뉴 최상단 헤더 라벨이
+    // "KoEnVue v{cur} — GitHub" 에서 "KoEnVue v{cur} → {newTag} — 다운로드" 로 자동 전환.
     // false 로 두면 네트워크 호출 자체가 발생하지 않음 (오프라인/사내망 친화).
     public bool UpdateCheckEnabled { get; init; } = true;
 

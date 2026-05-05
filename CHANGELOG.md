@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+## [0.9.2.6] — 2026-05-05
+
+### 변경
+
+- **트레이 우클릭 메뉴 — 버전 정보 + 업데이트 알림을 메뉴 최상단의 단일 헤더 라인으로 통합** — 직전 v0.9.2.5 에서 메뉴 최하단에 추가했던 "KoEnVue v{ver} — GitHub" 라인과, 그 이전부터 있던 메뉴 최상단의 "새 버전 있음 (vX) — 다운로드" 알림이 새 버전 가용 시 같은 GitHub 출처를 가리키는 두 라인으로 시각 중복을 일으키던 문제. 두 라인을 메뉴 최상단의 단일 헤더로 합치고 `MF_DEFAULT` 플래그(시스템 자동 볼드 처리, 팝업 메뉴당 1개만 가능) 를 부여해 "메뉴 헤더" 라는 구조적 역할을 명시 — 위치(최상단) + 볼드(MF_DEFAULT) + 분리선(separator) 3종 단서가 합쳐져 사용자가 첫 시선에서 "이 메뉴는 KoEnVue 의 것" 으로 인지. 라벨은 `_pendingUpdate` 상태에 따라 두 모드: 평소 `KoEnVue v0.9.2.5 — GitHub` (한·영 동일, 브랜드/도메인 고유명사), 새 버전 가용 시 `KoEnVue v0.9.2.5 → v0.9.3.0 — 다운로드` (브랜드/버전/화살표 부분은 한·영 공통 + 마지막 행위 단어만 `I18n.MenuDownload` 로 분기). `_pendingUpdate.Version` 은 GitHub release `tag_name` (예: "v1.0.1") 라 "v" prefix 가 이미 포함됨 → `→ {tag}` 로 합성해야 v 가 중복되지 않는다. 클릭 시 `IDM_HOMEPAGE` 단일 분기에서 `_pendingUpdate is not null ? OpenUpdatePage() : OpenHomepage()` — 새 버전 가용이면 `info.HtmlUrl` (`https://github.com/{owner}/{name}/releases/tag/...`, prefix 검증 적용) 로 릴리스 페이지, 평소엔 컴파일 타임 합성 URL (`https://github.com/{owner}/{name}`) 로 레포 루트. Windows 11 design language 와 100% 정합 — 시스템 메뉴 폰트/색을 그대로 쓰고 owner-draw 도입 없이 헤더감만 부여. `Win32Constants.MF_DEFAULT = 0x00001000` 상수 신규 추가 ([Core/Native/Win32Types.cs](Core/Native/Win32Types.cs)). 미세한 race: 메뉴가 떠 있는 동안 `WM_APP_UPDATE_FOUND` 가 도착해 `_pendingUpdate` 가 null → non-null 로 전이되면 사용자가 "GitHub" 라벨을 보고 클릭했는데 release 페이지가 열릴 수 있음 — UpdateChecker 가 부팅 시 1회만 발화하므로 실효 발생 확률 거의 0, 명시적 mitigation 없이 수용
+
+### 제거
+
+- **`IDM_UPDATE_DOWNLOAD = 4008` 상수 + `case IDM_UPDATE_DOWNLOAD` 핸들러 + `I18n.FormatMenuUpdateAvailable(string)` 헬퍼 일괄 정리** — 위 헤더 통합으로 메뉴 최상단의 별도 업데이트 알림 블록(`if (_pendingUpdate is not null) AppendMenuW(IDM_UPDATE_DOWNLOAD, ...) + separator`) 이 사라지면서 dead. 클릭 동작은 `IDM_HOMEPAGE` 단일 진입점이 `_pendingUpdate` 분기로 흡수. `IDM_USER_HIDDEN = 4009` ↔ `IDM_HOMEPAGE = 4010` 사이의 `4008` 슬롯은 의도적 빈 자리로 남김 — 재사용 시 의미 충돌(과거 `IDM_UPDATE_DOWNLOAD` 호환성 추적이 어려워짐) 회피 목적. `I18n.FormatMenuUpdateAvailable(version) → "새 버전 있음 ({version}) — 다운로드"` / `"New version available ({version}) — Download"` 도 단일 호출처(`Tray.ShowMenu`)에서 제거되어 dead → 헤더 라벨이 `MenuDownload` (단어 "다운로드"/"Download" 만) 신규 프로퍼티로 대체. 헤더 통합 + dead 정리로 v0.9.2.5 의 임시 하단 정보 라인 (별도 IDM 슬롯, 별도 separator, 별도 OpenHomepage 직결 분기) 이 모두 단순화
+
 ## [0.9.2.5] — 2026-05-05
 
 ### 수정

@@ -378,6 +378,9 @@ internal static class Win32Constants
     public const uint MF_CHECKED         = 0x0008;
     public const uint MF_UNCHECKED       = 0x0000;
     public const uint MF_GRAYED          = 0x0001;
+    // MF_DEFAULT: 메뉴 항목을 기본(default)으로 표시 → 시스템이 자동으로 볼드 처리.
+    // 팝업 메뉴당 정확히 하나만 가능 (winuser.h 정의: 시스템이 마지막에 박은 것을 우선).
+    public const uint MF_DEFAULT         = 0x1000;
     public const uint MF_BYCOMMAND       = 0x0000;
     public const uint TPM_BOTTOMALIGN    = 0x0020;
     public const uint TPM_LEFTALIGN      = 0x0000;
