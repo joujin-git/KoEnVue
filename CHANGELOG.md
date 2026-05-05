@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+## [0.9.2.5] — 2026-05-05
+
+### 수정
+
+- **`drag_modifier ≠ none` 일 때 첫 실행 직후 인디케이터 호버 시 모래시계 커서가 한동안 노출되던 문제 + 다이얼로그 5종의 동일 결함** — `Program.Bootstrap.RegisterWindowClasses` 의 오버레이 `WNDCLASSEXW` 초기화에서 `hCursor` 필드가 미지정(=`IntPtr.Zero`)이라 클래스 등록부에 시스템 표준 커서가 박혀 있지 않은 상태였음. 프로세스가 막 뜬 뒤 OS 는 해당 프로세스의 클라이언트 영역에 `IDC_APPSTARTING`(화살표 + 작은 모래시계, 런칭 중 커서)을 startup grace period(`HourglassWaitTime` 레지스트리 기본 ~5 초) 동안 적용하는데, `drag_modifier == None` 모드는 `WM_NCHITTEST` 가 항상 `HTCAPTION` 으로 떨어져 `DefWindowProc` 의 캡션 영역 처리가 `IDC_ARROW` 를 강제로 덮어쓰면서 자연 가려졌고, `Ctrl` / `Alt` / `CtrlAlt` 모드는 평상시(모디파이어 미입력) `HTCLIENT` 를 반환하면서 클래스 커서가 NULL 이라 `IDC_APPSTARTING` 이 그대로 노출되던 비대칭. 동일한 hCursor 누락이 다이얼로그 5종 클래스 등록부(`KoEnVueCleanupDlg` / `KoEnVueCleanupViewport` / `KoEnVueSettingsDlg` / `KoEnVueSettingsViewport` / `KoEnVueScaleDlg`) 에도 그대로 있어, 첫 실행 직후 트레이 좌클릭(`tray_click_action=settings`) 또는 우클릭 메뉴 → "상세 설정..." / "위치 기록 정리..." / 스케일 입력 다이얼로그를 띄우고 컨트롤 사이 빈 영역(레이블 옆 패딩 · viewport 빈 부분)에 호버하면 같은 모래시계가 노출됐음 (자식 컨트롤 `BUTTON` / `EDIT` / `COMBOBOX` 등 시스템 클래스 위에서는 자체 hCursor 가 박혀 있어 안전). `Core/Native/User32.cs` 에 `LoadCursorW(IntPtr hInstance, IntPtr lpCursorName)` `[LibraryImport]` 추가(IDC_* 가 정수 리소스 ID 라 lpCursorName 을 IntPtr 로 받아 LPCWSTR 마샬링 우회), `Core/Native/Win32Types.cs` 의 `Win32Constants` 에 `IDC_ARROW = 32512` (`nint`) 상수 추가, 그리고 모든 `WNDCLASSEXW` 등록 7개 지점(메인 + 오버레이 + 다이얼로그 5종)을 후술하는 `Win32DialogHelper.RegisterStandardClass` 단일 진입점으로 통합해 hCursor=IDC_ARROW 가 자동 박히도록 처리. 메인 윈도우는 메시지 전용 0×0 hidden 이라 호버 대상이 아니지만 일관성 + 미래 결함 차단 목적으로 동일 헬퍼 경유
+
+### 내부
+
+- **`Win32DialogHelper.RegisterStandardClass` 헬퍼 추출 — `WNDCLASSEXW` 등록 단일 진입점 강제** — 위 hCursor 결함의 근본 구조는 "윈도우 클래스 등록 보일러플레이트가 7곳에 흩어져 있어 신규 추가 시 한 자리만 박혀도 비대칭 발생" 이라는 P4 (No duplicate impl) 위반. 1회성 한 줄 추가 5건으로 막아도 다음 윈도우 클래스 추가 시 또 까먹을 수 있는 구조적 약점이 그대로 남음. `Core/Windowing/Win32DialogHelper.cs` 에 `RegisterStandardClass(string className, delegate*<...> wndProc, IntPtr hbrBackground = default)` 헬퍼 추가 — 시그니처가 hCursor 를 노출하지 않고 내부에서 항상 `User32.LoadCursorW(NULL, IDC_ARROW)` 를 박고, atom==0 / Logger.Error · atom!=0 / Logger.Debug 로깅까지 흡수. `hbrBackground` 만 옵셔널로 노출 — 다이얼로그 5종은 `(IntPtr)(COLOR_BTNFACE + 1)` 전달, 메시지 전용 윈도우 + layered overlay (WS_EX_LAYERED 라 WM_ERASEBKGND 미수신) 는 default(NULL) 그대로. 호출 7개 지점 일괄 치환 결과 `Program.Bootstrap.cs` `RegisterWindowClasses` 가 33줄 → 12줄 (디버그/에러 로깅 헬퍼로 이동), 다이얼로그 5건이 각 7~8줄 → 4줄로 축약. 향후 새 윈도우 클래스 추가 시 한 줄로 끝나며 hCursor 누락이 구조적으로 불가능. `Win32DialogHelper.cs` 의 클래스 docstring 도 "DPI-aware 메트릭 계산 유틸" 에서 "DPI-aware 메트릭 계산 + 윈도우 클래스 등록 유틸" 로 확장. `Program.Bootstrap.cs` 는 `Marshal.SizeOf` / `Marshal.GetLastPInvokeError` 호출이 모두 헬퍼로 이동하면서 dead 가 된 `using System.Runtime.InteropServices;` 도 함께 제거
+
 ## [0.9.2.4] — 2026-04-21
 
 ### 수정

@@ -28,7 +28,7 @@ Centralized modules enforced across the codebase:
 | GDI handles | [Core/Native/SafeGdiHandles](../Core/Native/SafeGdiHandles.cs) (`SafeFontHandle`, `SafeIconHandle`, ...) |
 | P/Invoke | [Core/Native/*](../Core/Native/) |
 | Structs / constants | [Core/Native/Win32Types.cs](../Core/Native/Win32Types.cs) (`Win32Constants` class — SM/WS/DWMWA/etc.) |
-| Win32 dialog metrics | [Core/Windowing/Win32DialogHelper](../Core/Windowing/Win32DialogHelper.cs) |
+| Win32 dialog metrics + `WNDCLASSEXW` 등록 | [Core/Windowing/Win32DialogHelper](../Core/Windowing/Win32DialogHelper.cs) |
 | Modal dialog loop | [Core/Windowing/ModalDialogLoop](../Core/Windowing/ModalDialogLoop.cs) |
 | Dialog scroll helpers | [Core/Windowing/ScrollableDialogHelper](../Core/Windowing/ScrollableDialogHelper.cs) |
 | Layered overlay engine | [Core/Windowing/LayeredOverlayBase](../Core/Windowing/LayeredOverlayBase.cs) |
@@ -185,6 +185,7 @@ Every structural refactor tracks the NativeAOT publish exe size before and after
 
 All three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) share:
 
+- **`Win32DialogHelper.RegisterStandardClass(className, &DlgProc, (IntPtr)(COLOR_BTNFACE + 1));`** for class registration — single entry point that always loads `IDC_ARROW` (defends `IDC_APPSTARTING` cursor leak on first-launch hover)
 - **`using var hFont = Win32DialogHelper.CreateDialogFont(dpiY);`** at the top of `Show`, scope covers the full modal loop + `DestroyWindow`
 - **`ModalDialogLoop.Run(hwndDialog, hwndOwner, ref _isClosed);`** for the modal loop
 - **`Win32DialogHelper.ApplyFont(child, hFont.DangerousGetHandle())`** via `WM_SETFONT` on each child control

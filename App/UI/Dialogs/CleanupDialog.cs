@@ -122,24 +122,16 @@ internal static class CleanupDialog
         using var hFont = Win32DialogHelper.CreateDialogFont(dpiY);
         IntPtr hFontRaw = hFont.DangerousGetHandle();
 
-        // 윈도우 클래스 등록 (한 번만, 중복 등록은 무시됨)
-        var wc = new WNDCLASSEXW
-        {
-            cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
-            lpfnWndProc = (IntPtr)(delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&CleanupDlgProc,
-            lpszClassName = DlgClassName,
-            hbrBackground = (IntPtr)(Win32Constants.COLOR_BTNFACE + 1),
-        };
-        User32.RegisterClassExW(ref wc);
+        // 윈도우 클래스 등록 (한 번만, 중복 등록은 무시됨) — 표준 헬퍼 경유로 hCursor=IDC_ARROW 자동 박힘.
+        Win32DialogHelper.RegisterStandardClass(
+            DlgClassName,
+            (delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&CleanupDlgProc,
+            (IntPtr)(Win32Constants.COLOR_BTNFACE + 1));
 
-        var vpWc = new WNDCLASSEXW
-        {
-            cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
-            lpfnWndProc = (IntPtr)(delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&ViewportProc,
-            lpszClassName = ViewportClassName,
-            hbrBackground = (IntPtr)(Win32Constants.COLOR_BTNFACE + 1),
-        };
-        User32.RegisterClassExW(ref vpWc);
+        Win32DialogHelper.RegisterStandardClass(
+            ViewportClassName,
+            (delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&ViewportProc,
+            (IntPtr)(Win32Constants.COLOR_BTNFACE + 1));
 
         // 화면 중앙 좌표 — 공통 헬퍼 (anchor=null → rcWork 정중앙)
         var (cx, cy) = Win32DialogHelper.CalculateDialogPosition(hMon, dlgWidth, dlgHeight);

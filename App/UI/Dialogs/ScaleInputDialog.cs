@@ -103,15 +103,11 @@ internal static class ScaleInputDialog
         using var hFont = Win32DialogHelper.CreateDialogFont(dpiY);
         IntPtr hFontRaw = hFont.DangerousGetHandle();
 
-        // 다이얼로그 클래스 등록 (중복 호출은 무시됨)
-        var wc = new WNDCLASSEXW
-        {
-            cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
-            lpfnWndProc = (IntPtr)(delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&ScaleDlgProc,
-            lpszClassName = DlgClassName,
-            hbrBackground = (IntPtr)(Win32Constants.COLOR_BTNFACE + 1),
-        };
-        User32.RegisterClassExW(ref wc);
+        // 다이얼로그 클래스 등록 (중복 호출은 무시됨) — 표준 헬퍼 경유로 hCursor=IDC_ARROW 자동 박힘.
+        Win32DialogHelper.RegisterStandardClass(
+            DlgClassName,
+            (delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&ScaleDlgProc,
+            (IntPtr)(Win32Constants.COLOR_BTNFACE + 1));
 
         // 대화상자 좌표: 커서 위치 기준, 모니터 work area 안으로 클램프
         // 공통 헬퍼 (anchor=cursorPt → 좌측-상단을 커서에 두고 rcWork 경계 클램프)

@@ -44,11 +44,12 @@ dotnet publish -r win-x64 -c Release
 
 **유지보수자 전용** — 새 릴리스를 내릴 때의 순서입니다. 일반 사용자는 건너뛰세요.
 
-버전 문자열은 **두 곳에서 동일하게** 관리됩니다. 둘 중 하나만 올리면 Windows 파일 속성(PE 헤더)과 런타임 업데이트 체크 값이 어긋나므로 **반드시 함께** 수정하세요.
+버전 문자열은 **세 곳에서 동일하게** 관리됩니다. 하나라도 빠지면 Windows 파일 속성(PE 헤더) · 런타임 업데이트 체크 값 · 아키텍처 문서가 어긋나므로 **반드시 함께** 수정하세요.
 
-1. **버전 bump (두 파일 동시 수정)**
+1. **버전 bump (세 파일 동시 수정)**
    - [App/Config/DefaultConfig.cs](App/Config/DefaultConfig.cs) 의 `AppVersion` 상수 — `UpdateChecker` 가 GitHub `tag_name` 과 비교
    - [KoEnVue.csproj](KoEnVue.csproj) 의 `<Version>` 요소 — PE 헤더의 `AssemblyVersion` / `FileVersion` / `InformationalVersion` 3종에 박힘 (Windows 파일 속성 → 자세히 탭에서 보임)
+   - [docs/architecture.md](docs/architecture.md) §4 App-specific modules 표의 `App/Config/DefaultConfig.cs` 행에 박힌 `AppVersion = "X.Y.Z.W"` 표기 — 문서 일관성용 (코드 단일 소스의 미러)
    - 형식: `major.minor.build.revision` (4-part, 예: `0.8.9.0`). `System.Version.TryParse` 가 2~4-part 를 받아들이지만 4-part 로 맞추면 모든 PE 헤더 필드가 동일해져 혼동이 없음
 2. **빌드 — 디버그와 릴리스 둘 다**
    ```bash

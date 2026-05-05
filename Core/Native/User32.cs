@@ -67,6 +67,11 @@ internal static partial class User32
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool GetCursorPos(out POINT lpPoint);
 
+    // LoadCursorW: hInstance=NULL + lpCursorName=MAKEINTRESOURCE(IDC_*) 로 시스템 표준 커서 핸들 획득.
+    // lpCursorName 은 LPCWSTR 시그니처지만 IDC_* 는 정수 리소스 ID 라 IntPtr 로 받아 마샬링 우회.
+    [LibraryImport("user32.dll", SetLastError = true)]
+    internal static partial IntPtr LoadCursorW(IntPtr hInstance, IntPtr lpCursorName);
+
     // === 윈도우 클래스/생성/파괴 ===
 
     [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]

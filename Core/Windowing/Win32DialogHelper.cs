@@ -1,13 +1,16 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using KoEnVue.Core.Logging;
 using KoEnVue.Core.Native;
 
 namespace KoEnVue.Core.Windowing;
 
 /// <summary>
-/// Win32 모달 다이얼로그에서 반복 사용되는 DPI-aware 메트릭 계산 유틸.
+/// Win32 모달 다이얼로그에서 반복 사용되는 DPI-aware 메트릭 계산 + 윈도우 클래스 등록 유틸.
 /// P4 공통모듈: CleanupDialog, ScaleDialog, SettingsDialog 세 곳이 동일한
-/// 비-클라이언트 높이·폭 + 9pt 시스템 폰트 높이 계산을 중복 구현해 왔다.
+/// 비-클라이언트 높이·폭 + 9pt 시스템 폰트 높이 계산을 중복 구현해 왔다. 그 위에
+/// 윈도우 클래스 등록(hCursor=IDC_ARROW 강제 + 단일 로깅 경로)도 같은 단일 진입점으로
+/// 통합해, hCursor 누락에서 비롯되는 IDC_APPSTARTING 폴백 결함이 다시 발생하지 않도록 한다.
 ///
 /// 주의: Overlay의 `Kernel32.MulDiv(scaledFontSize, dpiY, 72)` 경로는 별개 케이스다.
 /// 오버레이 폰트는 config.FontSize 가변이라 MulDiv가 더 정확하고, 여기 다이얼로그의
@@ -120,5 +123,42 @@ internal static class Win32DialogHelper
         if (cy < mi.rcWork.Top) cy = mi.rcWork.Top;
 
         return (cx, cy);
+    }
+
+    /// <summary>
+    /// 표준 윈도우 클래스를 등록한다 — <c>hCursor</c> 는 항상 <c>IDC_ARROW</c> 로 박힌다.
+    /// <para>
+    /// <c>hCursor=NULL</c> 이면 첫 실행 후 OS 의 startup grace period(<c>HourglassWaitTime</c>
+    /// 레지스트리 기본 ~5 초) 동안 클라이언트 영역에 <c>IDC_APPSTARTING</c>(화살표+모래시계)
+    /// 폴백이 노출된다. 모든 데스크톱 윈도우 클래스 등록을 이 단일 진입점으로 통일해
+    /// hCursor 누락성 결함이 재발하지 않도록 구조적으로 차단한다 — P4 (No duplicate impl).
+    /// </para>
+    /// <para>
+    /// <paramref name="hbrBackground"/> 는 옵셔널.
+    /// 다이얼로그처럼 GDI 배경 그리기가 필요한 클래스는 <c>(IntPtr)(COLOR_BTNFACE + 1)</c>
+    /// 형태(시스템 컬러 인덱스 + 1)로 전달한다. 메시지 전용 (0×0 hidden) 윈도우나
+    /// layered overlay (<c>WS_EX_LAYERED</c>, <c>WM_ERASEBKGND</c> 미수신) 는 default(NULL) 로 둔다.
+    /// </para>
+    /// </summary>
+    /// <returns>등록된 클래스의 atom, 실패 시 0.</returns>
+    internal static unsafe ushort RegisterStandardClass(
+        string className,
+        delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr> wndProc,
+        IntPtr hbrBackground = default)
+    {
+        var wc = new WNDCLASSEXW
+        {
+            cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
+            lpfnWndProc = (IntPtr)wndProc,
+            hCursor = User32.LoadCursorW(IntPtr.Zero, Win32Constants.IDC_ARROW),
+            hbrBackground = hbrBackground,
+            lpszClassName = className,
+        };
+        ushort atom = User32.RegisterClassExW(ref wc);
+        if (atom == 0)
+            Logger.Error($"RegisterClassExW failed for '{className}': error={Marshal.GetLastPInvokeError()}");
+        else
+            Logger.Debug($"Window class registered: '{className}' atom={atom}");
+        return atom;
     }
 }

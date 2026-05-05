@@ -1,9 +1,9 @@
-using System.Runtime.InteropServices;
 using KoEnVue.App.Config;
 using KoEnVue.App.Detector;
 using KoEnVue.App.UI;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Logging;
+using KoEnVue.Core.Windowing;
 
 namespace KoEnVue;
 
@@ -84,33 +84,17 @@ internal static partial class Program
 
     private static unsafe void RegisterWindowClasses()
     {
-        // 메인 윈도우 클래스
-        Logger.Debug("Registering main window class");
-        var mainClass = new WNDCLASSEXW
-        {
-            cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
-            lpfnWndProc = (IntPtr)(delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&WndProc,
-            lpszClassName = MainClassName,
-        };
-        ushort mainAtom = User32.RegisterClassExW(ref mainClass);
-        if (mainAtom == 0)
-            Logger.Error($"RegisterClassExW failed for main class: error={Marshal.GetLastPInvokeError()}");
-        else
-            Logger.Debug($"Main window class registered: atom={mainAtom}");
+        // 메인 윈도우 — 메시지 전용 0×0 hidden, 호버 대상 아님. hbrBackground 는 NULL 그대로.
+        Win32DialogHelper.RegisterStandardClass(
+            MainClassName,
+            (delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&WndProc);
 
-        // 오버레이 윈도우 클래스
-        Logger.Debug($"Registering overlay window class: {_config.Advanced.OverlayClassName}");
-        var overlayClass = new WNDCLASSEXW
-        {
-            cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
-            lpfnWndProc = (IntPtr)(delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&WndProc,
-            lpszClassName = _config.Advanced.OverlayClassName,
-        };
-        ushort overlayAtom = User32.RegisterClassExW(ref overlayClass);
-        if (overlayAtom == 0)
-            Logger.Error($"RegisterClassExW failed for overlay class: error={Marshal.GetLastPInvokeError()}");
-        else
-            Logger.Debug($"Overlay window class registered: atom={overlayAtom}");
+        // 오버레이 — WS_EX_LAYERED 라 WM_ERASEBKGND 미수신, hbrBackground 는 NULL 그대로.
+        // hCursor=IDC_ARROW 가 필수: NULL 이면 drag_modifier ≠ none 모드의 평상시(HTCLIENT 반환)
+        // 호버에 IDC_APPSTARTING 폴백이 노출됨. RegisterStandardClass 가 이를 자동 박는다.
+        Win32DialogHelper.RegisterStandardClass(
+            _config.Advanced.OverlayClassName,
+            (delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&WndProc);
     }
 
     private static IntPtr CreateMainWindow()

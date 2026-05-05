@@ -269,6 +269,12 @@ internal static class Win32Constants
     public const nint HTCLIENT           = 1;
     public const nint HTCAPTION          = 2;
 
+    // --- 시스템 커서 (LoadCursorW) ---
+    // WNDCLASSEXW.hCursor 가 NULL 이면 클라이언트 영역에서 시스템이 IDC_APPSTARTING(런칭 중 화살표+모래시계)
+    // 등 기본 커서로 폴백한다. 오버레이는 항상 IDC_ARROW 를 써야 모디파이어 게이트가 HTCLIENT 로 떨어질 때
+    // 모래시계가 노출되지 않는다.
+    public const nint IDC_ARROW          = 32512;
+
     // --- 윈도우 이동/리사이즈 ---
     public const uint WM_MOVING          = 0x0216;
     public const uint WM_ENTERSIZEMOVE   = 0x0231;

@@ -150,26 +150,18 @@ internal static partial class SettingsDialog
         using var hFont = Win32DialogHelper.CreateDialogFont(dpiY);
         IntPtr hFontRaw = hFont.DangerousGetHandle();
 
-        // 대화상자 클래스 등록 (중복 호출은 무시됨)
+        // 대화상자 클래스 등록 (중복 호출은 무시됨) — 표준 헬퍼 경유로 hCursor=IDC_ARROW 자동 박힘.
         string dlgClassName = "KoEnVueSettingsDlg";
-        var dlgWc = new WNDCLASSEXW
-        {
-            cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
-            lpfnWndProc = (IntPtr)(delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&SettingsDlgProc,
-            lpszClassName = dlgClassName,
-            hbrBackground = (IntPtr)(Win32Constants.COLOR_BTNFACE + 1),
-        };
-        User32.RegisterClassExW(ref dlgWc);
+        Win32DialogHelper.RegisterStandardClass(
+            dlgClassName,
+            (delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&SettingsDlgProc,
+            (IntPtr)(Win32Constants.COLOR_BTNFACE + 1));
 
         string viewportClassName = "KoEnVueSettingsViewport";
-        var vpWc = new WNDCLASSEXW
-        {
-            cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
-            lpfnWndProc = (IntPtr)(delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&ViewportProc,
-            lpszClassName = viewportClassName,
-            hbrBackground = (IntPtr)(Win32Constants.COLOR_BTNFACE + 1),
-        };
-        User32.RegisterClassExW(ref vpWc);
+        Win32DialogHelper.RegisterStandardClass(
+            viewportClassName,
+            (delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&ViewportProc,
+            (IntPtr)(Win32Constants.COLOR_BTNFACE + 1));
 
         // 모니터 중앙 배치 — 공통 헬퍼 (anchor=null → rcWork 정중앙)
         var (cx, cy) = Win32DialogHelper.CalculateDialogPosition(hMon, dlgWidth, dlgHeight);
