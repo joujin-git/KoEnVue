@@ -67,4 +67,5 @@ dotnet publish -r win-x64 -c Release  # NativeAOT single exe
 | **[docs/architecture.md](docs/architecture.md)** | Core/App module list, reuse contract, facade pattern |
 | **[docs/implementation-notes.md](docs/implementation-notes.md)** | Render pipeline, drag/snap, animation, CAPS LOCK, hot reload, dialogs, update check |
 | **[docs/conventions.md](docs/conventions.md)** | P1–P6 enforcement, silent catch policy, .NET 10 quirks |
+| **[docs/dev-notes/](docs/dev-notes/)** | Postmortems and lessons learned from failed implementation attempts (avoid re-walking the same traps) |
 | **[CHANGELOG.md](CHANGELOG.md)** | Release history (Keep a Changelog format) |
