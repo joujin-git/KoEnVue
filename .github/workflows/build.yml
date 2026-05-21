@@ -1,0 +1,28 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore + build (Debug)
+        run: dotnet build --configuration Debug
+
+      - name: Run unit tests
+        run: dotnet test tests/KoEnVue.Tests/ --configuration Debug --no-build --verbosity normal
+
+      # NativeAOT publish 는 ~수 분 소요 — PR 마다 돌리면 비용 큼.
+      # main 푸시에서만 AOT 회귀 가드로 실행. PR 회귀는 dotnet build 가 잡는다.
+      - name: NativeAOT publish smoke
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: dotnet publish -r win-x64 -c Release

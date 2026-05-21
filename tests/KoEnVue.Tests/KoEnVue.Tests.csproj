@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    PR-10 — xUnit dev-only 의존성. CLAUDE.md P1 의 "Zero NuGet" 은 release 출력에만 적용된다.
+    본 csproj 는 release exe 에 포함되지 않으며, tests/ 디렉토리는 dotnet publish 의 입력이 아니다.
+    AOT/Trim 분석기, InvariantGlobalization, Size-diet 스위치는 모두 끄거나 미설정 — 테스트는
+    reflection-heavy 인 xUnit 위에서 동작하므로 메인 프로젝트의 분석기를 상속할 필요가 없다.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- 메인 프로젝트가 켠 분석기를 명시적으로 차단 — 테스트 코드는 reflection 사용. -->
+    <EnableAotAnalyzer>false</EnableAotAnalyzer>
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+    <EnableSingleFileAnalyzer>false</EnableSingleFileAnalyzer>
+    <!-- xUnit 진단 노이즈 차단 — 메인 코드의 SYSLIB1051 와 동일 기조. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\KoEnVue.csproj" />
+  </ItemGroup>
+</Project>

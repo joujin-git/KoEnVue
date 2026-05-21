@@ -78,22 +78,53 @@ internal static partial class Program
         }
         catch (Exception ex)
         {
-            // 비상 로깅 — Logger 초기화 전이면 파일에 직접 기록. 기록 실패 시에도 앱 종료 경로라
-            // 추가 복구할 수 없으므로 I/O·권한·보안 실패를 흡수. 로직 버그는 전파.
-            try
-            {
-                File.AppendAllText(
-                    Path.Combine(AppContext.BaseDirectory, "koenvue_crash.txt"),
-                    $"[{DateTime.Now:HH:mm:ss.fff}] FATAL: {ex}\n");
-            }
-            catch (Exception inner) when (inner is IOException
-                or UnauthorizedAccessException
-                or System.Security.SecurityException)
-            {
-                _ = inner;
-            }
+            AppendCrashFile("FATAL", ex);
             Logger.Error($"Fatal: {ex}");
             Logger.Shutdown();
+        }
+    }
+
+    /// <summary>
+    /// PR-10 (G5): 메인 스레드 외 unhandled / unobserved 예외를 흡수해 <c>koenvue_crash.txt</c> +
+    /// <c>koenvue.log</c> 양쪽에 흔적을 남기고 종료한다. <c>AppDomain.UnhandledException</c> 은
+    /// CLR 이 프로세스를 죽이기 직전 호출되며 (<c>IsTerminating=true</c>), 핸들러 안에서 GUI 호출은
+    /// thread affinity 문제로 금지 — <c>Logger.Error</c> 와 파일 write 만 사용. AppDomain 핸들러는
+    /// background 스레드 + 메인 스레드 양쪽의 미흡수 예외를 모두 받는다.
+    /// </summary>
+    private static void RegisterCrashHandlers()
+    {
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            object exObj = e.ExceptionObject;
+            AppendCrashFile("UNHANDLED", exObj);
+            Logger.Error($"UnhandledException (terminating={e.IsTerminating}): {exObj}");
+            Logger.Shutdown();
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            AppendCrashFile("UNOBSERVED", e.Exception);
+            Logger.Error($"UnobservedTaskException: {e.Exception}");
+            e.SetObserved();  // finalizer 가 프로세스를 죽이지 않도록 관측 표시.
+        };
+    }
+
+    /// <summary>
+    /// 비상 크래시 로그 파일에 한 줄 append. Logger 초기화 전에도 동작한다.
+    /// I/O · 권한 · 보안 실패는 흡수 — 이미 종료 경로라 추가 복구 불가. 로직 버그는 전파.
+    /// </summary>
+    private static void AppendCrashFile(string tag, object payload)
+    {
+        try
+        {
+            File.AppendAllText(
+                Path.Combine(AppContext.BaseDirectory, "koenvue_crash.txt"),
+                $"[{DateTime.Now:HH:mm:ss.fff}] {tag}: {payload}\n");
+        }
+        catch (Exception inner) when (inner is IOException
+            or UnauthorizedAccessException
+            or System.Security.SecurityException)
+        {
+            _ = inner;
         }
     }
 
@@ -104,6 +135,12 @@ internal static partial class Program
         //    가 sink 를 통해 보낸 메시지는 Logger 의 pre-Initialize 버퍼에 쌓였다가 Initialize 직후
         //    한꺼번에 koenvue.log 로 flush — PR-06 Tier-3 ④ 에서 발견된 Trace-only 한계 해소.
         LogProvider.Sink = new LoggerSink();
+
+        // 0a. AppDomain unhandled + Task unobserved 예외 핸들러 (PR-10, G5).
+        //     background 스레드 (DetectionLoop / Logger drain / UpdateChecker / StartupTaskManager)
+        //     의 outer catch 가 흡수하지 못한 예외 — 주로 NullReferenceException 등 로직 버그 —
+        //     를 koenvue_crash.txt 에 박제. Logger.Error 도 pre-Init 버퍼 경유로 안전.
+        RegisterCrashHandlers();
 
         // 1. 다중 인스턴스 체크 — 실패 시 기존 인스턴스에 활성화 신호만 보내고 즉시 종료.
         //    Cleanup 보다 먼저 실행해야 "이미 실행 중" 인 정상 인스턴스의 트레이 아이콘을

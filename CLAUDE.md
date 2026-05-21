@@ -15,7 +15,7 @@ C# 14 / .NET 10 + NativeAOT single exe (~4.7 MB). Zero external NuGet packages.
 
 | Rule | Description |
 |------|-------------|
-| **P1** | Zero external NuGet packages. .NET 10 BCL + Windows API only |
+| **P1** | Zero external NuGet packages in release exe. .NET 10 BCL + Windows API only. **예외**: `tests/` 의 dev-only 의존성 (xUnit, Microsoft.NET.Test.Sdk) — release exe 에 미포함이라 `dotnet publish` 산출물 P1 정신은 유지 |
 | **P2** | UI text defaults to Korean. Log messages and config keys in English |
 | **P3** | No magic numbers → `const`/`enum`/config. No string comparisons → `enum` |
 | **P4** | No duplicate implementations — always reach for shared `Core/` modules |

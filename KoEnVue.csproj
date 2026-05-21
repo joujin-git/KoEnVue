@@ -22,6 +22,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <NoWarn>SYSLIB1051</NoWarn>
+    <!-- tests/ 하위는 KoEnVue.Tests.csproj 의 소스. 메인 프로젝트의 implicit `**/*.cs` 에서 제외. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);tests/**</DefaultItemExcludes>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>koenvue.ico</ApplicationIcon>
     <!-- AssemblyVersion/FileVersion/InformationalVersion 3종 세트. DefaultConfig.AppVersion 과 동기화 유지. -->
@@ -33,4 +35,8 @@
     <Company>joujin-git</Company>
     <Product>KoEnVue</Product>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- 테스트 프로젝트에 internal 멤버 접근 허용 (PR-10). 릴리즈 출력은 영향 없음. -->
+    <InternalsVisibleTo Include="KoEnVue.Tests" />
+  </ItemGroup>
 </Project>

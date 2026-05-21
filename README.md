@@ -1,5 +1,7 @@
 # KoEnVue
 
+[![build](https://github.com/joujin-git/KoEnVue/actions/workflows/build.yml/badge.svg)](https://github.com/joujin-git/KoEnVue/actions/workflows/build.yml)
+
 Windows 한/영 IME 상태 인디케이터 — 드래그 가능한 플로팅 오버레이로 현재 입력 모드를 실시간 표시.
 
 > **한글** 모드면 "한", **영문** 모드면 "En", **비한국어 IME**면 "EN" 라벨이 화면 위에 떠 있어 타이핑 중 시선 이동 없이 입력 상태를 파악할 수 있습니다. CAPS LOCK이 켜지면 라벨 좌우에 세로 막대가 함께 표시됩니다.
@@ -34,11 +36,16 @@ Windows 한/영 IME 상태 인디케이터 — 드래그 가능한 플로팅 오
 # 디버그 빌드
 dotnet build
 
+# 단위 테스트
+dotnet test tests/KoEnVue.Tests/
+
 # NativeAOT 릴리스 (단일 exe)
 dotnet publish -r win-x64 -c Release
 ```
 
 결과물: `bin/Release/net10.0-windows/win-x64/publish/KoEnVue.exe`
+
+코드 기여 / 개선 PR 절차는 [CONTRIBUTING.md](CONTRIBUTING.md) 를 참고하세요.
 
 ---
 

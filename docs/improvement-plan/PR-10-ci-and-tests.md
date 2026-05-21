@@ -94,4 +94,55 @@
 
 ## 6. 세션 진행 로그
 
-(empty)
+### 2026-05-21 — 1차 구현 (Tier-1 + Tier-2 통과)
+
+**상태**: ✅ Tier-1 + Tier-2 통과, Tier-3 사용자 smoke 대기.
+
+**구현**:
+
+- **테스트 프로젝트** ([tests/KoEnVue.Tests/KoEnVue.Tests.csproj](../../tests/KoEnVue.Tests/KoEnVue.Tests.csproj))
+  - `<TargetFramework>net10.0-windows</TargetFramework>` — 메인 프로젝트와 동일 (ProjectReference 호환). `<IsTestProject>true</IsTestProject>` 명시. `<IsPackable>false</IsPackable>` 로 NuGet 패키지화 차단.
+  - 의존성 3종: `Microsoft.NET.Test.Sdk` (17.13.0), `xunit` (2.9.3), `xunit.runner.visualstudio` (3.0.0, `PrivateAssets=all` 로 전이 차단).
+  - 메인의 AOT/Trim/SingleFile 분석기는 **명시적으로 끔** — 테스트 코드는 reflection 위에서 동작. csproj 에 3 토글 `false` 추가.
+  - `<ProjectReference Include="..\..\KoEnVue.csproj" />` 한 줄로 main 어셈블리 참조.
+- **InternalsVisibleTo**: [KoEnVue.csproj](../../KoEnVue.csproj) 에 `<InternalsVisibleTo Include="KoEnVue.Tests" />` 추가 — 테스트가 `internal` 타입 (Settings / DefaultConfig / AppConfig / ColorHelper / DpiHelper) 직접 접근.
+- **사이드 fix — DefaultItemExcludes**: KoEnVue.csproj 가 SDK 디폴트로 `**/*.cs` implicit 포함이라 `tests/**/*.cs` 까지 메인 어셈블리에 컴파일됨 (첫 빌드에서 95 errors). `<DefaultItemExcludes>$(DefaultItemExcludes);tests/**</DefaultItemExcludes>` 추가로 차단.
+- **테스트 3 파일**:
+  - [tests/KoEnVue.Tests/Unit/SettingsValidateTests.cs](../../tests/KoEnVue.Tests/Unit/SettingsValidateTests.cs) — 12 케이스 (PollIntervalMs 양 끝 clamp + Opacity 양 끝 clamp + FontSize 하단 clamp + IndicatorScale 1자리 round + DisplayMode/Language/Theme invalid cast → enum fallback + NonKoreanIme valid passthrough + AdvancedConfig OverlayClassName 한국어 → "KoEnVueOverlay" 폴백 + valid ASCII 보존).
+  - [tests/KoEnVue.Tests/Unit/ColorHelperTests.cs](../../tests/KoEnVue.Tests/Unit/ColorHelperTests.cs) — 5 메서드 ~15 케이스 (HexToColorRef BGR 순서, HexToRgb 채널 추출, RgbToHex 라운드트립, TryNormalizeHex trim/case/문법, ColorRefToRgb 채널 언패킹).
+  - [tests/KoEnVue.Tests/Unit/DpiHelperTests.cs](../../tests/KoEnVue.Tests/Unit/DpiHelperTests.cs) — Scale(int,double) 5 케이스 + Scale(double,double) 5 케이스 (banker's rounding 명시 케이스 포함 — F-S05 정수 절삭 회귀 가드) + BASE_DPI=96.
+  - 첫 실행 결과: **40 통과 / 0 실패 / 386 ms**.
+- **AppDomain unhandled 핸들러** ([Program.cs:100-140](../../Program.cs#L100))
+  - `Main()` 의 `try/catch` 안 크래시 파일 write 로직을 신규 정적 헬퍼 `AppendCrashFile(string tag, object payload)` 로 추출 — `[FATAL]` / `[UNHANDLED]` / `[UNOBSERVED]` 3 태그를 동일 포맷으로 통합.
+  - 신규 `RegisterCrashHandlers()` — `AppDomain.CurrentDomain.UnhandledException` (terminating 플래그 로깅 + Logger.Shutdown) + `TaskScheduler.UnobservedTaskException` (e.SetObserved 호출로 finalizer 종료 차단) 두 핸들러 등록.
+  - `MainImpl` 의 단계 0a 에서 `LogProvider.Sink` 배선 직후 호출 — Logger 초기화 이전 크래시도 pre-Init 버퍼 경유로 koenvue.log 에 기록 가능.
+  - 핸들러 안 **GUI 호출 금지** — thread affinity 문제로 `Logger.Error` + `File.AppendAllText` 만 사용. P/Invoke (User32) 도 부르지 않음.
+- **GitHub Actions** ([.github/workflows/build.yml](../../.github/workflows/build.yml))
+  - `windows-latest` + `actions/checkout@v4` + `actions/setup-dotnet@v4` (`dotnet-version: '10.0.x'`).
+  - 3 스텝: `dotnet build --configuration Debug` → `dotnet test ... --no-build` → (조건부) `dotnet publish -r win-x64 -c Release`.
+  - **AOT publish 는 `main` 푸시 한정** (`if: github.event_name == 'push' && github.ref == 'refs/heads/main'`) — PR 마다 돌리면 ~수 분 소요라 비용 큼. PR 회귀는 `dotnet build` + `dotnet test` 가 잡고, AOT-specific 회귀 (trim warnings 등) 는 main 머지 시점에 게이트.
+- **문서**:
+  - [CONTRIBUTING.md](../../CONTRIBUTING.md) 신규 — 환경 / 빌드+테스트+publish / improvement-plan 절차 / P1~P6 요약.
+  - [README.md](../../README.md) — CI 배지 추가 + `dotnet test` 명령 추가 + CONTRIBUTING.md 링크.
+  - [CHANGELOG.md](../../CHANGELOG.md) Unreleased `### 추가` 신설 + PR-10 1줄 엔트리.
+  - [CLAUDE.md](../../CLAUDE.md) P1 행에 "tests/ 의 dev-only 의존성 예외" 부연.
+
+**Tier-1**:
+- `dotnet build` clean — 0 경고 0 오류 (DefaultItemExcludes 추가 후).
+- `dotnet test tests/KoEnVue.Tests/` — 40/40 통과 386 ms.
+- `dotnet publish -r win-x64 -c Release` clean — 0 경고. exe 4,807,168 B (≈ **4.81 MB**, PR-09 의 4.80 MB 와 +3 KB / 노이즈 범위).
+
+**Tier-2 grep 가드** (PR-10 §3):
+- `git grep "InternalsVisibleTo.*KoEnVue\.Tests" KoEnVue.csproj` = 1 ✓
+- `git grep "AppDomain.CurrentDomain.UnhandledException" Program.cs` = 1 ✓
+- `git grep "TaskScheduler.UnobservedTaskException" Program.cs` = 1 ✓ (보너스)
+- `ls .github/workflows/build.yml` 존재 ✓
+
+**Invariant 4종**: 모두 0 매치 (`KoEnVue.App` / `ImeState` / `NonKoreanImeMode` in Core/, `[DllImport` in `*.cs`).
+**P5 2종**: 모두 0 매치 (`requireAdministrator` in app.manifest, `RunLevel.*HighestAvailable` in App/).
+
+**남은 작업 (Tier-3)**:
+1. `dotnet test` 사용자 PC 에서도 통과 — 본 세션 PC 는 통과했지만 NuGet 캐시가 비어 있던 PC 가 처음 복원 시 ~17 초 소요 (CI runner 도 동일 비용).
+2. (선택) 의도적 NullReferenceException 유도 → `koenvue_crash.txt` 에 `[UNHANDLED] ... NullReferenceException ...` 라인 기록 확인. 자연 발생을 기다리거나 디버그 빌드에서 일회성 throw 코드 임시 주입.
+3. GitHub Actions 실제 빌드 통과 — feat/pr-10-ci-tests 푸시 시점에 PR / push 트리거 자동 활성, Actions 탭에서 녹색 상태 확인.
+
