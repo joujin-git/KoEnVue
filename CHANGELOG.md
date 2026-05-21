@@ -5,7 +5,13 @@
 
 ## [Unreleased]
 
-> **참고**: 다음 릴리스 (v0.10.0) 부터는 [Keep a Changelog 한국어 스펙](https://keepachangelog.com/ko/1.1.0/) 표준 헤더 (`### 추가` / `### 변경` / `### 사용 중단` / `### 제거` / `### 수정` / `### 보안`) + 짧은 bullet 형식을 따릅니다. 본 `[Unreleased]` 섹션의 PR-00~PR-14 항목들은 13-PR 개선 작업의 사후 기록이라 비표준 단락형 — 보존 + 다음 릴리스부터 표준화.
+> 다음 릴리스부터는 [Keep a Changelog 한국어 스펙](https://keepachangelog.com/ko/1.1.0/) 표준 헤더 + 짧은 bullet 형식 적용.
+
+## [0.10.0] — 2026-05-21
+
+> **BREAKING**: `requireAdministrator` → `asInvoker` 전환. v0.9.x 시절 매 부팅 UAC 프롬프트가 사라지고 `koenvue.log` / `config.json` 경로가 `%LOCALAPPDATA%\KoEnVue\` 로 자동 fallback 됩니다. 자세한 영향과 마이그레이션은 아래 "변경 (BREAKING)" 절.
+>
+> 본 섹션의 항목들은 13-PR 개선 작업 (PR-00 ~ PR-14, 2026-05-21 4-라운드 코드베이스 리뷰 결과) 의 사후 기록이라 비표준 단락형입니다. 작업 회고: [docs/dev-notes/2026-05-21-improvement-plan-retrospective.md](docs/dev-notes/2026-05-21-improvement-plan-retrospective.md). 다음 릴리스부터 Keep a Changelog 표준 적용.
 
 ### 추가
 
