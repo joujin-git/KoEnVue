@@ -153,6 +153,7 @@ internal static class Settings
             AppFilterMode = EnumOrDefault(config.AppFilterMode, AppFilterMode.Blacklist),
             TrayClickAction = EnumOrDefault(config.TrayClickAction, TrayClickAction.Toggle),
             LogLevel = EnumOrDefault(config.LogLevel, LogLevel.Info),
+            Language = EnumOrDefault(config.Language, AppLanguage.Auto),
             PositionMode = EnumOrDefault(config.PositionMode, PositionMode.Window),
             DragModifier = EnumOrDefault(config.DragModifier, DragModifier.None),
 
@@ -629,7 +630,6 @@ internal sealed partial class AppSettingsManager : JsonSettingsManager<AppConfig
             HangulLabel = config.HangulLabel ?? "한",
             EnglishLabel = config.EnglishLabel ?? "En",
             NonKoreanLabel = config.NonKoreanLabel ?? "EN",
-            Language = config.Language ?? "ko",
             LogFilePath = config.LogFilePath ?? "",
         };
     }

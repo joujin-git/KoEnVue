@@ -100,7 +100,7 @@ internal sealed record AppConfig
 
     // [시스템]
     public LogLevel LogLevel { get; init; } = LogLevel.Info;
-    public string Language { get; init; } = "auto";
+    public AppLanguage Language { get; init; } = AppLanguage.Auto;
     public bool LogToFile { get; init; } = true;
     public string LogFilePath { get; init; } = "";
     public int LogMaxSizeMb { get; init; } = 10;

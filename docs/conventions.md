@@ -12,7 +12,7 @@ Related: [architecture.md](architecture.md) (structural rules), [implementation-
 |------|-------------|
 | **P1** | Zero external NuGet packages. .NET 10 BCL + Windows API only |
 | **P2** | UI text defaults to Korean. Log messages and config keys in English |
-| **P3** | No magic numbers → `const`/`enum`/config. No string comparisons → `enum` |
+| **P3** | No magic numbers → `const`/`enum`/config. No string comparisons → `enum`. config.json 의 3-상태 이상 키는 enum + `[JsonStringEnumMemberName]` (PR-06 D4) |
 | **P4** | No duplicate implementations — the same functionality must never be re-implemented in a second location; always reach for the shared module |
 | **P5** | `app.manifest` UAC `asInvoker` (PR-03, v0.10.0). exe 폴더가 user-non-writable 인 경우 `%LOCALAPPDATA%\KoEnVue\` 로 config.json/koenvue.log 자동 fallback ([App/Config/PortablePath](../App/Config/PortablePath.cs)). schtasks 시작 등록은 `LeastPrivilege` |
 | **P6** | One-way layer dependency: `App/` may import `Core/`, but `Core/` must not import `App/` |

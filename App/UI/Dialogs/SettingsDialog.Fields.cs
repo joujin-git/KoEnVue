@@ -262,8 +262,8 @@ internal static partial class SettingsDialog
         Sec("시스템", "System");
         Add(Combo("언어", "Language",
             ko ? ["자동", "한국어", "English"] : ["Auto", "Korean", "English"],
-            c => LanguageToIndex(c.Language),
-            (c, i) => c with { Language = IndexToLanguage(i) }));
+            c => (int)c.Language,
+            (c, i) => c with { Language = (AppLanguage)Math.Clamp(i, 0, 2) }));
         Add(Combo("로그 레벨", "Log level",
             ko ? ["디버그", "정보", "경고", "오류"] : ["Debug", "Info", "Warning", "Error"],
             c => (int)c.LogLevel,
@@ -475,19 +475,4 @@ internal static partial class SettingsDialog
         return copy;
     }
 
-    /// <summary>"ko"/"en"/"auto" 문자열을 콤보박스 인덱스(0=auto, 1=ko, 2=en)로 매핑.</summary>
-    private static int LanguageToIndex(string lang) => lang switch
-    {
-        "ko" => 1,
-        "en" => 2,
-        _    => 0,
-    };
-
-    /// <summary>콤보박스 인덱스(0=auto, 1=ko, 2=en)를 설정 문자열로 매핑.</summary>
-    private static string IndexToLanguage(int i) => i switch
-    {
-        1 => "ko",
-        2 => "en",
-        _ => "auto",
-    };
 }

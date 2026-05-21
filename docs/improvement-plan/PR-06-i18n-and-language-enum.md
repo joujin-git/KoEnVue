@@ -1,6 +1,6 @@
 # PR-06: I18n table + Language enum
 
-**Status**: ⏳ pending
+**Status**: 🚧 in progress (Tier-1+2 통과, Tier-3 사용자 검증 대기)
 **Branch**: feat/pr-06-i18n-language
 **Base**: main (PR-03 후 권장)
 **Risk**: Low
@@ -71,4 +71,6 @@
 
 ## 6. 세션 진행 로그
 
-(empty)
+| Date | Session | What | Next |
+|---|---|---|---|
+| 2026-05-21 | 1 | D3+D4 구현 완료. (D3) `I18n.cs` 41 property → `Dictionary<I18nKey, (Ko, En)>` + `Get(key)` dispatcher. 매개변수 헬퍼 3종(`GetSizeLabel`/`FormatCustomScaleLabel`/`GetTrayTooltip`)은 메서드 유지하되 locale suffix `"배"`/`"x"`만 `SizeLabelSuffix` 키로 분리해 `_isKorean ?`가 `Get` 한 곳에만 잔존. (D4) `AppLanguage { Auto, Ko, En }` enum 신설(`AppConfig.Language` property와 이름 충돌 회피로 `AppLanguage` 채택, risk 2 따름). `AppConfig.Language` `string → AppLanguage`. `I18n.Load(AppLanguage)` 시그너처 변경. `Settings.Validate`에 `Language = EnumOrDefault(config.Language, AppLanguage.Auto)` 추가. `EnsureSubObjects`의 `Language = config.Language ?? "ko"` 제거(enum non-nullable). `SettingsDialog.Fields.cs`의 `LanguageToIndex`/`IndexToLanguage` 헬퍼 2종 삭제 + Combo가 `(int)c.Language` / `(AppLanguage)Math.Clamp(i, 0, 2)`로 단순화(다른 11개 enum과 동일 패턴). Tier-1 debug + AOT publish clean(0 경고, 4.82 MB). Tier-2 grep 가드 5종 통과: `_isKorean ? in I18n.cs = 1`(Get만), `I18nKey in I18n.cs = 97`, `enum AppLanguage = 1`, `string Language in AppConfig = 0`, `"ko"/"en"/"auto" in SettingsDialog.Fields.cs = 0`. invariant 4종 + P5 2종 0 매치. 문서 5건 갱신(CHANGELOG / architecture I18n.cs 항목 + Models enum 리스트 / conventions P3 / dev-notes 신규 / PR-06 §6). README/User_Guide는 `language` 키 참조 0이라 갱신 불요(spec §2 docs에선 "선택" 표기). | Tier-3 수동 smoke (사용자 검증) 후 머지 |
