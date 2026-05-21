@@ -13,7 +13,14 @@
     함께 첨부 + 사용자에게는 "발행본 hash 와 다운로드 hash 비교" 의미만 보장.
   -->
 
-  <Target Name="GenerateVersionConstants" BeforeTargets="CoreCompile">
+  <!--
+    Condition — 메인 프로젝트 (KoEnVue.csproj) 에만 적용. KoEnVue.Tests 같은 sibling 프로젝트
+    에서 같은 namespace `KoEnVue.App.Config` 의 partial 조각이 생성되면 InternalsVisibleTo 로
+    노출된 메인의 internal DefaultConfig 와 local 의 internal DefaultConfig 가 type conflict
+    를 일으켜 컴파일러가 local 을 우선 — 다른 const (`MinPollMs` 등) 가 보이지 않게 된다.
+    CI 첫 실행에서 발견된 회귀. 로컬은 PR-10 시절 빌드된 tests/bin 캐시가 잔류해 가려졌다.
+  -->
+  <Target Name="GenerateVersionConstants" BeforeTargets="CoreCompile" Condition="'$(MSBuildProjectName)' == 'KoEnVue'">
     <PropertyGroup>
       <VersionGeneratedFile>$(IntermediateOutputPath)Version.g.cs</VersionGeneratedFile>
     </PropertyGroup>
@@ -45,7 +52,7 @@
     </ItemGroup>
   </Target>
 
-  <Target Name="EmitSha256" AfterTargets="Publish" Condition="'$(Configuration)' == 'Release'">
+  <Target Name="EmitSha256" AfterTargets="Publish" Condition="'$(Configuration)' == 'Release' AND '$(MSBuildProjectName)' == 'KoEnVue'">
     <!--
       NativeAOT publish 산출물 KoEnVue.exe 의 SHA256 을 publish/KoEnVue.exe.sha256.txt 로 기록.
       GitHub Releases body 에 그대로 붙여 사용자가 Get-FileHash 로 검증 가능 (G4).
