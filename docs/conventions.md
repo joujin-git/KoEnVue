@@ -139,6 +139,33 @@ Logic bugs in pipeline hooks (`Migrate`/`Validate`/`ApplyTheme`) and in path nor
 
 `JsonSettingsManager<T>` takes `JsonTypeInfo<T>` as a constructor parameter for this reason — there is no reflection fallback path.
 
+### AOT/Trim/SingleFile 분석기 정책
+
+`KoEnVue.csproj` 에는 `PublishAot=true` 와 함께 분석기 3종이 빌드 시점에 활성화되어 있다:
+
+```xml
+<EnableAotAnalyzer>true</EnableAotAnalyzer>
+<EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+<EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+```
+
+`PublishAot=true` 자체는 ILC publish 시점에 trim/dynamic-code 위반을 최종 검출하지만, 그건 피드백 루프가 길다 (Release publish 가 필요). 분석기 3종은 Roslyn 단계에서 동일 분류의 위반을 `dotnet build` 즉시 노출 — 후속 PR 들이 reflection API(`Type.GetType(string)`, `Assembly.GetType`, `Activator.CreateInstance` 등) 를 새로 추가할 때 회귀를 IDE 의 빨간 줄로 즉시 발견.
+
+정책:
+
+- 새 trim/AOT/single-file 경고는 **같은 PR 안에서 fix** 또는 명시적 `<NoWarn>NNNNN</NoWarn>` + 사유 주석 + DECISIONS.md 항목.
+- 묵음 누적 금지. 경고 0개가 baseline.
+- `<NoWarn>` 으로 일시 처리한 경고는 `// TODO: PR-NN` 주석으로 정리 PR 을 명시.
+
+검증:
+
+```bash
+git grep "EnableAotAnalyzer"        KoEnVue.csproj   → 1
+git grep "EnableTrimAnalyzer"       KoEnVue.csproj   → 1
+git grep "EnableSingleFileAnalyzer" KoEnVue.csproj   → 1
+dotnet build                                          → 경고 0개
+```
+
 ### `[LibraryImport]` only, `[DllImport]` banned
 
 `[LibraryImport]` uses a source generator to emit marshalling code at compile time, which is NativeAOT-compatible. `[DllImport]` falls back to reflection-based marshalling at runtime and will break under ILC trimming.

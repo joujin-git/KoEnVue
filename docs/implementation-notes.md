@@ -756,3 +756,16 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 ### `InvariantGlobalization`
 
 Enabled in [KoEnVue.csproj](../KoEnVue.csproj) — strips ICU from the NativeAOT publish. Means no `CultureInfo` usage except for `CultureInfo.InvariantCulture`. IME language detection uses `GetUserDefaultUILanguage` P/Invoke instead of `CultureInfo.CurrentUICulture`.
+
+### `app.manifest` 구성
+
+[app.manifest](../app.manifest) 는 다음 4가지 선언을 합쳐 한 리소스로 임베드한다:
+
+1. **`requireAdministrator` (`trustInfo`)** — P5. exe 폴더가 항상 쓰기 가능해야 하는 portable config 정책의 단일 출처. PR-03 에서 `asInvoker` 로 마이그레이션 예정 (BREAKING).
+2. **`supportedOS` (`compatibility.v1`)** — Win10/11 단일 GUID `{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}`. 이 블록이 없으면 Windows 가 `GetVersionEx`/`RtlGetVersion` 등 일부 API 에 legacy compatibility shim 을 적용해 Win8 로 자기 신원을 위장한다. 본 앱은 `DwmGetColorizationColor` / personalization accent / Win11 Snap Layout 인지 등 Win10 1607+ API 만 사용하므로 더 오래된 OS 는 명시적으로 unsupported.
+3. **`dpiAwareness` (`SMI/2016/WindowsSettings`) + `dpiAware` (`SMI/2005/WindowsSettings`) 페어** — `PerMonitorV2` 우선, fallback `true/pm`. Windows 10 1703 이전에선 `dpiAwareness` 가 무시되고 `dpiAware` 의 `true/pm` 이 PerMonitor V1 으로 동작. 모든 GDI / `GetSystemMetricsForDpi` / `AdjustWindowRectExForDpi` 호출은 `Core/Dpi/DpiHelper` 를 통해 per-monitor DPI 를 받는다.
+4. **`longPathAware` (`SMI/2016/WindowsSettings`)** — `windowsSettings` 블록 내에 위치. 사용자가 `config.json` / `koenvue.log` 를 매우 깊은 디렉토리(>260 chars) 에 두는 시나리오 방어. **실제 활성 조건**: 시스템 레지스트리 `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1` 이 별도 필요. manifest 의 `longPathAware` 는 "이 프로세스는 long path 를 받아도 안전" 이라는 *수용성* 선언일 뿐이고, 시스템 차원의 OFF 면 여전히 MAX_PATH 가 적용된다. 따라서 만 명시했다 해서 코드 측 path 처리가 변경되어야 하는 건 아니다 — `Path.Combine` + `AppContext.BaseDirectory` 기반 portable 정책은 그대로 유효.
+
+**의도적 미선언**: `gdiScaling` (`SMI/2017/WindowsSettings`). 본 앱은 PerMonitorV2 인지 + 자체 DPI 스케일링 핸들링이라 GDI auto-scaling 은 무의미하며, `gdiScaling=true` 는 legacy unaware/system-aware 프로세스용 옵션이다. 혼선 회피 목적으로 manifest 에서 명시적으로 빼둔다.
+
+PE 임베드 검증: PowerShell + Win32 `FindResource(hMod, MAKEINTRESOURCE(1), RT_MANIFEST=24)` 로 publish exe 의 manifest 리소스를 추출하면 위 4 선언이 그대로 들어 있어야 한다. 빌드 시점에 manifest XML 이 malformed 이면 `ResourceUpdate` 가 실패해 build error 로 즉시 노출 (실패-가시화 경로).

@@ -68,4 +68,8 @@
 
 ## 6. 세션 진행 로그
 
-(empty)
+| Date | Action | Result |
+|---|---|---|
+| 2026-05-21 | `EnableAotAnalyzer` + `EnableTrimAnalyzer` + `EnableSingleFileAnalyzer` 3종을 `KoEnVue.csproj` 에 추가 | clean `dotnet build` + clean `bin/obj` 후 `dotnet publish -r win-x64 -c Release` 모두 경고 0개 / 오류 0개. 기존 codebase 가 이미 `[LibraryImport]` + `[JsonSerializable]` + `[UnmanagedCallersOnly]` + generic `Marshal.SizeOf<T>` 만 사용해 분석기 관점 clean 이었음을 확인 |
+| 2026-05-21 | `app.manifest` 에 `<compatibility>` 블록 + `<longPathAware>` 추가 | Win10/11 단일 GUID `{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}` + `longPathAware=true` (SMI/2016 ns). `gdiScaling` 의도적 미추가 (사유 주석). AOT publish exe 의 PE manifest 리소스 (id=1, type=24) 를 `FindResource` + `LoadResource` 로 추출해 4 선언 모두 임베드 확인. exe size 4.47 MB → 4.47 MB (1024 bytes 차) |
+| 2026-05-21 | 문서 갱신 — `CHANGELOG.md` [Unreleased]/변경 2건, `docs/conventions.md` NativeAOT 섹션에 "AOT/Trim/SingleFile 분석기 정책" sub-section 신설, `docs/implementation-notes.md` Misc 끝에 "`app.manifest` 구성" sub-section 신설 | Tier-2 grep 가드 4종 (EnableTrimAnalyzer / EnableAotAnalyzer / longPathAware / supportedOS) 통과. invariant 4종 0매치 유지 |

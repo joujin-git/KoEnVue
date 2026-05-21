@@ -3,6 +3,11 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <PublishAot>true</PublishAot>
+    <!-- AOT/Trim/SingleFile 분석기 — 빌드 시점에 reflection/dynamic-code 위반 검출. -->
+    <!-- PublishAot=true 가 이미 IsAotCompatible/IsTrimmable 을 켜지만 분석기는 별도 toggle 이 필요. -->
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
     <InvariantGlobalization>true</InvariantGlobalization>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <IlcOptimizationPreference>Size</IlcOptimizationPreference>

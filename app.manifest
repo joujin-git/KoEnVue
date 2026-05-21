@@ -7,10 +7,26 @@
       </requestedPrivileges>
     </security>
   </trustInfo>
+  <!--
+    PR-03 에서 asInvoker 로 마이그레이션 예정 (BREAKING). 현재는 requireAdministrator 유지.
+    supportedOS: Win10/11 (단일 GUID). 본 앱은 Win11 personalization accent / DwmGetColorizationColor 등
+    Win10 1607+ API 만 사용 — 더 오래된 OS 는 명시적으로 unsupported.
+    longPathAware: Win10 1607+. 사용자가 config.json 을 매우 깊은 디렉토리에 두는 경우 대비.
+                   레지스트리 LongPathsEnabled=1 이 별도 필요 (사용자/관리자 설정).
+    gdiScaling: 의도적 미선언. 본 앱은 PerMonitorV2 + 자체 DPI 핸들링이라 GDI auto-scaling 무의미.
+                gdiScaling 은 legacy unaware/system-aware 프로세스용 옵션.
+  -->
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 / 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+    </application>
+  </compatibility>
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
       <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
       <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
     </windowsSettings>
   </application>
 </assembly>
