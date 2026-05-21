@@ -14,41 +14,42 @@ namespace KoEnVue.App.Config;
 /// </summary>
 internal static class ThemePresets
 {
+    /// <summary>
+    /// 6-쌍 테마 색상 묶음. record 로 묶어 4 preset 의 필드별 반복을 제거한다 (D2).
+    /// internal 이고 STJ context 에 등록하지 않으므로 직렬화되지 않는다.
+    /// </summary>
+    internal sealed record ThemeColors(
+        string HBg, string HFg,
+        string EBg, string EFg,
+        string NBg, string NFg);
+
+    /// <summary>
+    /// 정적 프리셋 — Minimal/Vivid/Pastel/Dark. System 은 ApplySystemTheme 가 런타임 계산하므로 제외.
+    /// </summary>
+    private static readonly Dictionary<Theme, ThemeColors> _presets = new()
+    {
+        [Theme.Minimal] = new("#1F2937", "#F9FAFB", "#9CA3AF", "#111827", "#D1D5DB", "#374151"),
+        [Theme.Vivid]   = new("#22C55E", "#FFFFFF", "#EF4444", "#FFFFFF", "#3B82F6", "#FFFFFF"),
+        [Theme.Pastel]  = new("#86EFAC", "#14532D", "#FDE68A", "#78350F", "#C4B5FD", "#3B0764"),
+        [Theme.Dark]    = new("#065F46", "#D1FAE5", "#92400E", "#FEF3C7", "#374151", "#F3F4F6"),
+    };
+
     public static AppConfig Apply(AppConfig config)
     {
         if (config.Theme == Theme.Custom)
             return RestoreCustomBackup(config);
 
         var backed = EnsureBackup(config);
-        return config.Theme switch
+        if (_presets.TryGetValue(config.Theme, out var colors))
         {
-            Theme.Minimal => backed with
+            return backed with
             {
-                HangulBg = "#1F2937", HangulFg = "#F9FAFB",
-                EnglishBg = "#9CA3AF", EnglishFg = "#111827",
-                NonKoreanBg = "#D1D5DB", NonKoreanFg = "#374151",
-            },
-            Theme.Vivid => backed with
-            {
-                HangulBg = "#22C55E", HangulFg = "#FFFFFF",
-                EnglishBg = "#EF4444", EnglishFg = "#FFFFFF",
-                NonKoreanBg = "#3B82F6", NonKoreanFg = "#FFFFFF",
-            },
-            Theme.Pastel => backed with
-            {
-                HangulBg = "#86EFAC", HangulFg = "#14532D",
-                EnglishBg = "#FDE68A", EnglishFg = "#78350F",
-                NonKoreanBg = "#C4B5FD", NonKoreanFg = "#3B0764",
-            },
-            Theme.Dark => backed with
-            {
-                HangulBg = "#065F46", HangulFg = "#D1FAE5",
-                EnglishBg = "#92400E", EnglishFg = "#FEF3C7",
-                NonKoreanBg = "#374151", NonKoreanFg = "#F3F4F6",
-            },
-            Theme.System => ApplySystemTheme(backed),
-            _ => backed,
-        };
+                HangulBg = colors.HBg, HangulFg = colors.HFg,
+                EnglishBg = colors.EBg, EnglishFg = colors.EFg,
+                NonKoreanBg = colors.NBg, NonKoreanFg = colors.NFg,
+            };
+        }
+        return config.Theme == Theme.System ? ApplySystemTheme(backed) : backed;
     }
 
     /// <summary>
@@ -110,11 +111,26 @@ internal static class ThemePresets
 
     private static AppConfig ApplySystemTheme(AppConfig config)
     {
-        // 데이터 소스 우선 순위 (PR-14):
-        //   1. DwmGetColorizationColor — Win11 personalization accent 의 source-of-truth.
-        //      "제목 표시줄과 창 테두리에 강조색 표시" 옵션이 꺼져 있어도 정확한 accent 추적.
-        //   2. GetSysColor(COLOR_HIGHLIGHT) — DWM composition 비활성 등 fallback.
-        //      Win11 에서 위 옵션 OFF 시 새 accent 가 즉시 반영되지 않는 known limitation.
+        // 데이터 소스 우선순위:
+        //   1. 고대비 모드 (PR-05 H4-c) — SPI_GETHIGHCONTRAST 가 ON 이면 OS 가 보장하는 contrast-safe
+        //      팔레트 (HIGHLIGHT/HIGHLIGHTTEXT/WINDOW/WINDOWTEXT) 를 사용. 보색 계산 결과가 명도 대비를
+        //      깨뜨릴 수 있어 가독성을 우선 보호한다.
+        //   2. DwmGetColorizationColor (PR-14) — Win11 personalization accent 의 source-of-truth.
+        //      "제목 표시줄과 창 테두리에 강조색 표시" 옵션 OFF 에서도 정확히 추적.
+        //   3. GetSysColor(COLOR_HIGHLIGHT) — DWM composition 비활성 등 마지막 폴백.
+        if (User32.IsHighContrastEnabled())
+        {
+            string hBg = SysColorHex(Win32Constants.COLOR_HIGHLIGHT);
+            string hFg = SysColorHex(Win32Constants.COLOR_HIGHLIGHTTEXT);
+            string eBg = SysColorHex(Win32Constants.COLOR_WINDOW);
+            string eFg = SysColorHex(Win32Constants.COLOR_WINDOWTEXT);
+            return config with
+            {
+                HangulBg = hBg, HangulFg = hFg,
+                EnglishBg = eBg, EnglishFg = eFg,
+            };
+        }
+
         if (!Dwmapi.TryGetColorizationRgb(out byte r, out byte g, out byte b))
         {
             uint accentColor = User32.GetSysColor(Win32Constants.COLOR_HIGHLIGHT);
@@ -124,5 +140,12 @@ internal static class ThemePresets
         // 보색 계산
         string englishBg = ColorHelper.RgbToHex((byte)(255 - r), (byte)(255 - g), (byte)(255 - b));
         return config with { HangulBg = hangulBg, EnglishBg = englishBg };
+    }
+
+    private static string SysColorHex(int sysColorIndex)
+    {
+        uint c = User32.GetSysColor(sysColorIndex);
+        var (r, g, b) = ColorHelper.ColorRefToRgb(c);
+        return ColorHelper.RgbToHex(r, g, b);
     }
 }

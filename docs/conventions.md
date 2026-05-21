@@ -41,6 +41,17 @@ Centralized modules enforced across the codebase:
 
 Before adding a new helper: **grep Core/ first**.
 
+#### P4 sub-rule — 수치/색상 디폴트는 `DefaultConfig` 단일 진실원 (PR-05)
+
+`AppConfig` 의 init 디폴트 / `Settings.Validate` 의 `Math.Clamp` 인자 / `SettingsDialog.Fields.cs` 의 `Int/Dbl` min/max 인자 / `ScaleInputDialog.Scale{Min,Max}Value` 의 4-축이 모두 [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) 의 const 를 참조한다. **한 곳에서 값을 변경하면 자동으로 네 곳이 따라가야 한다** — 리터럴을 손으로 동기화하면 다이얼로그 입력 → Validate 사이에서 silent 보정이 발생할 수 있다.
+
+규약:
+
+- 새 `AppConfig` 수치 필드 디폴트: `public int X { get; init; } = DefaultConfig.X;` 형태로 const 참조 — 인라인 리터럴 금지.
+- 새 `Settings.Validate` clamp 범위: `Math.Clamp(value, DefaultConfig.MinX, DefaultConfig.MaxX)` — 0/100 등 리터럴 인자 금지.
+- 새 다이얼로그 입력 필드: `Int("...", DefaultConfig.MinX, DefaultConfig.MaxX, getter, setter)` — 다이얼로그 hand-sync 금지.
+- 4-색 preset 추가 시 [App/Config/ThemePresets.cs](../App/Config/ThemePresets.cs) 의 `ThemeColors` record + `_presets` Dictionary 항목 추가 — `Theme.X => backed with { HangulBg=..., ..., NonKoreanFg=... }` 의 6-필드 반복 금지.
+
 ### P6 verification invariants
 
 All must return **0 matches** at the repo root:

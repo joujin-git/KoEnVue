@@ -1,6 +1,6 @@
 # PR-05: Theme + DefaultConfig consolidation + high-contrast
 
-**Status**: ⏳ pending
+**Status**: 🚧 in progress (Tier-1+2 통과, Tier-3 사용자 smoke 대기)
 **Branch**: feat/pr-05-theme-and-defaults
 **Base**: main (PR-03 후 권장)
 **Risk**: Low
@@ -80,4 +80,60 @@
 
 ## 6. 세션 진행 로그
 
-(empty)
+### 2026-05-21
+
+**구현**:
+- `App/Config/DefaultConfig.cs`:
+  - `FadeInDurationMs` → `FadeInMs`, `FadeOutDurationMs` → `FadeOutMs`, `ScaleFactor` → `HighlightScale`,
+    `ScaleReturnMs` → `HighlightDurationMs`, `PollingIntervalMs` → `PollIntervalMs` (N3 5건 rename).
+    `<see cref="AppConfig.X"/>` cref 코멘트로 단일 진실원 의도 명시. 호출자 0건이라 안전.
+  - 신규 const 32개 (Min/MaxX 16쌍): Poll / EventDisplay / AlwaysIdle / Opacity / HighlightScale /
+    Fade / SnapGapPx / FontSize / LabelWidth / LabelHeight / LabelBorderRadius / BorderWidth /
+    IndicatorScale / LogMaxSizeMb / ForceTopmostMs. 주석으로 D7 (4-축 hand-sync 제거) 의도 기록.
+- `App/Models/AppConfig.cs`:
+  - `using KoEnVue.App.Config;` 추가.
+  - 6쌍 inline 디폴트 → const 참조: `FadeInMs` / `FadeOutMs` / `HighlightScale` / `HighlightDurationMs` /
+    `AlwaysIdleTimeoutMs` / `PollIntervalMs`.
+- `App/Config/ThemePresets.cs`: 전체 rewrite.
+  - `internal sealed record ThemeColors(string HBg, ..., string NFg)` 신규.
+  - 4 preset 을 `Dictionary<Theme, ThemeColors> _presets` 정적 사전으로 표현. `Apply` 가 dict TryGetValue
+    단일 분기로 4 preset 처리. `Custom`/`System` 은 dict 외 분기 유지 (런타임 동적 계산).
+  - `ApplySystemTheme` 진입부에 `User32.IsHighContrastEnabled()` 분기 추가 — ON 이면 HIGHLIGHT/
+    HIGHLIGHTTEXT/WINDOW/WINDOWTEXT contrast-safe 팔레트로 BG+FG 4 필드 전환. OFF 면 PR-14 의 DWM
+    accent 우선 + GetSysColor 폴백 2단 분기 유지.
+- `Core/Native/User32.cs`:
+  - `SystemParametersInfoHighContrast(uint, uint, ref HIGHCONTRAST, uint)` `[LibraryImport]`
+    (`EntryPoint="SystemParametersInfoW"`) — SystemParametersInfoW 의 PVOID pvParam 이 uiAction 별로
+    다른 구조체를 받는 generic 시그니처라 SPI_GETHIGHCONTRAST 전용 오버로드로 둠.
+  - `IsHighContrastEnabled()` 헬퍼 — `cbSize = Marshal.SizeOf<HIGHCONTRAST>()` 설정 후 호출,
+    `dwFlags & HCF_HIGHCONTRASTON` 비트 검사, 실패 시 false.
+- `Core/Native/Win32Types.cs`: `SPI_GETHIGHCONTRAST = 0x0042`, `HCF_HIGHCONTRASTON = 0x00000001`,
+  `COLOR_WINDOW = 5`, `COLOR_WINDOWTEXT = 8`, `COLOR_HIGHLIGHTTEXT = 14` 5개 상수 신규. `HIGHCONTRAST`
+  struct 는 기 정의됨.
+- `App/Config/Settings.cs`: `Validate` 의 clamp 리터럴 18개를 모두 `DefaultConfig.Min/MaxX` 참조로 교체.
+- `App/UI/Dialogs/SettingsDialog.Fields.cs`: `using KoEnVue.App.Config;` 추가 + Int/Dbl 의 min/max 인자
+  13개를 모두 `DefaultConfig.Min/MaxX` 참조로 교체.
+- `App/UI/Dialogs/ScaleInputDialog.cs`: `using KoEnVue.App.Config;` 추가 + `ScaleMinValue` / `ScaleMaxValue`
+  를 `DefaultConfig.Min/MaxIndicatorScale` 참조로 통일. `Tray.Menu.cs` 의 서브메뉴 범위 표시도 자동 동기.
+
+**Tier-1 통과**:
+- `dotnet build -c Debug` 클린 (0 경고, 0 오류, 3.41s).
+- `dotnet publish -r win-x64 -c Release` AOT 클린 (0 경고, 4.77 MB 유지).
+
+**Tier-2 grep 가드** (5종 + invariant 4종 + P5 2종 모두 통과):
+- `git grep "ScaleFactor\|ScaleReturnMs\|FadeInDurationMs\|FadeOutDurationMs\|PollingIntervalMs" -- '*.cs'` → 0 매치 (docs 의 self-reference 잔존만 OK).
+- `git grep "record ThemeColors" App/Config/ThemePresets.cs` → 1 매치.
+- `git grep "SPI_GETHIGHCONTRAST" Core/Native/User32.cs` → 3 매치 (1+ 충족).
+- `git grep "MinPollMs\|MaxPollMs" App/Config/DefaultConfig.cs` → 2 매치 (1+ 충족).
+- `git grep "= 150\|= 400\|= 300\|= 3000" App/Models/AppConfig.cs` → 0 매치.
+- invariant 4종 (`KoEnVue\.App`/`ImeState`/`NonKoreanImeMode` in Core/, `DllImport`) → 0 매치.
+- P5 invariant 2종 (`requireAdministrator` in app.manifest, `RunLevel.*HighestAvailable` in App/) → 0 매치.
+
+**문서 갱신**:
+- `CHANGELOG.md` [Unreleased] / 변경 최상단에 PR-05 항목.
+- `docs/architecture.md` 의 DefaultConfig + ThemePresets 라인 갱신 (단일 진실원 + 고대비 분기 명시).
+- `docs/conventions.md` P4 sub-rule 신설 ("수치/색상 디폴트는 DefaultConfig 단일 진실원").
+- `docs/improvement-plan/INDEX.md` Sessions log + Progress matrix.
+
+**대기**: Tier-3 수동 smoke 4건 (테마 4종 전환 / Custom 왕복 / 고대비 모드 / SettingsDialog range)
+사용자 검증 후 머지.

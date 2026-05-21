@@ -1,8 +1,8 @@
 # Improvement Plan — Progress Index
 
 **Last updated**: 2026-05-21
-**Current branch**: main (idle, PR-04 머지 완료)
-**Next PR**: PR-05/06/08/09/10/11 자유 선택
+**Current branch**: feat/pr-05-theme-and-defaults (Tier-1+2 통과, Tier-3 대기)
+**Next PR**: PR-05 Tier-3 smoke → 머지 → PR-06/08/09/10/11 자유 선택
 
 ## Progress matrix
 
@@ -13,7 +13,7 @@
 | 02 | Analyzers + manifest hardening          | ✅     | (merged → main, 91621a4)        | Medium  | M    | G2+G3. Tier-1+2+3 통과. 분석기 활성 시점에 위반 0건. manifest PE 임베드 확인 |
 | 03 | asInvoker migration (BREAKING)          | ✅     | (merged → main, 06b4157)        | High    | L    | v0.10.0 후보. Tier-1+2+3 (A~F) 통과. Tier-3 D 회귀 1건 발견 후 fix (LogonTrigger UserId) |
 | 04 | Tray.cs decomposition                   | ✅     | (merged → main, 9192826)        | Low     | M    | C1+C2+D9+D10. Tier-1+2+3 통과. Tray.cs 1156→575줄 (-50%). 4 신규 모듈 + ShowMenu partial |
-| 05 | Theme + DefaultConfig consolidation     | ⏳     | feat/pr-05-theme-and-defaults   | Low     | M    | D2+D5+N3+D7+H4-c |
+| 05 | Theme + DefaultConfig consolidation     | 🚧     | feat/pr-05-theme-and-defaults   | Low     | M    | D2+D5+N3+D7+H4-c. Tier-1+2 통과, Tier-3 대기 |
 | 06 | I18n + Language enum                    | ⏳     | feat/pr-06-i18n-language        | Low     | M    | D3+D4 |
 | 07 | DialogShell + a11y baseline             | ⏳     | feat/pr-07-dialog-shell         | Medium  | L    | C3+H4-b. 수동 smoke 필요 |
 | 08 | Core reuse restoration                  | ⏳     | feat/pr-08-core-reuse           | Low     | M    | C4+C6+C5(TopmostWatchdog만)+E1+E2+E3 |
@@ -83,3 +83,4 @@ PR별 Tier-2 grep 가드 + Tier-3 수동 smoke은 각 `PR-NN-*.md` §3 참조.
 | 2026-05-21 | PR-03 | Tier-3 시나리오 A (정상 폴더) / B (Program Files fallback) / C (v0.9.x → v0.10.0 마이그) / D (schtasks 등록) / E (log_file_path sanitize) / F (tempPath GUID) 모두 사용자 가시 검증 통과. E 의 invalid JSON escape 사이드 — STJ 가 JsonReaderException 정상 throw 확인 (`\W` 직접 테스트), 인메모리 race 로 사용자 입력이 silent 정정되는 현상은 v0.9.x 부터의 기존 정책. FF merge to main (3 commits: 3ca644d, 8778b61, 06b4157) + 브랜치 삭제. PR-03 (BREAKING `requireAdministrator → asInvoker` + %LOCALAPPDATA% fallback + schtasks LeastPrivilege) 완료 | 다음 PR (04/05/06/08/09/10/11 자유 선택) |
 | 2026-05-21 | PR-04 | Tray.cs god class 분해 — 4개 신규 모듈 (`Core/Xml/XmlEntityCodec` / `Core/Shell/UriLauncher` / `App/Startup/StartupTaskManager` / `App/Config/PositionCleanupService`) + `App/UI/Tray.Menu.cs` partial. Tray.cs 1156 → 575 줄 (-50%). Program.cs 의 `Tray.SyncStartupPathAsync` → `StartupTaskManager.SyncStartupPathAsync`. Tier-1 debug + AOT publish clean (0 경고, 4.77 MB 유지). Tier-2 grep 가드 6종 통과 (xmldoc 단어 회피 + ShowMenu partial 분리로 line 가드 만족). invariant 4종 0매치. 문서 5건 갱신 (CHANGELOG / architecture.md 모듈 3종 + Tray 갱신 / PR-04 §2/§3/§6 / dev-notes 신규 / INDEX) | Tier-3 사용자 smoke 검증 후 머지 |
 | 2026-05-21 | PR-04 | Tier-3 사용자 수동 smoke 4항목 (트레이 메뉴 / 시작 등록 토글 / 홈페이지·설정파일·업데이트 / CleanupDialog) 모두 통과. FF merge to main (9192826) + 브랜치 삭제. PR-04 (Tray.cs god class 분해 1156→575) 완료 | 다음 PR (05/06/08/09/10/11 자유 선택) |
+| 2026-05-21 | PR-05 | D2+D5+N3+D7+H4-c 5건 묶음. `DefaultConfig` 5건 rename (Fade/Highlight/Poll) + Min/Max 16쌍 32 const 신규 + AppConfig 6쌍 inline 디폴트 → const 참조. `Settings.Validate` clamp 18 리터럴 + `SettingsDialog.Fields` 13 리터럴 + `ScaleInputDialog` 2 리터럴 → 모두 `DefaultConfig.Min/MaxX` 참조. `ThemePresets` 의 4 preset 96 줄 → `record ThemeColors` + Dictionary 16 줄. `ApplySystemTheme` 에 고대비 (`SPI_GETHIGHCONTRAST` / `HCF_HIGHCONTRASTON`) 분기 추가 — `User32.IsHighContrastEnabled()` 헬퍼 + `SystemParametersInfoHighContrast` `[LibraryImport]` 추가. Tier-1 debug + AOT publish clean (0 경고, 4.77 MB). Tier-2 grep 가드 5종 통과 (rename-away 0 매치 / `record ThemeColors` 1 / `SPI_GETHIGHCONTRAST` in User32.cs 3 / `Min/MaxPollMs` 2 / AppConfig 리터럴 0). invariant 4종 + P5 2종 모두 0 매치. 문서 4건 갱신 (CHANGELOG / architecture / conventions P4 sub-rule / PR-05 §6) | Tier-3 사용자 smoke (테마 4종 / Custom 왕복 / 고대비 / SettingsDialog range) 검증 후 머지 |

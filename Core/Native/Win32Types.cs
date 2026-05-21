@@ -429,8 +429,17 @@ internal static class Win32Constants
     public const uint DWMWA_CLOAKED      = 14;
 
     // --- 시스템 색상 ---
+    public const int COLOR_WINDOW         = 5;
+    public const int COLOR_WINDOWTEXT     = 8;
     public const int COLOR_HIGHLIGHT      = 13;
+    public const int COLOR_HIGHLIGHTTEXT  = 14;
     public const int COLOR_BTNFACE        = 15;
+
+    // --- 접근성 / SystemParametersInfo ---
+    /// <summary>SystemParametersInfo uiAction — 고대비 모드 상태 조회 (HIGHCONTRASTW 구조체 채움).</summary>
+    public const uint SPI_GETHIGHCONTRAST = 0x0042;
+    /// <summary>HIGHCONTRASTW.dwFlags — 고대비 모드가 켜져 있음을 의미하는 비트.</summary>
+    public const uint HCF_HIGHCONTRASTON  = 0x00000001;
 
     // --- 정적 컨트롤 스타일 ---
     public const uint SS_ETCHEDHORZ       = 0x0010;

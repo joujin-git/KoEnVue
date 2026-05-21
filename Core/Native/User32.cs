@@ -215,6 +215,34 @@ internal static partial class User32
     [LibraryImport("user32.dll")]
     internal static partial uint GetSysColor(int nIndex);
 
+    // === 접근성 / 시스템 파라미터 ===
+
+    /// <summary>
+    /// SystemParametersInfoW 의 SPI_GETHIGHCONTRAST 전용 시그니처 — pvParam 이 HIGHCONTRAST 구조체.
+    /// <para>
+    /// PVOID 인자라 동일 함수가 uiAction 별로 다른 구조체를 받는데, [LibraryImport] 는 generic
+    /// PVOID 마샬링을 직접 지원하지 않으므로 uiAction 별 EntryPoint=SystemParametersInfoW 오버로드를
+    /// 둔다. 추가 SPI_*을 다룰 때 같은 패턴으로 별개 partial 메서드를 선언한다.
+    /// </para>
+    /// </summary>
+    [LibraryImport("user32.dll", EntryPoint = "SystemParametersInfoW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SystemParametersInfoHighContrast(
+        uint uiAction, uint uiParam, ref HIGHCONTRAST pvParam, uint fWinIni);
+
+    /// <summary>
+    /// 접근성 → 고대비 모드 활성 여부. SPI_GETHIGHCONTRAST (0x0042) 를 통해 HCF_HIGHCONTRASTON
+    /// 비트를 읽는다. ThemePresets.ApplySystemTheme 에서 contrast-safe 팔레트 분기 게이트로 사용.
+    /// 호출 실패 시 false 로 폴백 — 정상 동작에 영향 없음.
+    /// </summary>
+    internal static bool IsHighContrastEnabled()
+    {
+        var hc = new HIGHCONTRAST { cbSize = (uint)Marshal.SizeOf<HIGHCONTRAST>() };
+        if (!SystemParametersInfoHighContrast(Win32Constants.SPI_GETHIGHCONTRAST, hc.cbSize, ref hc, 0))
+            return false;
+        return (hc.dwFlags & Win32Constants.HCF_HIGHCONTRASTON) != 0;
+    }
+
     // === 콜백 대리자 ===
 
     internal delegate void WinEventProc(

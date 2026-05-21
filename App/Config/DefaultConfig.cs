@@ -52,21 +52,23 @@ internal static class DefaultConfig
     public const int SnapThresholdPx = 10;
 
     // === 애니메이션 타이밍 (ms) ===
+    // 이름은 AppConfig 동등 필드와 일치시킨다 (N3) — AppConfig 의 init 디폴트에서 이 상수를
+    // 참조하므로 한 곳에서 값을 변경하면 양쪽이 자동으로 동기화된다.
 
-    /// <summary>페이드인 지속 시간</summary>
-    public const int FadeInDurationMs = 150;
+    /// <summary>페이드인 지속 시간 — <see cref="AppConfig.FadeInMs"/> 의 디폴트.</summary>
+    public const int FadeInMs = 150;
 
     /// <summary>유지 시간</summary>
     public const int HoldDurationMs = 1500;
 
-    /// <summary>페이드아웃 지속 시간</summary>
-    public const int FadeOutDurationMs = 400;
+    /// <summary>페이드아웃 지속 시간 — <see cref="AppConfig.FadeOutMs"/> 의 디폴트.</summary>
+    public const int FadeOutMs = 400;
 
-    /// <summary>IME 전환 시 확대 배율</summary>
-    public const double ScaleFactor = 1.3;
+    /// <summary>IME 전환 시 확대 배율 — <see cref="AppConfig.HighlightScale"/> 의 디폴트.</summary>
+    public const double HighlightScale = 1.3;
 
-    /// <summary>확대 -> 원래 크기 복귀 시간</summary>
-    public const int ScaleReturnMs = 300;
+    /// <summary>확대 -> 원래 크기 복귀 시간 — <see cref="AppConfig.HighlightDurationMs"/> 의 디폴트.</summary>
+    public const int HighlightDurationMs = 300;
 
     /// <summary>애니메이션 프레임 간격 (~60fps)</summary>
     public const uint AnimationFrameMs = 16;
@@ -79,8 +81,8 @@ internal static class DefaultConfig
 
     // === 감지 ===
 
-    /// <summary>감지 폴링 간격</summary>
-    public const int PollingIntervalMs = 80;
+    /// <summary>감지 폴링 간격 — <see cref="AppConfig.PollIntervalMs"/> 의 디폴트.</summary>
+    public const int PollIntervalMs = 80;
 
     /// <summary>
     /// 감지 루프 지수 백오프 가산치 — 연속 실패 시 tick 간격에 누적으로 더한다.
@@ -155,8 +157,44 @@ internal static class DefaultConfig
 
     // === always 모드 ===
 
-    /// <summary>always 모드 유휴 전환 타임아웃</summary>
+    /// <summary>always 모드 유휴 전환 타임아웃 — <see cref="AppConfig.AlwaysIdleTimeoutMs"/> 의 디폴트.</summary>
     public const int AlwaysIdleTimeoutMs = 3000;
+
+    // === Validate clamp / SettingsDialog field range — Min/Max 단일 진실원 (D7) ===
+    // Settings.Validate 의 Math.Clamp 인자와 SettingsDialog.Fields.cs 의 min/max 인자를 모두 본 const
+    // 참조로 통일한다. 두 곳에 같은 리터럴을 두면 한 쪽만 변경됐을 때 다이얼로그 입력 → Validate 클램프
+    // 의 silent 보정 가능성이 생긴다.
+
+    public const int    MinPollMs                = 50;
+    public const int    MaxPollMs                = 500;
+    public const int    MinEventDisplayMs        = 500;
+    public const int    MaxEventDisplayMs        = 10000;
+    public const int    MinAlwaysIdleMs          = 1000;
+    public const int    MaxAlwaysIdleMs          = 30000;
+    public const double MinOpacity               = 0.1;
+    public const double MaxOpacity               = 1.0;
+    public const double MinHighlightScale        = 1.0;
+    public const double MaxHighlightScale        = 2.0;
+    public const int    MinFadeMs                = 0;
+    public const int    MaxFadeMs                = 2000;
+    public const int    MinSnapGapPx             = 0;
+    public const int    MaxSnapGapPx             = 10;
+    public const int    MinFontSize              = 8;
+    public const int    MaxFontSize              = 36;
+    public const int    MinLabelWidth            = 16;
+    public const int    MaxLabelWidth            = 128;
+    public const int    MinLabelHeight           = 12;
+    public const int    MaxLabelHeight           = 96;
+    public const int    MinLabelBorderRadius     = 0;
+    public const int    MaxLabelBorderRadius     = 48;
+    public const int    MinBorderWidth           = 0;
+    public const int    MaxBorderWidth           = 8;
+    public const double MinIndicatorScale        = 1.0;
+    public const double MaxIndicatorScale        = 5.0;
+    public const int    MinLogMaxSizeMb          = 1;
+    public const int    MaxLogMaxSizeMb          = 100;
+    public const int    MinForceTopmostMs        = 0;
+    public const int    MaxForceTopmostMs        = 60000;
 
     // === 설정 파일 ===
 

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using KoEnVue.App.Config;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Color;
 using KoEnVue.Core.Dpi;
@@ -18,8 +19,10 @@ internal static class ScaleInputDialog
     // ================================================================
     // 범위/허용오차 상수 (Tray의 서브메뉴와 동일)
     // ================================================================
-    public const double ScaleMinValue = 1.0;
-    public const double ScaleMaxValue = 5.0;
+    /// <summary>인디케이터 배율 최솟값 — <see cref="DefaultConfig.MinIndicatorScale"/> 와 동기.</summary>
+    public const double ScaleMinValue = DefaultConfig.MinIndicatorScale;
+    /// <summary>인디케이터 배율 최댓값 — <see cref="DefaultConfig.MaxIndicatorScale"/> 와 동기.</summary>
+    public const double ScaleMaxValue = DefaultConfig.MaxIndicatorScale;
     public const double ScaleTolerance = 0.001;
 
     // 레이아웃 상수 (96 DPI 기준)

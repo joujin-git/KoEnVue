@@ -109,37 +109,37 @@ internal static class Settings
         return config with
         {
             // 감지
-            PollIntervalMs = Math.Clamp(config.PollIntervalMs, 50, 500),
+            PollIntervalMs = Math.Clamp(config.PollIntervalMs, DefaultConfig.MinPollMs, DefaultConfig.MaxPollMs),
 
             // 표시
-            EventDisplayDurationMs = Math.Clamp(config.EventDisplayDurationMs, 500, 10000),
-            AlwaysIdleTimeoutMs = Math.Clamp(config.AlwaysIdleTimeoutMs, 1000, 30000),
+            EventDisplayDurationMs = Math.Clamp(config.EventDisplayDurationMs, DefaultConfig.MinEventDisplayMs, DefaultConfig.MaxEventDisplayMs),
+            AlwaysIdleTimeoutMs = Math.Clamp(config.AlwaysIdleTimeoutMs, DefaultConfig.MinAlwaysIdleMs, DefaultConfig.MaxAlwaysIdleMs),
 
             // 투명도
-            Opacity = Math.Clamp(config.Opacity, 0.1, 1.0),
-            IdleOpacity = Math.Clamp(config.IdleOpacity, 0.1, 1.0),
-            ActiveOpacity = Math.Clamp(config.ActiveOpacity, 0.1, 1.0),
+            Opacity = Math.Clamp(config.Opacity, DefaultConfig.MinOpacity, DefaultConfig.MaxOpacity),
+            IdleOpacity = Math.Clamp(config.IdleOpacity, DefaultConfig.MinOpacity, DefaultConfig.MaxOpacity),
+            ActiveOpacity = Math.Clamp(config.ActiveOpacity, DefaultConfig.MinOpacity, DefaultConfig.MaxOpacity),
 
             // 애니메이션
-            HighlightScale = Math.Clamp(config.HighlightScale, 1.0, 2.0),
-            FadeInMs = Math.Clamp(config.FadeInMs, 0, 2000),
-            FadeOutMs = Math.Clamp(config.FadeOutMs, 0, 2000),
-            HighlightDurationMs = Math.Clamp(config.HighlightDurationMs, 0, 2000),
-            SlideSpeedMs = Math.Clamp(config.SlideSpeedMs, 0, 2000),
+            HighlightScale = Math.Clamp(config.HighlightScale, DefaultConfig.MinHighlightScale, DefaultConfig.MaxHighlightScale),
+            FadeInMs = Math.Clamp(config.FadeInMs, DefaultConfig.MinFadeMs, DefaultConfig.MaxFadeMs),
+            FadeOutMs = Math.Clamp(config.FadeOutMs, DefaultConfig.MinFadeMs, DefaultConfig.MaxFadeMs),
+            HighlightDurationMs = Math.Clamp(config.HighlightDurationMs, DefaultConfig.MinFadeMs, DefaultConfig.MaxFadeMs),
+            SlideSpeedMs = Math.Clamp(config.SlideSpeedMs, DefaultConfig.MinFadeMs, DefaultConfig.MaxFadeMs),
 
             // 스냅
-            SnapGapPx = Math.Clamp(config.SnapGapPx, 0, 10),
+            SnapGapPx = Math.Clamp(config.SnapGapPx, DefaultConfig.MinSnapGapPx, DefaultConfig.MaxSnapGapPx),
 
             // 크기
-            FontSize = Math.Clamp(config.FontSize, 8, 36),
-            LabelWidth = Math.Clamp(config.LabelWidth, 16, 128),
-            LabelHeight = Math.Clamp(config.LabelHeight, 12, 96),
-            LabelBorderRadius = Math.Clamp(config.LabelBorderRadius, 0, 48),
-            BorderWidth = Math.Clamp(config.BorderWidth, 0, 8),
-            IndicatorScale = Math.Round(Math.Clamp(config.IndicatorScale, 1.0, 5.0), 1),
+            FontSize = Math.Clamp(config.FontSize, DefaultConfig.MinFontSize, DefaultConfig.MaxFontSize),
+            LabelWidth = Math.Clamp(config.LabelWidth, DefaultConfig.MinLabelWidth, DefaultConfig.MaxLabelWidth),
+            LabelHeight = Math.Clamp(config.LabelHeight, DefaultConfig.MinLabelHeight, DefaultConfig.MaxLabelHeight),
+            LabelBorderRadius = Math.Clamp(config.LabelBorderRadius, DefaultConfig.MinLabelBorderRadius, DefaultConfig.MaxLabelBorderRadius),
+            BorderWidth = Math.Clamp(config.BorderWidth, DefaultConfig.MinBorderWidth, DefaultConfig.MaxBorderWidth),
+            IndicatorScale = Math.Round(Math.Clamp(config.IndicatorScale, DefaultConfig.MinIndicatorScale, DefaultConfig.MaxIndicatorScale), 1),
 
             // 시스템
-            LogMaxSizeMb = Math.Clamp(config.LogMaxSizeMb, 1, 100),
+            LogMaxSizeMb = Math.Clamp(config.LogMaxSizeMb, DefaultConfig.MinLogMaxSizeMb, DefaultConfig.MaxLogMaxSizeMb),
 
             // Enum — config.json 수작업 편집이나 구버전 스키마로 정의되지 않은 정수가 들어오면
             // 기본값으로 폴백. STJ 소스 생성기가 integer enum 을 (EnumType)raw 캐스트로

@@ -1,4 +1,5 @@
 using System.Globalization;
+using KoEnVue.App.Config;
 using KoEnVue.App.Models;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Color;
@@ -83,10 +84,12 @@ internal static partial class SettingsDialog
             ko ? ["이벤트 시", "항상"] : ["On Event", "Always"],
             c => (int)c.DisplayMode,
             (c, i) => c with { DisplayMode = (DisplayMode)Math.Clamp(i, 0, 1) }));
-        Add(Int("이벤트 표시 시간 (ms)", "Event display duration (ms)", 500, 10000,
+        Add(Int("이벤트 표시 시간 (ms)", "Event display duration (ms)",
+            DefaultConfig.MinEventDisplayMs, DefaultConfig.MaxEventDisplayMs,
             c => c.EventDisplayDurationMs,
             (c, v) => c with { EventDisplayDurationMs = v }));
-        Add(Int("항상 모드 유휴 전환 (ms)", "Always-mode idle timeout (ms)", 1000, 30000,
+        Add(Int("항상 모드 유휴 전환 (ms)", "Always-mode idle timeout (ms)",
+            DefaultConfig.MinAlwaysIdleMs, DefaultConfig.MaxAlwaysIdleMs,
             c => c.AlwaysIdleTimeoutMs,
             (c, v) => c with { AlwaysIdleTimeoutMs = v }));
         Add(Bool("포커스 변경 시 이벤트", "Trigger on focus change",
@@ -100,13 +103,17 @@ internal static partial class SettingsDialog
         // 2. 외관 — 크기·테두리
         // ================================================================
         Sec("외관 — 크기·테두리", "Appearance — Size & Border");
-        Add(Int("라벨 너비 (px)", "Label width (px)", 16, 128,
+        Add(Int("라벨 너비 (px)", "Label width (px)",
+            DefaultConfig.MinLabelWidth, DefaultConfig.MaxLabelWidth,
             c => c.LabelWidth, (c, v) => c with { LabelWidth = v }));
-        Add(Int("라벨 높이 (px)", "Label height (px)", 12, 96,
+        Add(Int("라벨 높이 (px)", "Label height (px)",
+            DefaultConfig.MinLabelHeight, DefaultConfig.MaxLabelHeight,
             c => c.LabelHeight, (c, v) => c with { LabelHeight = v }));
-        Add(Int("테두리 둥글기 (px)", "Border radius (px)", 0, 48,
+        Add(Int("테두리 둥글기 (px)", "Border radius (px)",
+            DefaultConfig.MinLabelBorderRadius, DefaultConfig.MaxLabelBorderRadius,
             c => c.LabelBorderRadius, (c, v) => c with { LabelBorderRadius = v }));
-        Add(Int("테두리 두께 (px)", "Border width (px)", 0, 8,
+        Add(Int("테두리 두께 (px)", "Border width (px)",
+            DefaultConfig.MinBorderWidth, DefaultConfig.MaxBorderWidth,
             c => c.BorderWidth, (c, v) => c with { BorderWidth = v }));
         Add(ColorField("테두리 색상", "Border color",
             c => c.BorderColor, (c, v) => c with { BorderColor = v }));
@@ -127,9 +134,11 @@ internal static partial class SettingsDialog
             c => c.NonKoreanBg, (c, v) => c with { NonKoreanBg = v }));
         Add(ColorField("비한국어 글자색", "Non-Korean foreground",
             c => c.NonKoreanFg, (c, v) => c with { NonKoreanFg = v }));
-        Add(Dbl("유휴 투명도", "Idle opacity", 0.1, 1.0,
+        Add(Dbl("유휴 투명도", "Idle opacity",
+            DefaultConfig.MinOpacity, DefaultConfig.MaxOpacity,
             c => c.IdleOpacity, (c, v) => c with { IdleOpacity = v }));
-        Add(Dbl("활성 투명도", "Active opacity", 0.1, 1.0,
+        Add(Dbl("활성 투명도", "Active opacity",
+            DefaultConfig.MinOpacity, DefaultConfig.MaxOpacity,
             c => c.ActiveOpacity, (c, v) => c with { ActiveOpacity = v }));
 
         // ================================================================
@@ -138,7 +147,8 @@ internal static partial class SettingsDialog
         Sec("외관 — 텍스트", "Appearance — Text");
         Add(Str("글꼴", "Font family",
             c => c.FontFamily, (c, v) => c with { FontFamily = v }, allowEmpty: false));
-        Add(Int("글꼴 크기", "Font size", 8, 36,
+        Add(Int("글꼴 크기", "Font size",
+            DefaultConfig.MinFontSize, DefaultConfig.MaxFontSize,
             c => c.FontSize, (c, v) => c with { FontSize = v }));
         Add(Combo("글꼴 굵기", "Font weight",
             ko ? ["보통", "굵게"] : ["Normal", "Bold"],
@@ -166,24 +176,30 @@ internal static partial class SettingsDialog
         // ================================================================
         // AnimationEnabled / ChangeHighlight는 트레이 메뉴에서 토글 가능하므로 여기서 제외.
         Sec("애니메이션", "Animation");
-        Add(Int("페이드 인 (ms)", "Fade in (ms)", 0, 2000,
+        Add(Int("페이드 인 (ms)", "Fade in (ms)",
+            DefaultConfig.MinFadeMs, DefaultConfig.MaxFadeMs,
             c => c.FadeInMs, (c, v) => c with { FadeInMs = v }));
-        Add(Int("페이드 아웃 (ms)", "Fade out (ms)", 0, 2000,
+        Add(Int("페이드 아웃 (ms)", "Fade out (ms)",
+            DefaultConfig.MinFadeMs, DefaultConfig.MaxFadeMs,
             c => c.FadeOutMs, (c, v) => c with { FadeOutMs = v }));
-        Add(Dbl("강조 배율", "Highlight scale", 1.0, 2.0,
+        Add(Dbl("강조 배율", "Highlight scale",
+            DefaultConfig.MinHighlightScale, DefaultConfig.MaxHighlightScale,
             c => c.HighlightScale, (c, v) => c with { HighlightScale = v }));
-        Add(Int("강조 지속 시간 (ms)", "Highlight duration (ms)", 0, 2000,
+        Add(Int("강조 지속 시간 (ms)", "Highlight duration (ms)",
+            DefaultConfig.MinFadeMs, DefaultConfig.MaxFadeMs,
             c => c.HighlightDurationMs, (c, v) => c with { HighlightDurationMs = v }));
         Add(Bool("슬라이드 애니메이션", "Slide animation",
             c => c.SlideAnimation, (c, v) => c with { SlideAnimation = v }));
-        Add(Int("슬라이드 속도 (ms)", "Slide speed (ms)", 0, 2000,
+        Add(Int("슬라이드 속도 (ms)", "Slide speed (ms)",
+            DefaultConfig.MinFadeMs, DefaultConfig.MaxFadeMs,
             c => c.SlideSpeedMs, (c, v) => c with { SlideSpeedMs = v }));
 
         // ================================================================
         // 7. 감지 및 숨김
         // ================================================================
         Sec("감지 및 숨김", "Detection & Hiding");
-        Add(Int("감지 주기 (ms)", "Poll interval (ms)", 50, 500,
+        Add(Int("감지 주기 (ms)", "Poll interval (ms)",
+            DefaultConfig.MinPollMs, DefaultConfig.MaxPollMs,
             c => c.PollIntervalMs, (c, v) => c with { PollIntervalMs = v }));
         Add(Combo("감지 방식", "Detection method",
             ko ? ["자동", "IME 기본 윈도우", "IME 컨텍스트", "키보드 레이아웃"]
@@ -227,13 +243,16 @@ internal static partial class SettingsDialog
                : ["Toggle visibility", "Open config file", "None"],
             c => (int)c.TrayClickAction,
             (c, i) => c with { TrayClickAction = (TrayClickAction)Math.Clamp(i, 0, 2) }));
-        Add(Dbl("빠른 투명도 1 (진하게)", "Quick opacity 1 (High)", 0.1, 1.0,
+        Add(Dbl("빠른 투명도 1 (진하게)", "Quick opacity 1 (High)",
+            DefaultConfig.MinOpacity, DefaultConfig.MaxOpacity,
             c => GetPresetAt(c.TrayQuickOpacityPresets, 0, 0.95),
             (c, v) => c with { TrayQuickOpacityPresets = SetPresetAt(c.TrayQuickOpacityPresets, 0, v) }));
-        Add(Dbl("빠른 투명도 2 (보통)", "Quick opacity 2 (Normal)", 0.1, 1.0,
+        Add(Dbl("빠른 투명도 2 (보통)", "Quick opacity 2 (Normal)",
+            DefaultConfig.MinOpacity, DefaultConfig.MaxOpacity,
             c => GetPresetAt(c.TrayQuickOpacityPresets, 1, 0.85),
             (c, v) => c with { TrayQuickOpacityPresets = SetPresetAt(c.TrayQuickOpacityPresets, 1, v) }));
-        Add(Dbl("빠른 투명도 3 (연하게)", "Quick opacity 3 (Low)", 0.1, 1.0,
+        Add(Dbl("빠른 투명도 3 (연하게)", "Quick opacity 3 (Low)",
+            DefaultConfig.MinOpacity, DefaultConfig.MaxOpacity,
             c => GetPresetAt(c.TrayQuickOpacityPresets, 2, 0.6),
             (c, v) => c with { TrayQuickOpacityPresets = SetPresetAt(c.TrayQuickOpacityPresets, 2, v) }));
 
@@ -253,7 +272,8 @@ internal static partial class SettingsDialog
             c => c.LogToFile, (c, v) => c with { LogToFile = v }));
         Add(Str("로그 파일 경로", "Log file path",
             c => c.LogFilePath, (c, v) => c with { LogFilePath = v }, allowEmpty: true));
-        Add(Int("로그 최대 크기 (MB)", "Log max size (MB)", 1, 100,
+        Add(Int("로그 최대 크기 (MB)", "Log max size (MB)",
+            DefaultConfig.MinLogMaxSizeMb, DefaultConfig.MaxLogMaxSizeMb,
             c => c.LogMaxSizeMb, (c, v) => c with { LogMaxSizeMb = v }));
         Add(Bool("부팅 시 업데이트 확인", "Check for updates on startup",
             c => c.UpdateCheckEnabled, (c, v) => c with { UpdateCheckEnabled = v }));
@@ -262,7 +282,8 @@ internal static partial class SettingsDialog
         // 11. 인디케이터 조작
         // ================================================================
         Sec("인디케이터 조작", "Indicator Interaction");
-        Add(Int("창 스냅 간격 (px)", "Snap gap (px)", 0, 10,
+        Add(Int("창 스냅 간격 (px)", "Snap gap (px)",
+            DefaultConfig.MinSnapGapPx, DefaultConfig.MaxSnapGapPx,
             c => c.SnapGapPx, (c, v) => c with { SnapGapPx = v }));
         Add(Combo("드래그 활성 키", "Drag modifier",
             ko ? ["없음", "Ctrl", "Alt", "Ctrl + Alt"]
@@ -274,7 +295,8 @@ internal static partial class SettingsDialog
         // 12. 고급
         // ================================================================
         Sec("고급", "Advanced");
-        Add(Int("TOPMOST 강제 주기 (ms)", "Force topmost interval (ms)", 0, 60000,
+        Add(Int("TOPMOST 강제 주기 (ms)", "Force topmost interval (ms)",
+            DefaultConfig.MinForceTopmostMs, DefaultConfig.MaxForceTopmostMs,
             c => c.Advanced.ForceTopmostIntervalMs,
             (c, v) => c with { Advanced = c.Advanced with { ForceTopmostIntervalMs = v } }));
 

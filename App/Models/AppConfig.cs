@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using KoEnVue.App.Config;
 using KoEnVue.Core.Logging;
 
 namespace KoEnVue.App.Models;
@@ -13,7 +14,7 @@ internal sealed record AppConfig
     // [표시 모드]
     public DisplayMode DisplayMode { get; init; } = DisplayMode.Always;
     public int EventDisplayDurationMs { get; init; } = 2000;
-    public int AlwaysIdleTimeoutMs { get; init; } = 3000;
+    public int AlwaysIdleTimeoutMs { get; init; } = DefaultConfig.AlwaysIdleTimeoutMs;
     public EventTriggersConfig EventTriggers { get; init; } = new();
 
     // [외관 -- 스타일]
@@ -59,16 +60,16 @@ internal sealed record AppConfig
 
     // [애니메이션]
     public bool AnimationEnabled { get; init; } = true;
-    public int FadeInMs { get; init; } = 150;
-    public int FadeOutMs { get; init; } = 400;
+    public int FadeInMs { get; init; } = DefaultConfig.FadeInMs;
+    public int FadeOutMs { get; init; } = DefaultConfig.FadeOutMs;
     public bool ChangeHighlight { get; init; } = true;
-    public double HighlightScale { get; init; } = 1.3;
-    public int HighlightDurationMs { get; init; } = 300;
+    public double HighlightScale { get; init; } = DefaultConfig.HighlightScale;
+    public int HighlightDurationMs { get; init; } = DefaultConfig.HighlightDurationMs;
     public bool SlideAnimation { get; init; } = false;
     public int SlideSpeedMs { get; init; } = 100;
 
     // [동작 -- 감지]
-    public int PollIntervalMs { get; init; } = 80;
+    public int PollIntervalMs { get; init; } = DefaultConfig.PollIntervalMs;
     public DetectionMethod DetectionMethod { get; init; } = DetectionMethod.Auto;
     public NonKoreanImeMode NonKoreanIme { get; init; } = NonKoreanImeMode.Hide;
     public bool HideInFullscreen { get; init; } = true;
