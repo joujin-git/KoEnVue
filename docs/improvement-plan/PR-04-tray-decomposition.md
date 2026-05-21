@@ -1,7 +1,7 @@
 # PR-04: Tray.cs decomposition
 
-**Status**: ⏳ pending
-**Branch**: feat/pr-04-tray-decomposition
+**Status**: ✅ merged (9192826)
+**Branch**: feat/pr-04-tray-decomposition (deleted)
 **Base**: main (PR-03 후 권장)
 **Risk**: Low
 **Estimated session size**: M (1-2시간)
@@ -78,3 +78,4 @@
 | Date | What happened |
 |---|---|
 | 2026-05-21 | 4개 신규 모듈 (XmlEntityCodec / UriLauncher / StartupTaskManager / PositionCleanupService) + Tray.Menu.cs partial 분리. Tray.cs 1156 → 575 줄. Program.cs `Tray.SyncStartupPathAsync` → `StartupTaskManager.SyncStartupPathAsync`. Tier-1 debug + AOT publish clean (0 경고, 4.77 MB 유지). Tier-2 grep 가드 6종 통과 (xmldoc 단어 회피 + partial 분리로 line 가드 충족). invariant 4종 0매치. 문서 5건 갱신 (CHANGELOG / architecture.md 모듈 3종 추가 + Tray 항목 갱신 / PR-04 §2/§3/§6 / dev-notes 신규 / INDEX) |
+| 2026-05-21 | Tier-3 사용자 수동 smoke 4항목 (트레이 메뉴 / 시작 등록 토글 / 홈페이지·설정파일·업데이트 / CleanupDialog) 모두 통과. FF merge to main (9192826) + 브랜치 삭제. PR-04 완료 |
