@@ -71,7 +71,45 @@
 
 ## 6. 세션 진행 로그
 
-(empty)
+### 2026-05-21 — 구현 + Tier-1+2 통과
+
+**상태**: ✅ Tier-1+2 통과, 머지 대기.
+
+**구현**:
+
+- **H1 — `docs/config-reference.md` 신규** ([docs/config-reference.md](../config-reference.md))
+  - `AppConfig` 84 키 (74 top-level + 10 nested) 를 11 섹션 (표시 모드 / 외관 — 스타일·색상·텍스트·테마 / 애니메이션 / 감지 / 시스템 창 필터 / 앱별 프로필 + 필터 / 트레이 / 로깅 / 업데이트 / 위치 / 고급) 으로 분류 + 타입·기본값·범위·설명.
+  - 부록 — `DefaultConfig.Min/MaxX` 16쌍 ↔ `Settings.Validate` clamp ↔ `SettingsDialog.Fields` min/max ↔ `KoEnVue.csproj <Version>` ↔ `ThemeColors` record 4축 단일 진실원 매트릭스.
+- **H1 — `README.md` config 섹션 재작성**
+  - 자주 만지는 13 키만 추리고 `docs/config-reference.md` 로 링크. "12 섹션" 트레이 다이얼로그 안내 + `app_profiles` 같은 GUI 미노출 키는 직접 편집 명시.
+- **H2 — `9 conditions` → `8 conditions`**
+  - [docs/architecture.md:107](../architecture.md#L107) — SystemFilter 행 `9-condition hide logic` → `8-condition short-circuit hide logic (secure desktop / minimized / virtual desktop / class blacklist (+ owner chain) / process blacklist / no focus / fullscreen / app filter list)`.
+  - [docs/implementation-notes.md:331](../implementation-notes.md#L331) — `### System filter (9 conditions)` → `### System filter (8 conditions)`. 본문 enumerate 는 이미 8 항목이라 그대로.
+- **H4 — `CLAUDE.md` final**
+  - Documentation map 에 [CONTRIBUTING.md](../../CONTRIBUTING.md) (PR-10) / [docs/config-reference.md](../config-reference.md) (본 PR) / [docs/release-procedure.md](../release-procedure.md) (PR-11) 3 행 추가.
+  - Verification invariants 표에 PR-08 의 IME 어휘 누출 가드 2종 (`(Hangul|English|NonKorean)` Core/ + `맑은 고딕` Core/) 추가 → 누적 6종 → 8종 invariant. `[DllImport` 검색에 `-- '*.cs'` 추가해 docs 매치 노이즈 제거.
+- **H3 — `CHANGELOG.md` 표준 안내**
+  - `[Unreleased]` 직후 한 줄 안내 — "다음 릴리스 (v0.10.0) 부터 Keep a Changelog 표준 헤더 + 짧은 bullet 형식. 본 섹션의 PR-00~PR-14 항목은 사후 단락형 — 보존".
+  - PR-12 한 줄 엔트리 `### 추가` 에 추가.
+- **retrospective dev-note 신규** ([docs/dev-notes/2026-05-21-improvement-plan-retrospective.md](../dev-notes/2026-05-21-improvement-plan-retrospective.md))
+  - 6 섹션: 전/후 비교 1줄 / 15 PR 결과 표 / 잘 된 점 6 / 어려웠던 점 5 / 보류 항목 6 + 재검토 트리거 / 향후 후보 7. 작업 완료 후 후속 정리 절차 포함.
+
+**Tier-1**:
+- `dotnet build` clean — 0 경고 0 오류 (코드 무변경).
+
+**Tier-2 grep 가드** (PR-12 §3):
+- `git grep -E "9 conditions|9-condition|9개 조건" docs/` = 3 (모두 PR-12-documentation.md 명세 자체의 grep 가드 인용) — architecture.md + implementation-notes.md 본문은 0 매치 ✓
+- `git grep "DefaultConfig.AppVersion 수동" README.md` = 0 ✓ (PR-11 에서 이미 삭제됨)
+- `git grep "requireAdministrator" CLAUDE.md` = 1 (P5 invariant 명령어 자체의 grep — 의도된 매치) — 본문은 `asInvoker` 강조만 ✓
+- `docs/config-reference.md` 의 `|` 표 라인 116 (> 80 충족) ✓
+- `ls docs/dev-notes/2026-*-improvement-plan-retrospective.md` 존재 ✓
+
+**Invariant 4종 + P5 2종**: 모두 0 매치.
+
+**남은 작업**:
+- Tier-3 (수동 검수) — config-reference 표를 처음 본 사람이 이해 가능한지 / CLAUDE.md invariant 명령 8 종 실행 / retrospective self-contained 검수. 사용자 확인 후 머지.
+- 머지 후 후속 정리 — 메모리 삭제 / v0.10.0 태그 + GitHub Release (PR-11 SHA256 활용).
+
 
 ---
 

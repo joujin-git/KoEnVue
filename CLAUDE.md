@@ -28,7 +28,9 @@ Verification invariants — all must return **0 matches**:
 git grep "KoEnVue\.App"             Core/         # P6 namespace gate
 git grep "ImeState"                 Core/         # Risk 4 enum gate
 git grep "NonKoreanImeMode"         Core/         # Risk 4 enum gate
-git grep "DllImport"                              # banned, use [LibraryImport]
+git grep -E "(Hangul|English|NonKorean)" Core/    # P6 IME 어휘 누출 (PR-08)
+git grep "맑은 고딕"                 Core/         # P6 한국어 폰트 어휘 누출 (PR-08)
+git grep "\[DllImport"              -- '*.cs'     # banned, use [LibraryImport]
 git grep "requireAdministrator"     app.manifest  # P5: asInvoker only
 git grep "RunLevel.*HighestAvailable" App/        # P5: LeastPrivilege only
 ```
@@ -65,9 +67,12 @@ dotnet publish -r win-x64 -c Release  # NativeAOT single exe
 |------|---------|
 | **[docs/KoEnVue_PRD.md](docs/KoEnVue_PRD.md)** | Product requirements (feature spec, behavior, config) |
 | **[docs/User_Guide.md](docs/User_Guide.md)** | End-user manual (Korean) |
-| **[README.md](README.md)** | Download, build, release procedure, config.json keys |
+| **[README.md](README.md)** | Download, build, release entry-point. CI status badge |
+| **[CONTRIBUTING.md](CONTRIBUTING.md)** | 환경 / 빌드 + 테스트 + AOT publish / improvement-plan 절차 / P1~P6 요약 |
+| **[docs/config-reference.md](docs/config-reference.md)** | `config.json` 84개 키 전체 레퍼런스 (PR-12) |
 | **[docs/architecture.md](docs/architecture.md)** | Core/App module list, reuse contract, facade pattern |
 | **[docs/implementation-notes.md](docs/implementation-notes.md)** | Render pipeline, drag/snap, animation, CAPS LOCK, hot reload, dialogs, update check |
+| **[docs/release-procedure.md](docs/release-procedure.md)** | 릴리스 절차 — csproj `<Version>` bump + publish + GitHub Release + SHA256 첨부 (PR-11) |
 | **[docs/conventions.md](docs/conventions.md)** | P1–P6 enforcement, silent catch policy, .NET 10 quirks |
 | **[docs/dev-notes/](docs/dev-notes/)** | Postmortems and lessons learned from failed implementation attempts (avoid re-walking the same traps) |
 | **[CHANGELOG.md](CHANGELOG.md)** | Release history (Keep a Changelog format) |

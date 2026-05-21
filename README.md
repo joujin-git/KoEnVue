@@ -89,7 +89,9 @@ dotnet publish -r win-x64 -c Release
 
 ## `config.json` 주요 키
 
-exe 폴더의 `config.json` 을 직접 편집하거나 트레이 **상세 설정** 대화상자를 사용하세요. 저장 즉시 핫 리로드됩니다.
+exe 폴더 또는 `%LOCALAPPDATA%\KoEnVue\` 의 `config.json` 을 직접 편집하거나 트레이 **상세 설정** 대화상자를 사용하세요. 저장 즉시 핫 리로드됩니다.
+
+아래는 가장 자주 만지는 키만 추렸습니다. **전체 84개 키의 완전한 레퍼런스** — 타입·범위·기본값·섹션별 분류는 **[docs/config-reference.md](docs/config-reference.md)** 에 있습니다.
 
 | 키 | 기본값 | 설명 |
 |----|--------|------|
@@ -99,17 +101,15 @@ exe 폴더의 `config.json` 을 직접 편집하거나 트레이 **상세 설정
 | `idle_opacity` | `0.55` | 유휴 불투명도 (Always 모드) |
 | `position_mode` | `"window"` | `"fixed"` 화면 고정 / `"window"` 창 기준 상대 위치 |
 | `snap_to_windows` | `true` | 드래그 중 창 엣지 자석 스냅 |
-| `snap_gap_px` | `10` | 창 엣지 스냅 시 간격 (px, 0 = 밀착) |
-| `drag_modifier` | `"none"` | 드래그 개시 게이트. `"none"` 항상 드래그 / `"ctrl"`·`"alt"`·`"ctrl_alt"` 해당 키 누른 상태에서만 드래그 개시 (나머지 클릭은 오버레이가 소비, 크로스 프로세스 투과는 미지원) |
-| `theme` | `"custom"` | `custom` / `minimal` / `vivid` / `pastel` / `dark` / `system` (6 프리셋) |
-| `poll_interval_ms` | `80` | IME 감지 폴링 간격 (ms) |
-| `hide_in_fullscreen` | `true` | 전체화면 앱에서 숨김 |
-| `hide_when_no_focus` | `true` | 포커스 없는 창에서 숨김 |
-| `tray_tooltip` | `true` | 트레이 아이콘 호버 툴팁 표시 |
-| `user_hidden` | `false` | 사용자가 인디케이터를 숨긴 상태. `true` 일 때 아이콘 위에 굵은 취소선 1줄 표시, 감지 이벤트가 인디를 다시 띄우지 못하게 차단. 재기동에도 유지. 토글 경로: 트레이 좌클릭(좌클릭 동작이 `toggle` 일 때) 또는 우클릭 메뉴 "인디케이터 숨김" |
-| `update_check_enabled` | `true` | 부팅 시 GitHub Releases 에서 새 버전 1회 확인 (발견 시 트레이 메뉴 최상단 헤더 라벨이 `KoEnVue v{cur} → v{new} — 다운로드` 로 자동 전환) |
+| `drag_modifier` | `"none"` | 드래그 개시 게이트 (`none`/`ctrl`/`alt`/`ctrl_alt`) |
+| `theme` | `"custom"` | 6 프리셋 (`custom`/`minimal`/`vivid`/`pastel`/`dark`/`system`) |
+| `non_korean_ime` | `"hide"` | 비한국어 IME 표시 동작 (`hide`/`show`/`dim`) |
+| `hide_on_lock_screen` | `true` | 잠금 화면에서 인디 숨김 |
+| `tray_click_action` | `"toggle"` | 트레이 좌클릭 동작 (`toggle`/`settings`) |
+| `update_check_enabled` | `true` | 부팅 시 GitHub Releases 새 버전 1회 확인 |
+| `app_profiles` | `{}` | 앱별 override (GUI 미노출 — config.json 직접 편집). 자세히는 [docs/config-reference.md §앱별 프로필](docs/config-reference.md) |
 
-전체 설정 필드는 트레이 "상세 설정" 대화상자에서 섹션별로 편집할 수 있습니다 (표시 모드·외관·애니메이션·감지·앱별 프로필·트레이·시스템·업데이트·인디케이터 조작·위치·단축 작업·고급 등).
+트레이 "상세 설정" 대화상자는 12 섹션 (표시 모드 · 외관 · 애니메이션 · 감지 · 앱별 프로필 · 트레이 · 시스템 · 업데이트 · 인디케이터 조작 · 위치 · 단축 작업 · 고급) 으로 대부분의 키를 GUI 로 제공합니다. `app_profiles` 같은 GUI 미노출 키만 config.json 을 직접 편집해 주세요.
 
 ---
 
