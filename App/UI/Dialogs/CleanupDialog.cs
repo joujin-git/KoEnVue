@@ -44,6 +44,13 @@ internal static class CleanupDialog
     private static IntPtr _hwndViewport;
     private static readonly List<IntPtr> _checkboxHandles = [];
     private static bool _selectAllState = true;
+    // 결과 수집: 모달 루프 종료 후엔 DialogShell 의 finally 가 이미 DestroyWindow 를 호출해
+    // _checkboxHandles 의 HWND 가 무효 — BM_GETCHECK 가 silent 실패한다. 따라서 WM_COMMAND
+    // IDOK 처리 시점(모달 안, HWND 유효) 에 CommitSelections 가 _items 를 순회해
+    // _selectedItems 에 박아두고 Show() 는 _selectedItems 만 반환. SettingsDialog 의
+    // _workingConfig / ScaleInputDialog 의 _scaleDlgParsedValue 와 동일 패턴.
+    private static List<string> _items = null!;
+    private static List<string>? _selectedItems;
 
     // 스크롤 상태
     private static int _scrollPos;
@@ -56,6 +63,8 @@ internal static class CleanupDialog
     /// </summary>
     public static unsafe List<string>? Show(IntPtr hwndMain, List<string> items)
     {
+        _items = items;
+        _selectedItems = null;
         _dlgResult = false;
         _dlgClosed = false;
         _checkboxHandles.Clear();
@@ -97,26 +106,34 @@ internal static class CleanupDialog
             onAfterShow: null,
             isClosedFlag: ref _dlgClosed);
 
-        List<string>? result = null;
-        if (ran && _dlgResult)
-        {
-            result = [];
-            for (int i = 0; i < items.Count; i++)
-            {
-                if (i < _checkboxHandles.Count)
-                {
-                    IntPtr state = User32.SendMessageW(_checkboxHandles[i],
-                        Win32Constants.BM_GETCHECK, IntPtr.Zero, IntPtr.Zero);
-                    if (state == (IntPtr)Win32Constants.BST_CHECKED)
-                        result.Add(items[i]);
-                }
-            }
-        }
+        List<string>? result = (ran && _dlgResult) ? _selectedItems : null;
 
         _hwndDialog = IntPtr.Zero;
         _hwndViewport = IntPtr.Zero;
         _checkboxHandles.Clear();
+        _items = null!;
+        _selectedItems = null;
         return result;
+    }
+
+    /// <summary>
+    /// WM_COMMAND IDOK 처리 시점(모달 안, HWND 유효) 에 호출된다. 모든 체크박스 상태를
+    /// 읽어 _selectedItems 정적 필드에 박아둔 뒤 true 반환 — 빈 선택도 정상 처리이며
+    /// 호출자가 결과를 보고 후속 동작을 결정한다.
+    /// </summary>
+    private static bool CommitSelections()
+    {
+        var selected = new List<string>();
+        int count = Math.Min(_items.Count, _checkboxHandles.Count);
+        for (int i = 0; i < count; i++)
+        {
+            IntPtr state = User32.SendMessageW(_checkboxHandles[i],
+                Win32Constants.BM_GETCHECK, IntPtr.Zero, IntPtr.Zero);
+            if (state == (IntPtr)Win32Constants.BST_CHECKED)
+                selected.Add(_items[i]);
+        }
+        _selectedItems = selected;
+        return true;
     }
 
     private static unsafe void BuildChildren(
@@ -269,8 +286,11 @@ internal static class CleanupDialog
             case Win32Constants.WM_COMMAND:
             {
                 int id = (int)(wParam.ToInt64() & 0xFFFF);
+                // CommitSelections 콜백: IDOK 처리 시점(모달 안, HWND 유효) 에 체크박스
+                // 상태를 _selectedItems 에 박아둔다. 모달 루프 종료 후 DialogShell 의
+                // finally 가 DestroyWindow 를 호출하면 HWND 가 무효가 되므로 늦으면 안 됨.
                 if (DialogShell.HandleStandardCommands(id, IDC_BTN_OK, IDC_BTN_CANCEL,
-                    ref _dlgResult, ref _dlgClosed))
+                    ref _dlgResult, ref _dlgClosed, CommitSelections))
                     return IntPtr.Zero;
                 if (id == IDC_SELECT_ALL)
                 {

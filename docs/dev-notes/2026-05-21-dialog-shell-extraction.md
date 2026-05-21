@@ -95,6 +95,24 @@ DialogShell.Run(
 ## 회귀 위험
 
 - **위험 1 — CleanupDialog 의 `bringToForeground:true` 가 새로운 사용자 가시 동작 만들 가능성**: 트레이 메뉴 직후 다이얼로그가 명시적으로 포어그라운드를 잡음. ShowWindow 가 어차피 활성화 → 사용자 체감 차이는 거의 없을 것. 운영 중 사용자 보고 대기.
+
+- **회귀 1 (Tier-3 에서 발견 + fix) — CleanupDialog 결과 수집 타이밍 결함**: 1차 리팩토링에서 Show() 가 `DialogShell.Run` 반환 **후** `_checkboxHandles[i]` 에 `BM_GETCHECK` 메시지를 보내 결과 수집했는데, `DialogShell.Run` 의 `try { ModalDialogLoop.Run } finally { DestroyWindow }` 가 이미 `DestroyWindow` 를 호출한 뒤라 HWND 무효 → `SendMessageW` 가 모두 0 반환 → 빈 선택 → `PositionCleanupService.RemoveSelected` 가 빈 리스트 받아 실제 삭제 동작 안 함. 다이얼로그는 정상 닫히므로 사용자는 "삭제 후에도 인디 위치 그대로" 로만 체감.
+
+  **타이밍 대비**:
+  ```
+  기존 (PR-07 이전):
+      try { ModalDialogLoop.Run + 결과수집 } finally { DestroyWindow }   ← 같은 try 안
+
+  PR-07 1차 (회귀):
+      DialogShell.Run() { try { ... } finally { DestroyWindow } }
+      Show() { ... 결과수집 ... }                                          ← DestroyWindow 후
+  ```
+
+  `SettingsDialog` / `ScaleInputDialog` 는 `TryCommit` 안에서 `_workingConfig` / `_scaleDlgParsedValue` (값 복사) 를 채우고 Show() 는 그 값 복사본만 반환하는 패턴이라 영향 없음. CleanupDialog 만 결과를 모달 종료 후 HWND 로 수집하던 비대칭.
+
+  **Fix**: CleanupDialog 도 `tryCommit` 콜백 패턴 통일. `_items` + `_selectedItems` 정적 필드 신규, `CommitSelections() → bool` 헬퍼가 WM_COMMAND IDOK 처리 시점(모달 안, HWND 유효) 에 체크 상태를 읽어 `_selectedItems` 에 박아두고, Show() 는 `_selectedItems` 만 반환. `CleanupDlgProc` 의 `HandleStandardCommands` 호출에 `tryCommit: CommitSelections` 추가.
+
+  **교훈**: DialogShell 처럼 라이프사이클을 단일 진입점에 흡수하면 finally-DestroyWindow 시점이 호출자에서 "보이지 않게" 된다. **HWND 의존 결과 수집은 반드시 WndProc 안의 tryCommit 콜백 (모달 안) 에서 수행**해야 안전. 향후 다이얼로그를 추가할 때는 SettingsDialog/ScaleInputDialog/CleanupDialog 의 동일 패턴 — 정적 필드에 결과 박아두기 + Show() 는 그 필드만 반환 — 을 그대로 따른다.
 - **위험 2 — `delegate* unmanaged<...>` AOT 호환성**: function pointer 파라미터가 `Func<...>` / `Action<...>` 와 조합돼 셸에 전달. NativeAOT 가 generic delegate 의 closure 와 native function pointer 를 어떻게 처리하는지 — 본 PR 의 AOT publish 가 0 경고 / 4.80 MB clean 통과로 검증.
 - **위험 3 — `WS_GROUP` 가 기존 Tab 동작을 깨뜨릴 가능성**: `WS_GROUP` 은 화살표 키 그룹 경계 표시일 뿐 Tab 동작에는 영향 없음. 단, COMBOBOX 의 dropdown 동작이 화살표 키와 충돌하지 않는지 Tier-3 smoke 필요.
 - **위험 4 — `borderW = 16` 제거로 contentW 가 미세하게 달라짐**: nonClientW (~16 px @ 96 DPI for default theme) 와 기존 fudge 16 logical px 의 차이가 1-2 px. 자식 컨트롤이 스크롤바를 침범할 위험 — Tier-3 smoke 에서 SettingsDialog 의 38 필드 시각 확인 필요.

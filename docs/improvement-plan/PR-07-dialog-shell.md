@@ -153,3 +153,31 @@
 - 본 파일 §6 + INDEX session log
 
 **다음**: Tier-3 사용자 수동 smoke (3 다이얼로그 × 각 4-6 항목 — §3 참조). 통과 후 FF merge to main + 브랜치 삭제.
+
+### 2026-05-21 (2차) — Tier-3 회귀 발견 + fix (CleanupDialog 결과 수집 타이밍)
+
+**증상**: CleanupDialog 에서 항목 체크 + 삭제 후 다이얼로그가 정상 닫히지만 실제 dict 에서 항목이 제거되지 않음 → 사용자는 "삭제 후에도 인디 위치가 그대로" 로 인지.
+
+**원인**: 1차 리팩토링의 결과 수집 타이밍 결함. 새 Show() 가 `DialogShell.Run` 반환 **후** `_checkboxHandles[i]` 에 `BM_GETCHECK` 메시지를 보내 결과 수집했는데, `DialogShell.Run` 의 `try { ModalDialogLoop.Run } finally { DestroyWindow }` 가 이미 `DestroyWindow` 를 호출한 뒤라 HWND 가 무효. `SendMessageW` 가 모두 0 반환 → 빈 선택 → `PositionCleanupService.RemoveSelected` 가 빈 리스트 → 삭제 동작 안 함.
+
+```
+기존 (PR-07 이전):
+    try { ModalDialogLoop.Run + 결과수집 } finally { DestroyWindow }   ← 같은 try 블록 안
+
+새 1차 (회귀):
+    DialogShell.Run() { try { ... } finally { DestroyWindow } }
+    Show() { ... 결과수집 ... }                                          ← DestroyWindow 후
+```
+
+`SettingsDialog`/`ScaleInputDialog` 는 `TryCommit` 안에서 `_workingConfig`/`_scaleDlgParsedValue` (값 복사) 를 채우고 Show() 가 그걸 반환하는 패턴이라 영향 없음. **CleanupDialog 만 결과를 모달 루프 후 HWND 로 수집하던 비대칭**.
+
+**Fix**: CleanupDialog 도 `tryCommit` 콜백 패턴으로 통일.
+
+- `_items` (List<string>) + `_selectedItems` (List<string>?) 정적 필드 신규 — `_items` 는 Show() 진입 시 매개변수 저장, `_selectedItems` 는 CommitSelections 가 채움.
+- `CommitSelections() → bool` 신규: `_items` 와 `_checkboxHandles` 를 함께 순회하며 BM_GETCHECK 로 체크 상태 읽어 `_selectedItems` 에 적재. 빈 선택도 정상 처리이므로 항상 true 반환.
+- `CleanupDlgProc` 의 `HandleStandardCommands` 호출에 `tryCommit: CommitSelections` 추가 — IDOK 처리 시점(모달 안, HWND 유효) 에 결과 수집.
+- Show() 는 `_selectedItems` 만 반환 → HWND 의존 제거.
+
+`SettingsDialog`/`ScaleInputDialog` 의 `TryCommit` 패턴과 완전 일관. AOT publish + debug build 모두 clean (0 경고, 4.80 MB 유지). PR-07 1차 commit (f4552dc) 위에 추가 commit 으로 적층 — 후속 squash 머지 결정은 사용자.
+
+**dev-notes 갱신**: [docs/dev-notes/2026-05-21-dialog-shell-extraction.md](../dev-notes/2026-05-21-dialog-shell-extraction.md) §"회귀 위험" 에 본 사례 + fix 기록.
