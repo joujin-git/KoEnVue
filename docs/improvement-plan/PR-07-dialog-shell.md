@@ -115,4 +115,41 @@
 
 ## 6. 세션 진행 로그
 
-(empty)
+### 2026-05-21 — DialogShell 추출 + 3 다이얼로그 리팩토링 + a11y baseline
+
+**구현 완료**:
+
+- **신규 [Core/Windowing/DialogShell.cs](../../Core/Windowing/DialogShell.cs)** (200 줄): `DialogShellMetrics` (record struct: DPI/non-client/pad/dlgWidth) + `DialogShellContext` (sealed: + HwndDialog/HFont/DlgHeight + ClientW/ClientH 파생) + `DialogShell.Run(...)` 라이프사이클 단일 진입점 + `DialogShell.HandleStandardCommands(...)` WM_COMMAND IDOK/IDCANCEL 헬퍼. 채택 방식: 셸은 라이프사이클(reentry guard / DPI/font/class 등록 / CreateWindowExW outer / ShowWindow / SetForegroundWindow / onAfterShow / ModalDialogLoop.Run / DestroyWindow try-finally) 만 흡수, 자식 컨트롤 생성 + WndProc + 다이얼로그-고유 정적 상태는 호출자 유지. 자세한 설계 트레이드오프 → [docs/dev-notes/2026-05-21-dialog-shell-extraction.md](../dev-notes/2026-05-21-dialog-shell-extraction.md).
+- **3 다이얼로그 리팩토링**: 각 다이얼로그가 `measureDlgHeight` + `useCursorAnchor` + `bringToForeground` + `buildChildren` + `onAfterShow` 콜백만 셸에 제공. SettingsDialog/CleanupDialog/ScaleInputDialog 모두 reentry guard / DPI/font/class 등록 / CreateWindowExW outer / ShowWindow + SetForegroundWindow / DestroyWindow try-finally 코드를 셸에 위임. CleanupDialog 의 `SetForegroundWindow` 누락 잠재 결함이 셸의 `bringToForeground:true` 통일로 자동 해소. `borderW = 16` 매직(세 다이얼로그 자식 컨트롤 폭 fudge)이 `ctx.ClientW = dlgWidth - nonClientW` 정확 계산으로 대체.
+- **a11y baseline (H4-b)**: `Win32Constants.WS_GROUP = 0x00020000` 상수 신규 ([Core/Native/Win32Types.cs](../../Core/Native/Win32Types.cs) line 227). CleanupDialog 의 "전체 선택" + 항목 체크박스 + OK/Cancel 버튼에 `WS_TABSTOP` 추가 (v0.9.x 까지 체크박스에 누락), SELECT_ALL/첫 항목/OK 에 `WS_GROUP`. ScaleInputDialog 의 STATIC 안내 라벨 + OK 에 `WS_GROUP`. SettingsDialog 의 12 섹션 헤더 STATIC + 각 섹션 첫 입력 컨트롤(12개) + OK 에 `WS_GROUP` — 화살표 키로 섹션 단위 그룹 이동 가능. STATIC 이 EDIT 직전 z-order → UIA `LabeledBy` 자동 연결.
+- **partial class 구조 검토 결과**: SettingsDialog 의 3 partial (main / Fields / Scroll) 유지 — Show/BuildChildren/TryCommit/WndProc 가 main 에 응집, Fields/Scroll 은 독립 책임. §2 "1-2 로 축소 검토" 는 라인 카운트 슬립 분석 후 보류 결정.
+
+**Tier-1 검증** (모두 통과):
+
+- `dotnet build` clean (0 경고, 0 오류)
+- `dotnet publish -r win-x64 -c Release` clean (0 경고, 0 오류, 4.80 MB → 4.80 MB)
+- invariant 4종 (`KoEnVue\.App` / `ImeState` / `NonKoreanImeMode` / `DllImport` in `Core/`): 모두 0 매치
+- P5 invariant 2종 (`requireAdministrator` in `app.manifest` / `RunLevel.*HighestAvailable` in `App/`): 모두 0 매치
+
+**Tier-2 grep 가드 결과** (부분 통과 — 명세 작성 시 추정 일부 부정확):
+
+| 항목 | 목표 | 실제 | 판정 |
+|---|---|---|---|
+| `ModalDialogLoop.Run` in `App/UI/Dialogs/` | ≤3 | 3 (모두 `RunExternal` 부분일치) | ✅ 충족 |
+| `CreateWindowExW` in `App/UI/Dialogs/` | 0 | 22 | ❌ 명세 오류 — 셸은 outer 다이얼로그만 흡수, 자식 컨트롤은 호출자 책임 |
+| `WS_TABSTOP\|WS_GROUP` in `Core/Windowing/DialogShell.cs` | 1+ | 0 | ❌ 셸 outer 는 WS_CAPTION/SYSMENU 만 — 의미 있는 grep 은 `App/UI/Dialogs/` 대상이며 20 매치 ✅ |
+| `wc -l SettingsDialog.cs` | <200 | **384** (440에서 -13%) | ❌ 슬립 |
+| `wc -l CleanupDialog.cs` | <200 | **325** (377에서 -14%) | ❌ 슬립 |
+| `wc -l ScaleInputDialog.cs` | <150 | **219** (277에서 -21%) | ❌ 슬립 |
+
+**라인 카운트 슬립 분석**: 잔여 라인의 ~65% 가 `BuildChildren` (자식 컨트롤 생성 + DPI-스케일 변수 선언 + 12 섹션/60 필드 케이스 분기) — 본질적으로 per-dialog 유니크. 추가 감축은 (a) fluent control builder 도입 (PR-07 스코프 초과), 또는 (b) `*.Build.cs` partial 분리 (§2 "partial 축소 검토" 와 모순). 본 PR 은 핵심 가치(셸 추출 + a11y baseline + bringToForeground 통일 fix)에 집중하고 라인 카운트 슬립을 명시.
+
+**문서 갱신 5건**:
+
+- [CHANGELOG.md](../../CHANGELOG.md) `[Unreleased] > 변경` 에 항목 추가
+- [docs/architecture.md](../architecture.md) Core/Windowing 모듈 목록에 DialogShell 추가 + 소스 트리에 명시
+- [docs/implementation-notes.md](../implementation-notes.md) Dialogs 섹션 첫째/둘째 bullet 갱신 (DialogShell.Run 라이프사이클 + a11y baseline 설명)
+- [docs/dev-notes/2026-05-21-dialog-shell-extraction.md](../dev-notes/2026-05-21-dialog-shell-extraction.md) 신규 — 설계 결정/대안/회귀 위험/측정 계획
+- 본 파일 §6 + INDEX session log
+
+**다음**: Tier-3 사용자 수동 smoke (3 다이얼로그 × 각 4-6 항목 — §3 참조). 통과 후 FF merge to main + 브랜치 삭제.

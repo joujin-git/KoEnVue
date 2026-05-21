@@ -1,8 +1,5 @@
 using System.Runtime.InteropServices;
 using KoEnVue.Core.Native;
-using KoEnVue.Core.Color;
-using KoEnVue.Core.Dpi;
-using KoEnVue.Core.Logging;
 using KoEnVue.Core.Windowing;
 using KoEnVue.App.Localization;
 
@@ -11,13 +8,13 @@ namespace KoEnVue.App.UI.Dialogs;
 /// <summary>
 /// indicator_positions 항목을 체크박스 UI로 선택 삭제하는 Win32 모달 다이얼로그.
 /// 항목이 DlgMaxVisibleItems를 초과하면 스크롤 가능한 뷰포트를 표시한다.
+/// DialogShell 이 라이프사이클을 담당하고, 본 파일은 자식 컨트롤 생성 + 스크롤 + WndProc 만 보유한다.
 /// </summary>
 internal static class CleanupDialog
 {
     // ================================================================
-    // 레이아웃 상수 (96 DPI 기준, DPI 스케일 적용)
+    // 레이아웃 상수 (96 DPI 기준)
     // ================================================================
-    private const int DlgPadding = 16;
     private const int DlgCheckHeight = 22;
     private const int DlgCheckGap = 4;
     private const int DlgButtonWidth = 90;
@@ -28,18 +25,18 @@ internal static class CleanupDialog
     private const int DlgSepGap = 12;
     private const int DlgItemIndent = 20;
 
-    // 다이얼로그 컨트롤 ID
+    // 컨트롤 ID
     private const int IDC_CHECK_BASE = 5000;
     private const int IDC_SELECT_ALL = 5500;
     private const int IDC_BTN_OK = 5501;
     private const int IDC_BTN_CANCEL = 5502;
 
-    // Win32 윈도우 클래스 이름
+    // 윈도우 클래스
     private const string DlgClassName = "KoEnVueCleanupDlg";
     private const string ViewportClassName = "KoEnVueCleanupViewport";
 
     // ================================================================
-    // 다이얼로그 상태 (모달 루프용)
+    // 모달 상태
     // ================================================================
     private static bool _dlgResult;
     private static bool _dlgClosed;
@@ -48,108 +45,106 @@ internal static class CleanupDialog
     private static readonly List<IntPtr> _checkboxHandles = [];
     private static bool _selectAllState = true;
 
-    // ================================================================
     // 스크롤 상태
-    // ================================================================
     private static int _scrollPos;
     private static int _scrollMax;
     private static int _viewportClientH;
-    private static int _itemHeight;  // DPI-scaled (checkH + checkGap)
-    private static int _checkItemX;  // DPI-scaled itemIndent (뷰포트 내 체크박스 X 좌표)
-    private static readonly List<(IntPtr Hwnd, int LogicalY)> _scrollChildren = [];
+    private static int _itemHeight;
 
     /// <summary>
     /// 체크박스 선택 다이얼로그를 표시하고 선택된 항목을 반환한다. 취소 시 null.
     /// </summary>
     public static unsafe List<string>? Show(IntPtr hwndMain, List<string> items)
     {
-        // 재진입 가드: 이미 다른 모달 다이얼로그가 열려 있으면 그 창으로 포커스만 복원.
-        // 트레이 아이콘은 shell32 관리라 EnableWindow(_hwndMain, false) 로 차단되지 않으므로
-        // 다이얼로그가 열린 상태에서도 트레이 메뉴 → 같은/다른 다이얼로그 재호출이 가능하다.
-        if (ModalDialogLoop.IsActive)
-        {
-            User32.SetForegroundWindow(ModalDialogLoop.ActiveDialog);
-            return null;
-        }
-
         _dlgResult = false;
         _dlgClosed = false;
         _checkboxHandles.Clear();
-        _scrollChildren.Clear();
         _selectAllState = true;
         _scrollPos = 0;
         _scrollMax = 0;
 
-        // DPI 스케일링
-        User32.GetCursorPos(out POINT cursorPt);
-        IntPtr hMon = User32.MonitorFromPoint(cursorPt, Win32Constants.MONITOR_DEFAULTTOPRIMARY);
-        double dpiScale = DpiHelper.GetScale(hMon);
-        var (_, dpiY) = DpiHelper.GetRawDpi(hMon);
-        uint rawDpi = (uint)Math.Round(dpiScale * DpiHelper.BASE_DPI);
-
-        int pad = DpiHelper.Scale(DlgPadding, dpiScale);
-        int checkH = DpiHelper.Scale(DlgCheckHeight, dpiScale);
-        int checkGap = DpiHelper.Scale(DlgCheckGap, dpiScale);
-        int btnW = DpiHelper.Scale(DlgButtonWidth, dpiScale);
-        int btnH = DpiHelper.Scale(DlgButtonHeight, dpiScale);
-        int descH = DpiHelper.Scale(DlgDescHeight, dpiScale);
-        int sepGap = DpiHelper.Scale(DlgSepGap, dpiScale);
-        int itemIndent = DpiHelper.Scale(DlgItemIndent, dpiScale);
-
-        _itemHeight = checkH + checkGap;
-        _checkItemX = itemIndent;
         int visibleCount = Math.Min(items.Count, DlgMaxVisibleItems);
         bool needsScroll = items.Count > DlgMaxVisibleItems;
+        string title = I18n.IsKorean ? "위치 기록 정리" : "Clean position history";
+
+        bool ran = DialogShell.Run(
+            hwndOwner: hwndMain,
+            className: DlgClassName,
+            wndProc: (delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&CleanupDlgProc,
+            title: title,
+            dlgLogicalWidth: DlgMinWidth,
+            measureDlgHeight: m =>
+            {
+                int checkH = m.Scale(DlgCheckHeight);
+                int checkGap = m.Scale(DlgCheckGap);
+                int descH = m.Scale(DlgDescHeight);
+                int sepGap = m.Scale(DlgSepGap);
+                int btnH = m.Scale(DlgButtonHeight);
+                int viewportH = visibleCount * (checkH + checkGap);
+                return m.NonClientH + m.Pad
+                    + descH + checkGap
+                    + checkH + checkGap
+                    + sepGap
+                    + viewportH
+                    + m.Pad + btnH + m.Pad;
+            },
+            useCursorAnchor: false,
+            // bringToForeground: true — 셋 다 통일 (CleanupDialog 가 누락하던 부분).
+            // ShowWindow 가 어차피 활성 윈도우라 사용자 체감 변화는 거의 없지만,
+            // 트레이 메뉴가 닫힌 직후 다이얼로그가 명시적으로 포어그라운드를 잡도록 한다.
+            bringToForeground: true,
+            buildChildren: ctx => BuildChildren(ctx, items, visibleCount, needsScroll),
+            onAfterShow: null,
+            isClosedFlag: ref _dlgClosed);
+
+        List<string>? result = null;
+        if (ran && _dlgResult)
+        {
+            result = [];
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (i < _checkboxHandles.Count)
+                {
+                    IntPtr state = User32.SendMessageW(_checkboxHandles[i],
+                        Win32Constants.BM_GETCHECK, IntPtr.Zero, IntPtr.Zero);
+                    if (state == (IntPtr)Win32Constants.BST_CHECKED)
+                        result.Add(items[i]);
+                }
+            }
+        }
+
+        _hwndDialog = IntPtr.Zero;
+        _hwndViewport = IntPtr.Zero;
+        _checkboxHandles.Clear();
+        return result;
+    }
+
+    private static unsafe void BuildChildren(
+        DialogShellContext ctx, List<string> items, int visibleCount, bool needsScroll)
+    {
+        _hwndDialog = ctx.HwndDialog;
+
+        int pad = ctx.Pad;
+        int checkH = ctx.Scale(DlgCheckHeight);
+        int checkGap = ctx.Scale(DlgCheckGap);
+        int btnW = ctx.Scale(DlgButtonWidth);
+        int btnH = ctx.Scale(DlgButtonHeight);
+        int descH = ctx.Scale(DlgDescHeight);
+        int sepGap = ctx.Scale(DlgSepGap);
+        int itemIndent = ctx.Scale(DlgItemIndent);
+
+        _itemHeight = checkH + checkGap;
         int scrollbarW = needsScroll
-            ? User32.GetSystemMetricsForDpi(Win32Constants.SM_CXVSCROLL, rawDpi) : 0;
-
+            ? User32.GetSystemMetricsForDpi(Win32Constants.SM_CXVSCROLL, ctx.RawDpi) : 0;
         int viewportH = visibleCount * _itemHeight;
-        int dlgWidth = DpiHelper.Scale(DlgMinWidth, dpiScale);
-        // 비클라이언트 영역 높이 (타이틀바 + 프레임) — 공통 헬퍼 사용
-        int nonClientH = Win32DialogHelper.CalculateNonClientHeight(rawDpi);
+        int contentW = ctx.ClientW - pad * 2;
 
-        int dlgHeight = nonClientH               // non-client (title bar + borders)
-            + pad                                // top padding
-            + descH + checkGap                   // description label
-            + checkH + checkGap                  // "전체 선택"
-            + sepGap                             // separator
-            + viewportH                          // scrollable item area
-            + pad                                // gap before buttons
-            + btnH                               // buttons
-            + pad;                               // bottom padding
-
-        // UI 폰트 (맑은 고딕 9pt, DPI 스케일) — using 스코프 종료 시 자동 DeleteObject
-        using var hFont = Win32DialogHelper.CreateDialogFont(dpiY);
-        IntPtr hFontRaw = hFont.DangerousGetHandle();
-
-        // 윈도우 클래스 등록 (한 번만, 중복 등록은 무시됨) — 표준 헬퍼 경유로 hCursor=IDC_ARROW 자동 박힘.
-        Win32DialogHelper.RegisterStandardClass(
-            DlgClassName,
-            (delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&CleanupDlgProc,
-            (IntPtr)(Win32Constants.COLOR_BTNFACE + 1));
-
+        // 뷰포트 클래스 등록 — 본 다이얼로그가 자체 뷰포트를 소유하므로 셸 외부에서.
         Win32DialogHelper.RegisterStandardClass(
             ViewportClassName,
             (delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&ViewportProc,
             (IntPtr)(Win32Constants.COLOR_BTNFACE + 1));
 
-        // 화면 중앙 좌표 — 공통 헬퍼 (anchor=null → rcWork 정중앙)
-        var (cx, cy) = Win32DialogHelper.CalculateDialogPosition(hMon, dlgWidth, dlgHeight);
-
-        string title = I18n.IsKorean ? "위치 기록 정리" : "Clean position history";
-        _hwndDialog = User32.CreateWindowExW(0, DlgClassName, title,
-            Win32Constants.WS_CAPTION | Win32Constants.WS_SYSMENU,
-            cx, cy, dlgWidth, dlgHeight,
-            hwndMain, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-
-        if (_hwndDialog == IntPtr.Zero)
-            return null;
-
-        // 클라이언트 영역 너비 (비클라이언트 보더 제외)
-        int borderW = DpiHelper.Scale(16, dpiScale);
-        int contentW = dlgWidth - pad * 2 - borderW;
-
-        // 컨트롤 생성
         int y = pad;
 
         // 설명 라벨
@@ -159,17 +154,19 @@ internal static class CleanupDialog
         IntPtr hwndDesc = User32.CreateWindowExW(0, "STATIC", descText,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE,
             pad, y, contentW, descH,
-            _hwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndDesc, hFontRaw);
+            ctx.HwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        Win32DialogHelper.ApplyFont(hwndDesc, ctx.HFont);
         y += descH + checkGap;
 
-        // "전체 선택" 체크박스
+        // "전체 선택" 체크박스 — WS_TABSTOP + WS_GROUP 추가 (a11y baseline)
         string selectAllText = I18n.IsKorean ? "전체 선택" : "Select All";
         IntPtr hwndSelectAll = User32.CreateWindowExW(0, "BUTTON", selectAllText,
-            Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.BS_AUTOCHECKBOX,
+            Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE
+                | Win32Constants.BS_AUTOCHECKBOX
+                | Win32Constants.WS_TABSTOP | Win32Constants.WS_GROUP,
             pad, y, contentW, checkH,
-            _hwndDialog, (IntPtr)IDC_SELECT_ALL, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndSelectAll, hFontRaw);
+            ctx.HwndDialog, (IntPtr)IDC_SELECT_ALL, IntPtr.Zero, IntPtr.Zero);
+        Win32DialogHelper.ApplyFont(hwndSelectAll, ctx.HFont);
         User32.SendMessageW(hwndSelectAll, Win32Constants.BM_SETCHECK,
             (IntPtr)Win32Constants.BST_CHECKED, IntPtr.Zero);
         y += checkH + checkGap;
@@ -178,35 +175,34 @@ internal static class CleanupDialog
         User32.CreateWindowExW(0, "STATIC", "",
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.SS_ETCHEDHORZ,
             pad, y + sepGap / 2 - 1, contentW, 2,
-            _hwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            ctx.HwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
         y += sepGap;
 
-        // 스크롤 뷰포트 (항목 체크박스 컨테이너)
-        // WS_CLIPCHILDREN: 부모 페인트·에레이즈에서 자식 영역 제외 (1차 방어).
-        // WS_EX_COMPOSITED (dwExStyle): DWM 이 뷰포트와 모든 자식을 오프스크린 비트맵에 합성 후
-        // 한 번에 출력하는 더블버퍼링. 썸 드래그·휠 스크롤의 연속 이동 중 중간 상태가
-        // 화면에 노출되지 않아 플리커·티어링 제거.
+        // 스크롤 뷰포트
         uint vpStyle = Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_CLIPCHILDREN;
         if (needsScroll) vpStyle |= Win32Constants.WS_VSCROLL;
-        _hwndViewport = User32.CreateWindowExW(Win32Constants.WS_EX_COMPOSITED, ViewportClassName, "",
+        _hwndViewport = User32.CreateWindowExW(
+            Win32Constants.WS_EX_COMPOSITED, ViewportClassName, "",
             vpStyle, pad, y, contentW, viewportH,
-            _hwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            ctx.HwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
         _viewportClientH = viewportH;
 
-        // 항목 체크박스 (뷰포트의 자식)
+        // 항목 체크박스 — WS_TABSTOP 추가 (a11y baseline; 첫 항목은 WS_GROUP)
         int checkW = contentW - itemIndent - scrollbarW;
         for (int i = 0; i < items.Count; i++)
         {
             int logicalY = i * _itemHeight;
+            uint extraStyle = (i == 0 ? Win32Constants.WS_GROUP : 0u);
             IntPtr hwndCheck = User32.CreateWindowExW(0, "BUTTON", items[i],
-                Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.BS_AUTOCHECKBOX,
+                Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE
+                    | Win32Constants.BS_AUTOCHECKBOX
+                    | Win32Constants.WS_TABSTOP | extraStyle,
                 itemIndent, logicalY, checkW, checkH,
                 _hwndViewport, (IntPtr)(IDC_CHECK_BASE + i), IntPtr.Zero, IntPtr.Zero);
-            Win32DialogHelper.ApplyFont(hwndCheck, hFontRaw);
+            Win32DialogHelper.ApplyFont(hwndCheck, ctx.HFont);
             User32.SendMessageW(hwndCheck, Win32Constants.BM_SETCHECK,
                 (IntPtr)Win32Constants.BST_CHECKED, IntPtr.Zero);
             _checkboxHandles.Add(hwndCheck);
-            _scrollChildren.Add((hwndCheck, logicalY));
         }
 
         // 스크롤바 범위 설정
@@ -226,63 +222,25 @@ internal static class CleanupDialog
             User32.SetScrollInfo(_hwndViewport, Win32Constants.SB_VERT, ref si, true);
         }
 
-        y += viewportH;
+        y += viewportH + pad;
 
-        // 버튼 영역
-        y += pad;
+        // 버튼
         int btnAreaWidth = btnW * 2 + pad;
-        int btnX = (dlgWidth - btnAreaWidth) / 2;
+        int btnX = (ctx.DlgWidth - btnAreaWidth) / 2;
 
         string okText = I18n.IsKorean ? "삭제" : "Delete";
         string cancelText = I18n.IsKorean ? "취소" : "Cancel";
         IntPtr hwndOk = User32.CreateWindowExW(0, "BUTTON", okText,
-            Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_TABSTOP,
+            Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE
+                | Win32Constants.WS_TABSTOP | Win32Constants.WS_GROUP,
             btnX, y, btnW, btnH,
-            _hwndDialog, (IntPtr)IDC_BTN_OK, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndOk, hFontRaw);
+            ctx.HwndDialog, (IntPtr)IDC_BTN_OK, IntPtr.Zero, IntPtr.Zero);
+        Win32DialogHelper.ApplyFont(hwndOk, ctx.HFont);
         IntPtr hwndCancel = User32.CreateWindowExW(0, "BUTTON", cancelText,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_TABSTOP,
             btnX + btnW + pad, y, btnW, btnH,
-            _hwndDialog, (IntPtr)IDC_BTN_CANCEL, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndCancel, hFontRaw);
-
-        // 모달 표시 — 루프/EnableWindow/포그라운드 복원은 공용 헬퍼에 위임
-        User32.ShowWindow(_hwndDialog, Win32Constants.SW_SHOW);
-
-        // 모달 루프 + 결과 수집을 try, 정리는 finally 에서 보장한다. finally 가 _checkboxHandles
-        // 를 비우므로 결과 수집은 반드시 try 내부에 유지되어야 한다.
-        List<string>? result = null;
-        try
-        {
-            ModalDialogLoop.Run(_hwndDialog, hwndMain, ref _dlgClosed);
-
-            if (_dlgResult)
-            {
-                result = [];
-                for (int i = 0; i < items.Count; i++)
-                {
-                    if (i < _checkboxHandles.Count)
-                    {
-                        IntPtr state = User32.SendMessageW(_checkboxHandles[i],
-                            Win32Constants.BM_GETCHECK, IntPtr.Zero, IntPtr.Zero);
-                        if (state == (IntPtr)Win32Constants.BST_CHECKED)
-                            result.Add(items[i]);
-                    }
-                }
-            }
-        }
-        finally
-        {
-            // 정리
-            User32.DestroyWindow(_hwndDialog);
-            _hwndDialog = IntPtr.Zero;
-            _hwndViewport = IntPtr.Zero;
-            _checkboxHandles.Clear();
-            _scrollChildren.Clear();
-            // hFont는 using 스코프 종료 시 자동 해제 (SafeFontHandle → DeleteObject)
-        }
-
-        return result;
+            ctx.HwndDialog, (IntPtr)IDC_BTN_CANCEL, IntPtr.Zero, IntPtr.Zero);
+        Win32DialogHelper.ApplyFont(hwndCancel, ctx.HFont);
     }
 
     // ================================================================
@@ -309,21 +267,11 @@ internal static class CleanupDialog
         switch (msg)
         {
             case Win32Constants.WM_COMMAND:
+            {
                 int id = (int)(wParam.ToInt64() & 0xFFFF);
-                if (id == IDC_BTN_OK || id == Win32Constants.IDOK)
-                {
-                    _dlgResult = true;
-                    _dlgClosed = true;
+                if (DialogShell.HandleStandardCommands(id, IDC_BTN_OK, IDC_BTN_CANCEL,
+                    ref _dlgResult, ref _dlgClosed))
                     return IntPtr.Zero;
-                }
-                // IsDialogMessageW 가 ESC 를 WM_COMMAND wParam=IDCANCEL(2) 로 변환해 보낸다.
-                // 취소 버튼 ID(IDC_BTN_CANCEL=5502)와 별개로 IDCANCEL 도 수락해야 ESC 가 작동.
-                if (id == IDC_BTN_CANCEL || id == Win32Constants.IDCANCEL)
-                {
-                    _dlgResult = false;
-                    _dlgClosed = true;
-                    return IntPtr.Zero;
-                }
                 if (id == IDC_SELECT_ALL)
                 {
                     // 전체 선택/해제 토글
@@ -334,9 +282,9 @@ internal static class CleanupDialog
                         User32.SendMessageW(h, Win32Constants.BM_SETCHECK, checkState, IntPtr.Zero);
                 }
                 return IntPtr.Zero;
+            }
 
             case Win32Constants.WM_MOUSEWHEEL:
-                // 뷰포트 외부(버튼 등)에 포커스가 있을 때도 스크롤 동작
                 HandleMouseWheel(wParam);
                 return IntPtr.Zero;
 

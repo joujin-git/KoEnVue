@@ -1,9 +1,6 @@
 using System.Runtime.InteropServices;
 using KoEnVue.App.Config;
 using KoEnVue.Core.Native;
-using KoEnVue.Core.Color;
-using KoEnVue.Core.Dpi;
-using KoEnVue.Core.Logging;
 using KoEnVue.Core.Windowing;
 using KoEnVue.App.Localization;
 
@@ -12,12 +9,13 @@ namespace KoEnVue.App.UI.Dialogs;
 /// <summary>
 /// 인디케이터 배율 직접 입력용 Win32 모달 다이얼로그.
 /// 커서 위치 근처에 표시되며 [1.0, 5.0] 범위 외 입력은 에러로 반려한다.
-/// Tray.cs에서 분리 (Wave 1-D).
+/// DialogShell 이 라이프사이클(reentry guard / DPI / font / class 등록 / 모달 루프 / DestroyWindow)을
+/// 담당하고, 본 파일은 자식 컨트롤 생성과 WndProc, 입력 검증만 보유한다.
 /// </summary>
 internal static class ScaleInputDialog
 {
     // ================================================================
-    // 범위/허용오차 상수 (Tray의 서브메뉴와 동일)
+    // 범위/허용오차 상수
     // ================================================================
     /// <summary>인디케이터 배율 최솟값 — <see cref="DefaultConfig.MinIndicatorScale"/> 와 동기.</summary>
     public const double ScaleMinValue = DefaultConfig.MinIndicatorScale;
@@ -27,7 +25,6 @@ internal static class ScaleInputDialog
 
     // 레이아웃 상수 (96 DPI 기준)
     private const int ScaleDlgWidth = 320;
-    private const int ScaleDlgPad = 16;
     private const int ScaleDlgLabelH = 20;
     private const int ScaleDlgEditH = 26;
     private const int ScaleDlgHintH = 18;
@@ -40,7 +37,6 @@ internal static class ScaleInputDialog
     private const int IDC_SCALE_OK = 6002;
     private const int IDC_SCALE_CANCEL = 6003;
 
-    // Win32 윈도우 클래스 이름
     private const string DlgClassName = "KoEnVueScaleDlg";
 
     // ================================================================
@@ -63,142 +59,101 @@ internal static class ScaleInputDialog
     /// </summary>
     public static unsafe double? Show(IntPtr hwndMain, double initialValue)
     {
-        // 재진입 가드: 이미 다른 모달 다이얼로그가 열려 있으면 그 창으로 포커스만 복원.
-        // 트레이 아이콘은 shell32 관리라 EnableWindow(_hwndMain, false) 로 차단되지 않으므로
-        // 다이얼로그가 열린 상태에서도 트레이 메뉴 → 같은/다른 다이얼로그 재호출이 가능하다.
-        if (ModalDialogLoop.IsActive)
-        {
-            User32.SetForegroundWindow(ModalDialogLoop.ActiveDialog);
-            return null;
-        }
-
         _scaleDlgResult = false;
         _scaleDlgClosed = false;
         _scaleDlgParsedValue = 0;
 
-        // 커서 위치 기준 모니터 DPI/work area
-        User32.GetCursorPos(out POINT cursorPt);
-        IntPtr hMon = User32.MonitorFromPoint(cursorPt, Win32Constants.MONITOR_DEFAULTTONEAREST);
-        double dpiScale = DpiHelper.GetScale(hMon);
-        var (_, dpiY) = DpiHelper.GetRawDpi(hMon);
+        bool ran = DialogShell.Run(
+            hwndOwner: hwndMain,
+            className: DlgClassName,
+            wndProc: (delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&ScaleDlgProc,
+            title: I18n.ScaleDialogTitle,
+            dlgLogicalWidth: ScaleDlgWidth,
+            measureDlgHeight: m =>
+            {
+                int labelH = m.Scale(ScaleDlgLabelH);
+                int editH = m.Scale(ScaleDlgEditH);
+                int hintH = m.Scale(ScaleDlgHintH);
+                int btnH = m.Scale(ScaleDlgBtnH);
+                int gap = m.Scale(ScaleDlgGap);
+                return m.NonClientH + m.Pad
+                    + labelH + gap + editH + gap
+                    + hintH + m.Pad + btnH + m.Pad;
+            },
+            useCursorAnchor: true,
+            bringToForeground: true,
+            buildChildren: ctx => BuildChildren(ctx, initialValue),
+            onAfterShow: _ =>
+            {
+                User32.SetFocus(_hwndScaleEdit);
+                User32.SendMessageW(_hwndScaleEdit, Win32Constants.EM_SETSEL,
+                    IntPtr.Zero, (IntPtr)(-1));
+            },
+            isClosedFlag: ref _scaleDlgClosed);
 
-        int pad = DpiHelper.Scale(ScaleDlgPad, dpiScale);
-        int labelH = DpiHelper.Scale(ScaleDlgLabelH, dpiScale);
-        int editH = DpiHelper.Scale(ScaleDlgEditH, dpiScale);
-        int hintH = DpiHelper.Scale(ScaleDlgHintH, dpiScale);
-        int btnW = DpiHelper.Scale(ScaleDlgBtnW, dpiScale);
-        int btnH = DpiHelper.Scale(ScaleDlgBtnH, dpiScale);
-        int gap = DpiHelper.Scale(ScaleDlgGap, dpiScale);
-        int dlgWidth = DpiHelper.Scale(ScaleDlgWidth, dpiScale);
+        double? result = (ran && _scaleDlgResult) ? _scaleDlgParsedValue : null;
+        _hwndScaleDlg = IntPtr.Zero;
+        _hwndScaleEdit = IntPtr.Zero;
+        return result;
+    }
 
-        uint rawDpi = (uint)Math.Round(dpiScale * DpiHelper.BASE_DPI);
-        int nonClientH = Win32DialogHelper.CalculateNonClientHeight(rawDpi);
+    private static void BuildChildren(DialogShellContext ctx, double initialValue)
+    {
+        _hwndScaleDlg = ctx.HwndDialog;
 
-        int dlgHeight = nonClientH
-            + pad
-            + labelH + gap
-            + editH + gap
-            + hintH + pad
-            + btnH
-            + pad;
-
-        // UI 폰트 (맑은 고딕 9pt, DPI 스케일) — using 스코프 종료 시 자동 DeleteObject
-        using var hFont = Win32DialogHelper.CreateDialogFont(dpiY);
-        IntPtr hFontRaw = hFont.DangerousGetHandle();
-
-        // 다이얼로그 클래스 등록 (중복 호출은 무시됨) — 표준 헬퍼 경유로 hCursor=IDC_ARROW 자동 박힘.
-        Win32DialogHelper.RegisterStandardClass(
-            DlgClassName,
-            (delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&ScaleDlgProc,
-            (IntPtr)(Win32Constants.COLOR_BTNFACE + 1));
-
-        // 대화상자 좌표: 커서 위치 기준, 모니터 work area 안으로 클램프
-        // 공통 헬퍼 (anchor=cursorPt → 좌측-상단을 커서에 두고 rcWork 경계 클램프)
-        var (cx, cy) = Win32DialogHelper.CalculateDialogPosition(
-            hMon, dlgWidth, dlgHeight, cursorPt);
-
-        _hwndScaleDlg = User32.CreateWindowExW(0, DlgClassName, I18n.ScaleDialogTitle,
-            Win32Constants.WS_CAPTION | Win32Constants.WS_SYSMENU,
-            cx, cy, dlgWidth, dlgHeight,
-            hwndMain, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-
-        if (_hwndScaleDlg == IntPtr.Zero)
-        {
-            return null;
-        }
-
-        int borderW = DpiHelper.Scale(16, dpiScale);
-        int contentW = dlgWidth - pad * 2 - borderW;
+        int pad = ctx.Pad;
+        int gap = ctx.Scale(ScaleDlgGap);
+        int labelH = ctx.Scale(ScaleDlgLabelH);
+        int editH = ctx.Scale(ScaleDlgEditH);
+        int hintH = ctx.Scale(ScaleDlgHintH);
+        int btnW = ctx.Scale(ScaleDlgBtnW);
+        int btnH = ctx.Scale(ScaleDlgBtnH);
+        int contentW = ctx.ClientW - pad * 2;
 
         int y = pad;
 
-        // 안내 레이블 ("배율 (1.0 ~ 5.0):")
+        // 안내 레이블 — 입력 컨트롤 바로 앞 (UIA LabeledBy 자동 연결)
         IntPtr hwndLabel = User32.CreateWindowExW(0, "STATIC", I18n.ScaleDialogPrompt,
-            Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE,
+            Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_GROUP,
             pad, y, contentW, labelH,
-            _hwndScaleDlg, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndLabel, hFontRaw);
+            ctx.HwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        Win32DialogHelper.ApplyFont(hwndLabel, ctx.HFont);
         y += labelH + gap;
 
-        // EDIT 박스 — 현재 값으로 미리 채움
+        // EDIT 박스
         string initialText = initialValue.ToString("0.#");
         _hwndScaleEdit = User32.CreateWindowExW(0, "EDIT", initialText,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_BORDER
                 | Win32Constants.WS_TABSTOP | Win32Constants.ES_LEFT | Win32Constants.ES_AUTOHSCROLL,
             pad, y, contentW, editH,
-            _hwndScaleDlg, (IntPtr)IDC_SCALE_EDIT, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(_hwndScaleEdit, hFontRaw);
+            ctx.HwndDialog, (IntPtr)IDC_SCALE_EDIT, IntPtr.Zero, IntPtr.Zero);
+        Win32DialogHelper.ApplyFont(_hwndScaleEdit, ctx.HFont);
         y += editH + gap;
 
-        // 힌트 레이블
+        // 힌트
         IntPtr hwndHint = User32.CreateWindowExW(0, "STATIC", I18n.ScaleDialogHint,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE,
             pad, y, contentW, hintH,
-            _hwndScaleDlg, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndHint, hFontRaw);
+            ctx.HwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        Win32DialogHelper.ApplyFont(hwndHint, ctx.HFont);
         y += hintH + pad;
 
         // 버튼 — 오른쪽 정렬
         int btnAreaWidth = btnW * 2 + gap;
-        int btnX = dlgWidth - borderW - pad - btnAreaWidth;
+        int btnX = ctx.ClientW - pad - btnAreaWidth;
 
         IntPtr hwndOk = User32.CreateWindowExW(0, "BUTTON", I18n.ScaleDialogOk,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_TABSTOP
-                | Win32Constants.BS_DEFPUSHBUTTON,
+                | Win32Constants.WS_GROUP | Win32Constants.BS_DEFPUSHBUTTON,
             btnX, y, btnW, btnH,
-            _hwndScaleDlg, (IntPtr)IDC_SCALE_OK, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndOk, hFontRaw);
+            ctx.HwndDialog, (IntPtr)IDC_SCALE_OK, IntPtr.Zero, IntPtr.Zero);
+        Win32DialogHelper.ApplyFont(hwndOk, ctx.HFont);
 
         IntPtr hwndCancel = User32.CreateWindowExW(0, "BUTTON", I18n.ScaleDialogCancel,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_TABSTOP,
             btnX + btnW + gap, y, btnW, btnH,
-            _hwndScaleDlg, (IntPtr)IDC_SCALE_CANCEL, IntPtr.Zero, IntPtr.Zero);
-        Win32DialogHelper.ApplyFont(hwndCancel, hFontRaw);
-
-        // 모달 표시 + EDIT 포커스 + 텍스트 전체 선택
-        // (EnableWindow/모달 루프/포그라운드 복원은 ModalDialogLoop.Run 이 담당,
-        //  다이얼로그-특이 초기화만 여기에 남는다)
-        User32.ShowWindow(_hwndScaleDlg, Win32Constants.SW_SHOW);
-        User32.SetForegroundWindow(_hwndScaleDlg);
-        User32.SetFocus(_hwndScaleEdit);
-        User32.SendMessageW(_hwndScaleEdit, Win32Constants.EM_SETSEL, IntPtr.Zero, (IntPtr)(-1));
-
-        // 모달 루프 + 결과 취득을 try, 정리는 finally 로 보장.
-        double? result = null;
-        try
-        {
-            ModalDialogLoop.Run(_hwndScaleDlg, hwndMain, ref _scaleDlgClosed);
-            if (_scaleDlgResult) result = _scaleDlgParsedValue;
-        }
-        finally
-        {
-            User32.DestroyWindow(_hwndScaleDlg);
-            _hwndScaleDlg = IntPtr.Zero;
-            _hwndScaleEdit = IntPtr.Zero;
-            // hFont는 using 스코프 종료 시 자동 해제 (SafeFontHandle → DeleteObject)
-        }
-
-        return result;
+            ctx.HwndDialog, (IntPtr)IDC_SCALE_CANCEL, IntPtr.Zero, IntPtr.Zero);
+        Win32DialogHelper.ApplyFont(hwndCancel, ctx.HFont);
     }
 
     /// <summary>
@@ -244,26 +199,13 @@ internal static class ScaleInputDialog
         switch (msg)
         {
             case Win32Constants.WM_COMMAND:
-                // IsDialogMessageW는 Enter → IDOK(1)/DEFPUSHBUTTON ID, Escape → IDCANCEL(2)로
-                // 변환해 WM_COMMAND를 쏜다. 우리 OK는 BS_DEFPUSHBUTTON이라 Enter가 IDC_SCALE_OK로
-                // 오지만 IDOK도 방어적으로 함께 수락.
+            {
                 int id = (int)(wParam.ToInt64() & 0xFFFF);
-                if (id == IDC_SCALE_OK || id == Win32Constants.IDOK)
-                {
-                    if (TryCommitScaleInput())
-                    {
-                        _scaleDlgResult = true;
-                        _scaleDlgClosed = true;
-                    }
+                if (DialogShell.HandleStandardCommands(id, IDC_SCALE_OK, IDC_SCALE_CANCEL,
+                    ref _scaleDlgResult, ref _scaleDlgClosed, TryCommitScaleInput))
                     return IntPtr.Zero;
-                }
-                if (id == IDC_SCALE_CANCEL || id == Win32Constants.IDCANCEL)
-                {
-                    _scaleDlgResult = false;
-                    _scaleDlgClosed = true;
-                    return IntPtr.Zero;
-                }
                 return IntPtr.Zero;
+            }
 
             case Win32Constants.WM_CLOSE:
                 _scaleDlgResult = false;

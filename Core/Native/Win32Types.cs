@@ -224,6 +224,7 @@ internal static class Win32Constants
     public const uint WS_CHILD          = 0x40000000;
     public const uint WS_VISIBLE        = 0x10000000;
     public const uint WS_TABSTOP        = 0x00010000;
+    public const uint WS_GROUP          = 0x00020000;
     public const uint WS_CLIPCHILDREN   = 0x02000000;
 
     // --- 버튼/체크박스 스타일 ---
