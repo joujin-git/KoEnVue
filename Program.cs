@@ -839,7 +839,13 @@ internal static partial class Program
             updateConfig: newConfig =>
             {
                 bool wasHidden = _config.UserHidden;
+                AppLanguage oldLanguage = _config.Language;
                 _config = ThemePresets.Apply(newConfig);
+                // 자체 Settings.Save 는 mtime self-bump 로 WM_CONFIG_CHANGED 를 차단하므로
+                // HandleConfigChanged 를 통한 I18n.Load 갱신 경로가 동작 안 한다. 사용자 가시
+                // 전환을 위해 람다 안에서 직접 재로드. Tray.UpdateState 가 뒤따라 fresh string.
+                if (oldLanguage != _config.Language)
+                    I18n.Load(_config.Language);
                 ImeStatus.UpdateDetectionMethod(_config.DetectionMethod);
                 Overlay.HandleConfigChanged(_config);
 

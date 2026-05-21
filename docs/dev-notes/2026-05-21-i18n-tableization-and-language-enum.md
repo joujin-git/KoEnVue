@@ -1,8 +1,8 @@
 # I18n 테이블화 + `AppLanguage` enum 전환 (PR-06)
 
 **Date**: 2026-05-21
-**Scope**: D3 + D4 (improvement-plan 4-라운드 리뷰 발견)
-**Status**: 완료 (Tier-1 + Tier-2 통과, Tier-3 사용자 검증 대기)
+**Scope**: D3 + D4 (improvement-plan 4-라운드 리뷰 발견) + Tier-3 즉시반영 패치 1건
+**Status**: 완료 (Tier-1 + Tier-2 + Tier-3 사용자 가시 검증 모두 통과)
 
 ## 무엇이 바뀌었나
 
@@ -134,12 +134,24 @@ STJ source-gen 의 `JsonStringEnumConverter<T>` 는 null 을 받으면 JsonExcep
 
 **완화**: 사용자 직접 편집 시 README/User_Guide 에 명시 (현재는 config 키 표가 README 에 없어 별도 갱신 불요 — `language` 는 트레이 메뉴와 다이얼로그 UI 에서만 노출).
 
+## Tier-3 검증 결과 + 즉시반영 패치
+
+Tier-3 사용자 가시 smoke 4 시나리오 모두 통과. ② 검증 중 다음 결함을 발견해 본 PR 안에서 함께 fix:
+
+**결함**: SettingsDialog 의 `언어` 콤보 변경 후 `확인` 을 눌러도 트레이 메뉴/툴팁이 즉시 새 언어로 안 바뀌고 다음 외부 config 편집 또는 재시작까지 stale 한국어/영어 유지.
+
+**근본 원인**: `Program.HandleMenuCommand` 의 `updateConfig` 람다가 `I18n.Load` 를 직접 호출하지 않았다. `I18n.Load` 호출처는 `Program.Main` 초기화와 `HandleConfigChanged` (WM_CONFIG_CHANGED 수신) 두 곳뿐인데, 다이얼로그 OK 경로의 `Settings.Save` 가 `JsonSettingsManager._lastMtime` 을 self-bump 해 다음 5초 폴링에서 `CheckReload` 가 false 를 반환 → `WM_CONFIG_CHANGED` 미발사 → `I18n.Load` 갱신 경로 단절. v0.9.x 부터 잠재했던 결함이지만 본 PR 의 Tier-3 ② 가 "즉시 반영" 을 명시 요구해 첫 가시화.
+
+**Fix**: `updateConfig` 람다 진입 시 `AppLanguage oldLanguage = _config.Language` 캡쳐, `ThemePresets.Apply(newConfig)` 직후 `oldLanguage != _config.Language` 비교해 변동 시 `I18n.Load(_config.Language)` 호출. 람다 후반의 `Tray.UpdateState` 가 fresh I18n 으로 tooltip 재구성 + 우클릭 시 메뉴가 새 언어로 즉시 빌드된다. 같은 람다 안 한 곳 추가, 신규 경로 0, 사이드 이펙트 0.
+
+**대안 검토**: `Settings.Save` 가 mtime self-bump 를 안 하도록 변경하면 `WM_CONFIG_CHANGED` 가 발사돼 `HandleConfigChanged` 가 `I18n.Load` 호출 — 자연 수렴. 단 self-bump 는 핫 리로드 폴링이 자체 write 에 의해 무한 재발사되는 걸 막는 핵심 mechanism 이라 제거 시 spam 회귀. 채택 안 함.
+
 ## 측정 계획
 
-- **N=1 smoke**: 사용자 정상 부팅 + 트레이 메뉴 한국어/영문 표시 + Settings 에서 Auto/Ko/En 전환 즉시 반영 확인. (PR-06 §3 Tier-3)
-- **호환성**: 기존 `config.json` 의 `"language": "auto"` 그대로 로드 (Tier-3 ③).
-- **잘못된 값**: `"language": "fr"` 로 편집 후 부팅 → 현재 구현은 JSON 파싱 단계에서 JsonException → `Settings.Load` 가 기본값으로 폴백, 파일은 보존 (PR-06 §3 Tier-3 ④ 의 "warning" 부분은 현 구현엔 없음 — 폴백 메커니즘이 다른 layer).
-- **장기**: 3rd 언어 추가 요청이 들어오면 본 문서를 절차 매뉴얼로 활용. 튜플 → 3-tuple 확장 또는 `Dictionary<(I18nKey, AppLanguage), string>` 으로 차원 확장.
+- **N=1 smoke**: 사용자 정상 부팅 + 트레이 메뉴 한국어/영문 표시 + Settings 에서 Auto/Ko/En 전환 즉시 반영 확인 (Tier-3 ②). **위 패치 적용 후 통과**.
+- **호환성**: 기존 `config.json` 의 `"language": "auto"` 그대로 로드 (Tier-3 ③). **통과**.
+- **잘못된 값**: `"language": "fr"` 편집 후 부팅 → JSON 파싱 단계에서 `JsonException` → `JsonSettingsManager.Load` 의 catch 가 `Logger.Warning` 발화 + 전체 config 가 defaults 로 폴백, 파일은 보존 (Tier-3 ④). 사용자 가시 evidence 는 koenvue.log 에 안 남는데 `Settings.Load` 가 `Logger.Initialize` 이전에 실행돼 Warning 이 Trace 로만 흘러가기 때문. Tier-3 검증은 다른 필드(`opacity`) 를 비-디폴트로 동시 편집해 defaults 폴백 가시화로 대체. **통과**.
+- **장기**: 3rd 언어 추가 요청이 들어오면 본 문서를 절차 매뉴얼로 활용. 튜플 → 3-tuple 확장 또는 `Dictionary<(I18nKey, AppLanguage), string>` 으로 차원 확장. Settings.Load 의 Trace-only Warning 문제는 PR-09 (logging policy) 에서 deferred-emit 패턴으로 일괄 해소 검토.
 
 ## 참고 파일
 

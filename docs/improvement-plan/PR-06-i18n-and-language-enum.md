@@ -1,6 +1,6 @@
 # PR-06: I18n table + Language enum
 
-**Status**: 🚧 in progress (Tier-1+2 통과, Tier-3 사용자 검증 대기)
+**Status**: ✅ Tier-1+2+3 통과 (FF 머지 대기)
 **Branch**: feat/pr-06-i18n-language
 **Base**: main (PR-03 후 권장)
 **Risk**: Low
@@ -54,9 +54,9 @@
 
 ### Tier 3 — 수동 smoke
 - [ ] 트레이 메뉴/다이얼로그의 한국어/영어 표시 정상
-- [ ] SettingsDialog에서 언어 변경 (Auto → Ko → En) → 즉시 반영
+- [ ] SettingsDialog에서 언어 변경 (Auto → Ko → En) → 즉시 반영. `HandleMenuCommand` updateConfig 람다에 `I18n.Load` 직접 호출 추가 — `Settings.Save` 의 mtime self-bump 가 `WM_CONFIG_CHANGED` 를 차단하기 때문
 - [ ] 기존 `config.json`의 `"language": "auto"` 그대로 로드 (호환 확인)
-- [ ] 잘못된 값 `"language": "fr"` → Validate가 Auto로 fallback + warning
+- [ ] 잘못된 값 `"language": "fr"` → STJ `JsonStringEnumConverter<AppLanguage>` 가 JsonException → `JsonSettingsManager.Load` 의 catch 가 `Logger.Warning("Failed to load config ...")` 출력 + 전체 config 가 defaults 로 폴백 (`Language` 디폴트가 `Auto` 라 결과적으로 시스템 언어 따라감) + 파일 보존
 
 ## 4. 사이드 이펙트 / 위험
 
@@ -74,3 +74,4 @@
 | Date | Session | What | Next |
 |---|---|---|---|
 | 2026-05-21 | 1 | D3+D4 구현 완료. (D3) `I18n.cs` 41 property → `Dictionary<I18nKey, (Ko, En)>` + `Get(key)` dispatcher. 매개변수 헬퍼 3종(`GetSizeLabel`/`FormatCustomScaleLabel`/`GetTrayTooltip`)은 메서드 유지하되 locale suffix `"배"`/`"x"`만 `SizeLabelSuffix` 키로 분리해 `_isKorean ?`가 `Get` 한 곳에만 잔존. (D4) `AppLanguage { Auto, Ko, En }` enum 신설(`AppConfig.Language` property와 이름 충돌 회피로 `AppLanguage` 채택, risk 2 따름). `AppConfig.Language` `string → AppLanguage`. `I18n.Load(AppLanguage)` 시그너처 변경. `Settings.Validate`에 `Language = EnumOrDefault(config.Language, AppLanguage.Auto)` 추가. `EnsureSubObjects`의 `Language = config.Language ?? "ko"` 제거(enum non-nullable). `SettingsDialog.Fields.cs`의 `LanguageToIndex`/`IndexToLanguage` 헬퍼 2종 삭제 + Combo가 `(int)c.Language` / `(AppLanguage)Math.Clamp(i, 0, 2)`로 단순화(다른 11개 enum과 동일 패턴). Tier-1 debug + AOT publish clean(0 경고, 4.82 MB). Tier-2 grep 가드 5종 통과: `_isKorean ? in I18n.cs = 1`(Get만), `I18nKey in I18n.cs = 97`, `enum AppLanguage = 1`, `string Language in AppConfig = 0`, `"ko"/"en"/"auto" in SettingsDialog.Fields.cs = 0`. invariant 4종 + P5 2종 0 매치. 문서 5건 갱신(CHANGELOG / architecture I18n.cs 항목 + Models enum 리스트 / conventions P3 / dev-notes 신규 / PR-06 §6). README/User_Guide는 `language` 키 참조 0이라 갱신 불요(spec §2 docs에선 "선택" 표기). | Tier-3 수동 smoke (사용자 검증) 후 머지 |
+| 2026-05-21 | 2 | Tier-3 사용자 가시 smoke 4종 검증 — ① 트레이 메뉴/다이얼로그 한국어 표시 정상, ② `English` 전환 즉시 반영, ③ `"language": "auto"` 호환 로드, ④ `"language": "fr"` → JsonException + defaults 폴백 (사용자 evidence 는 `"opacity": 0.1` 동시 편집 후 opacity 가 0.85 디폴트로 폴백되는 가시 확인으로 대체 — `Settings.Load` 가 `Logger.Initialize` 이전이라 Warning 이 Trace-only). ② 검증 중 결함 발견 + fix: `Program.HandleMenuCommand` 의 `updateConfig` 람다가 `I18n.Load` 를 직접 호출하지 않아 `Settings.Save` 의 mtime self-bump 가 `WM_CONFIG_CHANGED` 를 차단 → I18n 갱신 경로 단절 (v0.9.x 부터 잠재 결함). 람다 안에 `oldLanguage != _config.Language` 비교 + `I18n.Load(_config.Language)` 한 줄 추가. Tier-1 debug + AOT publish 재검증 통과 (0 경고, 4.82 MB). Tier-2 5종 + invariant 6종 재통과. 문서 3건 갱신 (CHANGELOG PR-06 항목에 즉시반영 패치 + 사용자 가시 영향 1건 명시 / dev-notes Tier-3 검증 결과 절 + Fix 절 추가 / 본 §3 ②+④ 문구 정정). | FF merge to main + 브랜치 삭제 |
