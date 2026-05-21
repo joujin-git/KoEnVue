@@ -56,9 +56,13 @@
     <!--
       NativeAOT publish 산출물 KoEnVue.exe 의 SHA256 을 publish/KoEnVue.exe.sha256.txt 로 기록.
       GitHub Releases body 에 그대로 붙여 사용자가 Get-FileHash 로 검증 가능 (G4).
-      Windows-only 빌드라 PowerShell 의존은 안전.
+
+      pwsh (PowerShell 7+) 사용 — windows-latest CI 와 CLAUDE.md 의 dev 환경 모두 표준 탑재.
+      Windows PowerShell 5.1 (`powershell.exe`) 는 GitHub Actions runner 에서 `Get-FileHash` 의
+      module auto-load 가 실패하는 케이스가 관측됨 (run 26219630253, "term not recognized").
+      pwsh 는 builtin 으로 Microsoft.PowerShell.Utility 가 즉시 사용 가능해 회피.
     -->
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Get-FileHash -Algorithm SHA256 '$(PublishDir)KoEnVue.exe' | Format-List Algorithm, Hash | Out-File -Encoding ASCII '$(PublishDir)KoEnVue.exe.sha256.txt'&quot;" />
+    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -Command &quot;Get-FileHash -Algorithm SHA256 '$(PublishDir)KoEnVue.exe' | Format-List Algorithm, Hash | Out-File -Encoding ASCII '$(PublishDir)KoEnVue.exe.sha256.txt'&quot;" />
     <Message Importance="high" Text="SHA256 emitted: $(PublishDir)KoEnVue.exe.sha256.txt" />
   </Target>
 </Project>
