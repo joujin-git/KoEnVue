@@ -1,14 +1,14 @@
 # Improvement Plan — Progress Index
 
 **Last updated**: 2026-05-21
-**Current branch**: feat/pr-00-mutex-abandoned (코드 완료, Tier-1+2 통과, NuGet.config 처분 + 머지 결정 대기)
+**Current branch**: main (idle, PR-00 머지 완료)
 **Next PR**: PR-01
 
 ## Progress matrix
 
 | #  | Title                                   | Status | Branch                          | Risk    | Size | Notes |
 |----|-----------------------------------------|--------|---------------------------------|---------|------|-------|
-| 00 | AbandonedMutex 캐치                     | ✅     | feat/pr-00-mutex-abandoned      | Low     | S    | Tier-1+2 통과. 머지 + NuGet.config 결정 대기 |
+| 00 | AbandonedMutex 캐치                     | ✅     | (merged → main, c4de0bd)        | Low     | S    | Tier-1+2 통과, Tier-3 deadlock 부재 확인 (catch 자체는 race 좁아 미trigger) |
 | 01 | MergeProfile pipeline + WM_THEMECHANGED | ⏳     | feat/pr-01-merge-profile        | Low     | M    | A1+A4+B3+H5 묶음 |
 | 02 | Analyzers + manifest hardening          | ⏳     | feat/pr-02-analyzers-manifest   | Medium  | M    | G2+G3 |
 | 03 | asInvoker migration (BREAKING)          | ⏳     | feat/pr-03-asinvoker            | High    | L    | v0.10.0 후보. CLAUDE.md P5 갱신 |
@@ -67,3 +67,4 @@ PR별 Tier-2 grep 가드 + Tier-3 수동 smoke은 각 `PR-NN-*.md` §3 참조.
 |---|---|---|---|
 | 2026-05-21 | setup | improvement-plan 셋업 완료 (16 파일 + 메모리) | PR-00 시작 |
 | 2026-05-21 | PR-00 | TryAcquireMutex catch 추가 + CHANGELOG + dev-notes. invariant 4종 + Tier-2 grep 통과. NuGet.config(nuget.org) 추가 후 Tier-1 빌드/AOT publish 클린 (4.47 MB exe) | NuGet.config 처분 결정 → 머지 → PR-01 |
+| 2026-05-21 | PR-00 | Tier-3 smoke 실행 — taskkill /f (관리자) + 즉시 재실행 = deadlock 없음. 로그에 WARN 부재 (catch 자체는 race 좁아 미trigger). FF merge to main (3 commits: 8d08611, 28ba7f4, c4de0bd) + 브랜치 삭제 | 새 세션에서 PR-01 시작 |
