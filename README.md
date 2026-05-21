@@ -26,6 +26,18 @@ Windows 한/영 IME 상태 인디케이터 — 드래그 가능한 플로팅 오
 
 첫 공개 릴리스는 **v0.8.9.0** (2026-04-14) 입니다. 이 빌드부터 부팅 시 GitHub Releases 에서 새 버전을 1회 자동 확인해, 새 버전이 있으면 트레이 메뉴 최상단 헤더 라벨이 평소 `KoEnVue v{ver} — GitHub` 에서 `KoEnVue v{cur} → v{new} — 다운로드` 로 자동 전환됩니다(자동 설치는 아니며 사용자가 직접 새 exe 로 교체). 싫으면 `config.json` 에서 `update_check_enabled: false`.
 
+### 다운로드 검증 (SHA256)
+
+KoEnVue 는 무서명 exe 입니다 — Windows SmartScreen 이 "확인되지 않은 게시자" 경고를 띄울 수 있어요. 다운로드한 파일이 GitHub 가 게시한 정본인지 PowerShell 한 줄로 확인할 수 있습니다.
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\KoEnVue.exe
+```
+
+출력의 `Hash` 값이 [Releases](../../releases) 페이지 본문에 첨부된 `KoEnVue.exe.sha256.txt` 의 hex 문자열과 일치하면 다운로드는 변조되지 않았습니다. 비교 대상은 **유지보수자가 직접 빌드해 GitHub Releases 에 첨부한 정본 hash** 입니다 — 본인이 소스에서 다시 빌드한 exe 와는 hash 가 다를 수 있어요 (NativeAOT ILC 가 codegen 단계에서 비결정성을 가져 머신·빌드별로 hash 가 달라짐. C# 컴파일러는 `<Deterministic>true</Deterministic>` 로 결정적이지만 AOT 단계는 아직 보장 안 됨 — [docs/dev-notes/2026-05-21-signing-decision.md](docs/dev-notes/2026-05-21-signing-decision.md) 참고). 정본 hash 와 다운로드 hash 가 불일치하면 다운로드를 중단하고 Issue 로 보고해 주세요.
+
+> EV/OV 코드 사인 인증서는 ROI 가 낮아 도입하지 않습니다. SmartScreen 평판은 다운로드 누적에 따라 자연 학습됩니다. [docs/dev-notes/2026-05-21-signing-decision.md](docs/dev-notes/2026-05-21-signing-decision.md) 에 결정 근거 + 재검토 트리거가 있습니다.
+
 ---
 
 ## 빌드
@@ -51,29 +63,27 @@ dotnet publish -r win-x64 -c Release
 
 ## 릴리즈 (Releasing)
 
-**유지보수자 전용** — 새 릴리스를 내릴 때의 순서입니다. 일반 사용자는 건너뛰세요.
+**유지보수자 전용** — 새 릴리스를 내릴 때의 순서입니다. 일반 사용자는 건너뛰세요. 전체 절차는 **[docs/release-procedure.md](docs/release-procedure.md)** 에 정리돼 있고, 아래는 핵심 요약입니다.
 
-버전 문자열은 **세 곳에서 동일하게** 관리됩니다. 하나라도 빠지면 Windows 파일 속성(PE 헤더) · 런타임 업데이트 체크 값 · 아키텍처 문서가 어긋나므로 **반드시 함께** 수정하세요.
+버전 문자열은 PR-11 D6 이후 [KoEnVue.csproj](KoEnVue.csproj) 의 `<Version>` 하나가 단일 진실원입니다. `Directory.Build.targets` 의 `GenerateVersionConstants` Target 가 빌드 시점에 `obj/.../Version.g.cs` 로 `DefaultConfig.AppVersion` partial 조각을 자동 생성해 PE 헤더 (`AssemblyVersion` / `FileVersion` / `InformationalVersion` 3종) 와 런타임 비교 값이 정합 유지됩니다.
 
-1. **버전 bump (세 파일 동시 수정)**
-   - [App/Config/DefaultConfig.cs](App/Config/DefaultConfig.cs) 의 `AppVersion` 상수 — `UpdateChecker` 가 GitHub `tag_name` 과 비교
-   - [KoEnVue.csproj](KoEnVue.csproj) 의 `<Version>` 요소 — PE 헤더의 `AssemblyVersion` / `FileVersion` / `InformationalVersion` 3종에 박힘 (Windows 파일 속성 → 자세히 탭에서 보임)
-   - [docs/architecture.md](docs/architecture.md) §4 App-specific modules 표의 `App/Config/DefaultConfig.cs` 행에 박힌 `AppVersion = "X.Y.Z.W"` 표기 — 문서 일관성용 (코드 단일 소스의 미러)
-   - 형식: `major.minor.build.revision` (4-part, 예: `0.8.9.0`). `System.Version.TryParse` 가 2~4-part 를 받아들이지만 4-part 로 맞추면 모든 PE 헤더 필드가 동일해져 혼동이 없음
+1. **버전 bump** — csproj `<Version>` 한 줄만 수정. 예: `<Version>0.10.0</Version>`. 형식은 `major.minor.build[.revision]` (2~4-part, `System.Version.TryParse` 가 받음).
 2. **빌드 — 디버그와 릴리스 둘 다**
    ```bash
    dotnet build
    dotnet publish -r win-x64 -c Release
    ```
+   `publish/KoEnVue.exe` 옆에 `KoEnVue.exe.sha256.txt` 가 자동 생성됩니다 (PR-11 G4, `Directory.Build.targets` 의 `EmitSha256` Target).
 3. **GitHub 릴리스 작성** — 웹 UI `Releases → Draft a new release`
-   - Tag: `vX.Y.Z.W` (예: `v0.8.9.0`) — 태그에 `v` 접두어 필수 (`UpdateChecker.NormalizeVersion` 이 벗겨냄)
-   - Title: 자유 (예: `KoEnVue v0.8.9.0`)
-   - Attach: `bin/Release/net10.0-windows/win-x64/publish/KoEnVue.exe`
+   - Tag: `vX.Y.Z[.W]` (예: `v0.10.0`) — 태그에 `v` 접두어 필수 (`UpdateChecker.NormalizeVersion` 이 벗겨냄)
+   - Title: 자유 (예: `KoEnVue v0.10.0`)
+   - Attach: `publish/KoEnVue.exe` + `publish/KoEnVue.exe.sha256.txt`
+   - Body 에 SHA256 hash 값 인용 (사용자가 다운로드 후 `Get-FileHash` 로 비교)
    - **"Set as a pre-release" 체크 해제** — 0.x.x 버전이라고 GitHub 가 자동으로 권장하지만, 체크하면 `release.prerelease=true` 로 `UpdateChecker` 가 건너뛰어 사용자에게 노출되지 않음. 정식 릴리스로 내보낼 때는 반드시 해제
    - Publish release
 4. **검증 (선택)** — 이전 버전 exe 를 실행하면 트레이 메뉴 최상단 헤더 라벨이 `KoEnVue v{old} → v{new} — 다운로드` 로 자동 전환되는지 확인
 
-> PE 헤더의 `InformationalVersion` 에 `+{gitHash}` 자동 접미어가 붙지 않도록 csproj 에 `<IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>` 가 설정되어 있습니다. 태그로 빌드를 식별하므로 해시 중복 불필요.
+> PE 헤더의 `InformationalVersion` 에 `+{gitHash}` 자동 접미어가 붙지 않도록 csproj 에 `<IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>` 가 설정되어 있습니다. 태그로 빌드를 식별하므로 해시 중복 불필요. `<Deterministic>true</Deterministic>` 는 C# 컴파일러 결정성용 — NativeAOT ILC codegen 은 별개로 비결정성을 가지므로 같은 머신에서 publish 를 반복해도 SHA256 이 달라집니다. GitHub Releases 에 첨부된 정본 hash 만 canonical 로 취급해 주세요.
 
 ---
 

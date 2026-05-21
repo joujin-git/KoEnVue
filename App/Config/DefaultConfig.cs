@@ -7,8 +7,14 @@ namespace KoEnVue.App.Config;
 /// 기본 상수값. 코드 전체에서 매직 넘버 대신 이 상수를 참조한다.
 /// config.json에서 오버라이드 가능한 값은 AppConfig 기본값에 정의하고,
 /// 여기에는 코드 레벨 픽셀 오프셋/간격/타이밍 상수만 정의한다.
+///
+/// <para>
+/// PR-11 D6: <c>partial</c> — <c>AppVersion</c> const 는 [Directory.Build.targets](../../Directory.Build.targets)
+/// 의 <c>GenerateVersionConstants</c> Target 가 <c>obj/.../Version.g.cs</c> 로 emit 한
+/// partial 조각에 정의된다. KoEnVue.csproj 의 <c>&lt;Version&gt;</c> 가 단일 진실원.
+/// </para>
 /// </summary>
-internal static class DefaultConfig
+internal static partial class DefaultConfig
 {
     // === 배치 (px, DPI 스케일링 전 기본값) ===
 
@@ -114,17 +120,9 @@ internal static class DefaultConfig
     /// <summary>Mutex 이름: "KoEnVue_{GUID}"</summary>
     public static readonly string MutexName = $"KoEnVue_{AppGuid}";
 
-    /// <summary>
-    /// 현재 앱 버전. UpdateChecker 가 GitHub Releases API 의 tag_name 과 비교한다.
-    /// 새 릴리스 publish 전에 본 상수를 수동으로 올린 뒤 dotnet publish + git tag.
-    /// 형식: <c>major.minor.build[.revision]</c> — <c>System.Version.TryParse</c> 가 받아들이는 2~4-part.
-    /// <para>
-    /// <b>KoEnVue.csproj 의 <c>&lt;Version&gt;</c> 요소와 반드시 동기화</b> — csproj 값은 PE 헤더의
-    /// AssemblyVersion/FileVersion/InformationalVersion 3종에 박히고, 본 상수는 UpdateChecker 전용이다.
-    /// 둘 중 하나만 올리면 바이너리 메타데이터와 런타임 비교 값이 불일치한다.
-    /// </para>
-    /// </summary>
-    public const string AppVersion = "0.9.2.8";
+    // AppVersion 은 Directory.Build.targets / GenerateVersionConstants Target 가 자동 생성하는
+    // obj/.../Version.g.cs (partial DefaultConfig) 에 박힌다. csproj <Version> 만 바꾸면
+    // PE 헤더 (AssemblyVersion/FileVersion/InformationalVersion 3종) 와 본 const 가 한 번에 정합.
 
     /// <summary>UpdateChecker 가 조회할 GitHub 레포 owner.</summary>
     public const string UpdateRepoOwner = "joujin-git";

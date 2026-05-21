@@ -1,0 +1,57 @@
+<Project>
+  <!--
+    PR-11 D6 — Version 단일 진실원.
+    KoEnVue.csproj 의 <Version> 값을 컴파일 시점에 obj/.../Version.g.cs 로 emit 해
+    DefaultConfig.AppVersion const 로 주입. 사람 손이 두 곳을 sync 해야 했던 footgun 제거.
+
+    PR-11 G4 — Release publish 후 SHA256 텍스트 파일 emit.
+    GitHub Releases body 에 손으로 SHA256 복붙하던 절차에서 hash 생성 자동화.
+
+    중요: NativeAOT ILC codegen 은 비결정성을 가져 같은 입력으로 publish 를 반복해도
+    SHA256 이 매번 달라진다 (PR-11 Tier-3 실측). 본 Target 의 산출물 KoEnVue.exe.sha256.txt
+    는 그 publish 시점의 binary 와만 짝이 맞으므로 GitHub Releases 에는 반드시 한 쌍을
+    함께 첨부 + 사용자에게는 "발행본 hash 와 다운로드 hash 비교" 의미만 보장.
+  -->
+
+  <Target Name="GenerateVersionConstants" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <VersionGeneratedFile>$(IntermediateOutputPath)Version.g.cs</VersionGeneratedFile>
+    </PropertyGroup>
+    <!--
+      WriteLinesToFile 은 Lines 항목 하나당 한 줄을 쓴다.
+      MSBuild item 구분자 ';' 는 %3B 로, '"' 는 &quot; 로 이스케이프.
+      WriteOnlyWhenDifferent=true → 매 빌드마다 mtime 가 갱신되지 않아 캐시 친화적.
+    -->
+    <ItemGroup>
+      <_VersionLine Include="// &lt;auto-generated /&gt;" />
+      <_VersionLine Include="// Source: KoEnVue.csproj &lt;Version&gt;. Do not edit. (PR-11 D6)" />
+      <_VersionLine Include="namespace KoEnVue.App.Config%3B" />
+      <_VersionLine Include="internal static partial class DefaultConfig" />
+      <_VersionLine Include="{" />
+      <_VersionLine Include="    public const string AppVersion = &quot;$(Version)&quot;%3B" />
+      <_VersionLine Include="}" />
+    </ItemGroup>
+    <WriteLinesToFile
+      File="$(VersionGeneratedFile)"
+      Lines="@(_VersionLine)"
+      Overwrite="true"
+      WriteOnlyWhenDifferent="true" />
+    <!--
+      Compile item 을 본 Target 안에서 동적 추가 — BeforeTargets=CoreCompile 라 CoreCompile 이
+      읽는 시점에 이미 ItemGroup 에 들어 있다.
+    -->
+    <ItemGroup>
+      <Compile Include="$(VersionGeneratedFile)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="EmitSha256" AfterTargets="Publish" Condition="'$(Configuration)' == 'Release'">
+    <!--
+      NativeAOT publish 산출물 KoEnVue.exe 의 SHA256 을 publish/KoEnVue.exe.sha256.txt 로 기록.
+      GitHub Releases body 에 그대로 붙여 사용자가 Get-FileHash 로 검증 가능 (G4).
+      Windows-only 빌드라 PowerShell 의존은 안전.
+    -->
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Get-FileHash -Algorithm SHA256 '$(PublishDir)KoEnVue.exe' | Format-List Algorithm, Hash | Out-File -Encoding ASCII '$(PublishDir)KoEnVue.exe.sha256.txt'&quot;" />
+    <Message Importance="high" Text="SHA256 emitted: $(PublishDir)KoEnVue.exe.sha256.txt" />
+  </Target>
+</Project>
