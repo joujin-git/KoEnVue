@@ -1,8 +1,8 @@
 # Improvement Plan — Progress Index
 
 **Last updated**: 2026-05-21
-**Current branch**: feat/pr-14-dwm-colorization (PR-14 구현 완료, 사용자 smoke 대기)
-**Next PR**: PR-14 머지 후 PR-03 (BREAKING) 또는 PR-04/05/06/08/09/10/11
+**Current branch**: main (idle, PR-14 머지 완료)
+**Next PR**: PR-03 (BREAKING) 또는 PR-04/05/06/08/09/10/11 자유 선택
 
 ## Progress matrix
 
@@ -22,7 +22,7 @@
 | 11 | Version single-source + SHA256 release  | ⏳     | feat/pr-11-version-signing      | Medium  | L    | D6+G4 |
 | 12 | Documentation alignment                 | ⏳     | feat/pr-12-docs                 | Low     | S    | H1+H2+H3 |
 | 13 | Per-app rendering config wiring         | ✅     | (merged → main, 11c3ec5)        | Medium  | M    | PR-01 Tier-3 발견. Tier-1+2+3 통과. theme/opacity/enabled:false 모두 사용자 가시 확인 |
-| 14 | Win11 accent — DwmGetColorizationColor  | 🚧     | feat/pr-14-dwm-colorization     | Low     | S-M  | PR-01 Tier-3 ④. Tier-1+2 통과. Tier-3 smoke 대기 (Windows 강조색 변경 시 인디 색 즉시 전환) |
+| 14 | Win11 accent — DwmGetColorizationColor  | ✅     | (merged → main, 4818cd2)        | Low     | S-M  | PR-01 Tier-3 ④ 해소. Tier-1+2+3 통과. Windows 강조색 변경 시 인디 색 즉시 전환 가시 확인 |
 
 Legend: ⏳ pending · 🚧 in progress · ✅ merged · ⏸ blocked · ❌ aborted
 Size: S ≤30분 · M 1-2시간 · L 반나절+
@@ -77,3 +77,4 @@ PR별 Tier-2 grep 가드 + Tier-3 수동 smoke은 각 `PR-NN-*.md` §3 참조.
 | 2026-05-21 | PR-13 | Option B 채택 — 메인 스레드에 `ResolveCurrent()` 헬퍼 + `Overlay.Show/UpdateColor` 시그니처 확장 + 18개 렌더 호출처 일괄 전환 + `DisplayMode`/`EventTriggers` 분기도 resolved 기반. Tier-1 debug + clean AOT publish 0 경고 / 0 오류 (4.47 MB). Tier-2 grep 가드 통과 (ResolveCurrent\|ResolveForApp 18 매치, `Animation.TriggerShow.*_config` 0). invariant 4종 0매치. 문서 4건 갱신 | Tier-3 smoke 사용자 검증 후 머지 |
 | 2026-05-21 | PR-13 | Tier-3 수동 smoke 통과 — 사용자 가시 확인 (notepad 다크 / opacity 0.3 / enabled:false). 사용자 1차 config 오타 실패 → 정정 후 재시험 정상. FF merge to main (11c3ec5) + 브랜치 삭제 | 다음 PR 선택 대기 |
 | 2026-05-21 | PR-14 | PR-01 Tier-3 ④ 잔존 결함 해소 PR 신설. `Dwmapi.DwmGetColorizationColor` + `TryGetColorizationRgb` 헬퍼 추가. `ApplySystemTheme` 가 DWM 우선 + `GetSysColor(COLOR_HIGHLIGHT)` 폴백 2단 분기. `WM_DWMCOLORIZATIONCOLORCHANGED = 0x0320` 상수 추가 + WndProc fall-through 머지. Tier-1 debug + clean AOT publish 모두 경고 0 (4.47 MB). Tier-2 grep 가드 4종 통과 (DwmGetColorizationColor Core/ 2, WM_DWMCOLORIZATIONCOLORCHANGED Program.cs 1 + Win32Types.cs 1, TryGetColorizationRgb 1). invariant 4종 0매치. 문서 4건 갱신 | Tier-3 사용자 smoke (강조색 변경 시 인디 색 즉시 전환) 후 머지 |
+| 2026-05-21 | PR-14 | Tier-3 수동 smoke 통과 (사용자 가시 확인 — 강조색 변경 시 인디 색 즉시 전환). FF merge to main (4818cd2) + 브랜치 삭제. PR-01 Tier-3 잔존 결함 전부 해소 | 다음 PR 선택 대기 |
