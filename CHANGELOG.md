@@ -7,7 +7,7 @@
 
 > 다음 릴리스부터는 [Keep a Changelog 한국어 스펙](https://keepachangelog.com/ko/1.1.0/) 표준 헤더 + 짧은 bullet 형식 적용.
 
-## [0.10.0] — 2026-05-21
+## [0.10.0.0] — 2026-05-21
 
 > **BREAKING**: `requireAdministrator` → `asInvoker` 전환. v0.9.x 시절 매 부팅 UAC 프롬프트가 사라지고 `koenvue.log` / `config.json` 경로가 `%LOCALAPPDATA%\KoEnVue\` 로 자동 fallback 됩니다. 자세한 영향과 마이그레이션은 아래 "변경 (BREAKING)" 절.
 >
