@@ -27,8 +27,12 @@ internal static class Overlay
 
     private static LayeredOverlayBase _engine = null!;
 
-    // Stage 3-A: 현재 AppConfig 캐시. Initialize/HandleConfigChanged 시점에 주입되며
-    // public 메서드 내부에서 BuildStyle을 통해 OverlayStyle로 합성된다.
+    // Stage 3-A: 현재 AppConfig 캐시. Initialize/HandleConfigChanged 시점에 주입.
+    // PR-13 이후로 렌더 경로(<see cref="Show"/>, <see cref="UpdateColor"/>) 는 호출자가
+    // per-app resolved AppConfig 를 명시 인자로 전달하므로 이 필드를 직접 읽지 않는다.
+    // 잔존 사용처: <see cref="HandleDpiChanged"/> 의 캐시 재빌드 (글로벌 기준), 드래그
+    // 경로(<see cref="HandleMoving"/>), 기본 위치 계산(<see cref="GetDefaultPosition"/>) 등
+    // per-app 으로 갈래야 갈 길 없는 글로벌-only 경로.
     private static AppConfig _config = null!;
 
     // CAPS LOCK 토글 상태. Program.cs의 메인 스레드 WM_TIMER 폴러가 SetCapsLock으로 주입한다.
@@ -65,17 +69,22 @@ internal static class Overlay
     /// <summary>
     /// 지정 좌표에 인디케이터 렌더 + UpdateLayeredWindow.
     /// 좌표가 속한 모니터 DPI로 리소스 갱신.
+    /// PR-13 이후 <paramref name="config"/> 는 호출자가 per-app resolved AppConfig 를
+    /// 전달한다 (글로벌 _config 대신) — `app_profiles` 의 시각 필드 override 가 본 렌더까지 도달.
     /// </summary>
-    public static void Show(int x, int y, ImeState state)
+    public static void Show(int x, int y, ImeState state, AppConfig config)
     {
         _engine.Show(x, y);
-        _engine.Render(BuildStyle(_config, state));
+        _engine.Render(BuildStyle(config, state));
     }
 
-    /// <summary>즉시 색상 변경 (비트맵 갱신 + premultiply).</summary>
-    public static void UpdateColor(ImeState state)
+    /// <summary>
+    /// 즉시 색상 변경 (비트맵 갱신 + premultiply).
+    /// PR-13 이후 <paramref name="config"/> 인자 명시 — per-app resolved 가 렌더까지 도달.
+    /// </summary>
+    public static void UpdateColor(ImeState state, AppConfig config)
     {
-        _engine.Render(BuildStyle(_config, state));
+        _engine.Render(BuildStyle(config, state));
     }
 
     /// <summary>페이드 프레임: SourceConstantAlpha만 변경.</summary>

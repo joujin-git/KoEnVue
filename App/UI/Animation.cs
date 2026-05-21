@@ -14,8 +14,8 @@ namespace KoEnVue.App.UI;
 /// 1. AppConfig → <see cref="AnimationConfig"/> 변환
 /// 2. ImeState/NonKoreanImeMode 분기 (Hide/Dim 판정) — Core에 누출되지 않도록 앱 레이어에서 처리
 /// 3. Overlay 타입 접근 (엔진은 Overlay를 모른다 — 콜백으로 위임받음)
-/// 4. <see cref="Overlay.Show(int, int, ImeState)"/> 및 <see cref="Overlay.UpdateColor(ImeState)"/> 호출
-///    (ImeState가 필요한 호출은 파사드 책임)
+/// 4. <see cref="Overlay.Show(int, int, ImeState, AppConfig)"/> 및 <see cref="Overlay.UpdateColor(ImeState, AppConfig)"/> 호출
+///    (ImeState 와 per-app resolved AppConfig 가 필요한 호출은 파사드 책임)
 /// </para>
 ///
 /// <para>
@@ -87,7 +87,8 @@ internal static class Animation
         var (prevX, prevY) = Overlay.GetLastPosition();
 
         // 렌더링 (ImeState 필요 — 파사드 책임)
-        Overlay.Show(x, y, state);
+        // PR-13: per-app resolved AppConfig 를 명시 전달 — `Overlay._config` 글로벌 의존 제거.
+        Overlay.Show(x, y, state, config);
 
         // 상태 머신 전이 — wasHidden 리턴으로 Hidden→visible 전이 여부 판정
         bool wasHidden = _animator.TriggerShow(prevX, prevY, x, y, highlightTrigger: imeChanged);
@@ -101,7 +102,7 @@ internal static class Animation
         else if (imeChanged)
         {
             // 비-Hidden 분기에서 imeChanged면 UpdateColor로 비트맵 갱신 (원본 Holding/Idle/FadingOut 경로).
-            Overlay.UpdateColor(state);
+            Overlay.UpdateColor(state, config);
         }
     }
 

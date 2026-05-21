@@ -383,18 +383,20 @@ internal static partial class Program
         _lastImeState = newState;
         Logger.Debug($"IME state: {newState}");
 
-        // 트레이 아이콘은 항상 IME 상태 반영
+        // 트레이 아이콘은 항상 IME 상태 반영 — 트레이는 글로벌 영역 (per-app 비대상)
         if (_config.TrayEnabled)
             Tray.UpdateState(newState, _config);
 
         if (_config.UserHidden) return;
         if (_lastForegroundHwnd == IntPtr.Zero) return;
 
-        if (_config.DisplayMode == DisplayMode.Always || _config.EventTriggers.OnImeChange)
+        // PR-13: DisplayMode / EventTriggers / 렌더 인자 모두 per-app resolved 사용.
+        AppConfig resolved = ResolveCurrent();
+        if (resolved.DisplayMode == DisplayMode.Always || resolved.EventTriggers.OnImeChange)
         {
             _indicatorVisible = true;
             var (x, y) = GetAppPosition();
-            Animation.TriggerShow(x, y, newState, _config, imeChanged: true);
+            Animation.TriggerShow(x, y, newState, resolved, imeChanged: true);
         }
     }
 
@@ -403,11 +405,12 @@ internal static partial class Program
         if (_config.UserHidden) return;
         if (_lastForegroundHwnd == IntPtr.Zero) return;
 
-        if (_config.DisplayMode == DisplayMode.Always || _config.EventTriggers.OnFocusChange)
+        AppConfig resolved = ResolveCurrent();
+        if (resolved.DisplayMode == DisplayMode.Always || resolved.EventTriggers.OnFocusChange)
         {
             _indicatorVisible = true;
             var (x, y) = GetAppPosition();
-            Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
+            Animation.TriggerShow(x, y, _lastImeState, resolved, imeChanged: false);
         }
     }
 
@@ -435,7 +438,8 @@ internal static partial class Program
             _indicatorVisible = true;
             var (x, y) = GetAppPosition();
             Logger.Debug($"PositionUpdated: process={_currentProcessName}, pos=({x},{y}), saved={_config.IndicatorPositions.Count}");
-            Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
+            // PR-13: per-app resolved (theme/색/투명도/폰트/라벨 등 시각 override 반영)
+            Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
         }
         // 같은 앱 내 윈도우 이동 — 플로팅 인디케이터는 위치 고정이므로 무시
     }
@@ -474,7 +478,7 @@ internal static partial class Program
         if (DefaultConfig.IsSystemInputProcess(_currentProcessName))
         {
             Logger.Debug($"Skip saving indicator position for system input process: {_currentProcessName}");
-            Overlay.Show(x, y, _lastImeState);
+            Overlay.Show(x, y, _lastImeState, ResolveCurrent());
             return;
         }
 
@@ -522,7 +526,28 @@ internal static partial class Program
             }
         }
         // 새 위치의 모니터 DPI로 리소스 재생성
-        Overlay.Show(x, y, _lastImeState);
+        Overlay.Show(x, y, _lastImeState, ResolveCurrent());
+    }
+
+    /// <summary>
+    /// 현재 포그라운드 앱에 대한 per-app resolved AppConfig 반환 (PR-13).
+    /// 프로필이 없거나 매치 실패 시 글로벌 <c>_config</c> 그대로.
+    /// <para>
+    /// <see cref="Settings.ResolveForApp"/> 가 <c>enabled:false</c> 프로필에 대해 null 을
+    /// 반환하지만, 그 케이스는 감지 스레드의 <see cref="TryHandleFilter"/> 가 한 틱 먼저
+    /// 인디 숨김 메시지를 보내므로 본 메서드를 호출하는 렌더 경로에는 도달하지 않는다.
+    /// 짧은 race window 방어 차원에서 null 폴백을 글로벌 <c>_config</c> 로 처리한다.
+    /// </para>
+    /// <para>
+    /// 호출 비용: <see cref="Settings.ResolveForApp"/> 의 LRU 캐시가 같은 프로세스명 키에서
+    /// 즉시 hit 한다. 첫 호출만 JSON merge + Validate + Theme 파이프라인 (수 ms) 통과.
+    /// 캐시 무효화는 <see cref="HandleConfigChanged"/> / <see cref="HandleSettingChange"/> 에서.
+    /// </para>
+    /// </summary>
+    private static AppConfig ResolveCurrent()
+    {
+        if (_lastForegroundHwnd == IntPtr.Zero) return _config;
+        return Settings.ResolveForApp(_config, _lastForegroundHwnd) ?? _config;
     }
 
     /// <summary>
@@ -630,12 +655,13 @@ internal static partial class Program
         I18n.Load(_config.Language);
         Settings.ClearProfileCache();
         ImeStatus.UpdateDetectionMethod(_config.DetectionMethod);
+        // 글로벌 기준으로 엔진 캐시 재빌드 — 다음 per-app TriggerShow 가 style 차이 시 추가 무효화.
         Overlay.HandleConfigChanged(_config);
-        // 인디가 가시 상태라면 애니메이터 config 갱신 + 새 alpha/크기/색상 즉시 반영
+        // 인디가 가시 상태라면 애니메이터 config 갱신 + 새 alpha/크기/색상 즉시 반영 (PR-13: per-app)
         if (!_config.UserHidden && _indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
         {
             var (x, y) = GetAppPosition();
-            Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
+            Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
         }
         if (_config.TrayEnabled)
             Tray.UpdateState(_lastImeState, _config);
@@ -679,7 +705,7 @@ internal static partial class Program
 
         _indicatorVisible = true;
         var (x, y) = GetAppPosition();
-        Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
+        Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
     }
 
     /// <summary>
@@ -723,7 +749,7 @@ internal static partial class Program
         Logger.Debug($"CapsLock: {(current ? "ON" : "OFF")}");
         Overlay.SetCapsLock(current);
         if (_indicatorVisible)
-            Overlay.UpdateColor(_lastImeState);
+            Overlay.UpdateColor(_lastImeState, ResolveCurrent());
     }
 
     private static void HandleTrayCallback(IntPtr lParam)
@@ -786,12 +812,12 @@ internal static partial class Program
         }
         else
         {
-            // 표시 전환: 현재 포그라운드 앱에 즉시 인디 재표시
+            // 표시 전환: 현재 포그라운드 앱에 즉시 인디 재표시 (PR-13: per-app)
             if (_lastForegroundHwnd != IntPtr.Zero)
             {
                 _indicatorVisible = true;
                 var (x, y) = GetAppPosition();
-                Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
+                Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
             }
         }
     }
@@ -813,14 +839,15 @@ internal static partial class Program
                 }
                 // 인디가 가시 상태라면 애니메이터 config 갱신 + 새 alpha/크기/색상이 즉시 반영되도록
                 // TriggerShow로 전체 갱신. TriggerShow는 UpdateConfig + Overlay.Show를 포함한다.
+                // PR-13: per-app resolved 로 갱신해 메뉴 변경 시점부터 프로필 시각 override 도 즉시 반영.
                 else if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
                 {
                     var (x, y) = GetAppPosition();
-                    Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
+                    Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
                 }
                 else if (_indicatorVisible)
                 {
-                    Overlay.UpdateColor(_lastImeState);
+                    Overlay.UpdateColor(_lastImeState, ResolveCurrent());
                 }
                 if (_config.TrayEnabled)
                     Tray.UpdateState(_lastImeState, _config);
@@ -842,7 +869,7 @@ internal static partial class Program
         if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
         {
             var (x, y) = GetAppPosition();
-            Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
+            Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
         }
     }
 
@@ -858,10 +885,12 @@ internal static partial class Program
             Overlay.HandleConfigChanged(_config);
         }
 
+        // PR-13: 글로벌 재적용 후 per-app resolved 로 렌더 — 프로필이 theme=system 상속 시
+        //         프로필 색상 6쌍이 새 시스템 색으로 재계산된 인스턴스로 갱신된다.
         if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
         {
             var (x, y) = GetAppPosition();
-            Animation.TriggerShow(x, y, _lastImeState, _config, imeChanged: false);
+            Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
         }
     }
 

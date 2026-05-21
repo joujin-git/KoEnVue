@@ -83,4 +83,6 @@
 
 ## 7. 세션 진행 로그
 
-(empty)
+| Date | Action | Result |
+|---|---|---|
+| 2026-05-21 | Option B (메인 스레드 ResolveForApp 재호출) 채택. `Program.cs` 에 `ResolveCurrent()` 정적 헬퍼 추가 — `_lastForegroundHwnd != Zero` 면 `Settings.ResolveForApp(_config, _lastForegroundHwnd) ?? _config`, 아니면 글로벌. `Overlay.Show(int, int, ImeState, AppConfig)` + `Overlay.UpdateColor(ImeState, AppConfig)` 시그니처 확장 (글로벌 `Overlay._config` 의존을 렌더 경로에서 제거). `Animation.TriggerShow` 가 `config` 인자를 `Overlay.Show` / `Overlay.UpdateColor` 로 forward. Program.cs 의 11개 메서드(HandleImeStateChanged / HandleFocusChanged / HandlePositionUpdated / HandleConfigChanged / HandleActivateRequest / HandleCapsLockTimer / HandleDisplayChange / HandleSettingChange / ApplyUserHiddenTransition / HandleMenuCommand updateConfig lambda / HandleOverlayDragEnd) 의 18개 렌더 호출이 `_config` → `ResolveCurrent()` 로 전환. `HandleImeStateChanged` / `HandleFocusChanged` 의 `DisplayMode` / `EventTriggers.OnImeChange` / `EventTriggers.OnFocusChange` 평가도 resolved 기반 | Tier-1 debug build clean, clean AOT publish clean (4.47 MB, +512 bytes 노이즈). Tier-2 grep: ResolveCurrent\|ResolveForApp in Program.cs = 18 (spec: 6+); `Animation.TriggerShow.*_config` in Program.cs = 0. invariant 4종 0매치. 문서 4건 갱신: CHANGELOG / PRD §5.4 (미배선 절 → 실효 범위 절로 통합 + 글로벌-only 키 목록 신설) / implementation-notes.md (프로필 머지 파이프라인 §"미배선" → §"메인 스레드 ResolveCurrent" 로 갱신) / dev-notes/2026-05-21-profile-pipeline-completion.md (§미배선 절 상단에 PR-13 머지 완료 notice 추기) |

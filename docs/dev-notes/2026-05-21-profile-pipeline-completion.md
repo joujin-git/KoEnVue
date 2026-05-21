@@ -41,6 +41,8 @@
 
 ## 미배선 — 프로필 시각 override 가 렌더링까지 도달하지 않음 (Tier-3 ② 의 근본 원인)
 
+> **후속 PR 처리 완료 (PR-13, 2026-05-21)** — 메인 스레드에 `ResolveCurrent()` 정적 헬퍼를 추가해 `Settings.ResolveForApp(_config, _lastForegroundHwnd)` 를 LRU 캐시 hit 로 재호출하고, `Animation.TriggerShow` / `Overlay.Show` / `Overlay.UpdateColor` 시그니처가 `AppConfig` 를 명시 인자로 받도록 확장. 18개 렌더 호출처가 `_config` → `ResolveCurrent()` 로 일괄 전환. `HandleImeStateChanged` / `HandleFocusChanged` 의 `DisplayMode` / `EventTriggers` 평가도 `resolved` 기반으로. 본 §"미배선" 절은 PR-13 머지 시점부터 history 항목이며, 현재 상태는 [docs/implementation-notes.md](../implementation-notes.md) §"프로필 머지 파이프라인" 의 "메인 스레드 — `ResolveCurrent()` 헬퍼로 렌더 경로까지 도달" 단락 참조. PR-13 의 spec / Tier-3 smoke 결과는 [docs/improvement-plan/PR-13-per-app-rendering.md](../improvement-plan/PR-13-per-app-rendering.md). 아래 분석은 PR-01 머지 시점의 결함 추적을 위한 기록으로 보존.
+
 ### 추적
 
 `Settings.ResolveForApp(global, hwnd)` 는 감지 스레드의 `TryHandleFilter` 안에서 호출되어 `resolved` AppConfig 를 만든다. 이 `resolved` 는 같은 틱 안에서 다음 3 영역에만 전달된다:
