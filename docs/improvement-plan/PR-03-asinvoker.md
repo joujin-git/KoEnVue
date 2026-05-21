@@ -1,4 +1,4 @@
-# PR-03: asInvoker migration (BREAKING — v0.10.0)
+# PR-03: asInvoker migration (BREAKING — v0.9.3.0)
 
 **Status**: ⏳ pending
 **Branch**: feat/pr-03-asinvoker
@@ -68,7 +68,7 @@
 ### Tier 3 — 수동 smoke (필수, 다중 시나리오)
 - [ ] **시나리오 A**: 정상 사용자 폴더(예: `%USERPROFILE%\Desktop\KoEnVue\`)에서 부팅 — UAC 프롬프트 없음, 트레이 정상, config.json 같은 폴더에 생성
 - [ ] **시나리오 B**: `Program Files`(`C:\Program Files\KoEnVue\`)에서 부팅 — UAC 없음, write 실패 후 `%LOCALAPPDATA%\KoEnVue\config.json`에 생성
-- [ ] **시나리오 C**: 기존 사용자가 v0.9.x에서 v0.10.0 업그레이드 — 기존 `config.json`이 BaseDirectory에 있으면 그대로 사용
+- [ ] **시나리오 C**: 기존 사용자가 v0.9.x에서 v0.9.3.0 업그레이드 — 기존 `config.json`이 BaseDirectory에 있으면 그대로 사용
 - [ ] **시나리오 D**: schtasks 시작 프로그램 등록 — UAC 없이 가능, task가 `LeastPrivilege`로 실행, 로그인 시 자동 시작 확인
 - [ ] **시나리오 E**: `config.json`에 `"log_file_path": "C:\\Windows\\evil.log"` 설정 → sanitize 후 default fallback + warning 로그
 - [ ] **시나리오 F**: schtasks XML 일시 파일이 `Path.GetRandomFileName()` 사용 확인
@@ -83,7 +83,7 @@
 ## 5. 롤백 절차
 
 - **부분 revert 가능**: app.manifest만 revert해도 동작. 단 schtasks XML 변경은 별도 revert 필요.
-- **데이터 영향**: 기존 사용자의 schtasks task가 RunLevel 변경됨. v0.10.0 → v0.9.x 다운그레이드 시 사용자가 직접 schtasks `/delete` + 재등록 필요.
+- **데이터 영향**: 기존 사용자의 schtasks task가 RunLevel 변경됨. v0.9.3.0 → v0.9.x 다운그레이드 시 사용자가 직접 schtasks `/delete` + 재등록 필요.
 - **CHANGELOG**: BREAKING 명시 필수.
 
 ## 6. 세션 진행 로그

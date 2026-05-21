@@ -1,4 +1,4 @@
-# Release Procedure — v0.10.0 이후
+# Release Procedure — v0.9.3.0 이후
 
 **유지보수자 전용.** 일반 사용자는 [README.md](../README.md) 의 다운로드 섹션을 보세요. 본 문서는 PR-11 (Version 단일 진실원 + SHA256 release) 머지 후 절차입니다.
 
@@ -15,12 +15,12 @@
 **한 곳만 수정합니다** — [KoEnVue.csproj](../KoEnVue.csproj) 의 `<Version>` 요소.
 
 ```xml
-<Version>0.10.0.0</Version>
+<Version>0.9.3.0</Version>
 ```
 
 형식: **`major.minor.build.revision` 4-part 필수** (본 프로젝트 컨벤션). 모든 PE 헤더 필드 (`AssemblyVersion` / `FileVersion` / `InformationalVersion`) 가 동일 4-part 로 박혀 Windows 탐색기 "자세히" 탭에서 혼동 없음. 빌드 시점에 [Directory.Build.targets](../Directory.Build.targets) 의 `GenerateVersionConstants` Target 가 `obj/.../Version.g.cs` 로 `DefaultConfig.AppVersion` partial 조각을 자동 생성하고, PE 헤더 3종도 같은 값에서 derive 합니다.
 
-> `System.Version.TryParse` 는 2-part `0.10` 도 받아들이지만 그러면 PE 헤더에 `0.10.0.0` 으로 0-padding 돼 csproj 값과 사용자 가시 값이 어긋납니다. 4-part 로 명시.
+> `System.Version.TryParse` 는 2-part `0.10` 도 받아들이지만 그러면 PE 헤더에 `0.9.3.0` 으로 0-padding 돼 csproj 값과 사용자 가시 값이 어긋납니다. 4-part 로 명시.
 
 **v0.9.x 시절 절차의 변화**: [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) 의 `AppVersion` const + [docs/architecture.md](architecture.md) 의 미러 표기를 손으로 sync 하던 footgun 이 사라졌습니다 (PR-11 D6).
 
@@ -51,14 +51,14 @@ cat bin/Release/net10.0-windows/win-x64/publish/KoEnVue.exe.sha256.txt
 **중요 — 3단계 publish 결과물 그대로 첨부**. NativeAOT 비결정성 때문에 재빌드하면 SHA256 이 바뀌어 사용자 검증이 실패합니다.
 
 ```bash
-git tag vX.Y.Z.W          # 예: git tag v0.10.0.0 (4-part)
+git tag vX.Y.Z.W          # 예: git tag v0.9.3.0.0 (4-part)
 git push origin main      # main 푸시 → GitHub Actions 트리거
 git push origin vX.Y.Z.W  # 태그 푸시
 ```
 
 **GitHub 웹 UI** — `Releases → Draft a new release`:
 
-- **Choose a tag**: `vX.Y.Z.W` (방금 푸시한 태그). 접두 `v` 필수 — [UpdateChecker.NormalizeVersion](../App/Update/UpdateChecker.cs) 가 벗겨냅니다. 4-part 컨벤션 (`v0.10.0.0` 등).
+- **Choose a tag**: `vX.Y.Z.W` (방금 푸시한 태그). 접두 `v` 필수 — [UpdateChecker.NormalizeVersion](../App/Update/UpdateChecker.cs) 가 벗겨냅니다. 4-part 컨벤션 (`v0.9.3.0.0` 등).
 - **Release title**: `KoEnVue vX.Y.Z.W` 또는 자유 텍스트.
 - **Describe**: CHANGELOG 의 해당 버전 섹션을 그대로 복붙. 본문 마지막에 SHA256 hash 인용:
   ```
@@ -80,7 +80,7 @@ git push origin vX.Y.Z.W  # 태그 푸시
 이전 버전 exe 를 한 번 실행:
 
 ```bash
-.\KoEnVue.exe   # v0.10.x-1
+.\KoEnVue.exe   # 이전 버전 (예: v0.9.2.x)
 ```
 
 5~10 초 후 트레이 메뉴 최상단 헤더 라벨이 `KoEnVue v{old} → v{new} — 다운로드` 로 자동 전환되면 [UpdateChecker](../App/Update/UpdateChecker.cs) 가 새 릴리스를 정상 감지한 것.

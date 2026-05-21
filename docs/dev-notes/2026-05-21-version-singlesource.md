@@ -54,4 +54,4 @@ ItemGroup 의 `<_VersionLine Include="    public const ..." />` 에서 leading 4
 ## 향후
 
 - 버전 bump 절차는 [docs/release-procedure.md §2](../release-procedure.md) 가 단일 진실원. csproj 한 줄만 수정.
-- 만약 release-procedure 가 손으로 sync 해야 하는 다른 버전 표기 (예: docs 어딘가 박힌 "v0.10.0") 가 생기면 본 generator 패턴을 확장하는 대신 docs 측을 "참조" (예: "현재 stable: latest GitHub release") 표기로 바꾸는 게 옳다 — generated docs 는 generator 인프라 비용 대비 이득이 적음.
+- 만약 release-procedure 가 손으로 sync 해야 하는 다른 버전 표기 (예: docs 곳곳에 박힌 특정 버전 문자열) 가 생기면 본 generator 패턴을 확장하는 대신 docs 측을 "참조" (예: "현재 stable: latest GitHub release") 표기로 바꾸는 게 옳다 — generated docs 는 generator 인프라 비용 대비 이득이 적음. 실제로 v0.9.3.0 릴리스 직전 docs 14곳에서 잘못된 버전 표기 (`v0.10.0` 로 가정한 흔적) 를 일괄 정정해야 했던 사례가 그 정확한 증거.

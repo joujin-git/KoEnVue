@@ -8,7 +8,7 @@
     </security>
   </trustInfo>
   <!--
-    asInvoker — PR-03 (v0.10.0) 에서 이전 admin-elevation 매니페스트에서 전환. 본 앱은 인디케이터 렌더링,
+    asInvoker — PR-03 (v0.9.3.0) 에서 이전 admin-elevation 매니페스트에서 전환. 본 앱은 인디케이터 렌더링,
     IME 감지, WinEventHook, WTSRegisterSessionNotification, schtasks /sc onlogon (LeastPrivilege),
     config.json write 모두 사용자 권한으로 충분하다. asInvoker 채택으로 매 부팅 UAC 프롬프트가 사라지고
     Admin 토큰을 전제한 보안 표면(write-anywhere log path, schtasks symlink, Admin-elevated notepad)

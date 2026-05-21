@@ -20,7 +20,7 @@ Windows 한/영 IME 상태 인디케이터 — 드래그 가능한 플로팅 오
 
 ## 다운로드
 
-[Releases](../../releases) 에서 `KoEnVue.exe` 를 받아 원하는 폴더에 두고 실행하면 됩니다. Windows 10/11 x64. v0.10.0 부터 관리자 권한이 필요 없습니다 (`app.manifest asInvoker`) — UAC 프롬프트 없이 바로 실행됩니다.
+[Releases](../../releases) 에서 `KoEnVue.exe` 를 받아 원하는 폴더에 두고 실행하면 됩니다. Windows 10/11 x64. v0.9.3.0 부터 관리자 권한이 필요 없습니다 (`app.manifest asInvoker`) — UAC 프롬프트 없이 바로 실행됩니다.
 
 **권장 설치 위치**: `%USERPROFILE%` 하위(예: 바탕화면, 문서 폴더), 또는 USB 같은 사용자가 쓰기 가능한 위치. `Program Files` 처럼 사용자 쓰기 불가 위치에 두면 `config.json` 과 `koenvue.log` 가 자동으로 `%LOCALAPPDATA%\KoEnVue\` 로 fallback 합니다(완전 포터블 시나리오를 원하면 user-writable 위치 권장).
 
@@ -67,7 +67,7 @@ dotnet publish -r win-x64 -c Release
 
 버전 문자열은 PR-11 D6 이후 [KoEnVue.csproj](KoEnVue.csproj) 의 `<Version>` 하나가 단일 진실원입니다. `Directory.Build.targets` 의 `GenerateVersionConstants` Target 가 빌드 시점에 `obj/.../Version.g.cs` 로 `DefaultConfig.AppVersion` partial 조각을 자동 생성해 PE 헤더 (`AssemblyVersion` / `FileVersion` / `InformationalVersion` 3종) 와 런타임 비교 값이 정합 유지됩니다.
 
-1. **버전 bump** — csproj `<Version>` 한 줄만 수정. 예: `<Version>0.10.0</Version>`. 형식은 `major.minor.build[.revision]` (2~4-part, `System.Version.TryParse` 가 받음).
+1. **버전 bump** — csproj `<Version>` 한 줄만 수정. 예: `<Version>0.9.3.0</Version>`. 형식은 `major.minor.build.revision` **4-part 필수** (본 프로젝트 컨벤션 — PE 헤더 3종 정합).
 2. **빌드 — 디버그와 릴리스 둘 다**
    ```bash
    dotnet build
@@ -75,8 +75,8 @@ dotnet publish -r win-x64 -c Release
    ```
    `publish/KoEnVue.exe` 옆에 `KoEnVue.exe.sha256.txt` 가 자동 생성됩니다 (PR-11 G4, `Directory.Build.targets` 의 `EmitSha256` Target).
 3. **GitHub 릴리스 작성** — 웹 UI `Releases → Draft a new release`
-   - Tag: `vX.Y.Z[.W]` (예: `v0.10.0`) — 태그에 `v` 접두어 필수 (`UpdateChecker.NormalizeVersion` 이 벗겨냄)
-   - Title: 자유 (예: `KoEnVue v0.10.0`)
+   - Tag: `vX.Y.Z[.W]` (예: `v0.9.3.0`) — 태그에 `v` 접두어 필수 (`UpdateChecker.NormalizeVersion` 이 벗겨냄)
+   - Title: 자유 (예: `KoEnVue v0.9.3.0`)
    - Attach: `publish/KoEnVue.exe` + `publish/KoEnVue.exe.sha256.txt`
    - Body 에 SHA256 hash 값 인용 (사용자가 다운로드 후 `Get-FileHash` 로 비교)
    - **"Set as a pre-release" 체크 해제** — 0.x.x 버전이라고 GitHub 가 자동으로 권장하지만, 체크하면 `release.prerelease=true` 로 `UpdateChecker` 가 건너뛰어 사용자에게 노출되지 않음. 정식 릴리스로 내보낼 때는 반드시 해제

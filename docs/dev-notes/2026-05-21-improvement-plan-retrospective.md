@@ -8,7 +8,7 @@
 
 ## 0. 전/후 비교 한 줄 요약
 
-| 축 | 전 (v0.9.x) | 후 (v0.10.0 후보) |
+| 축 | 전 (v0.9.x) | 후 (v0.9.3.0 후보) |
 |---|---|---|
 | **보안 토큰** | `requireAdministrator` (매 부팅 UAC) | `asInvoker` + `%LOCALAPPDATA%` fallback |
 | **테스트 / CI** | 0개 / 0개 | xUnit 40/40 + GitHub Actions windows-latest |
@@ -69,7 +69,7 @@
 | `OverlayAnimator` 의 fade/hold/highlight/slide 4 트랙 분해 (PR-08 C5) | 공유 상태 `_phase` / `_currentAlpha` + `TriggerShow` 분기 타이밍 의존이 강해 분해 시 사실상 single-class fragmentation. dev-notes 2 개의 fragile 영역 지목. | 타이머 mock 도입 + 픽셀-단위 비교 도구 마련 + 600줄 재돌파. [docs/dev-notes/2026-05-21-animator-decomposition-deferral.md](2026-05-21-animator-decomposition-deferral.md) 참고 |
 | EV/OV 코드 사인 (PR-11 G4) | 연간 $200~700 + 발급 절차 + 평판 학습 필요. 무서명 + SHA256 게시로 변조 검증만 보장. | (1) 다운로드 수 1,000+/년, (2) 잘 알려진 AV 가 false positive 분류, (3) 기업/학교 환경 배포 요청, (4) 유료화. [2026-05-21-signing-decision.md](2026-05-21-signing-decision.md) §재검토 트리거 |
 | 인디케이터 UIA + 글로벌 핫키 (H4 부분) | 채택한 부분 (다이얼로그 keyboard nav + UIA 라벨 PR-07, 고대비 감지 PR-05) 외 인디 UIA / 글로벌 핫키는 사용자 요구 부재. | 접근성 사용자 보고 또는 keyboard-only 사용 시나리오 명시 요청 |
-| CHANGELOG 기존 항목 → Keep a Changelog 표준 재작성 | 13-PR 의 사후 단락형 기록은 정보 밀도가 높아 표준 형식 (짧은 bullet) 로 압축 시 손실. | v0.10.0 후 새 릴리스부터 표준 적용 — 기존 보존 |
+| CHANGELOG 기존 항목 → Keep a Changelog 표준 재작성 | 13-PR 의 사후 단락형 기록은 정보 밀도가 높아 표준 형식 (짧은 bullet) 로 압축 시 손실. | v0.9.3.0 후 새 릴리스부터 표준 적용 — 기존 보존 |
 | README config 표를 전체 84 키로 확장 | UX 부담 — 신규 사용자에게 한 화면 분량의 표는 압도적. | 별 파일 `docs/config-reference.md` 분리 (PR-12) — README 는 13 키만 |
 | NativeAOT ILC deterministic 모드 (PR-11) | 현재 ILC 가 노출 안 함. C# 컴파일러 deterministic 만으로는 부족. | .NET 11+ 또는 ILC 에 deterministic flag 추가 시 README/release-procedure 의 "정본 hash" → "재현 가능 hash" 강화 |
 
@@ -77,7 +77,7 @@
 
 본 13-PR 의 범위 밖이지만, 본 작업 중 인접 가능성으로 관찰된 항목 — 우선순위는 사용자 가시 효과 + 회귀 위험으로 정렬:
 
-1. **v0.10.0 릴리스 cut**: 본 13-PR 의 변경 누적 + asInvoker BREAKING 을 정식 태그 + GitHub Releases 본문에 SHA256 첨부. [docs/release-procedure.md](../release-procedure.md) 절차 따름.
+1. **v0.9.3.0 릴리스 cut**: 본 13-PR 의 변경 누적 + asInvoker BREAKING 을 정식 태그 + GitHub Releases 본문에 SHA256 첨부. [docs/release-procedure.md](../release-procedure.md) 절차 따름.
 2. **`app_profiles` GUI 편집기**: 현재 config.json 직접 편집만 가능. Settings 다이얼로그에 "앱별 프로필" 섹션 추가 — 프로세스명 / 매칭 키 / override 6 키 (theme/색상/투명도/위치) 최소 노출.
 3. **글로벌 핫키 (Win+Shift+K 같은)**: 인디 토글 + 강제 표시. `RegisterHotKey` Win32 API. v0.9.x 부터 사용자 요구 잠재.
 4. **CleanupDialog 양방향 정렬**: 현재 알파벳 정렬 고정. 사용 빈도순 / 최근 사용순 옵션. (`indicator_positions` dict 가 입력 → 정렬 키만 추가)
@@ -87,9 +87,9 @@
 
 ## 6. 작업 완료 후 후속 정리 (이 PR 머지 후)
 
-PR-12 (본 PR) 머지 + v0.10.0 릴리스 후:
+PR-12 (본 PR) 머지 + v0.9.3.0 릴리스 후:
 
 1. ✅ `docs/improvement-plan/` 디렉토리 **보존** — 미래의 retrospective 참조 + PR-NN-*.md 명세는 self-contained 한 작업 단위 사례집
 2. ⏳ `memory/improvement-plan.md` 메모리 **삭제** (사용자가 새 메모리로 대체 또는 다음 작업 컨텍스트로 전환할 때)
 3. ⏳ README `프로젝트 마일스톤` 또는 유사 섹션에 본 retrospective 링크 (선택)
-4. ⏳ v0.10.0 태그 + GitHub Release (asInvoker BREAKING 명시 + SHA256 첨부 — PR-11 산출물 활용)
+4. ⏳ v0.9.3.0 태그 + GitHub Release (asInvoker BREAKING 명시 + SHA256 첨부 — PR-11 산출물 활용)

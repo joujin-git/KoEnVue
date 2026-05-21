@@ -32,7 +32,7 @@ internal static class PortablePath
     /// <summary>
     /// 활성 <c>config.json</c> 경로. 결정 우선순위:
     /// <list type="number">
-    /// <item><c>BaseDirectory\config.json</c> 가 이미 있으면 그 경로 (v0.9.x → v0.10.x 마이그레이션).</item>
+    /// <item><c>BaseDirectory\config.json</c> 가 이미 있으면 그 경로 (v0.9.2.x → v0.9.3.x 마이그레이션).</item>
     /// <item>BaseDirectory 가 writable 이면 <c>BaseDirectory\config.json</c>.</item>
     /// <item>아니면 <c>FallbackRoot\config.json</c> (디렉토리 자동 생성).</item>
     /// </list>

@@ -82,7 +82,7 @@ c => (int)c.Language,
 (c, i) => c with { Language = (AppLanguage)Math.Clamp(i, 0, 2) }
 ```
 
-`[JsonStringEnumConverter<AppLanguage>] + [JsonStringEnumMemberName("auto"/"ko"/"en")]` 로 디스크 표현은 기존 string 과 비트 단위 동일 — v0.9.x → v0.10.x config.json 그대로 로드.
+`[JsonStringEnumConverter<AppLanguage>] + [JsonStringEnumMemberName("auto"/"ko"/"en")]` 로 디스크 표현은 기존 string 과 비트 단위 동일 — v0.9.2.x → v0.9.3.x config.json 그대로 로드.
 
 ## 왜
 
@@ -122,7 +122,7 @@ c => (int)c.Language,
 ### 위험 1: 기존 `config.json` 에 `"language": null` 또는 다른 비정상 값
 STJ source-gen 의 `JsonStringEnumConverter<T>` 는 null 을 받으면 JsonException throw (legacy enum default 처리 아님). 단 `AppConfig.Language` 의 init 디폴트가 `AppLanguage.Auto` 이므로 JSON 에 키 자체가 없으면 정상.
 
-**완화**: 기존 `EnsureSubObjects` 의 `Language = config.Language ?? "ko"` fallback 은 enum 전환으로 제거됨. v0.9.x → v0.10.x 마이그레이션 시 `"language": null` 명시 user 가 있다면 JSON 파싱 실패 → `Settings.Load` 의 catch → 기본값 반환 (파일 보존). 실측 빈도 거의 0 (디폴트는 `"auto"` string).
+**완화**: 기존 `EnsureSubObjects` 의 `Language = config.Language ?? "ko"` fallback 은 enum 전환으로 제거됨. v0.9.2.x → v0.9.3.x 마이그레이션 시 `"language": null` 명시 user 가 있다면 JSON 파싱 실패 → `Settings.Load` 의 catch → 기본값 반환 (파일 보존). 실측 빈도 거의 0 (디폴트는 `"auto"` string).
 
 ### 위험 2: `Logger.Warning` 의 timing
 `Settings.Validate` 가 `Logger.Initialize` 이전에 호출됨 (PR-01 patterns 와 동일). enum 폴백 Warning 은 Trace 만 — 파일 로그 미기록. 단 현 구현은 `EnumOrDefault` 가 silent 라 어차피 Warning 없음.

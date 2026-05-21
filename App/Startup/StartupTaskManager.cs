@@ -29,7 +29,7 @@ internal static class StartupTaskManager
     /// </summary>
     private const string StartupTaskDelay = "PT15S";
 
-    /// <summary>v0.10.0 (PR-03) 부터 부여하는 RunLevel — UAC 프롬프트 없는 일반 권한 실행.</summary>
+    /// <summary>v0.9.3.0 (PR-03) 부터 부여하는 RunLevel — UAC 프롬프트 없는 일반 권한 실행.</summary>
     private const string RunLevelLeastPrivilege = "LeastPrivilege";
 
     // P3: 매직 넘버 금지
@@ -219,7 +219,7 @@ internal static class StartupTaskManager
             bool pathMatches = PathsEqual(registeredPath, currentPath);
             // 구 버전(/tr 방식)은 <Delay> 요소가 없어 null. 이 경우도 마이그레이션 대상.
             bool delayMatches = string.Equals(registeredDelay, StartupTaskDelay, StringComparison.Ordinal);
-            // v0.9.x 는 admin RunLevel 잔재. PR-03 (v0.10.0) 에서 LeastPrivilege 로 전환됐으므로
+            // v0.9.x 는 admin RunLevel 잔재. PR-03 (v0.9.3.0) 에서 LeastPrivilege 로 전환됐으므로
             // 업그레이드한 사용자의 기존 task 를 강제 재등록해야 부팅 시 UAC 프롬프트가 사라진다.
             bool runLevelMatches = string.Equals(registeredRunLevel, RunLevelLeastPrivilege, StringComparison.Ordinal);
 
@@ -245,7 +245,7 @@ internal static class StartupTaskManager
 
     /// <summary>
     /// 등록된 시작 프로그램 태스크의 실행 명령 경로 / LogonTrigger 지연 / RunLevel 을 반환.
-    /// 미등록 또는 실패 시 모두 null. RunLevel 은 PR-03 (v0.10.0) admin-elevation → LeastPrivilege
+    /// 미등록 또는 실패 시 모두 null. RunLevel 은 PR-03 (v0.9.3.0) admin-elevation → LeastPrivilege
     /// 마이그레이션 감지 목적.
     /// </summary>
     private static (string? Command, string? Delay, string? RunLevel) QueryRegisteredTask()

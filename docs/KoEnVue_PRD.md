@@ -179,9 +179,9 @@ KoEnVue v0.9.2.5 — GitHub              ← 항상 최상단 헤더 (MF_DEFAULT
 - **상세 설정**은 구분선으로 묶어 종료 바로 위에 배치 — 트레이 메뉴로 노출되지 않는 나머지 필드를 편집하는 진입점
 
 ### 4.3 시작 프로그램 등록
-- `schtasks /xml` 기반 등록/해제 (ONLOGON 트리거 + `<Delay>PT15S</Delay>`, `LeastPrivilege` — P5 asInvoker 와 일치, v0.10.0 부터 UAC 프롬프트 없음)
+- `schtasks /xml` 기반 등록/해제 (ONLOGON 트리거 + `<Delay>PT15S</Delay>`, `LeastPrivilege` — P5 asInvoker 와 일치, v0.9.3.0 부터 UAC 프롬프트 없음)
 - **로그온 15초 지연**: 부팅 자동 실행 시 explorer 트레이가 초기화되기 전에 앱이 떠서 `Shell_NotifyIconW NIM_ADD` 가 실패하는 레이스를 회피. (NIM_ADD 재시도로 복구되긴 하지만 매 부팅 warn 로그가 남는 문제 해소 목적)
-- **자동 동기화**: 앱 시작 시 백그라운드 스레드로 등록된 schtasks 항목의 `<Command>` 경로 / `<Delay>` 값 / `<RunLevel>` 을 조회해 현재 `Environment.ProcessPath` · `PT15S` · `LeastPrivilege` 와 비교. 경로가 바뀌었거나 `<Delay>` 가 없거나(구 버전 `/tr` 방식) `<RunLevel>` 이 `HighestAvailable` 이면(v0.9.x 잔재) XML 방식으로 재등록. v0.9.x → v0.10.0 업그레이드 시 첫 부팅 후 자동 재등록되어 다음 부팅부터 UAC 프롬프트가 사라진다. exe 폴더를 옮겨도 다음 수동 실행부터는 복구된다(이사 직후 첫 자동 부팅은 구 경로를 찌르므로 한 번은 실패할 수 있음)
+- **자동 동기화**: 앱 시작 시 백그라운드 스레드로 등록된 schtasks 항목의 `<Command>` 경로 / `<Delay>` 값 / `<RunLevel>` 을 조회해 현재 `Environment.ProcessPath` · `PT15S` · `LeastPrivilege` 와 비교. 경로가 바뀌었거나 `<Delay>` 가 없거나(구 버전 `/tr` 방식) `<RunLevel>` 이 `HighestAvailable` 이면(v0.9.x 잔재) XML 방식으로 재등록. v0.9.2.x → v0.9.3.x 업그레이드 시 첫 부팅 후 자동 재등록되어 다음 부팅부터 UAC 프롬프트가 사라진다. exe 폴더를 옮겨도 다음 수동 실행부터는 복구된다(이사 직후 첫 자동 부팅은 구 경로를 찌르므로 한 번은 실패할 수 있음)
 
 ### 4.4 기본 위치 설정
 - 저장 위치가 없는 앱을 열 때 인디케이터가 나타날 기본 위치를 사용자가 지정. 현재 위치 모드에 따라 저장 대상이 달라짐
@@ -244,7 +244,7 @@ KoEnVue v0.9.2.5 — GitHub              ← 항상 최상단 헤더 (MF_DEFAULT
 
 ### 5.1 파일 위치
 - **기본은 exe 디렉토리의 `config.json`** — 포터블 정책. exe 만 있으면 첫 실행 시 자동 생성된다
-- **v0.10.0 (PR-03) 부터 `%LOCALAPPDATA%\KoEnVue\` 로 자동 fallback** — `app.manifest` 를 `asInvoker` 로 전환하면서 exe 폴더가 user-non-writable 한 경우(예: `Program Files` 설치)를 [App/Config/PortablePath](../App/Config/PortablePath.cs) 가 결정. 결정 우선순위: `BaseDirectory\config.json` 이 이미 있으면 그 경로(v0.9.x → v0.10.x 마이그레이션) → BaseDirectory writable 이면 BaseDirectory → `%LOCALAPPDATA%\KoEnVue\config.json`
+- **v0.9.3.0 (PR-03) 부터 `%LOCALAPPDATA%\KoEnVue\` 로 자동 fallback** — `app.manifest` 를 `asInvoker` 로 전환하면서 exe 폴더가 user-non-writable 한 경우(예: `Program Files` 설치)를 [App/Config/PortablePath](../App/Config/PortablePath.cs) 가 결정. 결정 우선순위: `BaseDirectory\config.json` 이 이미 있으면 그 경로(v0.9.2.x → v0.9.3.x 마이그레이션) → BaseDirectory writable 이면 BaseDirectory → `%LOCALAPPDATA%\KoEnVue\config.json`
 - `koenvue.log` 도 동일 fallback. `config.json:log_file_path` 사용자 지정 값은 `PortablePath.SanitizeLogPath` 가 허용 루트(BaseDirectory / `%LOCALAPPDATA%\KoEnVue`) 하위인지 검증해 위반 시 기본 경로로 폴백 + `Logger.Warning`
 - **첫 실행**: 파일이 없으면 기본 `AppConfig` 를 즉시 디스크에 저장해 사용자 눈에 바로 보이게 한다
 - **원자적 저장**: `JsonSettingsFile.WriteAllText` 는 `path + ".tmp"` 로 먼저 쓴 뒤 `File.Move(tmp, path, overwrite: true)` — 내부적으로 `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` 이므로 같은 볼륨에서 원자적 교체가 보장된다. 저장 중 크래시 / 전원 차단이 일어나도 잘린 `config.json` 이 남지 않으며, 핫 리로드의 "삭제 감지" 가드와 호환된다
@@ -396,7 +396,7 @@ dotnet publish -r win-x64 -c Release  # NativeAOT 릴리스 퍼블리시
 
 - NativeAOT 단일 exe (~4.7 MB)
 - .NET 런타임 설치 불필요
-- `app.manifest` : UAC `asInvoker` (P5, v0.10.0~). Program Files 등 user-non-writable 위치 설치 시 `%LOCALAPPDATA%\KoEnVue\` 로 config/log 자동 fallback
+- `app.manifest` : UAC `asInvoker` (P5, v0.9.3.0~). Program Files 등 user-non-writable 위치 설치 시 `%LOCALAPPDATA%\KoEnVue\` 로 config/log 자동 fallback
 - **디버그·릴리스 둘 다 빌드 필수** — 디버그만 돌리면 릴리스 exe 가 낡은 상태로 남음
 
 ---

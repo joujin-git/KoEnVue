@@ -31,7 +31,7 @@ dotnet publish -r win-x64 -c Release
 
 ## 개선 계획 (improvement-plan) 절차
 
-본 repo 는 v0.10.0 까지의 코드베이스 개선을 [docs/improvement-plan/](docs/improvement-plan/) 의 13~14 PR 체크리스트로 추적합니다. 이미 머지된 PR 도 같은 구조를 따랐으므로 새 PR 도 동일 절차로 진행해 주세요.
+본 repo 는 v0.9.3.0 까지의 코드베이스 개선을 [docs/improvement-plan/](docs/improvement-plan/) 의 13~14 PR 체크리스트로 추적합니다. 이미 머지된 PR 도 같은 구조를 따랐으므로 새 PR 도 동일 절차로 진행해 주세요.
 
 1. [docs/improvement-plan/INDEX.md](docs/improvement-plan/INDEX.md) 의 진행 매트릭스에서 다음 ⏳ PR 선택.
 2. 해당 `PR-NN-*.md` 본문의 §1 목적 / §2 변경 범위 / §3 검증 기준 / §4 위험을 모두 읽기.
