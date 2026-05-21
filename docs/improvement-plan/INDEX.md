@@ -1,8 +1,8 @@
 # Improvement Plan — Progress Index
 
 **Last updated**: 2026-05-21
-**Current branch**: feat/pr-13-per-app-rendering (PR-13 구현 완료, 머지 대기)
-**Next PR**: PR-13 머지 후 PR-03 (BREAKING, asInvoker) — 또는 다른 PR 선택
+**Current branch**: main (idle, PR-13 머지 완료)
+**Next PR**: PR-03 (BREAKING, asInvoker) — 또는 PR-04/05/06/08/09/10/11 중 선택
 
 ## Progress matrix
 
@@ -21,7 +21,7 @@
 | 10 | CI + first tests                        | ⏳     | feat/pr-10-ci-tests             | Low     | M    | G1+G5 |
 | 11 | Version single-source + SHA256 release  | ⏳     | feat/pr-11-version-signing      | Medium  | L    | D6+G4 |
 | 12 | Documentation alignment                 | ⏳     | feat/pr-12-docs                 | Low     | S    | H1+H2+H3 |
-| 13 | Per-app rendering config wiring         | 🚧     | feat/pr-13-per-app-rendering    | Medium  | M    | PR-01 Tier-3 발견. Tier-1+2 통과. Tier-3 수동 smoke 대기 (theme:dark / opacity / enabled:false 시나리오) |
+| 13 | Per-app rendering config wiring         | ✅     | (merged → main, 11c3ec5)        | Medium  | M    | PR-01 Tier-3 발견. Tier-1+2+3 통과. theme/opacity/enabled:false 모두 사용자 가시 확인 |
 
 Legend: ⏳ pending · 🚧 in progress · ✅ merged · ⏸ blocked · ❌ aborted
 Size: S ≤30분 · M 1-2시간 · L 반나절+
@@ -74,3 +74,4 @@ PR별 Tier-2 grep 가드 + Tier-3 수동 smoke은 각 `PR-NN-*.md` §3 참조.
 | 2026-05-21 | PR-02 | csproj 에 분석기 3종(`EnableAotAnalyzer`/`EnableTrimAnalyzer`/`EnableSingleFileAnalyzer`) 활성 — 신규 경고 0건 (codebase 가 reflection-free 라 clean). app.manifest 에 `<compatibility>` Win10/11 GUID + `longPathAware` 추가, `gdiScaling` 의도적 미추가. Tier-1 (debug + AOT publish clean) + Tier-2 grep 가드 4종 + invariant 4종 0매치 통과. PE 매니페스트 임베드 확인. exe 크기 4.47 MB 유지. 문서 3건 갱신 (CHANGELOG / conventions / implementation-notes) | 사용자 검토 후 머지 |
 | 2026-05-21 | PR-02 | Tier-3 수동 smoke 통과 (사용자 부팅 확인). FF merge to main (91621a4) + 브랜치 삭제 | 다음 PR (PR-03 또는 PR-13) 선택 대기 |
 | 2026-05-21 | PR-13 | Option B 채택 — 메인 스레드에 `ResolveCurrent()` 헬퍼 + `Overlay.Show/UpdateColor` 시그니처 확장 + 18개 렌더 호출처 일괄 전환 + `DisplayMode`/`EventTriggers` 분기도 resolved 기반. Tier-1 debug + clean AOT publish 0 경고 / 0 오류 (4.47 MB). Tier-2 grep 가드 통과 (ResolveCurrent\|ResolveForApp 18 매치, `Animation.TriggerShow.*_config` 0). invariant 4종 0매치. 문서 4건 갱신 | Tier-3 smoke 사용자 검증 후 머지 |
+| 2026-05-21 | PR-13 | Tier-3 수동 smoke 통과 — 사용자 가시 확인 (notepad 다크 / opacity 0.3 / enabled:false). 사용자 1차 config 오타 실패 → 정정 후 재시험 정상. FF merge to main (11c3ec5) + 브랜치 삭제 | 다음 PR 선택 대기 |
