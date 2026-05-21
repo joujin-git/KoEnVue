@@ -1,15 +1,15 @@
 # Improvement Plan — Progress Index
 
 **Last updated**: 2026-05-21
-**Current branch**: feat/pr-01-merge-profile (구현 완료, 머지 대기)
-**Next PR**: PR-02 (PR-01 머지 후) — PR-13 신규 추가됨 (PR-01 Tier-3 에서 발견된 결함 대응)
+**Current branch**: main (idle, PR-01 머지 완료)
+**Next PR**: PR-02 — PR-13 신규 추가됨 (PR-01 Tier-3 에서 발견된 결함 대응)
 
 ## Progress matrix
 
 | #  | Title                                   | Status | Branch                          | Risk    | Size | Notes |
 |----|-----------------------------------------|--------|---------------------------------|---------|------|-------|
 | 00 | AbandonedMutex 캐치                     | ✅     | (merged → main, c4de0bd)        | Low     | S    | Tier-1+2 통과, Tier-3 deadlock 부재 확인 (catch 자체는 race 좁아 미trigger) |
-| 01 | MergeProfile pipeline + WM_THEMECHANGED | ⏳     | feat/pr-01-merge-profile        | Low     | M    | A1+A4+B3+H5 묶음 |
+| 01 | MergeProfile pipeline + WM_THEMECHANGED | ✅     | (merged → main, 4bca33d)        | Low     | M    | A1+A4+B3+H5. Tier-3 에서 PR-13 신설 근거 발견 |
 | 02 | Analyzers + manifest hardening          | ⏳     | feat/pr-02-analyzers-manifest   | Medium  | M    | G2+G3 |
 | 03 | asInvoker migration (BREAKING)          | ⏳     | feat/pr-03-asinvoker            | High    | L    | v0.10.0 후보. CLAUDE.md P5 갱신 |
 | 04 | Tray.cs decomposition                   | ⏳     | feat/pr-04-tray-decomposition   | Low     | M    | C1+C2+D9+D10 |
