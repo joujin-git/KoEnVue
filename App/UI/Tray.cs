@@ -830,15 +830,22 @@ internal static class Tray
             if (IsStartupRegistered())
             {
                 // 삭제
-                RunSchtasks($"/delete /tn \"{TaskName}\" /f");
-                Logger.Info("Startup registration removed");
+                bool deleteOk = RunSchtasks($"/delete /tn \"{TaskName}\" /f");
+                if (deleteOk && !IsStartupRegistered())
+                    Logger.Info("Startup registration removed");
+                else
+                    Logger.Warning("Startup registration delete did not take effect (see schtasks log above)");
             }
             else
             {
                 // 등록
                 string exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? "";
-                RegisterStartupTaskWithXml(exePath);
-                Logger.Info("Startup registration created");
+                bool createOk = RegisterStartupTaskWithXml(exePath);
+                // schtasks 가 silent 로 거부하는 케이스가 있어 post-check 로 실제 등록 여부 검증
+                if (createOk && IsStartupRegistered())
+                    Logger.Info("Startup registration created");
+                else
+                    Logger.Warning("Startup registration create did not take effect (see schtasks log above)");
             }
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
@@ -860,7 +867,7 @@ internal static class Tray
     /// 사라졌지만, 양식 차원의 안전망 + 동시 등록 race 방어 목적으로 유지.
     /// </para>
     /// </summary>
-    private static void RegisterStartupTaskWithXml(string exePath)
+    private static bool RegisterStartupTaskWithXml(string exePath)
     {
         string xml = BuildStartupTaskXml(exePath);
         // %TEMP% 는 per-user. GUID 로 attacker 가 미리 같은 경로를 점유하지 못하게 한다.
@@ -874,7 +881,7 @@ internal static class Tray
             {
                 sw.Write(xml);
             }
-            RunSchtasks($"/create /tn \"{TaskName}\" /xml \"{tempPath}\" /f");
+            return RunSchtasks($"/create /tn \"{TaskName}\" /xml \"{tempPath}\" /f");
         }
         finally
         {
@@ -886,9 +893,29 @@ internal static class Tray
     /// <summary>
     /// schtasks /xml 에 전달할 Task Scheduler 2.0 XML 을 조립한다. LogonTrigger.Delay 에
     /// <see cref="StartupTaskDelay"/> 삽입. 최소 필드만 쓰고 나머지는 schtasks 기본값에 위임.
+    /// <para>
+    /// <b>두 개의 <c>UserId</c> 구분</b>:
+    /// </para>
+    /// <list type="bullet">
+    /// <item>
+    /// <c>&lt;LogonTrigger&gt;&lt;UserId&gt;...&lt;/UserId&gt;</c> — <b>trigger 대상</b> user.
+    /// 본 필드가 비면 schtasks 는 ANY-user logon trigger 로 해석 → admin 권한 요구
+    /// (asInvoker 토큰에서 "액세스가 거부되었습니다" ExitCode=1). 본인 logon 만 발화하도록 명시 필요.
+    /// </item>
+    /// <item>
+    /// <c>&lt;Principal&gt;&lt;UserId&gt;...&lt;/UserId&gt;</c> — task <b>실행 user</b>.
+    /// 의도적 미포함 — 명시 시 schtasks 가 SID lookup 검증에서 admin 토큰을 요구 (v0.9.x 의
+    /// requireAdministrator 가 그 검증을 통과시켜 줬을 뿐). 비워두면 schtasks 가 current user 의
+    /// SID 로 자동 채워 권한 검증을 우회.
+    /// </item>
+    /// </list>
+    /// <para>
+    /// 두 필드의 의도가 완전히 다르고 둘 다 채우면 다시 admin 요구로 회귀하므로 LogonTrigger 쪽만 채운다.
+    /// </para>
     /// </summary>
     private static string BuildStartupTaskXml(string exePath)
     {
+        // LogonTrigger.<UserId> — trigger 대상 user 식별. 본인 logon 만 발화하도록 명시 필요.
         string userId = EscapeXml($"{Environment.UserDomainName}\\{Environment.UserName}");
         // /tr 방식의 기존 Command 형식("\"path\"")을 XML 에서도 동일하게 유지 — QueryRegisteredTask 의
         // Trim('"') 로직이 두 방식 모두 호환되어 마이그레이션 후에도 경로 비교가 안정적.
@@ -900,11 +927,11 @@ internal static class Tray
     <LogonTrigger>
       <Enabled>true</Enabled>
       <Delay>{StartupTaskDelay}</Delay>
+      <UserId>{userId}</UserId>
     </LogonTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">
-      <UserId>{userId}</UserId>
       <LogonType>InteractiveToken</LogonType>
       <RunLevel>LeastPrivilege</RunLevel>
     </Principal>
@@ -1158,7 +1185,12 @@ internal static class Tray
         Logger.Info($"Cleaned {selectedOriginal.Count} position(s): {string.Join(", ", selectedOriginal)}");
     }
 
-    private static void RunSchtasks(string arguments)
+    /// <summary>
+    /// schtasks.exe 실행 + ExitCode / STDOUT / STDERR 검사. 실패 시 Warning 1줄 로깅.
+    /// PR-03 asInvoker 전환 후 schtasks 가 XML 의 <c>&lt;UserId&gt;</c> / <c>&lt;RunLevel&gt;</c> 조합을
+    /// 거부할 수 있는 케이스를 진단하기 위해 silent ExitCode 무시 동작을 제거. 성공 시 true.
+    /// </summary>
+    private static bool RunSchtasks(string arguments)
     {
         var psi = new ProcessStartInfo("schtasks.exe", arguments)
         {
@@ -1168,7 +1200,27 @@ internal static class Tray
             RedirectStandardError = true,
         };
         using var proc = Process.Start(psi);
-        proc?.WaitForExit(SchtasksCommandTimeoutMs);
+        if (proc is null)
+        {
+            Logger.Warning($"schtasks {arguments}: Process.Start returned null");
+            return false;
+        }
+        string stdout = proc.StandardOutput.ReadToEnd();
+        string stderr = proc.StandardError.ReadToEnd();
+        bool exited = proc.WaitForExit(SchtasksCommandTimeoutMs);
+        if (!exited)
+        {
+            Logger.Warning($"schtasks {arguments}: timed out after {SchtasksCommandTimeoutMs}ms");
+            return false;
+        }
+        if (proc.ExitCode != 0)
+        {
+            Logger.Warning(
+                $"schtasks {arguments}: ExitCode={proc.ExitCode}, "
+                + $"stderr={stderr.Trim()}, stdout={stdout.Trim()}");
+            return false;
+        }
+        return true;
     }
 
 }
