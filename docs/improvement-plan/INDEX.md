@@ -2,7 +2,7 @@
 
 **Last updated**: 2026-05-21
 **Current branch**: main (PR-12 머지 완료 — **모든 13-PR 작업 종료**)
-**Next**: v0.9.3.0 릴리스 (csproj `<Version>` bump + tag + GitHub Release + SHA256 첨부) + 메모리 정리
+**Status**: ✅ 완료 — v0.9.3.0 릴리스 shipped (commit 456875f, tag v0.9.3.0). 본 디렉토리는 retrospective 참조 + 작업 단위 사례집으로 보존 ([dev-notes/2026-05-21-improvement-plan-retrospective.md](../dev-notes/2026-05-21-improvement-plan-retrospective.md) §결정 참조).
 
 ## Progress matrix
 
