@@ -354,6 +354,9 @@ internal static class Win32Constants
     public const uint WM_POWERBROADCAST  = 0x0218;
     public const uint WM_DISPLAYCHANGE   = 0x007E;
     public const uint WM_SETTINGCHANGE   = 0x001A;
+    // 비주얼 스타일 / 다크 모드 토글 시 셸이 별도로 브로드캐스트하는 메시지. WM_SETTINGCHANGE
+    // 와 함께 받지만 wParam 으로 그룹을 거르지 않아도 되는 단일 시그널이라 분리 처리.
+    public const uint WM_THEMECHANGED    = 0x031A;
     public const uint WM_SETFONT         = 0x0030;
     public const uint WM_DPICHANGED     = 0x02E0;
     public const uint WM_LBUTTONUP       = 0x0202;

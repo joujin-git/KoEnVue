@@ -26,6 +26,11 @@ internal static class SystemFilter
     private static readonly StrategyBasedComWrappers _comWrappers = new();
     private static readonly IVirtualDesktopManager? _vdm;
 
+    // A4 측정용: VDM COM 호출 실패 빈도. 감지 스레드 단일 라이터라 Interlocked 불요.
+    // 4주 후 데이터로 cross-thread COM 마이그레이션 필요 여부 재결정.
+    private static int _vdmFailCount;
+    private const int VdmFailLogEvery = 1000;
+
     // WS_CAPTION int 캐스트: GetWindowLongW는 int 반환, WS_CAPTION은 uint
     private const int WsCaption = unchecked((int)Win32Constants.WS_CAPTION);
 
@@ -164,6 +169,9 @@ internal static class SystemFilter
             // 예외는 RCW 상태(InvalidComObjectException), 마샬링, 드물게 NullReferenceException
             // 등으로 일관되게 좁히기 어렵다. 본문이 단일 COM 호출 1줄이라 과대 포획 리스크가 낮으므로
             // wide catch 유지. 기본값은 "숨기지 않음"으로 안전 폴백.
+            _vdmFailCount++;
+            if (_vdmFailCount % VdmFailLogEvery == 0)
+                Logger.Debug($"VDM COM failure count: {_vdmFailCount}");
             Logger.Debug($"IVirtualDesktopManager.IsWindowOnCurrentVirtualDesktop failed: {ex.Message}");
             return true;
         }

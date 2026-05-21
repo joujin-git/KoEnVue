@@ -68,4 +68,33 @@
 
 ## 6. 세션 진행 로그
 
-(empty)
+### 2026-05-21 — 구현 + Tier-1/2 + 부분 Tier-3
+
+**구현**
+- A1: `Settings.MergeProfile` 의 `return AppSettingsManager.EnsureSubObjectsPublic(merged)` 를 `ApplyMergedProfilePipeline(merged)` 로 교체. 새 헬퍼는 `EnsureSubObjects → Settings.Validate → ThemePresets.Apply` 를 디스크 로드 경로와 동일 순서로 적용. `Migrate` 는 App 레벨 override 없는 identity 라 주석으로 자리 표시
+- H5: `Win32Constants.WM_THEMECHANGED = 0x031A` 추가. `WndProc` 가 `WM_SETTINGCHANGE` 케이스에 fall-through 로 묶어 `HandleSettingChange` 동일 호출. `HandleSettingChange` 진입 시 `Settings.ClearProfileCache()` 추가
+- B3: `Settings.Validate` 의 `Advanced = ValidateAdvanced(config.Advanced)` 추가. `IsValidWindowClassName` 가드(영문/숫자/언더스코어 + 길이 1-255) 위반 시 `KoEnVueOverlay` 폴백 + `Logger.Warning`
+- A4: `SystemFilter._vdmFailCount` static + 1000회당 `Logger.Debug` 1줄. `Interlocked` 불요 (감지 스레드 단일 라이터)
+
+**Tier-1 (빌드/AOT)**
+- `dotnet build` — 경고 0, 오류 0 (00:00:00.77)
+- `dotnet publish -r win-x64 -c Release` — 4.47 MB exe, AOT 정상
+- invariant 4종 0 매치 (DllImport 는 docs 만 매치)
+
+**Tier-2 (grep 가드)**
+- T2-a: `Validate / ApplyTheme / Migrate` MergeProfile 인근 매치 — `Settings.cs:421` "EnsureSubObjects → (Migrate: 현재 identity) → Validate → ApplyTheme" 주석 + `:426` `ApplyMergedProfilePipeline` 호출 확인
+- T2-b: `WM_THEMECHANGED in Program.cs` — `Program.cs:312` 1 매치
+- T2-c: `OverlayClassName` Validate 인근 — `Settings.cs:161` `Advanced = ValidateAdvanced` + `:181` `IsValidWindowClassName` 호출 확인
+- T2-d: `VDM COM failure count` — `SystemFilter.cs:174` 1 매치
+
+**Tier-3 (수동 smoke, 사용자 실측)**
+- **①** 정상 부팅 — OK
+- **②** 프로필 `"app_profiles": { "notepad": { "theme": "dark" } }` 추가 + 메모장 포커스 — **인디 색 변하지 않음**. 원인: 별개의 미배선 결함. 감지 스레드의 `resolved` AppConfig 가 메인 스레드 렌더링 경로(`Animation.TriggerShow` / `Overlay.UpdateColor` / `BuildStyle`)에 전달되지 않음. 본 PR 의 파이프라인 fix 는 `resolved` 인스턴스의 정확성을 보장할 뿐. 자세한 영향 범위 + 후속 PR 옵션 → [docs/dev-notes/2026-05-21-profile-pipeline-completion.md](../dev-notes/2026-05-21-profile-pipeline-completion.md) §"미배선"
+- **③** `"advanced": { "overlay_class_name": "!!!invalid!!!" }` — 정상 부팅 (폴백 작동). `koenvue.log` 에 Warning 부재 — `Settings.Validate` 가 `Logger.Initialize` 이전에 실행돼 drain 스레드 부재. `Trace.WriteLine` 에는 흐름. 폴백 동작 자체는 정상이라 의도된 동작으로 수용
+- **④** `theme:system` + Windows accent 색 변경 — **인디 색 변하지 않음**. 추정 원인: `ThemePresets.ApplySystemTheme` 가 `GetSysColor(COLOR_HIGHLIGHT)` 를 읽는데 Win11 에서 "제목 표시줄에 강조색 표시" 옵션이 꺼져 있으면 personalization accent 변경이 `COLOR_HIGHLIGHT` 에 안 반영. 별도 후속 PR 에서 `DwmGetColorizationColor` 로 데이터 소스 전환 검토
+
+**Tier-3 회고**
+- ②/④ 둘 다 사용자 가시 부분은 본 PR 범위 밖. ② 는 인프라 fix 가 후속 PR 의 전제 조건으로서 가치 보존, ④ 는 데이터 소스 자체의 한계 — 모두 후속 PR 로 분리
+- ③ 의 Warning 부재는 logger init 순서 이슈, 폴백은 작동 — 의도된 동작으로 수용
+
+**결과**: 본 PR 는 인프라 정확성 fix 로 머지. A1 의 사용자 가시 효과는 후속 PR-13 (감지→메인 스레드 resolved 마샬링) + 별도 ApplySystemTheme 데이터 소스 PR 가 합쳐졌을 때 비로소 드러남. INDEX.md sessions log + 메모리에 발견 사항 기록.

@@ -1,8 +1,8 @@
 # Improvement Plan — Progress Index
 
 **Last updated**: 2026-05-21
-**Current branch**: main (idle, PR-00 머지 완료)
-**Next PR**: PR-01
+**Current branch**: feat/pr-01-merge-profile (구현 완료, 머지 대기)
+**Next PR**: PR-02 (PR-01 머지 후) — PR-13 신규 추가됨 (PR-01 Tier-3 에서 발견된 결함 대응)
 
 ## Progress matrix
 
@@ -21,6 +21,7 @@
 | 10 | CI + first tests                        | ⏳     | feat/pr-10-ci-tests             | Low     | M    | G1+G5 |
 | 11 | Version single-source + SHA256 release  | ⏳     | feat/pr-11-version-signing      | Medium  | L    | D6+G4 |
 | 12 | Documentation alignment                 | ⏳     | feat/pr-12-docs                 | Low     | S    | H1+H2+H3 |
+| 13 | Per-app rendering config wiring         | ⏳     | feat/pr-13-per-app-rendering    | Medium  | M    | PR-01 Tier-3 발견 — `resolved` AppConfig 가 메인 스레드 렌더링까지 도달하지 않음 |
 
 Legend: ⏳ pending · 🚧 in progress · ✅ merged · ⏸ blocked · ❌ aborted
 Size: S ≤30분 · M 1-2시간 · L 반나절+
@@ -68,3 +69,5 @@ PR별 Tier-2 grep 가드 + Tier-3 수동 smoke은 각 `PR-NN-*.md` §3 참조.
 | 2026-05-21 | setup | improvement-plan 셋업 완료 (16 파일 + 메모리) | PR-00 시작 |
 | 2026-05-21 | PR-00 | TryAcquireMutex catch 추가 + CHANGELOG + dev-notes. invariant 4종 + Tier-2 grep 통과. NuGet.config(nuget.org) 추가 후 Tier-1 빌드/AOT publish 클린 (4.47 MB exe) | NuGet.config 처분 결정 → 머지 → PR-01 |
 | 2026-05-21 | PR-00 | Tier-3 smoke 실행 — taskkill /f (관리자) + 즉시 재실행 = deadlock 없음. 로그에 WARN 부재 (catch 자체는 race 좁아 미trigger). FF merge to main (3 commits: 8d08611, 28ba7f4, c4de0bd) + 브랜치 삭제 | 새 세션에서 PR-01 시작 |
+| 2026-05-21 | PR-01 | A1+H5+B3+A4 4건 구현 + Tier-1 (debug + AOT publish 4.47 MB) + Tier-2 grep 가드 4종 통과 + invariant 4종 0매치. 문서 4건 갱신 (CHANGELOG / PRD §5.4 신설 / implementation-notes 프로필 머지 파이프라인 / dev-notes 2건) | Tier-3 smoke |
+| 2026-05-21 | PR-01 | Tier-3 수동 smoke: ① 정상 부팅 ✅, ② 프로필 theme:dark 색 변화 없음 ❌, ③ overlay_class_name 폴백 정상 (Warning 은 logger init 이전이라 파일 미기록), ④ system accent 변경 색 변화 없음 ❌. ②/④ 분석: ②는 별개 미배선 결함 (감지→메인 스레드 `resolved` 마샬링 부재) → PR-13 신설, ④는 `GetSysColor(COLOR_HIGHLIGHT)` 데이터 소스 한계 (Win11 personalization). 본 PR 는 인프라 fix 로 partial-merge | INDEX/PRD/CHANGELOG/dev-notes 정정 + PR-13 stub + 머지 |

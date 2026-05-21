@@ -155,6 +155,10 @@ internal static class Settings
             // 중첩 record 의 Corner — null 이면 건너뜀.
             DefaultIndicatorPosition = ValidateDefaultPosition(config.DefaultIndicatorPosition),
             DefaultIndicatorPositionRelative = ValidateRelativePosition(config.DefaultIndicatorPositionRelative),
+
+            // 고급 — overlay_class_name 은 RegisterClassExW 에 그대로 전달되므로 비정상 값
+            // (빈 문자열·과도한 길이·제어문자) 차단. 위반 시 디폴트로 폴백.
+            Advanced = ValidateAdvanced(config.Advanced),
         };
     }
 
@@ -166,6 +170,35 @@ internal static class Settings
 
     private static RelativePositionConfig? ValidateRelativePosition(RelativePositionConfig? pos)
         => pos is null ? null : pos with { Corner = EnumOrDefault(pos.Corner, Corner.TopRight) };
+
+    /// <summary>
+    /// AdvancedConfig 정리. 현재는 <c>OverlayClassName</c> 만 검사한다 — 영문/숫자/언더스코어
+    /// 1-255 자 외 값은 디폴트로 폴백한다. RegisterClassExW 가 받는 문자열이라 비정상 값이면
+    /// 윈도우 클래스 등록 자체가 실패해 앱이 침묵 종료된다.
+    /// </summary>
+    private static AdvancedConfig ValidateAdvanced(AdvancedConfig adv)
+    {
+        if (IsValidWindowClassName(adv.OverlayClassName)) return adv;
+
+        Logger.Warning(
+            $"Invalid overlay_class_name '{adv.OverlayClassName}' (must be 1-255 chars, "
+            + "ASCII letters/digits/underscore). Falling back to default.");
+        return adv with { OverlayClassName = "KoEnVueOverlay" };
+    }
+
+    private static bool IsValidWindowClassName(string? name)
+    {
+        if (string.IsNullOrEmpty(name) || name.Length > 255) return false;
+        foreach (char c in name)
+        {
+            if (!((c >= 'A' && c <= 'Z')
+                  || (c >= 'a' && c <= 'z')
+                  || (c >= '0' && c <= '9')
+                  || c == '_'))
+                return false;
+        }
+        return true;
+    }
 
     // ================================================================
     // CheckConfigFileChange — 5초 mtime 체크
@@ -382,7 +415,15 @@ internal static class Settings
             // 3. 머지된 JSON → AppConfig
             string mergedJson = Encoding.UTF8.GetString(stream.ToArray());
             AppConfig? merged = JsonSerializer.Deserialize(mergedJson, AppConfigJsonContext.Default.AppConfig);
-            return merged is not null ? AppSettingsManager.EnsureSubObjectsPublic(merged) : global;
+            if (merged is null) return global;
+
+            // 4. 메인 Load 파이프라인과 동일한 후처리:
+            //    EnsureSubObjects → (Migrate: 현재 identity) → Validate → ApplyTheme.
+            //    A1: 이 단계가 빠져 있던 시점에는 프로필이 "theme":"dark" 를 지정해도 색이
+            //    안 바뀌고, "poll_interval_ms":999999 같은 범위 외 값이 clamp 안 됐다.
+            //    Migrate 는 App 레벨 override 가 없어 identity — 추후 profile 단위 schema
+            //    변경이 생기면 AppSettingsManager 에 정적 경유 훅을 추가해야 한다.
+            return AppSettingsManager.ApplyMergedProfilePipeline(merged);
         }
         catch (Exception ex) when (ex is JsonException
             or NotSupportedException
@@ -504,10 +545,18 @@ internal sealed partial class AppSettingsManager : JsonSettingsManager<AppConfig
     // ================================================================
 
     /// <summary>
-    /// <c>Settings.MergeProfile</c> 경로에서도 동일한 null 보정이 필요해서
-    /// 정적 경유 접근점을 제공한다.
+    /// <c>Settings.MergeProfile</c> 경로의 후처리 파이프라인 (Load 와 동일한 순서):
+    /// EnsureSubObjects → Validate → ApplyTheme.
+    /// Migrate 는 현재 App 레벨 override 가 없어(JsonSettingsManager 의 identity) 생략.
+    /// 추후 profile 단위 schema 변경이 필요해지면 여기에 끼워 넣는다.
     /// </summary>
-    public static AppConfig EnsureSubObjectsPublic(AppConfig config) => EnsureSubObjects(config);
+    public static AppConfig ApplyMergedProfilePipeline(AppConfig config)
+    {
+        config = EnsureSubObjects(config);
+        config = Settings.Validate(config);
+        config = ThemePresets.Apply(config);
+        return config;
+    }
 
     // ================================================================
     // FormatJson — 숫자 배열 한 줄 압축

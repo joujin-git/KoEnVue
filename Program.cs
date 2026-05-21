@@ -309,6 +309,7 @@ internal static partial class Program
                 return IntPtr.Zero;
 
             case Win32Constants.WM_SETTINGCHANGE:
+            case Win32Constants.WM_THEMECHANGED:
                 HandleSettingChange();
                 return IntPtr.Zero;
 
@@ -847,6 +848,10 @@ internal static partial class Program
 
     private static void HandleSettingChange()
     {
+        // 시스템 강조색 / 다크 모드 변경 시 프로필 머지 캐시 무효화 — 캐시된 머지 결과가
+        // 옛 시스템 색을 박제하고 있을 수 있다 (프로필이 theme=system 을 상속하는 케이스).
+        Settings.ClearProfileCache();
+
         if (_config.Theme == Theme.System)
         {
             _config = ThemePresets.Apply(_config);

@@ -427,6 +427,25 @@ Exclusively read from and written to `AppContext.BaseDirectory` (the exe's own f
 
 `EnsureSubObjects()` remains as null safety net for nested records (`EventTriggers`, `Advanced`) whose default construction can also be lost.
 
+### 프로필 머지 파이프라인
+
+`Settings.MergeProfile` (감지 스레드 핫패스) 는 글로벌 `AppConfig` 를 JSON 으로 직렬화한 결과에 매칭된 프로필 객체의 키만 덮어쓰고 다시 역직렬화하는 JSON-level merge 다. 역직렬화 직후의 객체는 디스크 로드 파이프라인과 동일한 후처리를 거쳐야 한다 — 그렇지 않으면 `ThemePresets.Apply` 가 호출 안 돼 프리셋 색상이 머지된 인스턴스에 박히지 않고, `"poll_interval_ms":999999` 같은 범위 외 값이 clamp 안 된 채 통과하며, `Theme.Custom` 백업/복원 로직도 작동 안 한다.
+
+`AppSettingsManager.ApplyMergedProfilePipeline(AppConfig)` 정적 헬퍼가 단일 진입점:
+
+1. **`EnsureSubObjects`** — null 보정 (`AppProfiles` / `Advanced` 등)
+2. **`Migrate`** — App 레벨 override 가 없는 identity. 추후 profile 단위 schema 진화가 필요해지면 여기에 instance 경유로 hookup
+3. **`Validate`** (`Settings.Validate`) — 범위 클램핑 + enum 검증 + `advanced.overlay_class_name` 폴백
+4. **`ApplyTheme`** (`ThemePresets.Apply`) — 프리셋 색상 오버레이 + Custom 백업/복원
+
+순서는 디스크 로드 경로(`JsonSettingsManager.Load`) 와 동일. 차이점은 `PostDeserializeFixup` (indicator_positions Dictionary 수동 재조립) 이 빠진다는 것 — 프로필은 글로벌의 indicator_positions 를 그대로 상속하며 머지 전 globalJson 캐시가 글로벌 인스턴스 단위로 1회 직렬화된다(같은 글로벌 → 캐시 hit). LRU 캐시는 50엔트리 상한, 글로벌 인스턴스 교체 / `WM_SETTINGCHANGE` · `WM_THEMECHANGED` 수신 시 클리어.
+
+**미배선 — 시각 필드는 아직 렌더링까지 안 닿는다**. `resolved` AppConfig 인스턴스는 감지 스레드의 `TryHandleFilter` 안에서만 사용된다 — `SystemFilter.ShouldHide` 파라미터, `TrackWindowMove` 의 `PositionMode` 판정, `ImeStatus.Detect` 의 `DetectionMethod` 분기. 메인 스레드로 전달되는 메시지(`WM_FOCUS_CHANGED` / `WM_IME_STATE_CHANGED` / `WM_POSITION_UPDATED`) 는 `resolved` 를 페이로드로 싣지 않으며, 메인 스레드의 `Animation.TriggerShow` / `Overlay.UpdateColor` / `BuildStyle` 은 글로벌 `_config` (또는 `Overlay._config` 캐시) 만 참조한다. 따라서 프로필이 `theme` / 색 6쌍 / 투명도 3종 / 라벨 크기·폰트·텍스트 / 애니메이션 파라미터 / `non_korean_ime` 등 시각 필드를 override 해도 렌더링은 글로벌 값으로 진행된다. 본 파이프라인 fix 는 머지된 `resolved` 인스턴스 자체의 정확성을 보장할 뿐이며, 시각 배선은 별도 후속 PR 의 범위 (PR-01 Tier-3 smoke 에서 발견).
+
+### Window class name validation
+
+`Settings.Validate.ValidateAdvanced` 가 `AppConfig.Advanced.OverlayClassName` 을 영문/숫자/언더스코어 + 길이 1-255 로 검증해 위반 시 `"KoEnVueOverlay"` 기본값으로 폴백한다. 이 문자열은 `Program.Bootstrap.RegisterWindowClasses` / `CreateOverlayWindow` 의 `RegisterClassExW` / `CreateWindowExW` 에 그대로 흘러가므로 비정상 값(빈 문자열·과도한 길이·제어문자·공백/슬래시 등 ASCII 외 문자) 이 들어오면 등록 자체가 실패해 부팅이 침묵 종료된다. 사용자가 `config.json` 을 손으로 편집해도 부팅 경로가 끊기지 않도록 단일 폴백 경로로 흡수. 검증 실패 시 `Logger.Warning` 1회만 남기고 정상 부팅을 보장.
+
 ---
 
 ## Tray

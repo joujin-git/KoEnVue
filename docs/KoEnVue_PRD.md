@@ -282,7 +282,18 @@ KoEnVue v0.9.2.5 — GitHub              ← 항상 최상단 헤더 (MF_DEFAULT
 | `dark` | 다크 — 진한 에메랄드/앰버/회색 |
 | `system` | 시스템 강조색 기반 — Windows `COLOR_HIGHLIGHT` 에서 한글 배경을 뽑고 보색으로 영문 배경을 계산 |
 
-### 5.4 핫 리로드
+### 5.4 앱별 프로필 머지
+
+`app_profiles` 는 포그라운드 앱에 따라 일부 키만 오버라이드하는 맵이다. 매칭 키는 `app_profile_match` 에 따라 프로세스명(`process`) / 윈도우 클래스명(`class`) / 윈도우 타이틀 정규식(`title`) 중 하나로 결정되며, 매칭된 프로필 객체에 명시된 키만 글로벌 설정을 덮어쓰고 나머지는 상속한다. `"enabled": false` 프로필은 해당 앱에서 인디케이터를 완전히 끈다.
+
+- **머지 후처리 파이프라인** — 매칭된 프로필을 JSON 레벨에서 글로벌과 합친 결과는 디스크 로드 경로(`JsonSettingsManager.Load`)와 동일한 후처리를 거친다: `EnsureSubObjects` (null 보정) → `Validate` (범위 클램핑, enum 검증, `advanced.overlay_class_name` 폴백) → `ApplyTheme` (프리셋 색상 적용 + Custom 백업/복원). `Migrate` 는 App 레벨 override 가 없어(JsonSettingsManager identity) 현재 효과가 없지만 추후 스키마 진화 시 같은 진입점에서 호출된다
+- **현재 실효 범위** — 머지된 `resolved` AppConfig 는 감지 스레드의 `Settings.ResolveForApp` 가 반환하며, 같은 틱 안에서 (a) `SystemFilter.ShouldHide` 의 모든 파라미터(`system_hide_classes` / `system_hide_processes` / `hide_in_fullscreen` / `hide_when_no_focus` / `app_filter_mode` / `app_filter_list`), (b) `PositionMode` (`position_mode` 의 fixed/window 결정 + `TrackWindowMove` 의 활성 여부), (c) `ImeStatus.Detect` 의 `detection_method` 분기 — 이 3개 영역에 한해 즉시 반영된다
+- **미배선 — 시각 필드** — 인디케이터 렌더링 경로(`Animation.TriggerShow` / `Overlay.UpdateColor` / `BuildStyle`) 는 메인 스레드의 글로벌 `_config` 만 참조한다. 따라서 프로필이 `theme` / `hangul_bg` / `english_bg` / `non_korean_bg` / 색 6쌍 / `opacity` / `idle_opacity` / `active_opacity` / `label_width` / `label_height` / `label_border_radius` / `border_width` / `border_color` / `indicator_scale` / `font_*` / `*_label` / `animation_*` / `*_duration_ms` / `slide_*` / `change_highlight` / `non_korean_ime` 등 시각 필드를 override 해도 화면 색/크기/투명도는 글로벌 값 그대로다. 머지 자체는 정확한 `resolved` 인스턴스를 만들지만 그 인스턴스가 렌더링 코드에 전달되지 않는다. 이 배선은 별도 후속 PR 의 범위
+- **PollIntervalMs 의 한계** — 감지 루프(`DetectionLoop`) 는 `_config.PollIntervalMs` 글로벌 값만 사용하므로 프로필에서 이 키를 override 해도 실효 변화 없다
+- **LRU 캐시** — 매칭 결과는 프로세스명/클래스명/타이틀 키 기준 LRU(최대 50개)로 캐시되어 80ms 폴링 핫패스의 JSON roundtrip 비용을 흡수한다. 글로벌 인스턴스가 교체(핫 리로드 / 트레이 저장) 되면 자동 무효화되고, 시스템 비주얼 스타일 변경(`WM_SETTINGCHANGE` · `WM_THEMECHANGED`) 시에도 캐시가 클리어되어 `Theme.System` 을 상속한 프로필이 옛 강조색을 박제하지 않는다
+- **타이틀 모드의 ReDoS 가드** — `title` 모드는 각 프로필 키를 정규식으로 평가하며 100ms 매칭 타임아웃을 적용한다. `config.json` 이 user-writable 이라 악의적 패턴의 지수 백트래킹이 들어와도 한 틱 안에서 컷오프된다
+
+### 5.5 핫 리로드
 - 감지 스레드가 ~5 초마다 `config.json` mtime 체크
 - 변경 감지 시 `WM_CONFIG_CHANGED` → 자동 리로드
 - **삭제 안전**: mtime 체크 전에 `File.Exists` 가드를 통과해야 한다. 파일이 삭제된 상태에서는 `GetLastWriteTimeUtc` 가 `1601-01-01` 센티널을 반환해 "변경됨" 으로 오인되는데, 이를 통과시키면 `Load()` 가 기본값으로 리셋하고 다음 `Save()` 가 파일을 재생성하면서 사용자 설정을 덮어써 버린다. 에디터의 원자적 교체(`delete → rename`) 저장 방식과도 호환되어야 하므로 파일 잠금이 아닌 읽기 측 가드로 해결
