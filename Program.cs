@@ -99,6 +99,12 @@ internal static partial class Program
 
     static void MainImpl()
     {
+        // 0. Core 로깅 sink 배선 — Core 코드의 `LogProvider.Sink?.X(...)` 호출이 Logger 로 흐르도록.
+        //    Logger.Initialize 가 호출되기 전에 Core 코드(예: Settings.Load 내부 JsonSettingsManager)
+        //    가 sink 를 통해 보낸 메시지는 Logger 의 pre-Initialize 버퍼에 쌓였다가 Initialize 직후
+        //    한꺼번에 koenvue.log 로 flush — PR-06 Tier-3 ④ 에서 발견된 Trace-only 한계 해소.
+        LogProvider.Sink = new LoggerSink();
+
         // 1. 다중 인스턴스 체크 — 실패 시 기존 인스턴스에 활성화 신호만 보내고 즉시 종료.
         //    Cleanup 보다 먼저 실행해야 "이미 실행 중" 인 정상 인스턴스의 트레이 아이콘을
         //    NIM_DELETE 로 지워버리는 부작용이 없다.

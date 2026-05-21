@@ -1,8 +1,8 @@
 # Improvement Plan — Progress Index
 
 **Last updated**: 2026-05-21
-**Current branch**: main (PR-06 머지 완료)
-**Next PR**: PR-08/09/10/11 자유 선택
+**Current branch**: feat/pr-09-logging-policy (Tier-1+2 통과, Tier-3 사용자 검증 대기)
+**Next PR**: PR-09 머지 후 PR-07/08/10/11 자유 선택
 
 ## Progress matrix
 
@@ -17,7 +17,7 @@
 | 06 | I18n + Language enum                    | ✅     | (merged → main, f1fb11c)        | Low     | M    | D3+D4 + Tier-3 즉시반영 fix. Tier-1+2+3 통과. AOT 4.82 MB |
 | 07 | DialogShell + a11y baseline             | ⏳     | feat/pr-07-dialog-shell         | Medium  | L    | C3+H4-b. 수동 smoke 필요 |
 | 08 | Core reuse restoration                  | ⏳     | feat/pr-08-core-reuse           | Low     | M    | C4+C6+C5(TopmostWatchdog만)+E1+E2+E3 |
-| 09 | Logging policy + ILogSink               | ⏳     | feat/pr-09-logging-policy       | Low     | M    | E4+E5+F1+F3+F4+F5 |
+| 09 | Logging policy + ILogSink               | 🚧     | feat/pr-09-logging-policy       | Low     | M    | E4+E5+F1+F3+F4+F5 + pre-Init 버퍼. Tier-1+2 통과 (AOT 4.80 MB, -16 KB) |
 | 10 | CI + first tests                        | ⏳     | feat/pr-10-ci-tests             | Low     | M    | G1+G5 |
 | 11 | Version single-source + SHA256 release  | ⏳     | feat/pr-11-version-signing      | Medium  | L    | D6+G4 |
 | 12 | Documentation alignment                 | ⏳     | feat/pr-12-docs                 | Low     | S    | H1+H2+H3 |
@@ -87,3 +87,4 @@ PR별 Tier-2 grep 가드 + Tier-3 수동 smoke은 각 `PR-NN-*.md` §3 참조.
 | 2026-05-21 | PR-05 | Tier-3 수동 smoke 4항목 (테마 4종 전환 / Custom 왕복 / 고대비 모드 / SettingsDialog range) 모두 사용자 가시 통과. FF merge to main (deedabe) + 브랜치 삭제. PR-05 (DefaultConfig 단일 진실원 + ThemeColors record + 고대비 분기) 완료 | 다음 PR (06/08/09/10/11 자유 선택) |
 | 2026-05-21 | PR-06 | D3+D4 구현 완료. `I18n.cs` 41 property → `Dictionary<I18nKey, (Ko, En)>` + `Get(key)` dispatcher (매개변수 헬퍼 3종은 메서드 유지, locale suffix 만 `SizeLabelSuffix` 키로 분리). `AppLanguage { Auto, Ko, En }` enum 신설 + `AppConfig.Language` string → enum + `I18n.Load(AppLanguage)` + `Settings.Validate` 에 `EnumOrDefault` 한 줄 + `EnsureSubObjects` Language 줄 제거 + `SettingsDialog.Fields.cs` 의 `LanguageToIndex`/`IndexToLanguage` 헬퍼 2종 삭제 + Combo 단순화. Tier-1 debug + AOT publish clean (0 경고, 4.82 MB). Tier-2 grep 가드 5종 통과 (`_isKorean ? = 1` Get 만, `I18nKey = 97`, `enum AppLanguage = 1`, `string Language in AppConfig = 0`, `"ko"/"en"/"auto" in SettingsDialog.Fields.cs = 0`). invariant 4종 + P5 2종 0 매치. 문서 5건 갱신 (CHANGELOG / architecture / conventions / dev-notes / PR-06 §6). README/User_Guide 는 `language` 키 참조 0 이라 갱신 불요 | Tier-3 사용자 smoke (트레이 메뉴 한·영 / Settings 언어 전환 / config.json `"language": "auto"` 호환) 검증 후 머지 |
 | 2026-05-21 | PR-06 | Tier-3 사용자 가시 smoke 4종 통과 — ① 한국어 표시 / ② `English` 즉시 전환 / ③ `"language": "auto"` 호환 / ④ `"language": "fr"` JsonException → defaults 폴백 (`"opacity": 0.1` 동시 편집 후 opacity=0.85 디폴트 가시화로 evidence 대체 — `Settings.Load` Warning 이 `Logger.Initialize` 이전이라 Trace-only). ② 검증 중 결함 fix: `Program.HandleMenuCommand` 의 `updateConfig` 람다에 `oldLanguage != _config.Language` 비교 + `I18n.Load(_config.Language)` 한 줄 추가 (v0.9.x 부터 잠재했던 `Settings.Save` self-bump 차단 결함). Tier-1+2 재검증 통과. CHANGELOG / dev-notes / §3 문구 정정. FF merge to main 진행 | 브랜치 삭제 후 다음 PR (08/09/10/11 자유 선택) |
+| 2026-05-21 | PR-09 | E4+E5+F1+F3+F5 구현 + F4 명세-convention 충돌 해소(현 catch 유지). 신규 `Core/Logging/ILogSink.cs` + `Core/Logging/LogProvider.cs` + `Logger.cs` 끝 `LoggerSink` passthrough. Core 6 파일 18 호출 `Logger.X → LogProvider.Sink?.X` 일괄 치환. `Program.MainImpl` 첫 라인에 Sink 배선. **E4+ 스펙 보강** — PR-06 Tier-3 ④ 의 Trace-only Warning 한계 해소: Logger.cs 에 `_preInitBuffer` 추가 + `EnqueueToFile` 가 pre-Init 시 본 버퍼로 우회 + `Initialize` 가 `FlushPreInitBuffer()` 호출. **E5** — Core/Logging/LogLevel.cs STJ 의존 제거 + App/Logging/LogLevelJsonConverter 신규 + AppConfig.LogLevel 속성에 `[JsonConverter]`. **F1** — Core Debug 5 라인 "failed" 워딩 회피. **F3** — PositionCleanupService:94 catch narrow. **F5** — last-error 3군(CreateMainWindow / UriLauncher / NIM_ADD·NIM_SETVERSION) 추가. Tier-1 debug + AOT publish clean (0 경고, 4.80 MB, -16 KB). Tier-2 grep 가드 6종 통과. invariant 4종 + P5 2종 0매치. 문서 4건 갱신 (CHANGELOG / conventions §8+§9 신규 / PR-09 §1+§6 / INDEX) | Tier-3 사용자 smoke (정상 부팅 + Debug 레벨 부팅 + `"language":"fr"` 편집 후 koenvue.log Warning 가시화) 후 머지 |

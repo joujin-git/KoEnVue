@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using KoEnVue.Core.Logging;
 using KoEnVue.Core.Native;
 
@@ -55,14 +56,18 @@ internal sealed class NotifyIconManager
 
         if (!Shell32.Shell_NotifyIconW(Win32Constants.NIM_ADD, ref nid))
         {
-            Logger.Warning("Shell_NotifyIconW NIM_ADD failed");
+            int err = Marshal.GetLastPInvokeError();
+            LogProvider.Sink?.Warning($"Shell_NotifyIconW NIM_ADD failed: error={err}");
             return false;
         }
 
         // NOTIFYICON_VERSION_4 활성화 — WM_CONTEXTMENU 전달 + NIF_SHOWTIP 요구 사항의 전제.
         nid.uVersion = Win32Constants.NOTIFYICON_VERSION_4;
         if (!Shell32.Shell_NotifyIconW(Win32Constants.NIM_SETVERSION, ref nid))
-            Logger.Warning("Shell_NotifyIconW NIM_SETVERSION failed");
+        {
+            int err = Marshal.GetLastPInvokeError();
+            LogProvider.Sink?.Warning($"Shell_NotifyIconW NIM_SETVERSION failed: error={err}");
+        }
 
         _added = true;
         return true;
@@ -85,7 +90,7 @@ internal sealed class NotifyIconManager
         nid.guidItem = _iconGuid;
 
         if (!Shell32.Shell_NotifyIconW(Win32Constants.NIM_MODIFY, ref nid))
-            Logger.Debug("Shell_NotifyIconW NIM_MODIFY (icon) failed");
+            LogProvider.Sink?.Debug("Shell_NotifyIconW NIM_MODIFY (icon) skipped — shell rejected update");
     }
 
     /// <summary>
@@ -105,7 +110,7 @@ internal sealed class NotifyIconManager
         CopyTooltip(ref nid, tip);
 
         if (!Shell32.Shell_NotifyIconW(Win32Constants.NIM_MODIFY, ref nid))
-            Logger.Debug("Shell_NotifyIconW NIM_MODIFY (tooltip) failed");
+            LogProvider.Sink?.Debug("Shell_NotifyIconW NIM_MODIFY (tooltip) skipped — shell rejected update");
     }
 
     /// <summary>
@@ -128,7 +133,7 @@ internal sealed class NotifyIconManager
         CopyTooltip(ref nid, tip);
 
         if (!Shell32.Shell_NotifyIconW(Win32Constants.NIM_MODIFY, ref nid))
-            Logger.Debug("Shell_NotifyIconW NIM_MODIFY (icon+tooltip) failed");
+            LogProvider.Sink?.Debug("Shell_NotifyIconW NIM_MODIFY (icon+tooltip) skipped — shell rejected update");
     }
 
     /// <summary>

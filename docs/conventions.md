@@ -119,7 +119,26 @@ Both have single-line try bodies so wide catch poses no masking risk.
 
 Logic bugs in pipeline hooks (`Migrate`/`Validate`/`ApplyTheme`) and in path normalization helpers now propagate instead of being absorbed.
 
-### 8. Detection loop catch
+### 8. Core ↔ Logger 단방향 추상화 (PR-09)
+
+Core 레이어 코드는 정적 `Logger.X(...)` 를 직접 호출하지 않는다 — 대신 `LogProvider.Sink?.X(...)` 를 사용한다.
+
+- **이유**: Core 모듈을 다른 Windows 데스크톱 프로젝트로 lift-out 할 때, 거기서 채택한 다른 로깅 백엔드(또는 no-op) 와 결합 가능해야 한다. `Logger` 의 drain thread / 파일 로테이션을 전부 끌고 갈 필요가 없도록 인터페이스 한 점에서만 외부 의존을 받는다.
+- **배선**: `Program.MainImpl` 의 첫 라인(Mutex 획득 전)에서 `LogProvider.Sink = new LoggerSink();`. `LoggerSink` 는 `Logger.X` 로 passthrough.
+- **부트 순서 보장**: `LogProvider.Sink` 가 `Logger.Initialize` 이전에 set 되어도 무방 — `Logger` 내부에 pre-Initialize 큐가 있어 `Settings.Load` 단계(JsonSettingsManager 의 Info/Warning) 로그는 버퍼링됐다가 `Initialize` 직후 일괄 flush 된다. PR-06 Tier-3 ④ 의 "Settings.Load Warning 이 koenvue.log 에 안 남는다" 한계가 본 절차로 해소됨.
+- **App 레이어**: App 코드는 `Logger.X` 직접 호출 그대로 OK — Core 만 단방향 추상화 대상.
+- **검증**: `git grep "Logger\.\(Debug\|Info\|Warning\|Error\)" Core/` 가 Logger.cs(LoggerSink 정의) 외 0 매치 + `git grep "LogProvider\." Core/` 가 1+ 매치.
+- **`LogLevel` STJ 의존**: Core `LogLevel` enum 은 `[JsonStringEnumMemberName]` 도 부착하지 않는 순수 enum. JSON 매핑(`"DEBUG"/"INFO"/"WARNING"/"ERROR"`) 은 App 레이어의 `LogLevelJsonConverter` 가 담당 — `AppConfig.LogLevel` 속성에 `[JsonConverter(typeof(LogLevelJsonConverter))]` 만 부착.
+
+### 9. Debug 레벨 로그의 "failed" 단어 회피
+
+Debug 레벨에서 "failed" 단어는 사용자가 로그 파일을 봤을 때 불필요한 불안을 유발한다 (Debug 레벨까지 켜는 사용자는 보통 진단 중이라 더 민감). 호출 자체는 정상 흐름인데 단발성 idempotent / silent fallthrough / 핫 패스 silent-drop 경로의 의도 노출이 깨진다.
+
+- **대체 표현**: "skipped" / "rejected" / "already X" / "absent" 등 — 동작의 의미를 표현.
+- **Warning/Error 레벨은 "failed" 허용**: 사용자가 봐야 할 진짜 실패는 "failed" 의 명확한 신호가 더 가치 있다.
+- **검증**: `git grep "Sink?\.Debug.*failed" Core/` 0 매치 (Win32DialogHelper 의 `error=` 포함 Error 레벨 라인은 무관).
+
+### 10. Detection loop catch
 
 `DetectionLoop`의 while 본문은 `catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or COMException or ArgumentException)`으로 래핑된다. 단일 폴링 예외(예: `WindowProcessInfo.GetProcessName` 내 `OpenProcess` 실패, UAC 전환 중 `COMException`)가 감지 스레드 전체를 종료시키지 않도록 보호하며, 다음 폴링 주기에서 정상 재개한다. `Thread.Sleep`은 try 바깥에 위치하여 예외 후에도 폴링 간격이 유지된다. Rule 2의 변형으로, P/Invoke + BCL 호출이 혼합된 긴 본문이므로 4-타입 narrowing 이 정당하며 로직 버그(`NullReferenceException` 등)는 Rule 1 에 따라 propagate 된다.
 

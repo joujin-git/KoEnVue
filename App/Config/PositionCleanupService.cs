@@ -91,8 +91,13 @@ internal static class PositionCleanupService
                 finally { proc.Dispose(); }
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException
+                                     or System.ComponentModel.Win32Exception)
         {
+            // Process.GetProcesses 는 winapi enumeration 자체가 막힐 때 Win32Exception
+            // (예: 권한 부족 / WMI 서비스 비활성) 또는 InvalidOperationException
+            // (no processes returned) 외에는 throw 하지 않는다. 그 외 예외는 propagate
+            // 시켜 로직 버그(NullReferenceException 등) 가 silent fallthrough 되지 않도록.
             Logger.Warning($"PositionCleanup: Process.GetProcesses enumeration failed: {ex.Message}");
         }
         return running;

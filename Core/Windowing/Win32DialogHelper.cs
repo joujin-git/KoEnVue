@@ -164,16 +164,16 @@ internal static class Win32DialogHelper
                 // 동작. 결함이 아닌 idempotent 경로라 Debug 레벨 + "failed" 단어 회피 (사용자가 로그를
                 // 봤을 때 불필요한 불안 유발 방지). 다이얼로그 Show() 가 매 호출마다 RegisterClassExW
                 // 를 호출하는 구조라 두 번째 이상의 오픈 시 자연스럽게 이 경로를 탄다.
-                Logger.Debug($"Window class '{className}' already registered (reusing)");
+                LogProvider.Sink?.Debug($"Window class '{className}' already registered (reusing)");
             }
             else
             {
-                Logger.Error($"RegisterClassExW failed for '{className}': error={err}");
+                LogProvider.Sink?.Error($"RegisterClassExW failed for '{className}': error={err}");
             }
         }
         else
         {
-            Logger.Debug($"Window class registered: '{className}' atom={atom}");
+            LogProvider.Sink?.Debug($"Window class registered: '{className}' atom={atom}");
         }
         return atom;
     }

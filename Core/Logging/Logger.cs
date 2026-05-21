@@ -34,6 +34,14 @@ internal static class Logger
     private const int MaxQueueSize = 10_000;
     private static int _droppedCount;
 
+    // Pre-Initialize 버퍼 — Initialize 호출 전(Settings.Load 단계의 JsonSettingsManager 등)에
+    // 발화한 Logger.X 메시지가 Trace 외에는 사라지던 한계 (PR-06 Tier-3 ④ 에서 확인) 해소.
+    // Initialize 가 정상 완료되면 본 버퍼의 내용을 _logQueue 로 옮긴 뒤 한 번 drain. 버퍼 상한은
+    // 같은 MaxQueueSize — Initialize 전 부트 단계의 로그가 상한을 넘기는 시나리오는 비정상이므로
+    // 동일 상한으로 충분.
+    private static readonly ConcurrentQueue<string> _preInitBuffer = new();
+    private static int _preInitDroppedCount;
+
     /// <summary>로그 레벨 설정.</summary>
     public static void SetLevel(LogLevel level) => _logLevel = level;
 
@@ -83,6 +91,26 @@ internal static class Logger
             Name = "LogDrain",
         };
         _drainThread.Start();
+
+        // Pre-Initialize 버퍼를 큐로 옮긴 뒤 drain 신호 — 부트 초반의 Logger.X 메시지가
+        // koenvue.log 에 정상 기록되도록 한다.
+        FlushPreInitBuffer();
+    }
+
+    private static void FlushPreInitBuffer()
+    {
+        int dropped = Interlocked.Exchange(ref _preInitDroppedCount, 0);
+        if (dropped > 0)
+        {
+            _logQueue.Enqueue(
+                $"[WARN] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} Logger pre-init buffer dropped {dropped} oldest messages");
+        }
+
+        while (_preInitBuffer.TryDequeue(out string? message))
+            _logQueue.Enqueue(message);
+
+        if (!_logQueue.IsEmpty)
+            _drainSignal.Set();
     }
 
     /// <summary>파일 로깅 종료. 잔여 메시지 flush 후 writer dispose.</summary>
@@ -110,12 +138,20 @@ internal static class Logger
     // ================================================================
 
     /// <summary>
-    /// 비차단 enqueue. drain 스레드가 없으면 무시.
-    /// <see cref="MaxQueueSize"/> 초과 시 최고령부터 드롭하여 메모리 무제한 증가를 차단.
+    /// 비차단 enqueue. drain 스레드가 없으면 <see cref="_preInitBuffer"/> 로 우회 — Initialize 가
+    /// 호출되면 본 버퍼를 큐로 옮겨 한꺼번에 기록한다. <see cref="MaxQueueSize"/> 초과 시 최고령부터
+    /// 드롭하여 메모리 무제한 증가를 차단.
     /// </summary>
     private static void EnqueueToFile(string formatted)
     {
-        if (_drainThread is null) return;
+        if (_drainThread is null)
+        {
+            // Pre-Initialize 단계: 버퍼에 누적. Initialize 가 끝나면 FlushPreInitBuffer 가 옮겨 적는다.
+            while (_preInitBuffer.Count >= MaxQueueSize && _preInitBuffer.TryDequeue(out _))
+                Interlocked.Increment(ref _preInitDroppedCount);
+            _preInitBuffer.Enqueue(formatted);
+            return;
+        }
 
         // Count 비교는 대략치이지만 상한 근처에서만 오버슈트 가능 — 허용.
         while (_logQueue.Count >= MaxQueueSize && _logQueue.TryDequeue(out _))
@@ -225,4 +261,17 @@ internal static class Logger
         _fileWriter?.Dispose();
         _fileWriter = null;
     }
+}
+
+/// <summary>
+/// <see cref="ILogSink"/> 의 기본 구현 — 정적 <see cref="Logger"/> 로 passthrough 한다.
+/// App 레이어가 <c>LogProvider.Sink = new LoggerSink();</c> 로 배선하면 Core 코드의 모든
+/// <c>LogProvider.Sink?.X(...)</c> 호출이 그대로 Logger 의 큐잉 메커니즘으로 흐른다.
+/// </summary>
+internal sealed class LoggerSink : ILogSink
+{
+    public void Debug(string message)   => Logger.Debug(message);
+    public void Info(string message)    => Logger.Info(message);
+    public void Warning(string message) => Logger.Warning(message);
+    public void Error(string message)   => Logger.Error(message);
 }

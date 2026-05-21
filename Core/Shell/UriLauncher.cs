@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using KoEnVue.Core.Logging;
 using KoEnVue.Core.Native;
 
@@ -40,10 +41,13 @@ internal static class UriLauncher
         // ShellExecuteW 의 반환값은 HINSTANCE 이지만 의미상 정수: <= 32 이면 실패.
         if ((long)result <= 32)
         {
-            Logger.Warning($"ShellExecuteW failed for {label} (rc={(long)result})");
+            // rc 자체가 SE_ERR_* 코드를 담는 게 일반적이지만, 일부 헬퍼/쉘 확장은 SetLastError 도
+            // 함께 세팅한다 — 진단 정보가 한 곳에 더 있는 게 디버깅에 도움.
+            int err = Marshal.GetLastPInvokeError();
+            LogProvider.Sink?.Warning($"ShellExecuteW failed for {label} (rc={(long)result}, error={err})");
             return false;
         }
-        Logger.Info($"Opened: {label}");
+        LogProvider.Sink?.Info($"Opened: {label}");
         return true;
     }
 }

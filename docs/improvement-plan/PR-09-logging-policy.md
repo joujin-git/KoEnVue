@@ -1,6 +1,6 @@
 # PR-09: Logging policy + ILogSink + catch 일관화
 
-**Status**: ⏳ pending
+**Status**: 🚧 Tier-1+2 통과, Tier-3 사용자 검증 대기
 **Branch**: feat/pr-09-logging-policy
 **Base**: main (PR-03 후 권장)
 **Risk**: Low
@@ -100,4 +100,6 @@
 
 ## 6. 세션 진행 로그
 
-(empty)
+| Date | Session | What | Next |
+|---|---|---|---|
+| 2026-05-21 | 1 | E4+E5+F1+F3+F5 구현 + F4 명세-convention 충돌 해소. **E4**: 신규 `Core/Logging/ILogSink.cs` 인터페이스 (Debug/Info/Warning/Error 4 메서드) + `Core/Logging/LogProvider.cs` 정적 `Sink?` 단일 점 + `Logger.cs` 끝에 `LoggerSink : ILogSink` passthrough 구현. Core 6 파일(JsonSettingsManager / NotifyIconManager / UriLauncher / LayeredOverlayBase / Win32DialogHelper / WindowProcessInfo)의 18 호출 `Logger.X(...)` → `LogProvider.Sink?.X(...)` 일괄 치환. `Program.MainImpl:106` 첫 라인(Mutex 획득 전)에 `LogProvider.Sink = new LoggerSink();` 배선. **E4+ (스펙 보강)**: PR-06 Tier-3 ④ 의 "Settings.Load 가 발화하는 Warning 이 Logger.Initialize 이전이라 Trace-only" 한계를 같이 해소 — Logger.cs 에 `_preInitBuffer` (ConcurrentQueue<string>) + `_preInitDroppedCount` 추가, `EnqueueToFile` 가 `_drainThread is null` 일 때 본 버퍼로 우회, `Initialize` 가 drain 스레드 시작 직후 `FlushPreInitBuffer()` 호출해 옮겨 적기. 본 보강은 명세 N1 의 의도("Logger 의 큐잉 메커니즘 활용") 를 실제로 동작하게 만드는 보완. **E5**: `Core/Logging/LogLevel.cs` 에서 `[JsonConverter(typeof(JsonStringEnumConverter<LogLevel>))]` + 4개 `[JsonStringEnumMemberName]` 제거 — Core enum 이 STJ 의존 0. 신규 `App/Logging/LogLevelJsonConverter.cs` `JsonConverter<LogLevel>` 직접 구현 (Read case-insensitive, Write 대문자, 정의 외 JsonException throw). AppConfig.LogLevel 속성에 `[JsonConverter(typeof(LogLevelJsonConverter))]` 부착. **F1**: Core Debug 5 라인의 "failed" 워딩 회피 — NotifyIconManager 3 (NIM_MODIFY icon/tooltip/icon+tooltip) "skipped — shell rejected update", WindowProcessInfo.GetProcessName "skipped (access denied or terminated)", JsonSettingsManager.CheckReload "mtime probe skipped (file locked or restricted)". **F3**: PositionCleanupService.CollectRunningProcessNames 바깥 catch 를 `when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)` 로 narrow + 주석. **F4**: HttpClientLite.cs:116 의 `catch (Exception)` 는 conventions.md §2 가 justified-bare-catch 예시로 명시 — narrow 대신 현 catch + 주석 유지하기로 결정 (명세 < convention 우선). **F5**: 3 군 last-error 추가 — Program.Bootstrap.CreateMainWindow (CreateWindowExW 실패 시 `error=` 필드), UriLauncher.Open (ShellExecuteW rc<=32 시 `error=` 추가), NotifyIconManager NIM_ADD/NIM_SETVERSION (실패 시 `error=`). Tier-1 debug + AOT publish clean (0 경고, 4.80 MB — vs 4.82 baseline -16 KB, JsonStringEnumConverter<LogLevel> 메타가 user converter 로 교체). Tier-2 grep 가드 6종 통과: `Logger.X` in Core = 4 매치(LoggerSink passthrough 만), `LogProvider.` in Core 17, `interface ILogSink` 1, `Sink?.Debug.*failed` 0, `catch (Exception` justified-3 (SystemFilter:58/165, HttpClientLite:116, UpdateChecker:109) 외 모두 narrowed, `LogProvider.Sink = ` 1. invariant 4종 + P5 2종 0매치. 문서 4건 갱신 (CHANGELOG / conventions §8+§9 신규 + Detection loop catch 가 §10 으로 번호 이동 / PR-09 §1+§6 / 본 §6). | Tier-3 사용자 smoke (정상 부팅 / "language":"fr" 편집 후 koenvue.log Warning 가시화 / Debug 레벨 부팅) 검증 후 머지 |

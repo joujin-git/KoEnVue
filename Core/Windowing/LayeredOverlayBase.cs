@@ -74,7 +74,7 @@ internal sealed class LayeredOverlayBase : IDisposable
     private int _cachedLabelFontSize;
     private bool _cachedLabelFontIsBold;
 
-    // CreateDIBSection 실패 시 Logger.Warning 을 한 번만 남기기 위한 래치.
+    // CreateDIBSection 실패 시 sink Warning 을 한 번만 남기기 위한 래치.
     // 빠른 IME 토글/DPI 전환 시 매 호출마다 기록되면 로그 스팸이 되므로 초회 1회만 남기고
     // 이후 실패는 조용히 fall-through — 기존 _ppvBits / _currentBitmap 은 보존된다.
     private bool _dibFailureLogged;
@@ -689,7 +689,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         // 빈 HFONT로 DrawText 가 실패하는 상태에 고착된다. Dispose 도 실패 경로에서는 생략.
         if (hFont == IntPtr.Zero)
         {
-            Logger.Warning($"CreateFontW failed: family='{style.FontFamily}' size={scaledFontSize} bold={style.IsBold}");
+            LogProvider.Sink?.Warning($"CreateFontW failed: family='{style.FontFamily}' size={scaledFontSize} bold={style.IsBold}");
             return;
         }
 
@@ -738,7 +738,7 @@ internal sealed class LayeredOverlayBase : IDisposable
             if (!_dibFailureLogged)
             {
                 _dibFailureLogged = true;
-                Logger.Warning($"CreateDIBSection failed: {width}x{height}. Keeping previous DIB.");
+                LogProvider.Sink?.Warning($"CreateDIBSection failed: {width}x{height}. Keeping previous DIB.");
             }
             return;
         }

@@ -77,7 +77,7 @@ internal class JsonSettingsManager<T>
                 config = ApplyTheme(config);
 
                 _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
-                Logger.Info($"Config loaded from {_filePath}");
+                LogProvider.Sink?.Info($"Config loaded from {_filePath}");
                 return config;
             }
             catch (Exception ex) when (IsExpectedLoadException(ex))
@@ -86,14 +86,14 @@ internal class JsonSettingsManager<T>
                 // mtime은 갱신해서 5초 폴링이 WM_CONFIG_CHANGED를 무한 재발송하는 스팸을 차단.
                 // 정책 항목 1(타입 좁히기): I/O + JSON + 소스젠 비지원 타입만 잡고, 훅(Validate/Migrate/...)
                 // 의 로직 버그(NullRef 등)는 propagate 시켜 표면화하도록 한다.
-                Logger.Warning($"Failed to load config from {_filePath}: {ex.Message}. Using defaults without overwriting.");
+                LogProvider.Sink?.Warning($"Failed to load config from {_filePath}: {ex.Message}. Using defaults without overwriting.");
                 try { _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath); }
                 catch (Exception innerEx) when (IsExpectedIoException(innerEx)) { }
                 return new T();
             }
         }
 
-        Logger.Info($"Config not found, creating defaults at {_filePath}");
+        LogProvider.Sink?.Info($"Config not found, creating defaults at {_filePath}");
         T defaults = new();
         Save(defaults);
         return defaults;
@@ -116,13 +116,13 @@ internal class JsonSettingsManager<T>
             JsonSettingsFile.WriteAllText(_filePath, json);
 
             _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
-            Logger.Debug($"Config saved to {_filePath}");
+            LogProvider.Sink?.Debug($"Config saved to {_filePath}");
         }
         catch (Exception ex) when (IsExpectedSaveException(ex))
         {
             // NF-25: 저장 실패 시 로그 경고 + 인메모리 유지.
             // 정책 항목 1(타입 좁히기): 로직 버그(NullRef 등)는 전파되어 표면화되도록 한다.
-            Logger.Warning($"Failed to save config: {ex.Message}");
+            LogProvider.Sink?.Warning($"Failed to save config: {ex.Message}");
         }
     }
 
@@ -154,7 +154,7 @@ internal class JsonSettingsManager<T>
         catch (Exception ex) when (IsExpectedIoException(ex))
         {
             // 파일 잠금(아토믹 replace 에디터의 delete→rename 중간 상태) 또는 권한 오류는 흡수.
-            Logger.Debug($"CheckReload mtime probe failed: {ex.Message}");
+            LogProvider.Sink?.Debug($"CheckReload mtime probe skipped (file locked or restricted): {ex.Message}");
         }
 
         return false;

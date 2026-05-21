@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using KoEnVue.App.Config;
 using KoEnVue.App.Detector;
 using KoEnVue.App.UI;
@@ -118,7 +119,10 @@ internal static partial class Program
             IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
 
         if (hwnd == IntPtr.Zero)
-            Logger.Error("Failed to create main window");
+        {
+            int err = Marshal.GetLastPInvokeError();
+            Logger.Error($"Failed to create main window: error={err}");
+        }
 
         return hwnd;
     }

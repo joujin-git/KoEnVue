@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using KoEnVue.App.Config;
+using KoEnVue.App.Logging;
 using KoEnVue.Core.Logging;
 
 namespace KoEnVue.App.Models;
@@ -99,6 +100,7 @@ internal sealed record AppConfig
     public bool UserHidden { get; init; } = false;
 
     // [시스템]
+    [JsonConverter(typeof(LogLevelJsonConverter))]
     public LogLevel LogLevel { get; init; } = LogLevel.Info;
     public AppLanguage Language { get; init; } = AppLanguage.Auto;
     public bool LogToFile { get; init; } = true;
