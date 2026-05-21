@@ -47,7 +47,7 @@ ItemGroup 의 `<_VersionLine Include="    public const ..." />` 에서 leading 4
 
 ## Tier-1 결과
 
-- `dotnet build` clean → `obj/Debug/net10.0-windows/Version.g.cs` 생성 + `DefaultConfig.AppVersion = "0.9.2.8"` 박힘 (현재 csproj 값).
+- `dotnet build` clean → `obj/Debug/net10.0-windows/Version.g.cs` 생성 + `DefaultConfig.AppVersion = "0.9.2.8"` 박힘 (PR-11 작성 당시 csproj 값. 릴리스 시점에는 `0.9.3.0` 으로 bump 됨).
 - `dotnet test tests/KoEnVue.Tests/` 40/40 통과 (테스트가 `DefaultConfig.AppVersion` 을 직접 검증하진 않지만 partial 분해가 다른 const 참조를 깨지 않는지 확인).
 - `dotnet publish -r win-x64 -c Release` clean → `bin/Release/.../publish/KoEnVue.exe` 4,807,168 B (PR-10 과 동일 — Deterministic 활성으로 PE timestamp 는 hash 기반 의사값으로 고정. 단 ILC codegen 단계 비결정성이 별개로 존재해 매 publish 마다 SHA256 자체는 달라짐 — [docs/dev-notes/2026-05-21-signing-decision.md](2026-05-21-signing-decision.md) §함의 — NativeAOT 비결정성).
 

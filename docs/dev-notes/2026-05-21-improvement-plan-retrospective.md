@@ -8,7 +8,7 @@
 
 ## 0. 전/후 비교 한 줄 요약
 
-| 축 | 전 (v0.9.x) | 후 (v0.9.3.0 후보) |
+| 축 | 전 (v0.9.2.x) | 후 (v0.9.3.0) |
 |---|---|---|
 | **보안 토큰** | `requireAdministrator` (매 부팅 UAC) | `asInvoker` + `%LOCALAPPDATA%` fallback |
 | **테스트 / CI** | 0개 / 0개 | xUnit 40/40 + GitHub Actions windows-latest |
@@ -77,19 +77,18 @@
 
 본 13-PR 의 범위 밖이지만, 본 작업 중 인접 가능성으로 관찰된 항목 — 우선순위는 사용자 가시 효과 + 회귀 위험으로 정렬:
 
-1. **v0.9.3.0 릴리스 cut**: 본 13-PR 의 변경 누적 + asInvoker BREAKING 을 정식 태그 + GitHub Releases 본문에 SHA256 첨부. [docs/release-procedure.md](../release-procedure.md) 절차 따름.
-2. **`app_profiles` GUI 편집기**: 현재 config.json 직접 편집만 가능. Settings 다이얼로그에 "앱별 프로필" 섹션 추가 — 프로세스명 / 매칭 키 / override 6 키 (theme/색상/투명도/위치) 최소 노출.
-3. **글로벌 핫키 (Win+Shift+K 같은)**: 인디 토글 + 강제 표시. `RegisterHotKey` Win32 API. v0.9.x 부터 사용자 요구 잠재.
-4. **CleanupDialog 양방향 정렬**: 현재 알파벳 정렬 고정. 사용 빈도순 / 최근 사용순 옵션. (`indicator_positions` dict 가 입력 → 정렬 키만 추가)
-5. **다국어 (3rd language)**: 현재 ko/en. I18n 의 `Dictionary<I18nKey, (Ko, En)>` 를 3-tuple 또는 `Dictionary<I18nKey, Dictionary<Lang, string>>` 로 확장 (PR-06 회고에서 이미 미리 설계됨).
-6. **PR-13 의 cross-thread per-app override 마샬링 검증**: 감지 스레드가 `ResolveForApp` 결과를 그대로 PostMessage 로 메인에 전달하는 현 구조의 성능 측정 (LRU 캐시 50 슬롯의 hit rate, JSON merge 비용). 4 주 데이터로 마이그레이션 필요 여부 재결정.
-7. **dotnet 10 -> 11 SDK 마이그레이션**: `EnableAotAnalyzer` / `EnableTrimAnalyzer` / `EnableSingleFileAnalyzer` 분석기의 신규 경고 검수 + AOT 사이즈 재측정.
+1. **`app_profiles` GUI 편집기**: 현재 config.json 직접 편집만 가능. Settings 다이얼로그에 "앱별 프로필" 섹션 추가 — 프로세스명 / 매칭 키 / override 6 키 (theme/색상/투명도/위치) 최소 노출.
+2. **글로벌 핫키 (Win+Shift+K 같은)**: 인디 토글 + 강제 표시. `RegisterHotKey` Win32 API. v0.9.x 부터 사용자 요구 잠재.
+3. **CleanupDialog 양방향 정렬**: 현재 알파벳 정렬 고정. 사용 빈도순 / 최근 사용순 옵션. (`indicator_positions` dict 가 입력 → 정렬 키만 추가)
+4. **다국어 (3rd language)**: 현재 ko/en. I18n 의 `Dictionary<I18nKey, (Ko, En)>` 를 3-tuple 또는 `Dictionary<I18nKey, Dictionary<Lang, string>>` 로 확장 (PR-06 회고에서 이미 미리 설계됨).
+5. **PR-13 의 cross-thread per-app override 마샬링 검증**: 감지 스레드가 `ResolveForApp` 결과를 그대로 PostMessage 로 메인에 전달하는 현 구조의 성능 측정 (LRU 캐시 50 슬롯의 hit rate, JSON merge 비용). 4 주 데이터로 마이그레이션 필요 여부 재결정.
+6. **dotnet 10 -> 11 SDK 마이그레이션**: `EnableAotAnalyzer` / `EnableTrimAnalyzer` / `EnableSingleFileAnalyzer` 분석기의 신규 경고 검수 + AOT 사이즈 재측정.
 
-## 6. 작업 완료 후 후속 정리 (이 PR 머지 후)
+## 6. 작업 완료 후 후속 정리 (모두 ✅ 완료)
 
-PR-12 (본 PR) 머지 + v0.9.3.0 릴리스 후:
+PR-12 머지 + v0.9.3.0 릴리스 절차:
 
 1. ✅ `docs/improvement-plan/` 디렉토리 **보존** — 미래의 retrospective 참조 + PR-NN-*.md 명세는 self-contained 한 작업 단위 사례집
-2. ⏳ `memory/improvement-plan.md` 메모리 **삭제** (사용자가 새 메모리로 대체 또는 다음 작업 컨텍스트로 전환할 때)
-3. ⏳ README `프로젝트 마일스톤` 또는 유사 섹션에 본 retrospective 링크 (선택)
-4. ⏳ v0.9.3.0 태그 + GitHub Release (asInvoker BREAKING 명시 + SHA256 첨부 — PR-11 산출물 활용)
+2. ✅ `memory/improvement-plan.md` 메모리 **삭제** 완료
+3. ⏳ README `프로젝트 마일스톤` 또는 유사 섹션에 본 retrospective 링크 (선택, 보류)
+4. ✅ **v0.9.3.0 정식 릴리스** — 태그 `v0.9.3.0` + GitHub Release `KoEnVue v0.9.3.0 — asInvoker BREAKING + 13-PR improvement cycle` + SHA256 `D2CD9B1ADEAB63626D3396A300BA28EA4262AE3A3888ED1FDE3799E0D5098555` + asset `KoEnVue.exe` (4,807,168 B) + `KoEnVue.exe.sha256.txt` 첨부 (`isPrerelease=false`, `isDraft=false`). 도중 3-part `v0.10.0` → 4-part `v0.10.0.0` → 사용자 명시로 `v0.9.3.0` 최종 정렬 (메이저 bump 보류 + 0.x 안 BREAKING 을 minor 로 처리).

@@ -25,7 +25,7 @@
 - [ ] [CHANGELOG.md](../../CHANGELOG.md):
   - 기존 항목 보존 (재작성 자제)
   - [Unreleased]에 본 PR의 변경 추가
-  - **다음 릴리스 (v0.9.3.0)** 항목은 Keep a Changelog 표준 헤더(Added/Changed/Deprecated/Removed/Fixed/Security) + bullet 형식
+  - **v0.9.3.0 이후 새 릴리스** 항목은 Keep a Changelog 표준 헤더(Added/Changed/Deprecated/Removed/Fixed/Security) + bullet 형식 (v0.9.3.0 자체는 13-PR 사후 단락형 보존)
 - [ ] [CLAUDE.md](../../CLAUDE.md) 최종 갱신:
   - P5 invariant 갱신(asInvoker — PR-03에서 이미 했지만 최종 확인)
   - "Documentation map" 섹션의 모듈 목록 갱신
@@ -59,7 +59,7 @@
 
 ## 4. 사이드 이펙트 / 위험
 
-- **위험 1**: CHANGELOG 표준 형식과 기존 항목의 비일관. **결정**: 기존 보존, v0.9.3.0부터 표준. 잘 보이는 표시(`---` 등)로 경계 명시.
+- **위험 1**: CHANGELOG 표준 형식과 기존 항목의 비일관. **결정**: 기존 보존, v0.9.3.0 이후 새 릴리스부터 표준 (v0.9.3.0 자체는 13-PR 사후 기록이라 단락형 유지). 잘 보이는 표시(`---` 등)로 경계 명시.
 - **위험 2**: README config 표가 너무 길어지면 별 파일로 분리. `docs/config-reference.md` 등.
 - **위험 3**: retrospective 문서는 의식적인 retrospective ritual — 단순 changelog 요약이 아님. 시간 충분히 투자.
 - **위험 4**: CLAUDE.md 갱신 시 기존 문장의 의도를 보존. P-invariant 표가 핵심이라 P5만 갱신.
@@ -89,7 +89,7 @@
   - Documentation map 에 [CONTRIBUTING.md](../../CONTRIBUTING.md) (PR-10) / [docs/config-reference.md](../config-reference.md) (본 PR) / [docs/release-procedure.md](../release-procedure.md) (PR-11) 3 행 추가.
   - Verification invariants 표에 PR-08 의 IME 어휘 누출 가드 2종 (`(Hangul|English|NonKorean)` Core/ + `맑은 고딕` Core/) 추가 → 누적 6종 → 8종 invariant. `[DllImport` 검색에 `-- '*.cs'` 추가해 docs 매치 노이즈 제거.
 - **H3 — `CHANGELOG.md` 표준 안내**
-  - `[Unreleased]` 직후 한 줄 안내 — "다음 릴리스 (v0.9.3.0) 부터 Keep a Changelog 표준 헤더 + 짧은 bullet 형식. 본 섹션의 PR-00~PR-14 항목은 사후 단락형 — 보존".
+  - `[Unreleased]` 직후 한 줄 안내 — "v0.9.3.0 이후 새 릴리스부터 Keep a Changelog 표준 헤더 + 짧은 bullet 형식. v0.9.3.0 섹션의 PR-00~PR-14 항목은 사후 단락형 — 보존".
   - PR-12 한 줄 엔트리 `### 추가` 에 추가.
 - **retrospective dev-note 신규** ([docs/dev-notes/2026-05-21-improvement-plan-retrospective.md](../dev-notes/2026-05-21-improvement-plan-retrospective.md))
   - 6 섹션: 전/후 비교 1줄 / 15 PR 결과 표 / 잘 된 점 6 / 어려웠던 점 5 / 보류 항목 6 + 재검토 트리거 / 향후 후보 7. 작업 완료 후 후속 정리 절차 포함.

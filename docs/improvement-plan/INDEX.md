@@ -11,7 +11,7 @@
 | 00 | AbandonedMutex 캐치                     | ✅     | (merged → main, c4de0bd)        | Low     | S    | Tier-1+2 통과, Tier-3 deadlock 부재 확인 (catch 자체는 race 좁아 미trigger) |
 | 01 | MergeProfile pipeline + WM_THEMECHANGED | ✅     | (merged → main, 4bca33d)        | Low     | M    | A1+A4+B3+H5. Tier-3 에서 PR-13 신설 근거 발견 |
 | 02 | Analyzers + manifest hardening          | ✅     | (merged → main, 91621a4)        | Medium  | M    | G2+G3. Tier-1+2+3 통과. 분석기 활성 시점에 위반 0건. manifest PE 임베드 확인 |
-| 03 | asInvoker migration (BREAKING)          | ✅     | (merged → main, 06b4157)        | High    | L    | v0.9.3.0 후보. Tier-1+2+3 (A~F) 통과. Tier-3 D 회귀 1건 발견 후 fix (LogonTrigger UserId) |
+| 03 | asInvoker migration (BREAKING)          | ✅     | (merged → main, 06b4157, shipped v0.9.3.0) | High    | L    | Tier-1+2+3 (A~F) 통과. Tier-3 D 회귀 1건 발견 후 fix (LogonTrigger UserId) |
 | 04 | Tray.cs decomposition                   | ✅     | (merged → main, 9192826)        | Low     | M    | C1+C2+D9+D10. Tier-1+2+3 통과. Tray.cs 1156→575줄 (-50%). 4 신규 모듈 + ShowMenu partial |
 | 05 | Theme + DefaultConfig consolidation     | ✅     | (merged → main, deedabe)        | Low     | M    | D2+D5+N3+D7+H4-c. Tier-1+2+3 통과. AppConfig 디폴트 ↔ DefaultConfig ↔ Validate ↔ Dialog 4-축 단일 진실원 + ThemeColors record + 고대비 분기 |
 | 06 | I18n + Language enum                    | ✅     | (merged → main, f1fb11c)        | Low     | M    | D3+D4 + Tier-3 즉시반영 fix. Tier-1+2+3 통과. AOT 4.82 MB |
