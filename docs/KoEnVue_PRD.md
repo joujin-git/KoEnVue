@@ -280,7 +280,7 @@ KoEnVue v0.9.2.5 — GitHub              ← 항상 최상단 헤더 (MF_DEFAULT
 | `vivid` | 비비드 — 강한 원색 대비 (녹/적/청) |
 | `pastel` | 파스텔 — 부드러운 연두/노랑/보라 |
 | `dark` | 다크 — 진한 에메랄드/앰버/회색 |
-| `system` | 시스템 강조색 기반 — Windows `COLOR_HIGHLIGHT` 에서 한글 배경을 뽑고 보색으로 영문 배경을 계산 |
+| `system` | 시스템 강조색 기반 — Win11 의 `DwmGetColorizationColor` (personalization accent 의 source-of-truth) 우선, DWM 비활성/실패 시 `COLOR_HIGHLIGHT` 폴백. 한글 배경에 직접 적용, 영문 배경은 보색 계산. `WM_DWMCOLORIZATIONCOLORCHANGED` (0x0320) / `WM_THEMECHANGED` (0x031A) / `WM_SETTINGCHANGE` (0x001A) 가 모두 캐시 무효화 + 재렌더를 트리거 |
 
 ### 5.4 앱별 프로필 머지
 

@@ -110,8 +110,16 @@ internal static class ThemePresets
 
     private static AppConfig ApplySystemTheme(AppConfig config)
     {
-        uint accentColor = User32.GetSysColor(Win32Constants.COLOR_HIGHLIGHT);
-        var (r, g, b) = ColorHelper.ColorRefToRgb(accentColor);
+        // 데이터 소스 우선 순위 (PR-14):
+        //   1. DwmGetColorizationColor — Win11 personalization accent 의 source-of-truth.
+        //      "제목 표시줄과 창 테두리에 강조색 표시" 옵션이 꺼져 있어도 정확한 accent 추적.
+        //   2. GetSysColor(COLOR_HIGHLIGHT) — DWM composition 비활성 등 fallback.
+        //      Win11 에서 위 옵션 OFF 시 새 accent 가 즉시 반영되지 않는 known limitation.
+        if (!Dwmapi.TryGetColorizationRgb(out byte r, out byte g, out byte b))
+        {
+            uint accentColor = User32.GetSysColor(Win32Constants.COLOR_HIGHLIGHT);
+            (r, g, b) = ColorHelper.ColorRefToRgb(accentColor);
+        }
         string hangulBg = ColorHelper.RgbToHex(r, g, b);
         // 보색 계산
         string englishBg = ColorHelper.RgbToHex((byte)(255 - r), (byte)(255 - g), (byte)(255 - b));

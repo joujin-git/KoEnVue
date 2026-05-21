@@ -37,7 +37,7 @@
 - **① 정상 부팅** — OK
 - **② 프로필 `theme:dark`** — `config.json` 에 `"app_profiles": { "notepad": { "theme": "dark" } }` 추가, 메모장 포커스 → **인디 색 변하지 않음**. 근본 원인: **별개의 미배선 결함** 노출 (아래 §미배선 절 참조). 본 PR 의 파이프라인 fix 는 `resolved` 인스턴스 정확성은 보장하지만, 그 인스턴스가 렌더링까지 도달하지 않음
 - **③ `overlay_class_name` 비정상** — `"advanced": { "overlay_class_name": "!!!invalid!!!" }` → 정상 부팅 (폴백 동작 작동). 단 `Logger.Warning` 이 `koenvue.log` 에 안 남음. 원인: `Settings.Validate` 는 `Settings.Load` 안에서 `Logger.Initialize` 이전에 실행되므로 drain 스레드가 없는 시점. `Trace.WriteLine` 에는 흐른다. 폴백 자체는 정상 → 본 PR 는 의도된 동작으로 수용
-- **④ 시스템 강조색 변경** — `theme:system` 으로 변경 후 Windows 설정 → 개인 설정 → 색 → 강조색 변경 → **인디 색 변하지 않음**. 추정 원인: `ThemePresets.ApplySystemTheme` 가 `GetSysColor(COLOR_HIGHLIGHT)` 를 읽는데 Win11 에서 "제목 표시줄 / 창 테두리에 강조색 표시" 옵션이 꺼져 있으면 personalization accent 변경이 `COLOR_HIGHLIGHT` 에 반영되지 않음. 별도 후속 PR 에서 `DwmGetColorizationColor` 로 데이터 소스 전환 검토
+- **④ 시스템 강조색 변경** — `theme:system` 으로 변경 후 Windows 설정 → 개인 설정 → 색 → 강조색 변경 → **인디 색 변하지 않음**. 추정 원인: `ThemePresets.ApplySystemTheme` 가 `GetSysColor(COLOR_HIGHLIGHT)` 를 읽는데 Win11 에서 "제목 표시줄 / 창 테두리에 강조색 표시" 옵션이 꺼져 있으면 personalization accent 변경이 `COLOR_HIGHLIGHT` 에 반영되지 않음. 별도 후속 PR 에서 `DwmGetColorizationColor` 로 데이터 소스 전환 검토. **(2026-05-21 추기 — PR-14 머지 완료)**: `Dwmapi.DwmGetColorizationColor` + `TryGetColorizationRgb` 헬퍼 추가, `ApplySystemTheme` 가 DWM 우선 + `GetSysColor` 폴백 2단 분기로 전환, `WM_DWMCOLORIZATIONCOLORCHANGED` (0x0320) 핸들러 추가. 사용자 가시 검증은 PR-14 Tier-3 smoke 결과 참조 ([docs/improvement-plan/PR-14-dwm-colorization.md](../improvement-plan/PR-14-dwm-colorization.md))
 
 ## 미배선 — 프로필 시각 override 가 렌더링까지 도달하지 않음 (Tier-3 ② 의 근본 원인)
 

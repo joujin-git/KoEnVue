@@ -310,6 +310,7 @@ internal static partial class Program
 
             case Win32Constants.WM_SETTINGCHANGE:
             case Win32Constants.WM_THEMECHANGED:
+            case Win32Constants.WM_DWMCOLORIZATIONCOLORCHANGED:
                 HandleSettingChange();
                 return IntPtr.Zero;
 

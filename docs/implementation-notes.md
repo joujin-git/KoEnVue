@@ -757,6 +757,21 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 
 Enabled in [KoEnVue.csproj](../KoEnVue.csproj) — strips ICU from the NativeAOT publish. Means no `CultureInfo` usage except for `CultureInfo.InvariantCulture`. IME language detection uses `GetUserDefaultUILanguage` P/Invoke instead of `CultureInfo.CurrentUICulture`.
 
+### `theme:system` 데이터 소스 및 시그널
+
+[App/Config/ThemePresets.cs:ApplySystemTheme](../App/Config/ThemePresets.cs#L111) 는 사용자가 `theme:system` 을 선택했을 때 시스템 강조색을 인디케이터 한글 배경에 직접 적용하고 영문 배경은 보색으로 계산한다. PR-14 이후 데이터 소스는 두 경로의 2단 분기:
+
+1. **`Dwmapi.DwmGetColorizationColor(out uint argb, out bool opaqueBlend)`** — Win11 personalization accent 의 source-of-truth. "제목 표시줄과 창 테두리에 강조색 표시" 옵션 ON/OFF 와 무관하게 항상 최신 accent 를 반환한다. 반환값은 0xAARRGGBB ARGB DWORD — `Dwmapi.TryGetColorizationRgb` 헬퍼가 R/G/B 3 채널로 분리 (alpha 무시). HRESULT 비-0 이면 false.
+2. **`User32.GetSysColor(Win32Constants.COLOR_HIGHLIGHT)`** 폴백 — DWM composition 비활성 / 안전 모드 등 예외 경로용. Win11 에서 위 옵션이 OFF 면 personalization accent 변경이 `COLOR_HIGHLIGHT` 에 즉시 반영되지 않는 known limitation 이 있어 일반 환경에선 1번 경로가 절대 우선.
+
+**ARGB byte 순서 주의**: DWM 의 0xAARRGGBB (R 이 high byte) 와 `GetSysColor` 의 COLORREF 0x00BBGGRR (B 가 high byte) 는 R/B 순서가 반대다. 두 경로가 같은 `ColorHelper` 헬퍼를 공유하지 않고 각자 분리한다 — `ColorHelper.ColorRefToRgb` 는 COLORREF 전용이라 ARGB 에 그대로 쓰면 색이 뒤집힌다.
+
+**메시지 시그널** (모두 같은 `HandleSettingChange` 핸들러로 라우팅 — `Settings.ClearProfileCache` + `ThemePresets.Apply` + `Animation.TriggerShow` 를 순서대로 트리거):
+
+- `WM_SETTINGCHANGE` (0x001A) — 시스템 색 / 시각 설정 전반의 광역 브로드캐스트
+- `WM_THEMECHANGED` (0x031A) — 비주얼 스타일 / 다크 모드 토글 시 별도 브로드캐스트 (PR-01 에서 추가)
+- `WM_DWMCOLORIZATIONCOLORCHANGED` (0x0320) — DWM colorization color 변경 시 정확히 발화. Win11 에서 "제목 표시줄 강조색 표시" OFF 인 경우 `WM_THEMECHANGED` 가 발화하지 않을 수 있어 본 시그널이 누락 없는 안전망 (PR-14 에서 추가)
+
 ### `app.manifest` 구성
 
 [app.manifest](../app.manifest) 는 다음 4가지 선언을 합쳐 한 리소스로 임베드한다:

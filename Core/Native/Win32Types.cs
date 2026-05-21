@@ -357,6 +357,10 @@ internal static class Win32Constants
     // 비주얼 스타일 / 다크 모드 토글 시 셸이 별도로 브로드캐스트하는 메시지. WM_SETTINGCHANGE
     // 와 함께 받지만 wParam 으로 그룹을 거르지 않아도 되는 단일 시그널이라 분리 처리.
     public const uint WM_THEMECHANGED    = 0x031A;
+    // DWM 의 colorization color (personalization accent) 가 변경됐을 때 브로드캐스트.
+    // Win11 에서 "제목 표시줄 강조색 표시" 옵션이 꺼져 있어 WM_THEMECHANGED 가 발화 안 하는
+    // 케이스에서도 본 메시지는 누락 없이 발화 — accent 추적의 정확한 시그널.
+    public const uint WM_DWMCOLORIZATIONCOLORCHANGED = 0x0320;
     public const uint WM_SETFONT         = 0x0030;
     public const uint WM_DPICHANGED     = 0x02E0;
     public const uint WM_LBUTTONUP       = 0x0202;
