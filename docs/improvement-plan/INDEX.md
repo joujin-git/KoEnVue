@@ -1,8 +1,8 @@
 # Improvement Plan — Progress Index
 
 **Last updated**: 2026-05-21
-**Current branch**: feat/pr-12-docs (Tier-1+2 통과, 머지 대기)
-**Next PR**: (없음 — 모든 PR 완료. 후속: v0.10.0 릴리스 + 메모리 정리)
+**Current branch**: main (PR-12 머지 완료 — **모든 13-PR 작업 종료**)
+**Next**: v0.10.0 릴리스 (csproj `<Version>` bump + tag + GitHub Release + SHA256 첨부) + 메모리 정리
 
 ## Progress matrix
 
@@ -20,7 +20,7 @@
 | 09 | Logging policy + ILogSink               | ✅     | (merged → main, 30b2275)        | Low     | M    | E4+E5+F1+F3+F4+F5 + pre-Init 버퍼. Tier-1+2+3 통과 (AOT 4.80 MB, -16 KB). PR-06 ④ 잔재 해소 |
 | 10 | CI + first tests                        | ✅     | (merged → main, de98e7b)        | Low     | M    | G1+G5. Tier-1+2 통과 + Tier-3 ③ CI 회귀 1건 fix (2dc85c9). xUnit 40/40 + AOT 4.81 MB + GitHub Actions 녹색 1m39s |
 | 11 | Version single-source + SHA256 release  | ✅     | (merged → main, 04c90dc, post-merge fix 2088980+721baef) | Medium  | L    | D6+G4. Tier-1+2+3 통과. NativeAOT 비결정성 발견 + Tier-3 회귀 2건 fix (Targets 조건/pwsh) |
-| 12 | Documentation alignment                 | 🚧     | feat/pr-12-docs                 | Low     | S    | H1+H2+H3+H4 + retrospective. Tier-1+2 통과. config-reference.md 신규 (84 키) + retrospective dev-note |
+| 12 | Documentation alignment                 | ✅     | (merged → main, 76a4c3f)        | Low     | S    | H1+H2+H3+H4 + retrospective. Tier-1+2 통과. config-reference.md 신규 (84 키) + 13-PR retrospective dev-note. **모든 PR 작업 종료** |
 | 13 | Per-app rendering config wiring         | ✅     | (merged → main, 11c3ec5)        | Medium  | M    | PR-01 Tier-3 발견. Tier-1+2+3 통과. theme/opacity/enabled:false 모두 사용자 가시 확인 |
 | 14 | Win11 accent — DwmGetColorizationColor  | ✅     | (merged → main, 4818cd2)        | Low     | S-M  | PR-01 Tier-3 ④ 해소. Tier-1+2+3 통과. Windows 강조색 변경 시 인디 색 즉시 전환 가시 확인 |
 
