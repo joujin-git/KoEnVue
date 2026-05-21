@@ -294,73 +294,17 @@ internal static class Overlay
     }
 
     /// <summary>
-    /// 현재 인디 위치(`_lastX, _lastY`)에서 가장 가까운 모서리를 찾아
-    /// DefaultPositionConfig로 환산. 트레이 "기본 위치 → 현재 위치로 설정"에서 호출.
-    /// 모니터는 현재 위치 기준으로 판정하므로 사용자가 멀티모니터 중 어느 화면에
-    /// 인디를 뒀든 해당 화면의 work area가 anchor 기준이 된다.
+    /// 주어진 frame RECT 의 4 모서리 중 (lastX, lastY) 와 맨해튼 거리가 가장 가까운 모서리를
+    /// 찾아 반환한다. delta 는 lastX/Y 와 모서리의 절대 좌표 차이 (물리 px) 그대로다.
     /// <para>
-    /// Delta 는 <b>논리 픽셀</b>(96 DPI 기준) 로 저장된다. 서로 다른 DPI 모니터 간 이동 시에도
-    /// 모서리 대비 시각적 상대 위치가 보존되도록, 저장 시점 모니터의 DPI 스케일로 나눠 정규화한다.
+    /// 작업 영역 기준(<see cref="ComputeAnchorFromCurrentPosition"/>) 과 창 프레임 기준
+    /// (<see cref="ComputeRelativeFromCurrentPosition"/>) 이 같은 알고리즘을 공유하던 것을
+    /// 단일 헬퍼로 통합. 호출자는 RECT 결정 + DPI 정규화 + 결과 타입 래핑만 책임진다.
     /// </para>
-    /// 인디가 한 번도 표시된 적이 없어 좌표가 (0,0)이면 null.
     /// </summary>
-    public static DefaultPositionConfig? ComputeAnchorFromCurrentPosition()
+    private static (Corner corner, int physicalDx, int physicalDy) ComputeCornerAnchor(
+        RECT frame, int lastX, int lastY)
     {
-        (int lastX, int lastY) = _engine.GetLastPosition();
-        if (lastX == 0 && lastY == 0)
-            return null;
-
-        POINT pt = new(lastX, lastY);
-        IntPtr hMonitor = User32.MonitorFromPoint(pt, Win32Constants.MONITOR_DEFAULTTONEAREST);
-        RECT workArea = DpiHelper.GetWorkArea(hMonitor);
-
-        // 4개 모서리까지의 맨해튼 거리를 각각 계산하여 최소값 선택 (물리 px 기준 비교).
-        (Corner corner, int dx, int dy) best = (Corner.TopRight, 0, 0);
-        long bestDist = long.MaxValue;
-
-        void Consider(Corner c, int ax, int ay)
-        {
-            int dx = lastX - ax;
-            int dy = lastY - ay;
-            long dist = Math.Abs((long)dx) + Math.Abs((long)dy);
-            if (dist < bestDist)
-            {
-                bestDist = dist;
-                best = (c, dx, dy);
-            }
-        }
-
-        Consider(Corner.TopLeft, workArea.Left, workArea.Top);
-        Consider(Corner.TopRight, workArea.Right, workArea.Top);
-        Consider(Corner.BottomLeft, workArea.Left, workArea.Bottom);
-        Consider(Corner.BottomRight, workArea.Right, workArea.Bottom);
-
-        // 물리 delta 를 저장 시점 모니터 DPI 스케일로 나눠 논리 px 로 정규화해 저장.
-        double dpiScale = DpiHelper.GetScale(hMonitor);
-        return new DefaultPositionConfig
-        {
-            Corner = best.corner,
-            DeltaX = (int)Math.Round(best.dx / dpiScale),
-            DeltaY = (int)Math.Round(best.dy / dpiScale),
-        };
-    }
-
-    /// <summary>
-    /// 현재 인디 위치에서 포그라운드 창의 가장 가까운 모서리를 찾아
-    /// RelativePositionConfig로 환산. 트레이 "기본 위치 → 현재 위치로 설정"(창 기준 모드)에서 호출.
-    /// <para>
-    /// Delta 는 <b>논리 픽셀</b>(96 DPI 기준) 로 저장된다. 서로 다른 DPI 모니터 간 이동 시에도
-    /// 창 모서리 대비 시각적 상대 위치가 보존되도록, 저장 시점 모니터의 DPI 스케일로 나눠 정규화한다.
-    /// </para>
-    /// 인디가 한 번도 표시된 적이 없거나 창 rect를 얻을 수 없으면 null.
-    /// </summary>
-    public static RelativePositionConfig? ComputeRelativeFromCurrentPosition(IntPtr hwndForeground)
-    {
-        (int lastX, int lastY) = _engine.GetLastPosition();
-        if (lastX == 0 && lastY == 0) return null;
-        if (hwndForeground == IntPtr.Zero) return null;
-        if (!Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT frame)) return null;
-
         (Corner corner, int dx, int dy) best = (Corner.TopRight, 0, 0);
         long bestDist = long.MaxValue;
 
@@ -381,6 +325,60 @@ internal static class Overlay
         Consider(Corner.BottomLeft, frame.Left, frame.Bottom);
         Consider(Corner.BottomRight, frame.Right, frame.Bottom);
 
+        return best;
+    }
+
+    /// <summary>
+    /// 현재 인디 위치(`_lastX, _lastY`)에서 가장 가까운 모서리를 찾아
+    /// DefaultPositionConfig로 환산. 트레이 "기본 위치 → 현재 위치로 설정"에서 호출.
+    /// 모니터는 현재 위치 기준으로 판정하므로 사용자가 멀티모니터 중 어느 화면에
+    /// 인디를 뒀든 해당 화면의 work area가 anchor 기준이 된다.
+    /// <para>
+    /// Delta 는 <b>논리 픽셀</b>(96 DPI 기준) 로 저장된다. 서로 다른 DPI 모니터 간 이동 시에도
+    /// 모서리 대비 시각적 상대 위치가 보존되도록, 저장 시점 모니터의 DPI 스케일로 나눠 정규화한다.
+    /// </para>
+    /// 인디가 한 번도 표시된 적이 없어 좌표가 (0,0)이면 null.
+    /// </summary>
+    public static DefaultPositionConfig? ComputeAnchorFromCurrentPosition()
+    {
+        (int lastX, int lastY) = _engine.GetLastPosition();
+        if (lastX == 0 && lastY == 0)
+            return null;
+
+        POINT pt = new(lastX, lastY);
+        IntPtr hMonitor = User32.MonitorFromPoint(pt, Win32Constants.MONITOR_DEFAULTTONEAREST);
+        RECT workArea = DpiHelper.GetWorkArea(hMonitor);
+
+        var best = ComputeCornerAnchor(workArea, lastX, lastY);
+
+        // 물리 delta 를 저장 시점 모니터 DPI 스케일로 나눠 논리 px 로 정규화해 저장.
+        double dpiScale = DpiHelper.GetScale(hMonitor);
+        return new DefaultPositionConfig
+        {
+            Corner = best.corner,
+            DeltaX = (int)Math.Round(best.physicalDx / dpiScale),
+            DeltaY = (int)Math.Round(best.physicalDy / dpiScale),
+        };
+    }
+
+    /// <summary>
+    /// 현재 인디 위치에서 포그라운드 창의 가장 가까운 모서리를 찾아
+    /// RelativePositionConfig로 환산. 트레이 "기본 위치 → 현재 위치로 설정"(창 기준 모드)에서 호출.
+    /// <para>
+    /// Delta 는 <b>논리 픽셀</b>(96 DPI 기준) 로 저장된다. 서로 다른 DPI 모니터 간 이동 시에도
+    /// 창 모서리 대비 시각적 상대 위치가 보존되도록, 저장 시점 모니터의 DPI 스케일로 나눠 정규화한다.
+    /// </para>
+    /// 인디가 한 번도 표시된 적이 없거나 창 rect를 얻을 수 없으면 null.
+    /// </summary>
+    public static RelativePositionConfig? ComputeRelativeFromCurrentPosition(IntPtr hwndForeground)
+    {
+        (int lastX, int lastY) = _engine.GetLastPosition();
+        if (lastX == 0 && lastY == 0) return null;
+        if (hwndForeground == IntPtr.Zero) return null;
+        if (!Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT frame)) return null;
+
+        var best = ComputeCornerAnchor(frame, lastX, lastY);
+
         // 물리 px → 논리 px 변환. 창이 걸친 모니터의 DPI 스케일로 나눈다.
         // GetScale 이 실패해도 1.0 을 반환하므로 안전.
         double dpiScale = DpiHelper.GetScale(
@@ -388,8 +386,8 @@ internal static class Overlay
         return new RelativePositionConfig
         {
             Corner = best.corner,
-            DeltaX = (int)Math.Round(best.dx / dpiScale),
-            DeltaY = (int)Math.Round(best.dy / dpiScale),
+            DeltaX = (int)Math.Round(best.physicalDx / dpiScale),
+            DeltaY = (int)Math.Round(best.physicalDy / dpiScale),
         };
     }
 
@@ -482,7 +480,7 @@ internal static class Overlay
             BorderHex: config.BorderColor,
             LabelText: labelText,
             CapsLockOn: _capsLockOn,
-            MeasureLabels: (config.HangulLabel, config.EnglishLabel, config.NonKoreanLabel)
+            MeasureLabels: [config.HangulLabel, config.EnglishLabel, config.NonKoreanLabel]
         );
     }
 

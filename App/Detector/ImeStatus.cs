@@ -80,8 +80,8 @@ internal static class ImeStatus
         _imeChangeCallback = OnImeChange;
 
         _hEventHook = User32.SetWinEventHook(
-            Win32Constants.EVENT_OBJECT_IME_CHANGE,
-            Win32Constants.EVENT_OBJECT_IME_CHANGE,
+            ImeConstants.EVENT_OBJECT_IME_CHANGE,
+            ImeConstants.EVENT_OBJECT_IME_CHANGE,
             IntPtr.Zero,
             _imeChangeCallback,
             0, 0,
@@ -128,8 +128,8 @@ internal static class ImeStatus
         // 1. IME 오픈 여부 확인
         IntPtr ret = User32.SendMessageTimeoutW(
             hIMEWnd,
-            Win32Constants.WM_IME_CONTROL,
-            (nint)Win32Constants.IMC_GETOPENSTATUS,
+            ImeConstants.WM_IME_CONTROL,
+            (nint)ImeConstants.IMC_GETOPENSTATUS,
             IntPtr.Zero,
             Win32Constants.SMTO_ABORTIFHUNG,
             DefaultConfig.ImeMessageTimeoutMs,
@@ -147,8 +147,8 @@ internal static class ImeStatus
         //    (GETOPENSTATUS만으로는 한국어 IME 내 한/영 전환을 구분할 수 없음)
         ret = User32.SendMessageTimeoutW(
             hIMEWnd,
-            Win32Constants.WM_IME_CONTROL,
-            (nint)Win32Constants.IMC_GETCONVERSIONMODE,
+            ImeConstants.WM_IME_CONTROL,
+            (nint)ImeConstants.IMC_GETCONVERSIONMODE,
             IntPtr.Zero,
             Win32Constants.SMTO_ABORTIFHUNG,
             DefaultConfig.ImeMessageTimeoutMs,
@@ -156,7 +156,7 @@ internal static class ImeStatus
 
         if (ret == IntPtr.Zero) return null;
 
-        return ((uint)(nint)convResult & Win32Constants.IME_CMODE_HANGUL) != 0
+        return ((uint)(nint)convResult & ImeConstants.IME_CMODE_HANGUL) != 0
             ? ImeState.Hangul
             : ImeState.English;
     }
@@ -174,7 +174,7 @@ internal static class ImeStatus
         {
             if (Imm32.ImmGetConversionStatus(hIMC, out uint conversion, out _))
             {
-                return (conversion & Win32Constants.IME_CMODE_HANGUL) != 0
+                return (conversion & ImeConstants.IME_CMODE_HANGUL) != 0
                     ? ImeState.Hangul
                     : ImeState.English;
             }
@@ -201,15 +201,15 @@ internal static class ImeStatus
     private static ImeState TryTier3(uint threadId)
     {
         IntPtr hkl = User32.GetKeyboardLayout(threadId);
-        ushort langId = (ushort)((long)hkl & Win32Constants.HKL_LANGID_MASK);
+        ushort langId = (ushort)((long)hkl & ImeConstants.HKL_LANGID_MASK);
 
-        if (langId == Win32Constants.LANGID_KOREAN)
+        if (langId == ImeConstants.LANGID_KOREAN)
             return ImeState.English;  // 한국어 IME이지만 한/영 구분 불가
 
         // IME 디바이스 시그니처가 있을 때만 NonKorean. 그 외(단순 키보드 레이아웃) 는
         // "IME 미활성" 상태로 보고 English 로 폴백해 conhost 플래시-숨김을 회피.
-        bool isIme = ((uint)(long)hkl & Win32Constants.HKL_IME_DEVICE_MASK)
-                     == Win32Constants.HKL_IME_DEVICE_SIG;
+        bool isIme = ((uint)(long)hkl & ImeConstants.HKL_IME_DEVICE_MASK)
+                     == ImeConstants.HKL_IME_DEVICE_SIG;
         return isIme ? ImeState.NonKorean : ImeState.English;
     }
 

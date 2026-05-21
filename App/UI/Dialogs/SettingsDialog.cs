@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using KoEnVue.App.Config;
 using KoEnVue.App.Models;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Windowing;
@@ -110,6 +111,7 @@ internal static partial class SettingsDialog
             measureDlgHeight: m => m.Scale(DlgHeight),
             useCursorAnchor: false,
             bringToForeground: true,
+            dialogFontFamily: DefaultConfig.DefaultDialogFontFamily,
             buildChildren: ctx => BuildChildren(ctx, rows),
             onAfterShow: null,
             isClosedFlag: ref _dlgClosed);

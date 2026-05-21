@@ -82,6 +82,7 @@ internal static class ScaleInputDialog
             },
             useCursorAnchor: true,
             bringToForeground: true,
+            dialogFontFamily: DefaultConfig.DefaultDialogFontFamily,
             buildChildren: ctx => BuildChildren(ctx, initialValue),
             onAfterShow: _ =>
             {

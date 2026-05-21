@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using KoEnVue.App.Detector;
 using KoEnVue.App.Models;
 using KoEnVue.Core.Native;
 
@@ -47,7 +48,7 @@ internal static class I18n
     public static bool IsSystemKorean()
     {
         ushort langId = Kernel32.GetUserDefaultUILanguage();
-        return langId == Win32Constants.LANGID_KOREAN;
+        return langId == ImeConstants.LANGID_KOREAN;
     }
 
     // ================================================================

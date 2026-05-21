@@ -61,6 +61,8 @@ git grep "KoEnVue\.App"      Core/   # P6 namespace gate
 git grep "ImeState"          Core/   # Risk 4 enum gate
 git grep "NonKoreanImeMode"  Core/   # Risk 4 enum gate
 git grep "DllImport"                 # banned, use [LibraryImport]
+git grep -E "Hangul|English|NonKorean" Core/   # PR-08 IME 어휘 게이트
+git grep "맑은 고딕"          Core/   # PR-08 한국어 폰트 어휘 게이트
 ```
 
 Additional sub-rule — `App/Config/` must not import `App/Detector/`:
@@ -69,7 +71,7 @@ Additional sub-rule — `App/Config/` must not import `App/Detector/`:
 git grep "using KoEnVue\.App\.Detector" App/Config/                   → 0
 ```
 
-**Risk 4** (the critical failure mode): letting `ImeState` leak into `Core/` would couple the generic layered-overlay engine to KoEnVue's IME problem domain and break reuse. The `OverlayStyle.LabelText : string` + `MeasureLabels : (string, string, string)` primitive boundary is the defense. Similarly `OverlayStyle.IsBold : bool` keeps `FontWeight` out, `AnimationConfig.AlwaysMode : bool` keeps `DisplayMode` out, and `OverlayAnimator.SetDimMode(bool)` keeps `NonKoreanImeMode` out.
+**Risk 4** (the critical failure mode): letting `ImeState` leak into `Core/` would couple the generic layered-overlay engine to KoEnVue's IME problem domain and break reuse. The `OverlayStyle.LabelText : string` + `MeasureLabels : string[]` primitive boundary is the defense (PR-08 E1 일반화 — 이전 3-tuple `(Hangul, English, NonKorean)` 가 record struct 안에 IME 상태 이름을 박아 두었음). Similarly `OverlayStyle.IsBold : bool` keeps `FontWeight` out, `AnimationConfig.AlwaysMode : bool` keeps `DisplayMode` out, and `OverlayAnimator.SetDimMode(bool)` keeps `NonKoreanImeMode` out. IME 메시지 / WinEvent / HKL 파싱 9 상수는 [`App/Detector/ImeConstants.cs`](../App/Detector/ImeConstants.cs) 에 위치 (PR-08 E2). 다이얼로그 폰트 패밀리는 호출자가 주입 — `Win32DialogHelper.CreateDialogFont(uint dpiY, string fontFamily)` 시그니처에 명시, App 측 [`DefaultConfig.DefaultDialogFontFamily`](../App/Config/DefaultConfig.cs) 가 `"맑은 고딕"` 단일 진실원 (PR-08 E3).
 
 ---
 

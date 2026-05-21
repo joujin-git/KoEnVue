@@ -11,6 +11,9 @@ namespace KoEnVue.Core.Windowing;
 /// <para>
 /// <c>record struct</c>로 선언되어 값 동등성 비교가 자동으로 동작한다. 엔진의
 /// flip-flop 가드는 이전 스타일과 현재 스타일을 <c>==</c>로 비교해 동일 시 재렌더를 스킵한다.
+/// <c>MeasureLabels</c> 는 <c>string[]</c> 라 디폴트 <c>EqualityComparer</c> 가 reference equality
+/// 로 떨어지므로, 본 타입의 <c>Equals</c> / <c>GetHashCode</c> 를 명시적으로 오버라이드해
+/// 시퀀스 동등성을 보장한다.
 /// </para>
 /// <para>
 /// 레이어 경계: 이 타입은 KoEnVue.Core.Windowing 네임스페이스에 있으며 App 레이어
@@ -31,8 +34,8 @@ internal readonly record struct OverlayStyle(
     int PaddingXLogicalPx,      // 라벨 가로 패딩 상수 * IndicatorScale (파사드가 합성)
 
     // === 색상 (state-routed — 파사드가 합성) ===
-    string BgHex,               // Hangul/English/NonKoreanBg 중 현재 상태에 해당
-    string FgHex,               // Hangul/English/NonKoreanFg 중 현재 상태에 해당
+    string BgHex,               // 현재 상태에 해당하는 배경 색
+    string FgHex,               // 현재 상태에 해당하는 전경 색
     string BorderHex,           // config.BorderColor (state-independent)
 
     // === 라벨 텍스트 (state-routed) ===
@@ -43,12 +46,59 @@ internal readonly record struct OverlayStyle(
     // 매 렌더마다 반영하므로 record 동등성 비교 시 state-transition 트리거로도 작동한다.
     bool CapsLockOn,
 
-    // === 라벨 측정용 3종 (flip-flop fix 필수 — state-independent) ===
-    // CalculateFixedLabelWidth는 상태와 무관하게 3종 라벨 모두를 측정해 최대 폭으로
+    // === 라벨 측정용 (flip-flop fix 필수 — state-independent) ===
+    // CalculateFixedLabelWidth는 상태와 무관하게 모든 라벨 후보를 측정해 최대 폭으로
     // _fixedLabelWidth를 고정한다. 단일 LabelText만 사용하면 state 전환 시마다 라벨 폭이
     // 변동해 DIB 재생성 → 깜빡임이 발생한다.
-    (string Hangul, string English, string NonKorean) MeasureLabels
-);
+    string[] MeasureLabels
+)
+{
+    /// <summary>
+    /// 값 동등성 — <c>MeasureLabels</c> 는 시퀀스 동등성, 그 외 필드는 일반 비교.
+    /// 컴파일러가 자동 생성한 <c>Equals</c> 는 <c>string[]</c> 에 대해 reference equality
+    /// 로 떨어져, 파사드의 <c>BuildStyle</c> 가 매번 새 배열을 합성하면 flip-flop 가드가
+    /// 항상 미스되어 DIB 재생성이 매 IME 변경 (80ms 주기) 마다 발생한다. 본 오버라이드가
+    /// 그것을 방지.
+    /// </summary>
+    public bool Equals(OverlayStyle other)
+    {
+        return FontFamily == other.FontFamily
+            && FontSizeLogicalPx == other.FontSizeLogicalPx
+            && IsBold == other.IsBold
+            && LabelWidthLogicalPx == other.LabelWidthLogicalPx
+            && LabelHeightLogicalPx == other.LabelHeightLogicalPx
+            && BorderRadiusLogicalPx == other.BorderRadiusLogicalPx
+            && BorderWidthLogicalPx == other.BorderWidthLogicalPx
+            && PaddingXLogicalPx == other.PaddingXLogicalPx
+            && BgHex == other.BgHex
+            && FgHex == other.FgHex
+            && BorderHex == other.BorderHex
+            && LabelText == other.LabelText
+            && CapsLockOn == other.CapsLockOn
+            && MeasureLabels.AsSpan().SequenceEqual(other.MeasureLabels);
+    }
+
+    public override int GetHashCode()
+    {
+        HashCode hc = default;
+        hc.Add(FontFamily);
+        hc.Add(FontSizeLogicalPx);
+        hc.Add(IsBold);
+        hc.Add(LabelWidthLogicalPx);
+        hc.Add(LabelHeightLogicalPx);
+        hc.Add(BorderRadiusLogicalPx);
+        hc.Add(BorderWidthLogicalPx);
+        hc.Add(PaddingXLogicalPx);
+        hc.Add(BgHex);
+        hc.Add(FgHex);
+        hc.Add(BorderHex);
+        hc.Add(LabelText);
+        hc.Add(CapsLockOn);
+        foreach (string label in MeasureLabels)
+            hc.Add(label);
+        return hc.ToHashCode();
+    }
+}
 
 /// <summary>
 /// LayeredOverlayBase가 <c>renderToDib</c> 콜백에 전달하는 DPI 적용 후 메트릭.

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using KoEnVue.App.Config;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Windowing;
 using KoEnVue.App.Localization;
@@ -102,6 +103,7 @@ internal static class CleanupDialog
             // ShowWindow 가 어차피 활성 윈도우라 사용자 체감 변화는 거의 없지만,
             // 트레이 메뉴가 닫힌 직후 다이얼로그가 명시적으로 포어그라운드를 잡도록 한다.
             bringToForeground: true,
+            dialogFontFamily: DefaultConfig.DefaultDialogFontFamily,
             buildChildren: ctx => BuildChildren(ctx, items, visibleCount, needsScroll),
             onAfterShow: null,
             isClosedFlag: ref _dlgClosed);

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using KoEnVue.Core.Native;
+using KoEnVue.Core.Windowing;
 
 namespace KoEnVue.Core.Animation;
 
@@ -73,7 +74,7 @@ public sealed class OverlayAnimator : IDisposable
     private readonly Action<int, int> _onPositionOffset;
     private readonly Action<int, int, int, int, byte> _onScaledSize;
     private readonly Action _onHide;
-    private readonly Action _onForceTopmost;
+    private readonly TopmostWatchdog _topmostWatchdog;
     private readonly Func<(int w, int h)> _getBaseSize;
 
     // GetLastPosition — 슬라이드/하이라이트 시점 기준 좌표. 엔진이 Show 후 직접 기억한다.
@@ -102,15 +103,12 @@ public sealed class OverlayAnimator : IDisposable
         _onPositionOffset = onPositionOffset;
         _onScaledSize = onScaledSize;
         _onHide = onHide;
-        _onForceTopmost = onForceTopmost;
         _getBaseSize = getBaseSize;
 
-        // TOPMOST 재적용 타이머 시작
-        if (initialConfig.ForceTopmostIntervalMs > 0)
-        {
-            User32.SetTimer(_hwndTimer, _timerIds.Topmost,
-                (uint)initialConfig.ForceTopmostIntervalMs, IntPtr.Zero);
-        }
+        // TOPMOST 재적용은 단일 책임 워치독에 위임 (C5 — fade / hold / highlight / slide
+        // 와 무관한 시간 기반 트랙이라 분리해도 회귀 위험 최소).
+        _topmostWatchdog = new TopmostWatchdog(
+            hwndTimer, timerIds.Topmost, initialConfig.ForceTopmostIntervalMs, onForceTopmost);
     }
 
     public void Dispose()
@@ -119,7 +117,7 @@ public sealed class OverlayAnimator : IDisposable
         User32.KillTimer(_hwndTimer, _timerIds.Hold);
         User32.KillTimer(_hwndTimer, _timerIds.Highlight);
         User32.KillTimer(_hwndTimer, _timerIds.Slide);
-        User32.KillTimer(_hwndTimer, _timerIds.Topmost);
+        _topmostWatchdog.Dispose();
     }
 
     // ================================================================
@@ -139,14 +137,7 @@ public sealed class OverlayAnimator : IDisposable
         _config = config;
 
         if (topmostChanged)
-        {
-            User32.KillTimer(_hwndTimer, _timerIds.Topmost);
-            if (config.ForceTopmostIntervalMs > 0)
-            {
-                User32.SetTimer(_hwndTimer, _timerIds.Topmost,
-                    (uint)config.ForceTopmostIntervalMs, IntPtr.Zero);
-            }
-        }
+            _topmostWatchdog.SetInterval(config.ForceTopmostIntervalMs);
     }
 
     /// <summary>
@@ -331,6 +322,9 @@ public sealed class OverlayAnimator : IDisposable
 
     public void OnWmTimer(nuint timerId)
     {
+        if (_topmostWatchdog.TryHandleTimer(timerId))
+            return;
+
         if (timerId == _timerIds.Fade)
             HandleFadeTimer();
         else if (timerId == _timerIds.Hold)
@@ -339,8 +333,6 @@ public sealed class OverlayAnimator : IDisposable
             HandleHighlightTimer();
         else if (timerId == _timerIds.Slide)
             HandleSlideTimer();
-        else if (timerId == _timerIds.Topmost)
-            _onForceTopmost();
     }
 
     // ================================================================

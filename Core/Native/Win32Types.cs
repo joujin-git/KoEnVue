@@ -284,15 +284,11 @@ internal static class Win32Constants
     // --- SendMessageTimeout 플래그 ---
     public const uint SMTO_ABORTIFHUNG   = 0x0002;
 
-    // --- IME 메시지 ---
-    public const uint WM_IME_CONTROL     = 0x0283;
-    public const uint IMC_GETOPENSTATUS      = 0x0005;
-    public const uint IMC_GETCONVERSIONMODE  = 0x0001;
-    public const uint IME_CMODE_HANGUL       = 0x01;
+    // IME 메시지/WinEvent 상수는 P6 (Core 가 IME 를 모름) 게이트를 지키기 위해
+    // App/Detector/ImeConstants.cs 로 이전됨.
 
     // --- WinEvent 상수 ---
     public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
-    public const uint EVENT_OBJECT_IME_CHANGE = 0x8029;  // Windows SDK WinUser.h 정의
 
     // --- MonitorFromPoint / MonitorFromWindow 플래그 ---
     public const uint MONITOR_DEFAULTTOPRIMARY = 0x00000001;
@@ -477,15 +473,8 @@ internal static class Win32Constants
     public const uint CB_GETCURSEL        = 0x0147;
     public const uint CB_SETCURSEL        = 0x014E;
 
-    // --- GetKeyboardLayout ---
-    // LOWORD(HKL) -> LANGID, 0x0412 = 한국어
-    public const ushort LANGID_KOREAN    = 0x0412;
-    public const long HKL_LANGID_MASK   = 0xFFFF;  // LOWORD 추출 마스크
-
-    // HIWORD(HKL) 최상위 니블이 0xE = IME 디바이스. 0x0409_0409 같은 단순
-    // 키보드 레이아웃과 0xE001_0412(한글), 0xE001_0411(일본어 IME) 등을 구분.
-    public const uint HKL_IME_DEVICE_MASK = 0xF0000000;
-    public const uint HKL_IME_DEVICE_SIG  = 0xE0000000;
+    // HKL (Keyboard Layout) 파싱 상수 — LANGID_KOREAN / HKL_LANGID_MASK /
+    // HKL_IME_DEVICE_* 는 P6 게이트를 지키기 위해 App/Detector/ImeConstants.cs 로 이전됨.
 
     // --- LOWORD/HIWORD 마스크 ---
     public const uint LOWORD_MASK       = 0xFFFF;

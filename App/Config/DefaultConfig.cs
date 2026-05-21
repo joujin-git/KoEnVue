@@ -16,6 +16,13 @@ internal static class DefaultConfig
     public const int LABEL_PADDING_X = 4;
 
     /// <summary>
+    /// 모달 다이얼로그 (Settings / Cleanup / ScaleInput) 의 9pt 시스템 폰트 패밀리.
+    /// <c>Core</c> 레이어 (<c>Win32DialogHelper</c> / <c>DialogShell</c>) 는 한국어 폰트
+    /// 어휘를 알지 않도록 P6 게이트를 지키기 위해 본 상수가 App 측 단일 진실원이 된다.
+    /// </summary>
+    public const string DefaultDialogFontFamily = "맑은 고딕";
+
+    /// <summary>
     /// 저장 위치가 없는 앱의 기본 인디케이터 위치 — work area TopRight 모서리 기준 X 오프셋.
     /// 음수 = 모서리에서 왼쪽으로. AppConfig.DefaultIndicatorPosition이 null일 때 폴백.
     /// </summary>

@@ -78,6 +78,8 @@ internal static class DialogShell
     /// <param name="useCursorAnchor">true=커서 위치를 좌측-상단으로 배치 (ScaleInputDialog 패턴),
     ///                                false=작업 영역 정중앙 (Settings/Cleanup 패턴).</param>
     /// <param name="bringToForeground">ShowWindow 직후 SetForegroundWindow 호출 여부.</param>
+    /// <param name="dialogFontFamily">9pt 다이얼로그 폰트 패밀리. App 레이어가 결정 (P6 —
+    ///                                Core 는 한국어 폰트 어휘를 모름).</param>
     /// <param name="buildChildren">CreateWindowExW 직후 자식 컨트롤을 생성한다.</param>
     /// <param name="onAfterShow">ShowWindow + SetForegroundWindow 직후의 추가 초기화 (옵셔널).</param>
     /// <param name="isClosedFlag">WndProc 가 true 로 전환하면 모달 루프 종료.</param>
@@ -90,6 +92,7 @@ internal static class DialogShell
         Func<DialogShellMetrics, int> measureDlgHeight,
         bool useCursorAnchor,
         bool bringToForeground,
+        string dialogFontFamily,
         Action<DialogShellContext> buildChildren,
         Action<DialogShellContext>? onAfterShow,
         ref bool isClosedFlag)
@@ -126,7 +129,7 @@ internal static class DialogShell
 
         // 폰트 생명은 모달 루프 + DestroyWindow 구간 전체. 호출자가 SafeFontHandle 을
         // using 으로 쥐고 있던 패턴을 셸이 흡수.
-        using var hFont = Win32DialogHelper.CreateDialogFont(dpiY);
+        using var hFont = Win32DialogHelper.CreateDialogFont(dpiY, dialogFontFamily);
 
         Win32DialogHelper.RegisterStandardClass(
             className, wndProc,

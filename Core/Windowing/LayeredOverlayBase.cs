@@ -63,10 +63,12 @@ internal sealed class LayeredOverlayBase : IDisposable
     private bool _cachedFontIsBold;
     private double _cachedFontDpiScale;
 
-    // 라벨 폭 계산 캐시 키 — (레이블 3종 + 폰트 서명 + DPI + 패딩 + 최소폭) 이 불변이면
-    // GetTextExtentPoint32W 3회 호출을 생략한다. 각 EnsureResources 진입마다 같은 키로
+    // 라벨 폭 계산 캐시 키 — (레이블 리스트 + 폰트 서명 + DPI + 패딩 + 최소폭) 이 불변이면
+    // GetTextExtentPoint32W 호출을 생략한다. 각 EnsureResources 진입마다 같은 키로
     // 재진입하는 것이 일반적이므로 체감 이득은 크다.
-    private (string Hangul, string English, string NonKorean) _cachedLabelMeasureKey;
+    // 배열 reference equality 가 아닌 SequenceEqual 로 비교하여 파사드가 매번 새 배열을
+    // 합성해도 캐시 히트가 정상 동작.
+    private string[]? _cachedLabelMeasureKey;
     private int _cachedLabelPaddingLogicalPx = -1;
     private int _cachedLabelMinWidthLogicalPx = -1;
     private double _cachedLabelDpiScale;
@@ -102,17 +104,6 @@ internal sealed class LayeredOverlayBase : IDisposable
     // 스냅 델타가 누적되어 창과 커서가 벌어지는 현상을 방지한다.
     private int _dragHotPointX;
     private int _dragHotPointY;
-
-    // ================================================================
-    // EnumWindows 콜백용 정적 브리지 (인스턴스 하나 가정)
-    //
-    // [UnmanagedCallersOnly] 콜백은 인스턴스 필드에 접근할 수 없어 정적 필드로 브리지한다.
-    // BeginDrag 시점에 s_activeSnapRects / s_activeOwnerHwnd에 현재 드래그 중인 엔진의
-    // 스냅 캐시를 바인딩하고, EndDrag에서 클리어한다.
-    // ================================================================
-
-    private static readonly List<RECT> s_activeSnapRects = new(64);
-    private static IntPtr s_activeOwnerHwnd;
 
     // ================================================================
     // 생성자 / 해제
@@ -318,7 +309,8 @@ internal sealed class LayeredOverlayBase : IDisposable
 
     /// <summary>
     /// 드래그 시작 (WM_ENTERSIZEMOVE). UpdateOverlay 억제 + Shift 축 잠금용 시작 좌표 캐치
-    /// + 커서 hot point 캐치 + snapToWindows 유효 시 EnumWindows로 스냅 후보 rect 리스트 캐싱.
+    /// + 커서 hot point 캐치 + snapToWindows 유효 시 WindowSnapHelper 가 EnumWindows 로
+    /// 스냅 후보 rect 리스트를 캐싱.
     /// </summary>
     public void BeginDrag(bool snapToWindows)
     {
@@ -336,23 +328,17 @@ internal sealed class LayeredOverlayBase : IDisposable
             }
         }
 
-        s_activeSnapRects.Clear();
-        s_activeOwnerHwnd = _hwndOverlay;
         if (snapToWindows)
-        {
-            unsafe
-            {
-                User32.EnumWindows(&EnumWindowsCallback, IntPtr.Zero);
-            }
-        }
+            WindowSnapHelper.CollectTargets(_hwndOverlay);
+        else
+            WindowSnapHelper.ClearTargets();
     }
 
     /// <summary>드래그 종료 (WM_EXITSIZEMOVE). 새 위치를 _lastX/_lastY에 반영 + 스냅 캐시 해제.</summary>
     public (int x, int y) EndDrag()
     {
         _isDragging = false;
-        s_activeSnapRects.Clear();
-        s_activeOwnerHwnd = IntPtr.Zero;
+        WindowSnapHelper.ClearTargets();
         if (_hwndOverlay != IntPtr.Zero
             && User32.GetWindowRect(_hwndOverlay, out RECT rc))
         {
@@ -417,101 +403,12 @@ internal sealed class LayeredOverlayBase : IDisposable
         }
 
         if (snapToWindows)
-            ApplySnap(ref movingRect, xLocked, yLocked, snapThresholdPx, snapGapPx);
+            WindowSnapHelper.ApplySnap(ref movingRect, xLocked, yLocked,
+                _currentDpiScale, snapThresholdPx, snapGapPx);
 
         HandleDragDpiChange(movingRect.Left, movingRect.Top, style);
 
         return true;
-    }
-
-    /// <summary>
-    /// _snapRects와 현재 위치의 모니터 work area를 후보로 하여 인디케이터 엣지를
-    /// 가장 가까운 타겟 엣지에 스냅한다. X/Y 축 독립 처리, 잠긴 축은 건너뜀.
-    /// 타겟 rect와의 수직/수평 겹침을 요구해 "멀리 떨어진 창"에 끌려가는 현상을 방지.
-    /// work area는 인디가 항상 그 안에 있어 겹침 체크가 항상 통과 → 화면 엣지 스냅 성립.
-    /// <paramref name="snapThresholdPx"/>는 pre-DPI 값이며 내부에서 DpiHelper.Scale로 변환.
-    /// </summary>
-    private bool ApplySnap(ref RECT movingRect, bool xLocked, bool yLocked, int snapThresholdPx, int snapGapPx)
-    {
-        int threshold = DpiHelper.Scale(snapThresholdPx, _currentDpiScale);
-        int gap = DpiHelper.Scale(snapGapPx, _currentDpiScale);
-        int w = movingRect.Right - movingRect.Left;
-        int h = movingRect.Bottom - movingRect.Top;
-
-        int bestDx = 0, bestDy = 0;
-        int bestDistX = threshold + 1;
-        int bestDistY = threshold + 1;
-
-        // 현재 위치의 모니터 work area 추가 (화면 엣지 스냅 — 간격 없음)
-        IntPtr hMonitor = DpiHelper.GetMonitorFromPoint(
-            movingRect.Left + w / 2, movingRect.Top + h / 2);
-        RECT workArea = DpiHelper.GetWorkArea(hMonitor);
-        ConsiderTarget(ref movingRect, workArea, xLocked, yLocked,
-            ref bestDx, ref bestDy, ref bestDistX, ref bestDistY, gap: 0);
-
-        // 창 엣지 스냅 — 경계선 겹침 방지 간격 적용
-        foreach (RECT target in s_activeSnapRects)
-        {
-            ConsiderTarget(ref movingRect, target, xLocked, yLocked,
-                ref bestDx, ref bestDy, ref bestDistX, ref bestDistY, gap);
-        }
-
-        bool modified = false;
-        if (bestDistX <= threshold)
-        {
-            movingRect.Left += bestDx;
-            movingRect.Right += bestDx;
-            modified = true;
-        }
-        if (bestDistY <= threshold)
-        {
-            movingRect.Top += bestDy;
-            movingRect.Bottom += bestDy;
-            modified = true;
-        }
-        return modified;
-    }
-
-    /// <summary>
-    /// 단일 타겟 rect에 대해 4개 엣지 쌍(L↔L, L↔R, R↔L, R↔R)과
-    /// (T↔T, T↔B, B↔T, B↔B)을 검사해 최단 거리 스냅 후보를 갱신.
-    /// Y 겹침이 있는 경우에만 X 엣지 스냅, X 겹침이 있는 경우에만 Y 엣지 스냅.
-    /// </summary>
-    private static void ConsiderTarget(
-        ref RECT movingRect, RECT target,
-        bool xLocked, bool yLocked,
-        ref int bestDx, ref int bestDy,
-        ref int bestDistX, ref int bestDistY,
-        int gap)
-    {
-        bool yOverlap = movingRect.Top < target.Bottom && movingRect.Bottom > target.Top;
-        if (!xLocked && yOverlap)
-        {
-            // gap 부호: inside(같은 쪽 엣지)는 안쪽으로, outside(반대 쪽)는 바깥으로
-            TryEdge(target.Left + gap - movingRect.Left, ref bestDistX, ref bestDx);    // L-L inside
-            TryEdge(target.Left - gap - movingRect.Right, ref bestDistX, ref bestDx);   // L-R outside
-            TryEdge(target.Right + gap - movingRect.Left, ref bestDistX, ref bestDx);   // R-L outside
-            TryEdge(target.Right - gap - movingRect.Right, ref bestDistX, ref bestDx);  // R-R inside
-        }
-
-        bool xOverlap = movingRect.Left < target.Right && movingRect.Right > target.Left;
-        if (!yLocked && xOverlap)
-        {
-            TryEdge(target.Top + gap - movingRect.Top, ref bestDistY, ref bestDy);      // T-T inside
-            TryEdge(target.Top - gap - movingRect.Bottom, ref bestDistY, ref bestDy);   // T-B outside
-            TryEdge(target.Bottom + gap - movingRect.Top, ref bestDistY, ref bestDy);   // B-T outside
-            TryEdge(target.Bottom - gap - movingRect.Bottom, ref bestDistY, ref bestDy);// B-B inside
-        }
-    }
-
-    private static void TryEdge(int delta, ref int bestDist, ref int bestDelta)
-    {
-        int abs = Math.Abs(delta);
-        if (abs < bestDist)
-        {
-            bestDist = abs;
-            bestDelta = delta;
-        }
     }
 
     /// <summary>
@@ -585,38 +482,6 @@ internal sealed class LayeredOverlayBase : IDisposable
         User32.UpdateLayeredWindow(_hwndOverlay, IntPtr.Zero, ref ptDst, ref size,
             _memDC, ref ptSrc, 0, ref blend, Win32Constants.ULW_ALPHA);
     }
-
-    /// <summary>
-    /// EnumWindows 콜백. BeginDrag에서 스냅 후보 rect를 s_activeSnapRects에 수집.
-    /// [UnmanagedCallersOnly] + 함수 포인터 방식 (NativeAOT 권장).
-    /// BOOL 리턴 (1 = 계속 열거, 0 = 중단).
-    /// </summary>
-    [UnmanagedCallersOnly]
-    private static int EnumWindowsCallback(IntPtr hwnd, IntPtr lParam)
-    {
-        if (hwnd == s_activeOwnerHwnd) return 1;
-        if (!User32.IsWindowVisible(hwnd)) return 1;
-        if (User32.IsIconic(hwnd)) return 1;
-        if (Dwmapi.IsCloaked(hwnd)) return 1;
-        if (!Dwmapi.TryGetVisibleFrame(hwnd, out RECT frame)) return 1;
-
-        int w = frame.Right - frame.Left;
-        int h = frame.Bottom - frame.Top;
-        // 최소 크기 필터 — [UnmanagedCallersOnly] 정적 콜백이라 인스턴스 필드 접근 불가.
-        // 상수 80px 을 Core 레이어 private const 로 직접 보관한다.
-        if (w < SnapMinWindowSizePx || h < SnapMinWindowSizePx)
-            return 1;
-
-        s_activeSnapRects.Add(frame);
-        return 1;
-    }
-
-    /// <summary>
-    /// 스냅 후보 최소 크기 (DPI 미적용 px). [UnmanagedCallersOnly] 정적 콜백에서
-    /// 인스턴스 필드 접근 불가라 Core 레이어 private const 로 직접 보관.
-    /// </summary>
-    private const int SnapMinWindowSizePx = 80;
-
 
     // ================================================================
     // 리소스 관리
@@ -703,7 +568,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         // 새 폰트의 메트릭을 측정해 vCenter 보정값 갱신.
         // 보정 = (tmInternalLeading - tmDescent) / 2  (>0이면 텍스트를 위로 그만큼 이동)
         // tmInternalLeading은 라틴 액센트용 상단 reserved 공간. 한글/대문자는 이 영역을 쓰지 않아
-        // tmInternalLeading > tmDescent인 폰트(맑은 고딕 등)는 글리프가 cell 중앙보다 아래로 치우친다.
+        // tmInternalLeading > tmDescent인 폰트는 글리프가 cell 중앙보다 아래로 치우친다.
         // GDI는 폰트가 SelectObject된 상태에서만 메트릭을 반환하므로 _memDC에 임시 SelectObject.
         IntPtr oldFont = Gdi32.SelectObject(_memDC, hFont);
         if (Gdi32.GetTextMetricsW(_memDC, out TEXTMETRICW tm))
@@ -770,8 +635,11 @@ internal sealed class LayeredOverlayBase : IDisposable
 
         // 캐시 히트 조건: 키 전부 일치 + _fixedLabelWidth 이미 계산됨.
         // 폰트 서명은 EnsureFont 가 방금 갱신한 _cachedFont* 를 그대로 비교한다.
+        // 라벨 배열은 reference 가 아닌 SequenceEqual 로 비교 — 파사드가 매번 새 배열을
+        // 합성해도 동일 시퀀스면 캐시 히트.
         if (_fixedLabelWidth > 0
-            && _cachedLabelMeasureKey == style.MeasureLabels
+            && _cachedLabelMeasureKey is { } cachedLabels
+            && cachedLabels.AsSpan().SequenceEqual(style.MeasureLabels)
             && _cachedLabelPaddingLogicalPx == style.PaddingXLogicalPx
             && _cachedLabelMinWidthLogicalPx == style.LabelWidthLogicalPx
             && Math.Abs(_cachedLabelDpiScale - _currentDpiScale) < DpiScaleTolerance
@@ -787,8 +655,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         IntPtr oldFont = Gdi32.SelectObject(_memDC, _currentFont.DangerousGetHandle());
 
         int maxTextWidth = 0;
-        (string hangul, string english, string nonKorean) = style.MeasureLabels;
-        foreach (string label in new[] { hangul, english, nonKorean })
+        foreach (string label in style.MeasureLabels)
         {
             Gdi32.GetTextExtentPoint32W(_memDC, label, label.Length, out SIZE sz);
             if (sz.cx > maxTextWidth) maxTextWidth = sz.cx;

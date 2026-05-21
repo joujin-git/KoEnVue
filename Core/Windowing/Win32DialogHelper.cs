@@ -18,7 +18,8 @@ namespace KoEnVue.Core.Windowing;
 /// </summary>
 internal static class Win32DialogHelper
 {
-    /// <summary>기본 다이얼로그 폰트 크기 (pt). 맑은 고딕 9pt 시스템 기본값.</summary>
+    /// <summary>기본 다이얼로그 폰트 크기 (pt). Windows 시스템 9pt 표준 — 폰트 패밀리는
+    /// 호출자가 결정 (P6 — Core 는 한국어 폰트 어휘를 알지 않음).</summary>
     public const double DefaultDialogFontPointSize = 9.0;
 
     /// <summary>1인치당 포인트 수 (타이포그래피 표준).</summary>
@@ -67,13 +68,13 @@ internal static class Win32DialogHelper
     }
 
     /// <summary>
-    /// 다이얼로그용 맑은 고딕 9pt SafeFontHandle을 생성한다.
-    /// CleanupDialog/ScaleInputDialog/SettingsDialog 세 곳이 동일하게 사용하던
-    /// 9줄짜리 CreateFontW 호출 + SafeFontHandle 래핑 보일러플레이트를 흡수한다.
-    /// 호출자는 `using var hFont = Win32DialogHelper.CreateDialogFont(dpiY);` 스코프로
-    /// 폰트 수명을 모달 루프 + DestroyWindow 구간에 고정해야 한다 (Risk 3 — early release는 DrawTextW crash).
+    /// 다이얼로그용 9pt SafeFontHandle 을 생성한다. 폰트 패밀리는 App 레이어가 결정하며
+    /// (P6 — Core 는 한국어 폰트 어휘를 모름), 호출자가 명시적으로 전달한다.
+    /// 호출자는 <c>using var hFont = Win32DialogHelper.CreateDialogFont(dpiY, family);</c>
+    /// 스코프로 폰트 수명을 모달 루프 + DestroyWindow 구간에 고정해야 한다
+    /// (Risk 3 — early release 는 DrawTextW crash).
     /// </summary>
-    public static SafeFontHandle CreateDialogFont(uint dpiY)
+    public static SafeFontHandle CreateDialogFont(uint dpiY, string fontFamily)
     {
         int fontHeight = CalculateFontHeightPx(dpiY);
         return new SafeFontHandle(
@@ -81,7 +82,7 @@ internal static class Win32DialogHelper
                 0, 0, 0, Win32Constants.DEFAULT_CHARSET,
                 Win32Constants.OUT_TT_PRECIS, Win32Constants.CLIP_DEFAULT_PRECIS,
                 Win32Constants.CLEARTYPE_QUALITY, Win32Constants.DEFAULT_PITCH,
-                "맑은 고딕"),
+                fontFamily),
             ownsHandle: true);
     }
 
