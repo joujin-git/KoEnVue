@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using KoEnVue.App.Config;
 using KoEnVue.App.Detector;
 using KoEnVue.App.Models;
+using KoEnVue.App.Startup;
 using KoEnVue.App.UI;
 using KoEnVue.App.Update;
 using KoEnVue.Core.Native;
@@ -188,7 +189,7 @@ internal static partial class Program
         Tray.Initialize(_hwndMain, _lastImeState, _config);
 
         // 9c. 시작 프로그램 태스크 경로 동기화 (exe 이동 감지 → 재등록, 백그라운드)
-        Tray.SyncStartupPathAsync();
+        StartupTaskManager.SyncStartupPathAsync();
 
         // 9d. CAPS LOCK 폴링 타이머 시작 (200ms, 메인 스레드)
         //     GetKeyState는 calling thread 입력 상태를 읽기 때문에 메시지 큐가 있는 메인 스레드에서만

@@ -1,23 +1,24 @@
-using System.Diagnostics;
 using KoEnVue.App.Config;
+using KoEnVue.App.Localization;
 using KoEnVue.App.Models;
+using KoEnVue.App.Startup;
 using KoEnVue.App.UI.Dialogs;
 using KoEnVue.App.Update;
-using KoEnVue.Core.Native;
-using KoEnVue.Core.Color;
-using KoEnVue.Core.Dpi;
 using KoEnVue.Core.Logging;
+using KoEnVue.Core.Native;
+using KoEnVue.Core.Shell;
 using KoEnVue.Core.Tray;
 using KoEnVue.Core.Windowing;
-using KoEnVue.App.Localization;
 
 namespace KoEnVue.App.UI;
 
 /// <summary>
-/// Shell_NotifyIconW 기반 시스템 트레이 아이콘 관리 + 팝업 메뉴 + 시작등록 + 설정파일 열기.
-/// WinForms NotifyIcon 사용 금지 (P1).
+/// Shell_NotifyIconW 기반 시스템 트레이 아이콘 관리 + 팝업 메뉴 + 메뉴 커맨드 디스패치.
+/// WinForms NotifyIcon 사용 금지 (P1). PR-04 분해 후 시작 프로그램 등록 →
+/// <see cref="StartupTaskManager"/>, 위치 정리 → <see cref="PositionCleanupService"/>,
+/// URL/파일 열기 → <see cref="UriLauncher"/> 로 위임.
 /// </summary>
-internal static class Tray
+internal static partial class Tray
 {
     // ================================================================
     // 메뉴 항목 ID (P3: 매직 넘버 금지)
@@ -65,18 +66,8 @@ internal static class Tray
     private const int IDM_HOMEPAGE           = 4010;
     private const int IDM_EXIT               = 4002;
 
-    // schtasks 작업 이름
-    private const string TaskName = "KoEnVue";
-
-    // 시작 프로그램 로그온 지연 (ISO 8601 duration).
-    // 부팅 자동 실행 시 explorer 트레이 초기화 전에 앱이 떠서 Shell_NotifyIconW NIM_ADD 가 실패하는
-    // 레이스를 회피한다. 재시도로 복구되긴 하지만 매 부팅마다 warn 로그가 남는 문제 해소 목적.
-    private const string StartupTaskDelay = "PT15S";
-
     // P3: 매직 넘버 금지
     private const double OpacityTolerance = 0.001;
-    private const int SchtasksQueryTimeoutMs = 3000;
-    private const int SchtasksCommandTimeoutMs = 5000;
 
     // NIM_ADD 재시도 — startup 레이스 대비 (explorer 트레이 초기화 전에 task 가 먼저 기동).
     // 1s 간격 × 30회 = 최대 30초 대기. 그 안에 explorer 가 안 떠 있으면 포기.
@@ -107,11 +98,9 @@ internal static class Tray
     // ================================================================
 
     /// <summary>
-    /// 트레이 아이콘 등록 (NIM_ADD + NIM_SETVERSION).
-    /// config.TrayEnabled == false 이면 건너뛴다.
-    /// NIM_ADD 실패 시 WM_TIMER 로 1초 간격 재시도 — 부팅 레이스(explorer 의 트레이 초기화
-    /// 전에 scheduled task 로 기동된 경우) 대비. TaskbarCreated 브로드캐스트를 못 받는
-    /// 환경(예: 재시작 없이 느리게 준비된 explorer) 에서도 복구 가능.
+    /// 트레이 아이콘 등록 (NIM_ADD + NIM_SETVERSION). <c>config.TrayEnabled == false</c> 이면 건너뛴다.
+    /// NIM_ADD 실패 시 WM_TIMER 로 1초 간격 재시도 — explorer 트레이 초기화 전에 기동된 부팅 레이스 대비.
+    /// TaskbarCreated 브로드캐스트를 못 받는 환경에서도 복구 가능.
     /// </summary>
     internal static void Initialize(IntPtr hwndMain, ImeState initialState, AppConfig config)
     {
@@ -148,10 +137,8 @@ internal static class Tray
     }
 
     /// <summary>
-    /// WM_TIMER(TIMER_ID_TRAY_ADD_RETRY) 핸들러. 첫 NIM_ADD 가 실패한 경우에 한해
-    /// 1초 간격으로 재시도한다. 성공하거나 최대 시도 횟수에 도달하면 타이머 해제.
-    /// TaskbarCreated 브로드캐스트가 선행 도착하면 Recreate 경로에서 _addPending 을
-    /// 정리하므로 본 타이머도 자연스럽게 stop 된다.
+    /// WM_TIMER(TIMER_ID_TRAY_ADD_RETRY) 핸들러. 첫 NIM_ADD 실패 시 1초 간격 재시도, 성공/한도 도달 시 해제.
+    /// TaskbarCreated 가 선행 도착하면 Recreate 경로에서 _addPending 이 정리되어 본 타이머도 자연스럽게 stop.
     /// </summary>
     internal static void HandleAddRetryTimer()
     {
@@ -162,8 +149,7 @@ internal static class Tray
         }
 
         _addRetryCount++;
-        // _pendingConfig 는 Initialize 실패 경로에서 반드시 설정됨 — null 이면 위의 가드에
-        // 걸려 이 지점에 도달하지 않는다.
+        // _pendingConfig 는 Initialize 실패 경로에서 반드시 설정됨 — null 가능성은 위 가드가 차단.
         bool added = _notifyIcon.Add(_currentIcon.DangerousGetHandle(),
             BuildTooltip(_pendingInitialState, _pendingConfig!));
 
@@ -197,12 +183,11 @@ internal static class Tray
         var newIcon = TrayIcon.CreateIcon(state, config);
         _notifyIcon?.UpdateIconAndTooltip(newIcon.DangerousGetHandle(), BuildTooltip(state, config));
 
-        // 이전 아이콘 해제 후 교체 — 소유권은 Tray.cs 측에 남는다 (NotifyIconManager 는 해제 금지).
+        // 이전 아이콘 해제 후 교체 — 소유권은 Tray 측에 남는다 (NotifyIconManager 는 해제 금지).
         _currentIcon?.Dispose();
         _currentIcon = newIcon;
 
-        // Add 재시도 중이면 pending 상태도 최신화 — 재시도 성공 시 툴팁이 오래된 초기 상태로
-        // 남는 걸 방지. 아이콘 자체는 _currentIcon 참조로 이미 최신이라 별도 처리 불필요.
+        // Add 재시도 중이면 pending 상태도 최신화 — 재시도 성공 후 툴팁이 오래된 상태로 남는 걸 방지.
         if (_addPending)
         {
             _pendingInitialState = state;
@@ -221,18 +206,13 @@ internal static class Tray
     }
 
     /// <summary>
-    /// 트레이 아이콘 재등록.
-    /// Explorer 재시작(업데이트, 크래시) 또는 다른 원인으로 셸이 아이콘을 잃었을 때
-    /// TaskbarCreated 브로드캐스트를 수신한 Program 이 호출.
-    /// 내부 상태를 초기화한 뒤 Initialize 를 다시 호출한다 — 셸 측에 이전 등록이 없으므로
-    /// NIM_DELETE 는 실패해도 무해하다.
+    /// 트레이 아이콘 재등록 (Explorer 재시작/크래시로 셸이 아이콘을 잃을 때 TaskbarCreated 수신 후).
+    /// 셸 측에 이전 등록이 없으므로 NIM_DELETE 가 실패해도 무해.
     /// </summary>
     internal static void Recreate(ImeState state, AppConfig config)
     {
-        // TaskbarCreated 가 Initialize 이전에 도착하는 레이스(트레이 브로드캐스트 → Program 수신 선행)
-        // 에서는 _hwndMain 만 세팅된 상태일 수 있다. _initialized 까지 확인해 Remove 가 NIM_DELETE
-        // 없이 내부 상태만 초기화하는 경로를 타도록 가드 — 초기화 절반만 이뤄진 채 Initialize 가
-        // 재호출되면 _currentIcon 참조가 유실돼 핸들 누수로 이어진다.
+        // TaskbarCreated 가 Initialize 이전에 도착하는 레이스에서 _hwndMain 만 세팅된 상태일 수 있다.
+        // _initialized 까지 확인하지 않으면 Initialize 재호출 시 _currentIcon 참조 유실로 핸들 누수.
         if (_hwndMain == IntPtr.Zero || !_initialized) return;
 
         IntPtr hwndMain = _hwndMain;
@@ -248,8 +228,7 @@ internal static class Tray
     {
         if (!_initialized) return;
 
-        // 재시도 타이머가 남아 있으면 먼저 정리 — Remove 후 Initialize 가 재호출되는 Recreate
-        // 경로에서 이전 retry 상태가 새 초기화에 섞이지 않도록.
+        // 재시도 타이머 정리 — Recreate 경로에서 이전 retry 상태가 새 초기화에 섞이지 않도록.
         StopAddRetryTimer();
 
         bool removed = _notifyIcon?.Remove() ?? true;
@@ -264,183 +243,7 @@ internal static class Tray
         Logger.Info("Tray icon removed");
     }
 
-    /// <summary>
-    /// 트레이 우클릭 팝업 메뉴 표시.
-    /// </summary>
-    internal static void ShowMenu(IntPtr hwndMain, AppConfig config)
-    {
-        if (!_initialized) return;
-
-        // --- 서브메뉴: 투명도 ---
-        IntPtr hOpacityMenu = User32.CreatePopupMenu();
-        double[] presets = config.TrayQuickOpacityPresets;
-        if (presets.Length >= 3)
-        {
-            User32.AppendMenuW(hOpacityMenu, Win32Constants.MF_STRING, (nuint)IDM_OPACITY_HIGH,
-                $"{I18n.OpacityHigh} {presets[0]}");
-            User32.AppendMenuW(hOpacityMenu, Win32Constants.MF_STRING, (nuint)IDM_OPACITY_NORMAL,
-                $"{I18n.OpacityNormal} {presets[1]}");
-            User32.AppendMenuW(hOpacityMenu, Win32Constants.MF_STRING, (nuint)IDM_OPACITY_LOW,
-                $"{I18n.OpacityLow} {presets[2]}");
-
-            // 현재 opacity와 매칭되는 프리셋에 라디오 체크
-            // Always 모드에서는 ActiveOpacity가 실제 적용 값이므로 이를 기준으로 비교
-            double effectiveOpacity = config.DisplayMode == DisplayMode.Always
-                ? config.ActiveOpacity
-                : config.Opacity;
-            uint opacityCheckId = 0;
-            if (Math.Abs(effectiveOpacity - presets[0]) < OpacityTolerance) opacityCheckId = (uint)IDM_OPACITY_HIGH;
-            else if (Math.Abs(effectiveOpacity - presets[1]) < OpacityTolerance) opacityCheckId = (uint)IDM_OPACITY_NORMAL;
-            else if (Math.Abs(effectiveOpacity - presets[2]) < OpacityTolerance) opacityCheckId = (uint)IDM_OPACITY_LOW;
-
-            if (opacityCheckId != 0)
-                User32.CheckMenuRadioItem(hOpacityMenu, (uint)IDM_OPACITY_HIGH, (uint)IDM_OPACITY_LOW,
-                    opacityCheckId, Win32Constants.MF_BYCOMMAND);
-        }
-
-        // --- 서브메뉴: 크기 배율 ---
-        // 정수 프리셋 5개 + 직접 지정(대화상자). 현재 배율이 비정수면
-        // "직접 지정 (2.3배)" 형태로 값을 라벨에 노출하고 해당 항목에 라디오 체크.
-        IntPtr hSizeMenu = User32.CreatePopupMenu();
-        for (int n = ScaleIntegerMin; n <= ScaleIntegerMax; n++)
-        {
-            User32.AppendMenuW(hSizeMenu, Win32Constants.MF_STRING,
-                (nuint)(IDM_SIZE_BASE + n - ScaleIntegerMin), I18n.GetSizeLabel(n));
-        }
-
-        double currentScale = Math.Clamp(config.IndicatorScale,
-            ScaleInputDialog.ScaleMinValue, ScaleInputDialog.ScaleMaxValue);
-        bool isIntegerScale = ScaleInputDialog.IsIntegerScale(currentScale);
-        string customLabel = isIntegerScale
-            ? I18n.MenuSizeCustom
-            : I18n.FormatCustomScaleLabel(currentScale);
-        User32.AppendMenuW(hSizeMenu, Win32Constants.MF_STRING,
-            (nuint)IDM_SIZE_CUSTOM, customLabel);
-
-        uint sizeCheckId;
-        if (isIntegerScale)
-        {
-            int intScale = Math.Clamp((int)Math.Round(currentScale), ScaleIntegerMin, ScaleIntegerMax);
-            sizeCheckId = (uint)(IDM_SIZE_BASE + intScale - ScaleIntegerMin);
-        }
-        else
-        {
-            sizeCheckId = (uint)IDM_SIZE_CUSTOM;
-        }
-        User32.CheckMenuRadioItem(hSizeMenu,
-            (uint)IDM_SIZE_BASE,
-            (uint)IDM_SIZE_CUSTOM,
-            sizeCheckId,
-            Win32Constants.MF_BYCOMMAND);
-
-        // --- 서브메뉴: 기본 위치 ---
-        IntPtr hDefaultPosMenu = User32.CreatePopupMenu();
-        User32.AppendMenuW(hDefaultPosMenu, Win32Constants.MF_STRING,
-            (nuint)IDM_DEFAULT_POS_SET_CURRENT, I18n.MenuDefaultPosSetCurrent);
-        bool hasDefault = config.PositionMode == PositionMode.Window
-            ? config.DefaultIndicatorPositionRelative is not null
-            : config.DefaultIndicatorPosition is not null;
-        uint resetFlags = Win32Constants.MF_STRING
-            | (hasDefault ? 0u : Win32Constants.MF_GRAYED);
-        User32.AppendMenuW(hDefaultPosMenu, resetFlags,
-            (nuint)IDM_DEFAULT_POS_RESET, I18n.MenuDefaultPosReset);
-
-        // --- 서브메뉴: 위치 모드 ---
-        IntPtr hPositionModeMenu = User32.CreatePopupMenu();
-        User32.AppendMenuW(hPositionModeMenu, Win32Constants.MF_STRING,
-            (nuint)IDM_POSITION_FIXED, I18n.MenuPositionFixed);
-        User32.AppendMenuW(hPositionModeMenu, Win32Constants.MF_STRING,
-            (nuint)IDM_POSITION_WINDOW, I18n.MenuPositionWindow);
-        uint positionModeCheckId = config.PositionMode == PositionMode.Fixed
-            ? (uint)IDM_POSITION_FIXED : (uint)IDM_POSITION_WINDOW;
-        User32.CheckMenuRadioItem(hPositionModeMenu, (uint)IDM_POSITION_FIXED,
-            (uint)IDM_POSITION_WINDOW, positionModeCheckId, Win32Constants.MF_BYCOMMAND);
-
-        // --- 서브메뉴: 드래그 활성 키 ---
-        IntPtr hDragModMenu = User32.CreatePopupMenu();
-        User32.AppendMenuW(hDragModMenu, Win32Constants.MF_STRING,
-            (nuint)IDM_DRAG_MOD_NONE, I18n.MenuDragModifierNone);
-        User32.AppendMenuW(hDragModMenu, Win32Constants.MF_STRING,
-            (nuint)IDM_DRAG_MOD_CTRL, I18n.MenuDragModifierCtrl);
-        User32.AppendMenuW(hDragModMenu, Win32Constants.MF_STRING,
-            (nuint)IDM_DRAG_MOD_ALT, I18n.MenuDragModifierAlt);
-        User32.AppendMenuW(hDragModMenu, Win32Constants.MF_STRING,
-            (nuint)IDM_DRAG_MOD_CTRL_ALT, I18n.MenuDragModifierCtrlAlt);
-        uint dragModCheckId = config.DragModifier switch
-        {
-            DragModifier.Ctrl    => (uint)IDM_DRAG_MOD_CTRL,
-            DragModifier.Alt     => (uint)IDM_DRAG_MOD_ALT,
-            DragModifier.CtrlAlt => (uint)IDM_DRAG_MOD_CTRL_ALT,
-            _                    => (uint)IDM_DRAG_MOD_NONE,
-        };
-        User32.CheckMenuRadioItem(hDragModMenu, (uint)IDM_DRAG_MOD_NONE,
-            (uint)IDM_DRAG_MOD_CTRL_ALT, dragModCheckId, Win32Constants.MF_BYCOMMAND);
-
-        // --- 메인 메뉴 ---
-        IntPtr hMenu = User32.CreatePopupMenu();
-
-        // 헤더 라인 — 항상 메뉴 최상단에 노출되는 단일 라인. `_pendingUpdate` 상태에 따라 두 모드:
-        //   평소           → "KoEnVue v{ver} — GitHub"
-        //   새 버전 가용시 → "KoEnVue v{cur} → {newTag} — 다운로드"
-        // 시스템 자동 볼드 처리를 위해 (1) `AppendMenuW` 에 `MF_DEFAULT` 플래그 + (2) 직후
-        // `SetMenuDefaultItem` 명시 호출 둘 다 박는다. AppendMenu 의 MF_DEFAULT 플래그만으로는
-        // 내부 default 비트는 세팅되지만 Windows 11 의 일부 환경에서 볼드 렌더링이 시각 적용되지
-        // 않는 케이스가 있어, MSDN 권장 경로인 SetMenuDefaultItem 으로 보강. MF_DEFAULT 플래그는
-        // 의도 자기-문서화 목적으로 유지 (호출 한 줄 보고 "이건 default 항목" 임을 즉시 인지 가능).
-        // 바로 아래 separator 가 메뉴 구조를 시각 분할. 클릭 시 IDM_HOMEPAGE 핸들러가
-        // `_pendingUpdate` 유무로 OpenUpdatePage / OpenHomepage 분기.
-        // `_pendingUpdate.Version` 은 GitHub release tag (예: "v1.0.1") 라 prefix 가 이미 포함됨 →
-        // `→ v{...}` 가 아니라 `→ {tag}` 로 합성해야 v 가 중복되지 않음.
-        string headerLabel = _pendingUpdate is not null
-            ? $"KoEnVue v{DefaultConfig.AppVersion} → {_pendingUpdate.Version} — {I18n.MenuDownload}"
-            : $"KoEnVue v{DefaultConfig.AppVersion} — GitHub";
-        User32.AppendMenuW(hMenu,
-            Win32Constants.MF_STRING | Win32Constants.MF_DEFAULT,
-            (nuint)IDM_HOMEPAGE, headerLabel);
-        User32.SetMenuDefaultItem(hMenu, (uint)IDM_HOMEPAGE, 0); // 0 = by command ID (not position)
-        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
-
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hOpacityMenu, I18n.MenuOpacity);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hSizeMenu, I18n.MenuSize);
-        uint snapFlags = config.SnapToWindows ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
-        User32.AppendMenuW(hMenu, snapFlags, (nuint)IDM_SNAP_TO_WINDOWS, I18n.MenuSnapToWindows);
-        uint animationFlags = config.AnimationEnabled ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
-        User32.AppendMenuW(hMenu, animationFlags, (nuint)IDM_ANIMATION_ENABLED, I18n.MenuAnimation);
-        uint highlightFlags = config.ChangeHighlight ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
-        User32.AppendMenuW(hMenu, highlightFlags, (nuint)IDM_CHANGE_HIGHLIGHT, I18n.MenuChangeHighlight);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
-
-        bool isStartup = IsStartupRegistered();
-        User32.AppendMenuW(hMenu, isStartup ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED,
-            (nuint)IDM_STARTUP, I18n.MenuStartup);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
-            (nuint)(nint)hDefaultPosMenu, I18n.MenuDefaultPosition);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
-            (nuint)(nint)hPositionModeMenu, I18n.MenuPositionMode);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
-            (nuint)(nint)hDragModMenu, I18n.MenuDragModifier);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_CLEANUP, I18n.MenuCleanup);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
-        uint userHiddenFlags = config.UserHidden ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
-        User32.AppendMenuW(hMenu, userHiddenFlags, (nuint)IDM_USER_HIDDEN, I18n.MenuUserHidden);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_SETTINGS, I18n.MenuSettings);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_EXIT, I18n.MenuExit);
-
-        // --- 표시 (워크어라운드 적용) ---
-        User32.GetCursorPos(out POINT pt);
-        User32.SetForegroundWindow(hwndMain);
-        User32.TrackPopupMenu(hMenu, Win32Constants.TPM_RIGHTBUTTON,
-            pt.X, pt.Y, 0, hwndMain, IntPtr.Zero);
-        User32.PostMessageW(hwndMain, Win32Constants.WM_NULL, IntPtr.Zero, IntPtr.Zero);
-
-        // --- 정리 (DestroyMenu 은 부모에 MF_POPUP 로 부착된 서브메뉴만 자동 파괴한다) ---
-        // 위의 AppendMenuW(MF_POPUP) 호출이 모두 성공해 부착된 전제하에 안전.
-        // P/Invoke 는 예외를 던지지 않고 BOOL 로 실패 신호만 주므로 중단 경로가 없어 현 구현은 누수가 없다.
-        User32.DestroyMenu(hMenu);
-    }
+    // ShowMenu(메뉴 빌더) 는 partial 분할 — App/UI/Tray.Menu.cs 참조.
 
     /// <summary>
     /// WM_COMMAND 메뉴 명령 처리.
@@ -489,7 +292,7 @@ internal static class Tray
 
             // --- 시작 프로그램 등록 ---
             case IDM_STARTUP:
-                ToggleStartupRegistration();
+                StartupTaskManager.ToggleStartupRegistration();
                 break;
 
             // --- 기본 위치: 현재 위치로 설정 ---
@@ -606,14 +409,11 @@ internal static class Tray
 
     /// <summary>
     /// 펜딩된 업데이트의 GitHub 릴리스 페이지를 기본 브라우저로 연다.
-    /// ShellExecuteW 반환값이 32 이하면 실패지만 사용자에게 알려도 할 일이 없으므로 silent log.
     /// <para>
-    /// <b>URL 프리픽스 검증</b> — <c>info.HtmlUrl</c> 은 GitHub API 응답 JSON 의 <c>html_url</c> 필드에서 왔다.
-    /// 신뢰된 CA 를 가진 MITM 프록시가 응답을 조작하거나 계정이 탈취되면 <c>file:///</c>·<c>javascript:</c>·
-    /// <c>ms-settings:</c> 등의 스킴이 주입될 가능성이 있다. PR-03 후 asInvoker 라 Admin 토큰 EoP 표면은
-    /// 사라졌지만, 외부 응답을 그대로 ShellExecute 에 넘기면 사용자 컨텍스트의 임의 핸들러 실행으로 번질
-    /// 수 있어 검증을 유지한다. 예상 릴리스 페이지 URL 프리픽스 (<c>https://github.com/{owner}/{name}/</c>)
-    /// 와 일치하지 않으면 열지 않는다.
+    /// <b>URL 프리픽스 검증</b> — <c>info.HtmlUrl</c> 은 GitHub API 응답에서 왔다. MITM/계정 탈취 시
+    /// <c>file:///</c>·<c>javascript:</c>·<c>ms-settings:</c> 스킴이 주입될 수 있어, 예상 릴리스 페이지
+    /// 프리픽스 (<c>https://github.com/{owner}/{name}/</c>) 와 일치하지 않으면 열지 않는다. PR-03 후
+    /// Admin 토큰 EoP 는 사라졌지만 사용자 컨텍스트 임의 핸들러 실행 방지 목적으로 검증 유지.
     /// </para>
     /// </summary>
     private static void OpenUpdatePage()
@@ -632,56 +432,23 @@ internal static class Tray
             return;
         }
 
-        IntPtr result = Shell32.ShellExecuteW(
-            IntPtr.Zero,
-            "open",
-            info.HtmlUrl,
-            null,
-            null,
-            Win32Constants.SW_SHOWNORMAL);
-
-        // ShellExecuteW 의 반환값은 HINSTANCE 이지만 의미상 정수: <= 32 이면 실패.
-        if ((long)result <= 32)
-            Logger.Warning($"ShellExecuteW failed for update URL (rc={(long)result})");
-        else
-            Logger.Info($"Opened update page: {info.HtmlUrl}");
+        UriLauncher.Open(info.HtmlUrl);
     }
 
     /// <summary>
-    /// GitHub 레포 홈페이지를 기본 브라우저로 연다 (트레이 메뉴 하단 "KoEnVue v… — GitHub" 클릭).
-    /// URL 은 <see cref="DefaultConfig.UpdateRepoOwner"/> / <see cref="DefaultConfig.UpdateRepoName"/>
-    /// 컴파일 타임 상수에서 합성하므로 <see cref="OpenUpdatePage"/> 와 달리 외부 입력이 없어
-    /// prefix 검증이 필요 없다. ShellExecuteW 반환값이 32 이하면 실패로 silent 로깅.
+    /// GitHub 레포 홈페이지를 기본 브라우저로 연다 (트레이 메뉴 헤더 "KoEnVue v… — GitHub" 클릭).
+    /// URL 은 컴파일 타임 상수에서 합성하므로 <see cref="OpenUpdatePage"/> 와 달리 prefix 검증 불필요.
     /// </summary>
-    private static void OpenHomepage()
-    {
-        string url = $"https://github.com/{DefaultConfig.UpdateRepoOwner}/{DefaultConfig.UpdateRepoName}";
-        IntPtr result = Shell32.ShellExecuteW(
-            IntPtr.Zero,
-            "open",
-            url,
-            null,
-            null,
-            Win32Constants.SW_SHOWNORMAL);
-
-        if ((long)result <= 32)
-            Logger.Warning($"ShellExecuteW failed for homepage URL (rc={(long)result})");
-        else
-            Logger.Info($"Opened homepage: {url}");
-    }
+    private static void OpenHomepage() =>
+        UriLauncher.Open($"https://github.com/{DefaultConfig.UpdateRepoOwner}/{DefaultConfig.UpdateRepoName}");
 
     /// <summary>
     /// 현재 활성 config.json 을 메모장으로 연다 (트레이 좌클릭 "설정 파일 열기" 동작).
     /// <para>
     /// <b>메모장 고정 이유</b> — 일반 사용자 PC 에는 <c>.json</c> 에 연결된 기본 앱이 없어
-    /// <c>ShellExecuteW("open", "...json")</c> 가 "앱 선택" 다이얼로그를 띄우거나 무반응으로
-    /// 보일 확률이 높다. 메모장은 Windows 모든 버전에 기본 탑재되고 UTF-8 을 정상 표시하며
-    /// 저장 시 hot reload 파일 감시에 바로 감지된다.
-    /// </para>
-    /// <para>
-    /// 경로에 공백이 있을 수 있어(<c>C:\Program Files\...</c>) <c>lpParameters</c> 를
-    /// 따옴표로 감싼다. ShellExecuteW 반환값이 32 이하면 실패지만 사용자에게 알려도 할 일이
-    /// 없으므로 silent log.
+    /// shell 의 <c>open</c> verb 가 "앱 선택" 다이얼로그를 띄우거나 무반응으로 보일 확률이 높다.
+    /// 메모장은 Windows 모든 버전에 기본 탑재되고 UTF-8 표시 + 저장 시 hot reload 감지가 즉시 된다.
+    /// 경로에 공백이 있을 수 있어 인자를 따옴표로 감싼다.
     /// </para>
     /// </summary>
     internal static void OpenConfigFile()
@@ -693,18 +460,7 @@ internal static class Tray
             return;
         }
 
-        IntPtr result = Shell32.ShellExecuteW(
-            IntPtr.Zero,
-            "open",
-            "notepad.exe",
-            $"\"{path}\"",
-            null,
-            Win32Constants.SW_SHOWNORMAL);
-
-        if ((long)result <= 32)
-            Logger.Warning($"ShellExecuteW failed for notepad (rc={(long)result}, path={path})");
-        else
-            Logger.Info($"Opened config file in notepad: {path}");
+        UriLauncher.Open("notepad.exe", $"\"{path}\"");
     }
 
     // ================================================================
@@ -748,9 +504,8 @@ internal static class Tray
 
     private static void ShowPositionError()
     {
-        // MessageBoxW 는 자체 메시지 루프를 돌리므로 ModalDialogLoop.Run 으로 감쌀 수 없다.
-        // RunExternal 로 IsActive 가드만 씌워, 박스가 열린 동안 감지 스레드가 인디를
-        // 박스 근처로 튀게 만들지 않도록 한다.
+        // MessageBoxW 는 자체 메시지 루프를 돌려 ModalDialogLoop.Run 으로 감쌀 수 없다.
+        // RunExternal 로 IsActive 가드만 씌워 박스가 열린 동안 인디 튐을 억제.
         ModalDialogLoop.RunExternal(_hwndMain, () =>
             User32.MessageBoxW(_hwndMain, I18n.TrayPositionUnavailable, "KoEnVue", 0));
     }
@@ -774,9 +529,7 @@ internal static class Tray
     // ================================================================
 
     /// <summary>
-    /// 빠른 투명도 프리셋을 DisplayMode에 맞게 적용한다.
-    /// Always 모드에서는 ActiveOpacity를 프리셋 값으로, IdleOpacity를 기존 비율 유지하며 변경.
-    /// OnEvent 모드에서는 Opacity만 변경.
+    /// 빠른 투명도 프리셋 적용. Always 모드는 Active/Idle 의 기존 비율 유지하며 변경, OnEvent 는 Opacity 만.
     /// </summary>
     private static AppConfig ApplyQuickOpacity(AppConfig config, double preset)
     {
@@ -796,431 +549,27 @@ internal static class Tray
     }
 
     // ================================================================
-    // Private — 시작 프로그램 등록 (schtasks)
-    // ================================================================
-
-    private static bool IsStartupRegistered()
-    {
-        try
-        {
-            var psi = new ProcessStartInfo("schtasks.exe", $"/query /tn \"{TaskName}\"")
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-            using var proc = Process.Start(psi);
-            proc?.WaitForExit(SchtasksQueryTimeoutMs);
-            return proc?.ExitCode == 0;
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
-            or PlatformNotSupportedException or FileNotFoundException)
-        {
-            // 정책 항목 1(타입 좁히기): Process.Start 실패(스케쥴러 없음/실행 권한 없음) 만 false 로 폴백.
-            // 로직 버그(NullRef 등)는 propagate 시켜 표면화.
-            return false;
-        }
-    }
-
-    private static void ToggleStartupRegistration()
-    {
-        try
-        {
-            if (IsStartupRegistered())
-            {
-                // 삭제
-                bool deleteOk = RunSchtasks($"/delete /tn \"{TaskName}\" /f");
-                if (deleteOk && !IsStartupRegistered())
-                    Logger.Info("Startup registration removed");
-                else
-                    Logger.Warning("Startup registration delete did not take effect (see schtasks log above)");
-            }
-            else
-            {
-                // 등록
-                string exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? "";
-                bool createOk = RegisterStartupTaskWithXml(exePath);
-                // schtasks 가 silent 로 거부하는 케이스가 있어 post-check 로 실제 등록 여부 검증
-                if (createOk && IsStartupRegistered())
-                    Logger.Info("Startup registration created");
-                else
-                    Logger.Warning("Startup registration create did not take effect (see schtasks log above)");
-            }
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
-            or PlatformNotSupportedException or FileNotFoundException
-            or IOException or UnauthorizedAccessException)
-        {
-            // 정책 항목 1(타입 좁히기): schtasks.exe 실행 실패 + 임시 XML 파일 write 실패만 잡음.
-            Logger.Warning($"Failed to toggle startup registration: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// LogonTrigger.Delay 를 포함한 Task Scheduler 2.0 XML 을 생성해 schtasks /xml 로 등록한다.
-    /// /tr 방식과 달리 초 단위 지연이 지정 가능 — Shell(explorer) 트레이 초기화 레이스 회피.
-    /// <para>
-    /// tempPath 는 GUID 기반 unpredictable 이름 + <see cref="FileMode.CreateNew"/> + <see cref="FileShare.None"/>
-    /// 로 작성한다. 같은 위치에 사전 placed symlink 가 있어도 CreateNew 가 실패하므로 schtasks 가
-    /// 가짜 XML 을 읽어들이는 TOCTOU 표면이 차단된다 (B2). PR-03 asInvoker 전환 후 Admin 토큰 표면은
-    /// 사라졌지만, 양식 차원의 안전망 + 동시 등록 race 방어 목적으로 유지.
-    /// </para>
-    /// </summary>
-    private static bool RegisterStartupTaskWithXml(string exePath)
-    {
-        string xml = BuildStartupTaskXml(exePath);
-        // %TEMP% 는 per-user. GUID 로 attacker 가 미리 같은 경로를 점유하지 못하게 한다.
-        string tempPath = Path.Combine(Path.GetTempPath(), $"koenvue-task-{Guid.NewGuid():N}.xml");
-        try
-        {
-            // schtasks /xml 은 UTF-16 LE + BOM 을 기대한다. Encoding.Unicode 가 정확히 그 포맷.
-            // FileMode.CreateNew + FileShare.None: pre-placed file/symlink 발견 시 IOException 발생.
-            using (var fs = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            using (var sw = new StreamWriter(fs, System.Text.Encoding.Unicode))
-            {
-                sw.Write(xml);
-            }
-            return RunSchtasks($"/create /tn \"{TaskName}\" /xml \"{tempPath}\" /f");
-        }
-        finally
-        {
-            try { File.Delete(tempPath); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _ = ex; }
-        }
-    }
-
-    /// <summary>
-    /// schtasks /xml 에 전달할 Task Scheduler 2.0 XML 을 조립한다. LogonTrigger.Delay 에
-    /// <see cref="StartupTaskDelay"/> 삽입. 최소 필드만 쓰고 나머지는 schtasks 기본값에 위임.
-    /// <para>
-    /// <b>두 개의 <c>UserId</c> 구분</b>:
-    /// </para>
-    /// <list type="bullet">
-    /// <item>
-    /// <c>&lt;LogonTrigger&gt;&lt;UserId&gt;...&lt;/UserId&gt;</c> — <b>trigger 대상</b> user.
-    /// 본 필드가 비면 schtasks 는 ANY-user logon trigger 로 해석 → admin 권한 요구
-    /// (asInvoker 토큰에서 "액세스가 거부되었습니다" ExitCode=1). 본인 logon 만 발화하도록 명시 필요.
-    /// </item>
-    /// <item>
-    /// <c>&lt;Principal&gt;&lt;UserId&gt;...&lt;/UserId&gt;</c> — task <b>실행 user</b>.
-    /// 의도적 미포함 — 명시 시 schtasks 가 SID lookup 검증에서 admin 토큰을 요구 (v0.9.x 의
-    /// requireAdministrator 가 그 검증을 통과시켜 줬을 뿐). 비워두면 schtasks 가 current user 의
-    /// SID 로 자동 채워 권한 검증을 우회.
-    /// </item>
-    /// </list>
-    /// <para>
-    /// 두 필드의 의도가 완전히 다르고 둘 다 채우면 다시 admin 요구로 회귀하므로 LogonTrigger 쪽만 채운다.
-    /// </para>
-    /// </summary>
-    private static string BuildStartupTaskXml(string exePath)
-    {
-        // LogonTrigger.<UserId> — trigger 대상 user 식별. 본인 logon 만 발화하도록 명시 필요.
-        string userId = EscapeXml($"{Environment.UserDomainName}\\{Environment.UserName}");
-        // /tr 방식의 기존 Command 형식("\"path\"")을 XML 에서도 동일하게 유지 — QueryRegisteredTask 의
-        // Trim('"') 로직이 두 방식 모두 호환되어 마이그레이션 후에도 경로 비교가 안정적.
-        string command = EscapeXml($"\"{exePath}\"");
-        return $"""
-<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <Triggers>
-    <LogonTrigger>
-      <Enabled>true</Enabled>
-      <Delay>{StartupTaskDelay}</Delay>
-      <UserId>{userId}</UserId>
-    </LogonTrigger>
-  </Triggers>
-  <Principals>
-    <Principal id="Author">
-      <LogonType>InteractiveToken</LogonType>
-      <RunLevel>LeastPrivilege</RunLevel>
-    </Principal>
-  </Principals>
-  <Actions Context="Author">
-    <Exec>
-      <Command>{command}</Command>
-    </Exec>
-  </Actions>
-</Task>
-""";
-    }
-
-    private static string EscapeXml(string s) =>
-        s.Replace("&", "&amp;")
-         .Replace("<", "&lt;")
-         .Replace(">", "&gt;")
-         .Replace("\"", "&quot;")
-         .Replace("'", "&apos;");
-
-    /// <summary>
-    /// 등록된 시작 프로그램 태스크의 exe 경로가 현재 실행 파일 경로와 다르면 재등록한다.
-    /// 포터블 모드에서 exe를 다른 폴더로 옮겼을 때 태스크 스케줄러가 오래된 절대 경로를 가리키는 문제를 해결.
-    /// schtasks 호출 지연(~100~300ms)을 main 스레드에서 분리하기 위해 백그라운드 스레드에서 실행.
-    /// </summary>
-    internal static void SyncStartupPathAsync()
-    {
-        var thread = new Thread(SyncStartupPathCore)
-        {
-            IsBackground = true,
-            Name = "StartupPathSync",
-        };
-        thread.Start();
-    }
-
-    private static void SyncStartupPathCore()
-    {
-        try
-        {
-            var (registeredCommand, registeredDelay, registeredRunLevel) = QueryRegisteredTask();
-            if (registeredCommand is null)
-            {
-                // 등록 안 돼 있거나 쿼리 실패 — 정상 케이스 (대부분 사용자는 startup 안 씀)
-                return;
-            }
-
-            // 구 버전(/tr 방식) 및 신 버전(/xml + "\"path\"" 보존) 모두 Command 양끝에 리터럴 큰따옴표가
-            // 있다. Path.GetFullPath 는 " 를 잘못된 문자로 보고 ArgumentException 을 던져 PathsEqual 이
-            // 원본 문자열 비교로 폴백하므로, 비교 전 감싼 따옴표를 제거해 매 부팅마다 재등록되는 것을 막는다.
-            string registeredPath = registeredCommand.Trim('"');
-
-            string? currentPath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
-            if (string.IsNullOrEmpty(currentPath)) return;
-
-            bool pathMatches = PathsEqual(registeredPath, currentPath);
-            // 구 버전(/tr 방식)은 <Delay> 요소가 없어 null. 이 경우도 마이그레이션 대상.
-            bool delayMatches = string.Equals(registeredDelay, StartupTaskDelay, StringComparison.Ordinal);
-            // v0.9.x 는 admin RunLevel 잔재. PR-03 (v0.10.0) 에서 LeastPrivilege 로 전환됐으므로
-            // 업그레이드한 사용자의 기존 task 를 강제 재등록해야 부팅 시 UAC 프롬프트가 사라진다.
-            bool runLevelMatches = string.Equals(registeredRunLevel, "LeastPrivilege", StringComparison.Ordinal);
-
-            if (pathMatches && delayMatches && runLevelMatches)
-            {
-                Logger.Debug("Startup task already in sync (path + delay + runlevel)");
-                return;
-            }
-
-            Logger.Info(
-                $"Startup task out of sync (path='{registeredPath}' delay='{registeredDelay ?? "<none>"}' "
-                + $"runlevel='{registeredRunLevel ?? "<none>"}'), re-registering with delay {StartupTaskDelay} + LeastPrivilege");
-            RegisterStartupTaskWithXml(currentPath);
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
-            or PlatformNotSupportedException or FileNotFoundException
-            or IOException or UnauthorizedAccessException)
-        {
-            // 정책 항목 1(타입 좁히기): schtasks.exe 실행 실패 + 임시 XML 파일 write 실패만 잡음.
-            Logger.Warning($"Failed to sync startup task path: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// 등록된 시작 프로그램 태스크의 실행 명령 경로 / LogonTrigger 지연 / RunLevel 을 반환.
-    /// 미등록 또는 실패 시 모두 null. RunLevel 은 PR-03 (v0.10.0) admin-elevation → LeastPrivilege
-    /// 마이그레이션 감지 목적.
-    /// </summary>
-    private static (string? Command, string? Delay, string? RunLevel) QueryRegisteredTask()
-    {
-        try
-        {
-            var psi = new ProcessStartInfo("schtasks.exe", $"/query /tn \"{TaskName}\" /xml ONE")
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-            using var proc = Process.Start(psi);
-            if (proc is null) return (null, null, null);
-            string xml = proc.StandardOutput.ReadToEnd();
-            proc.WaitForExit(SchtasksQueryTimeoutMs);
-            if (proc.ExitCode != 0) return (null, null, null);
-            return (ExtractTagFromXml(xml, "Command", unescape: true),
-                    ExtractTagFromXml(xml, "Delay", unescape: false),
-                    ExtractTagFromXml(xml, "RunLevel", unescape: false));
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
-            or InvalidOperationException
-            or PlatformNotSupportedException
-            or FileNotFoundException
-            or IOException)
-        {
-            // schtasks.exe 실행/stdout 파이프 읽기 실패만 흡수 → null(미등록으로 취급).
-            // 로직 버그는 전파.
-            _ = ex;
-            return (null, null, null);
-        }
-    }
-
-    /// <summary>
-    /// schtasks XML 출력에서 지정한 단일 태그의 내용을 추출한다.
-    /// <paramref name="unescape"/>가 true 면 XML 엔티티(&amp;amp; 등)를 복원한다 —
-    /// Command 경로엔 필요하지만 Delay(ISO 8601) 같은 순수 텍스트에는 불필요.
-    /// </summary>
-    private static string? ExtractTagFromXml(string xml, string tagName, bool unescape)
-    {
-        string openTag = $"<{tagName}>";
-        string closeTag = $"</{tagName}>";
-        int start = xml.IndexOf(openTag, StringComparison.Ordinal);
-        if (start < 0) return null;
-        start += openTag.Length;
-        int end = xml.IndexOf(closeTag, start, StringComparison.Ordinal);
-        if (end < 0) return null;
-
-        string content = xml[start..end];
-        if (unescape)
-        {
-            content = content
-                .Replace("&amp;", "&")
-                .Replace("&quot;", "\"")
-                .Replace("&apos;", "'")
-                .Replace("&lt;", "<")
-                .Replace("&gt;", ">");
-        }
-        return content.Trim();
-    }
-
-    /// <summary>
-    /// Windows 경로 동일성 비교 (대소문자 무시 + 정규화).
-    /// </summary>
-    private static bool PathsEqual(string a, string b)
-    {
-        try
-        {
-            return string.Equals(
-                Path.GetFullPath(a),
-                Path.GetFullPath(b),
-                StringComparison.OrdinalIgnoreCase);
-        }
-        catch (Exception ex) when (ex is ArgumentException
-            or System.Security.SecurityException
-            or PathTooLongException
-            or NotSupportedException)
-        {
-            // 경로 정규화 실패(잘못된 문자/권한/길이 초과/플랫폼 미지원) 시 원본 문자열 비교로 폴백.
-            // 로직 버그는 전파.
-            _ = ex;
-            return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
-        }
-    }
-
-    // ================================================================
     // Private — 위치 기록 정리
     // ================================================================
 
     /// <summary>
-    /// indicator_positions 전체 항목을 체크박스 다이얼로그로 표시하여 선택 삭제한다.
-    /// 실행 중인 프로세스에는 "(실행 중)" / "(running)" 접미사를 붙여 표시한다.
+    /// indicator_positions 정리 대화상자 — empty 안내 + dialog 띄우기. 비즈니스 로직은
+    /// <see cref="PositionCleanupService"/> 로 위임.
     /// </summary>
     private static void CleanupPositions(AppConfig config, Action<AppConfig> updateConfig)
     {
-        // 양쪽 dict의 키 합집합
-        var allKeys = new HashSet<string>(config.IndicatorPositions.Keys, StringComparer.OrdinalIgnoreCase);
-        foreach (string k in config.IndicatorPositionsRelative.Keys)
-            allKeys.Add(k);
-
-        if (allKeys.Count == 0)
+        var (displayItems, originalNames) = PositionCleanupService.Compute(config);
+        if (displayItems.Count == 0)
         {
-            // MessageBoxW 는 자체 메시지 루프를 돌리므로 ModalDialogLoop.Run 으로 감쌀 수 없다.
-            // RunExternal 로 IsActive 가드만 씌워 박스가 열린 동안 인디를 억제.
+            // ShowPositionError 와 동일 이유로 RunExternal 사용 (MessageBoxW 자체 메시지 루프).
             ModalDialogLoop.RunExternal(_hwndMain, () =>
                 User32.MessageBoxW(_hwndMain, I18n.TrayPositionHistoryEmpty, "KoEnVue", 0));
             return;
         }
 
-        // 실행 중인 프로세스 이름 수집
-        var running = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        try
-        {
-            foreach (var proc in Process.GetProcesses())
-            {
-                try { running.Add(proc.ProcessName); }
-                catch (Exception ex) when (ex is InvalidOperationException
-                                             or System.ComponentModel.Win32Exception)
-                {
-                    Logger.Debug($"CleanupDialog: failed to read process name: {ex.Message}");
-                }
-                finally { proc.Dispose(); }
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Warning($"CleanupDialog: Process.GetProcesses enumeration failed: {ex.Message}");
-        }
-
-        // 전체 항목에 실행 중 여부 접미사 추가
-        string runningSuffix = I18n.RunningSuffix;
-        var displayItems = new List<string>();
-        var originalNames = new List<string>();
-        foreach (string name in allKeys)
-        {
-            originalNames.Add(name);
-            displayItems.Add(running.Contains(name) ? name + runningSuffix : name);
-        }
-
-        // 체크박스 다이얼로그 표시
         List<string>? selected = CleanupDialog.Show(_hwndMain, displayItems);
         if (selected is null || selected.Count == 0) return;
 
-        // 선택된 표시 이름에서 원본 이름 복원 후 삭제
-        var selectedOriginal = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (int i = 0; i < displayItems.Count; i++)
-        {
-            if (selected.Contains(displayItems[i]))
-                selectedOriginal.Add(originalNames[i]);
-        }
-
-        var cleanedFixed = new Dictionary<string, int[]>(config.IndicatorPositions);
-        var cleanedRelative = new Dictionary<string, int[]>(config.IndicatorPositionsRelative);
-        foreach (string name in selectedOriginal)
-        {
-            cleanedFixed.Remove(name);
-            cleanedRelative.Remove(name);
-        }
-
-        updateConfig(config with
-        {
-            IndicatorPositions = cleanedFixed,
-            IndicatorPositionsRelative = cleanedRelative,
-        });
-        Logger.Info($"Cleaned {selectedOriginal.Count} position(s): {string.Join(", ", selectedOriginal)}");
+        updateConfig(PositionCleanupService.RemoveSelected(config, displayItems, originalNames, selected));
     }
-
-    /// <summary>
-    /// schtasks.exe 실행 + ExitCode / STDOUT / STDERR 검사. 실패 시 Warning 1줄 로깅.
-    /// PR-03 asInvoker 전환 후 schtasks 가 XML 의 <c>&lt;UserId&gt;</c> / <c>&lt;RunLevel&gt;</c> 조합을
-    /// 거부할 수 있는 케이스를 진단하기 위해 silent ExitCode 무시 동작을 제거. 성공 시 true.
-    /// </summary>
-    private static bool RunSchtasks(string arguments)
-    {
-        var psi = new ProcessStartInfo("schtasks.exe", arguments)
-        {
-            CreateNoWindow = true,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        using var proc = Process.Start(psi);
-        if (proc is null)
-        {
-            Logger.Warning($"schtasks {arguments}: Process.Start returned null");
-            return false;
-        }
-        string stdout = proc.StandardOutput.ReadToEnd();
-        string stderr = proc.StandardError.ReadToEnd();
-        bool exited = proc.WaitForExit(SchtasksCommandTimeoutMs);
-        if (!exited)
-        {
-            Logger.Warning($"schtasks {arguments}: timed out after {SchtasksCommandTimeoutMs}ms");
-            return false;
-        }
-        if (proc.ExitCode != 0)
-        {
-            Logger.Warning(
-                $"schtasks {arguments}: ExitCode={proc.ExitCode}, "
-                + $"stderr={stderr.Trim()}, stdout={stdout.Trim()}");
-            return false;
-        }
-        return true;
-    }
-
 }

@@ -1,8 +1,8 @@
 # Improvement Plan — Progress Index
 
 **Last updated**: 2026-05-21
-**Current branch**: main (idle, PR-03 머지 완료)
-**Next PR**: PR-04/05/06/08/09/10/11 자유 선택 (PR-03 가 모든 후속 PR 의 전제 게이트였음 → 이제 해제)
+**Current branch**: feat/pr-04-tray-decomposition (Tier-3 사용자 smoke 대기)
+**Next PR**: PR-05/06/08/09/10/11 자유 선택 (PR-04 머지 후)
 
 ## Progress matrix
 
@@ -12,7 +12,7 @@
 | 01 | MergeProfile pipeline + WM_THEMECHANGED | ✅     | (merged → main, 4bca33d)        | Low     | M    | A1+A4+B3+H5. Tier-3 에서 PR-13 신설 근거 발견 |
 | 02 | Analyzers + manifest hardening          | ✅     | (merged → main, 91621a4)        | Medium  | M    | G2+G3. Tier-1+2+3 통과. 분석기 활성 시점에 위반 0건. manifest PE 임베드 확인 |
 | 03 | asInvoker migration (BREAKING)          | ✅     | (merged → main, 06b4157)        | High    | L    | v0.10.0 후보. Tier-1+2+3 (A~F) 통과. Tier-3 D 회귀 1건 발견 후 fix (LogonTrigger UserId) |
-| 04 | Tray.cs decomposition                   | ⏳     | feat/pr-04-tray-decomposition   | Low     | M    | C1+C2+D9+D10 |
+| 04 | Tray.cs decomposition                   | 🚧     | feat/pr-04-tray-decomposition   | Low     | M    | C1+C2+D9+D10. Tier-1+2 통과. Tray.cs 1156→575줄 (-50%). Tier-3 smoke 대기 |
 | 05 | Theme + DefaultConfig consolidation     | ⏳     | feat/pr-05-theme-and-defaults   | Low     | M    | D2+D5+N3+D7+H4-c |
 | 06 | I18n + Language enum                    | ⏳     | feat/pr-06-i18n-language        | Low     | M    | D3+D4 |
 | 07 | DialogShell + a11y baseline             | ⏳     | feat/pr-07-dialog-shell         | Medium  | L    | C3+H4-b. 수동 smoke 필요 |
@@ -81,3 +81,4 @@ PR별 Tier-2 grep 가드 + Tier-3 수동 smoke은 각 `PR-NN-*.md` §3 참조.
 | 2026-05-21 | PR-03 | BREAKING `requireAdministrator → asInvoker` + schtasks `LeastPrivilege` + App/Config/PortablePath.cs 신규 (BaseDirectory ↔ %LOCALAPPDATA%\KoEnVue fallback + SanitizeLogPath) + Settings/Logger 배선 + Tray.cs tempPath Guid:N + CreateNew + SyncStartupPathCore 가 RunLevel 동기화. CLAUDE.md P5 갱신 + invariant 2종 추가. 문서 6건 + dev-notes. Tier-1 debug + AOT publish clean (4.48 MB, +4 KB). Tier-2 grep 가드 4종 통과 (코멘트 단어 우회 정정 후). invariant 4종 0매치 | Tier-3 다중 시나리오 (A~F) 사용자 smoke 검증 후 머지 |
 | 2026-05-21 | PR-03 | Tier-3 D 회귀 발견 + fix. schtasks /create 가 ExitCode=1 "액세스가 거부되었습니다" 로 silent 거부. 진단 가시화 (RunSchtasks ExitCode/STDERR 로깅 + post-check) 후 root cause 확정: `<LogonTrigger>` 가 `<UserId>` 없이 비면 ANY-user trigger 로 해석되어 admin 요구. v0.9.x admin 토큰이 통과시켜 줬을 뿐. Fix: LogonTrigger 안에 `<UserId>{domain}\{user}</UserId>` 추가 (Principal `<UserId>` 는 비워둠 — 명시 시 SID lookup 검증에서 admin 요구). PR-03 §6 + dev-notes 사후 발견 절 + CHANGELOG 인라인 fix 메모. Tier-1/2 재검증 통과. commit 8778b61 | Tier-3 나머지 시나리오 (A/B/C/E/F) 사용자 검증 후 머지 |
 | 2026-05-21 | PR-03 | Tier-3 시나리오 A (정상 폴더) / B (Program Files fallback) / C (v0.9.x → v0.10.0 마이그) / D (schtasks 등록) / E (log_file_path sanitize) / F (tempPath GUID) 모두 사용자 가시 검증 통과. E 의 invalid JSON escape 사이드 — STJ 가 JsonReaderException 정상 throw 확인 (`\W` 직접 테스트), 인메모리 race 로 사용자 입력이 silent 정정되는 현상은 v0.9.x 부터의 기존 정책. FF merge to main (3 commits: 3ca644d, 8778b61, 06b4157) + 브랜치 삭제. PR-03 (BREAKING `requireAdministrator → asInvoker` + %LOCALAPPDATA% fallback + schtasks LeastPrivilege) 완료 | 다음 PR (04/05/06/08/09/10/11 자유 선택) |
+| 2026-05-21 | PR-04 | Tray.cs god class 분해 — 4개 신규 모듈 (`Core/Xml/XmlEntityCodec` / `Core/Shell/UriLauncher` / `App/Startup/StartupTaskManager` / `App/Config/PositionCleanupService`) + `App/UI/Tray.Menu.cs` partial. Tray.cs 1156 → 575 줄 (-50%). Program.cs 의 `Tray.SyncStartupPathAsync` → `StartupTaskManager.SyncStartupPathAsync`. Tier-1 debug + AOT publish clean (0 경고, 4.77 MB 유지). Tier-2 grep 가드 6종 통과 (xmldoc 단어 회피 + ShowMenu partial 분리로 line 가드 만족). invariant 4종 0매치. 문서 5건 갱신 (CHANGELOG / architecture.md 모듈 3종 + Tray 갱신 / PR-04 §2/§3/§6 / dev-notes 신규 / INDEX) | Tier-3 사용자 smoke 검증 후 머지 |
