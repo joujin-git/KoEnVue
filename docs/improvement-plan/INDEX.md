@@ -1,8 +1,8 @@
 # Improvement Plan — Progress Index
 
 **Last updated**: 2026-05-21
-**Current branch**: feat/pr-02-analyzers-manifest (PR-02 구현 완료, 머지 대기)
-**Next PR**: PR-02 머지 후 PR-03 (BREAKING, asInvoker) — 또는 PR-13 (per-app rendering wiring) 우선 가능
+**Current branch**: main (idle, PR-02 머지 완료)
+**Next PR**: PR-03 (BREAKING, asInvoker) 또는 PR-13 (per-app rendering wiring) — 사용자 선택 대기
 
 ## Progress matrix
 
@@ -10,7 +10,7 @@
 |----|-----------------------------------------|--------|---------------------------------|---------|------|-------|
 | 00 | AbandonedMutex 캐치                     | ✅     | (merged → main, c4de0bd)        | Low     | S    | Tier-1+2 통과, Tier-3 deadlock 부재 확인 (catch 자체는 race 좁아 미trigger) |
 | 01 | MergeProfile pipeline + WM_THEMECHANGED | ✅     | (merged → main, 4bca33d)        | Low     | M    | A1+A4+B3+H5. Tier-3 에서 PR-13 신설 근거 발견 |
-| 02 | Analyzers + manifest hardening          | 🚧     | feat/pr-02-analyzers-manifest   | Medium  | M    | G2+G3. Tier-1+2 통과, 분석기 활성화 시점에 위반 0건 (codebase 이미 clean). 머지 대기 |
+| 02 | Analyzers + manifest hardening          | ✅     | (merged → main, 91621a4)        | Medium  | M    | G2+G3. Tier-1+2+3 통과. 분석기 활성 시점에 위반 0건. manifest PE 임베드 확인 |
 | 03 | asInvoker migration (BREAKING)          | ⏳     | feat/pr-03-asinvoker            | High    | L    | v0.10.0 후보. CLAUDE.md P5 갱신 |
 | 04 | Tray.cs decomposition                   | ⏳     | feat/pr-04-tray-decomposition   | Low     | M    | C1+C2+D9+D10 |
 | 05 | Theme + DefaultConfig consolidation     | ⏳     | feat/pr-05-theme-and-defaults   | Low     | M    | D2+D5+N3+D7+H4-c |
@@ -72,3 +72,4 @@ PR별 Tier-2 grep 가드 + Tier-3 수동 smoke은 각 `PR-NN-*.md` §3 참조.
 | 2026-05-21 | PR-01 | A1+H5+B3+A4 4건 구현 + Tier-1 (debug + AOT publish 4.47 MB) + Tier-2 grep 가드 4종 통과 + invariant 4종 0매치. 문서 4건 갱신 (CHANGELOG / PRD §5.4 신설 / implementation-notes 프로필 머지 파이프라인 / dev-notes 2건) | Tier-3 smoke |
 | 2026-05-21 | PR-01 | Tier-3 수동 smoke: ① 정상 부팅 ✅, ② 프로필 theme:dark 색 변화 없음 ❌, ③ overlay_class_name 폴백 정상 (Warning 은 logger init 이전이라 파일 미기록), ④ system accent 변경 색 변화 없음 ❌. ②/④ 분석: ②는 별개 미배선 결함 (감지→메인 스레드 `resolved` 마샬링 부재) → PR-13 신설, ④는 `GetSysColor(COLOR_HIGHLIGHT)` 데이터 소스 한계 (Win11 personalization). 본 PR 는 인프라 fix 로 partial-merge | INDEX/PRD/CHANGELOG/dev-notes 정정 + PR-13 stub + 머지 |
 | 2026-05-21 | PR-02 | csproj 에 분석기 3종(`EnableAotAnalyzer`/`EnableTrimAnalyzer`/`EnableSingleFileAnalyzer`) 활성 — 신규 경고 0건 (codebase 가 reflection-free 라 clean). app.manifest 에 `<compatibility>` Win10/11 GUID + `longPathAware` 추가, `gdiScaling` 의도적 미추가. Tier-1 (debug + AOT publish clean) + Tier-2 grep 가드 4종 + invariant 4종 0매치 통과. PE 매니페스트 임베드 확인. exe 크기 4.47 MB 유지. 문서 3건 갱신 (CHANGELOG / conventions / implementation-notes) | 사용자 검토 후 머지 |
+| 2026-05-21 | PR-02 | Tier-3 수동 smoke 통과 (사용자 부팅 확인). FF merge to main (91621a4) + 브랜치 삭제 | 다음 PR (PR-03 또는 PR-13) 선택 대기 |
