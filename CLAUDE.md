@@ -19,16 +19,18 @@ C# 14 / .NET 10 + NativeAOT single exe (~4.7 MB). Zero external NuGet packages.
 | **P2** | UI text defaults to Korean. Log messages and config keys in English |
 | **P3** | No magic numbers → `const`/`enum`/config. No string comparisons → `enum` |
 | **P4** | No duplicate implementations — always reach for shared `Core/` modules |
-| **P5** | `app.manifest` UAC `requireAdministrator` |
+| **P5** | `app.manifest` UAC `asInvoker`. exe 가 user-non-writable 위치(Program Files 등)면 `%LOCALAPPDATA%\KoEnVue\` 로 자동 fallback (PortablePath) |
 | **P6** | One-way layer dependency: `App/` may import `Core/`, never the reverse |
 
 Verification invariants — all must return **0 matches**:
 
 ```bash
-git grep "KoEnVue\.App"      Core/   # P6 namespace gate
-git grep "ImeState"          Core/   # Risk 4 enum gate
-git grep "NonKoreanImeMode"  Core/   # Risk 4 enum gate
-git grep "DllImport"                 # banned, use [LibraryImport]
+git grep "KoEnVue\.App"             Core/         # P6 namespace gate
+git grep "ImeState"                 Core/         # Risk 4 enum gate
+git grep "NonKoreanImeMode"         Core/         # Risk 4 enum gate
+git grep "DllImport"                              # banned, use [LibraryImport]
+git grep "requireAdministrator"     app.manifest  # P5: asInvoker only
+git grep "RunLevel.*HighestAvailable" App/        # P5: LeastPrivilege only
 ```
 
 ## Architecture

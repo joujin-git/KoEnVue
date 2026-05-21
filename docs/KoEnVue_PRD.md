@@ -179,9 +179,9 @@ KoEnVue v0.9.2.5 — GitHub              ← 항상 최상단 헤더 (MF_DEFAULT
 - **상세 설정**은 구분선으로 묶어 종료 바로 위에 배치 — 트레이 메뉴로 노출되지 않는 나머지 필드를 편집하는 진입점
 
 ### 4.3 시작 프로그램 등록
-- `schtasks /xml` 기반 등록/해제 (ONLOGON 트리거 + `<Delay>PT15S</Delay>`, HIGHEST 권한 — P5 requireAdministrator 와 일치)
+- `schtasks /xml` 기반 등록/해제 (ONLOGON 트리거 + `<Delay>PT15S</Delay>`, `LeastPrivilege` — P5 asInvoker 와 일치, v0.10.0 부터 UAC 프롬프트 없음)
 - **로그온 15초 지연**: 부팅 자동 실행 시 explorer 트레이가 초기화되기 전에 앱이 떠서 `Shell_NotifyIconW NIM_ADD` 가 실패하는 레이스를 회피. (NIM_ADD 재시도로 복구되긴 하지만 매 부팅 warn 로그가 남는 문제 해소 목적)
-- **자동 동기화**: 앱 시작 시 백그라운드 스레드로 등록된 schtasks 항목의 `<Command>` 경로와 `<Delay>` 값을 조회해 현재 `Environment.ProcessPath` 및 `PT15S` 와 비교. 경로가 바뀌었거나 `<Delay>` 가 없으면(구 버전에서 `/tr` 방식으로 등록된 경우) XML 방식으로 재등록. exe 폴더를 옮겨도 다음 수동 실행부터는 복구된다(이사 직후 첫 자동 부팅은 구 경로를 찌르므로 한 번은 실패할 수 있음)
+- **자동 동기화**: 앱 시작 시 백그라운드 스레드로 등록된 schtasks 항목의 `<Command>` 경로 / `<Delay>` 값 / `<RunLevel>` 을 조회해 현재 `Environment.ProcessPath` · `PT15S` · `LeastPrivilege` 와 비교. 경로가 바뀌었거나 `<Delay>` 가 없거나(구 버전 `/tr` 방식) `<RunLevel>` 이 `HighestAvailable` 이면(v0.9.x 잔재) XML 방식으로 재등록. v0.9.x → v0.10.0 업그레이드 시 첫 부팅 후 자동 재등록되어 다음 부팅부터 UAC 프롬프트가 사라진다. exe 폴더를 옮겨도 다음 수동 실행부터는 복구된다(이사 직후 첫 자동 부팅은 구 경로를 찌르므로 한 번은 실패할 수 있음)
 
 ### 4.4 기본 위치 설정
 - 저장 위치가 없는 앱을 열 때 인디케이터가 나타날 기본 위치를 사용자가 지정. 현재 위치 모드에 따라 저장 대상이 달라짐
@@ -231,7 +231,7 @@ KoEnVue v0.9.2.5 — GitHub              ← 항상 최상단 헤더 (MF_DEFAULT
 - **HTTP 스택**: `Core/Http/HttpClientLite` → `Core/Native/WinHttp.cs` P/Invoke. `System.Net.Http.HttpClient` 는 NativeAOT 퍼블리시에 ~2.5 MB 를 추가하지만 WinHTTP 경로는 ~40 KB 로 끝나므로 (약 60× 차이) 트레이 앱 크기 예산(P1 정신)에 맞춰 선택
 - **빈도**: 앱 시작 시 백그라운드 스레드 1회만 실행. 주기 폴링·재시도·레이트 리밋 관리 없음. 재확인은 앱 재시작으로 대체
 - **silent 실패**: 네트워크 오류, HTTP 비-200, 빈 응답, JSON 파싱 실패, draft/prerelease skip, `current >= latest` 실패 — 모두 `Logger.Debug` 로만 기록. 사용자에게 팝업/배지 노출 없음
-- **URL 스킴 화이트리스트**: `Tray.OpenUpdatePage` 는 `ShellExecuteW` 호출 전에 GitHub API 응답의 `html_url` 이 `https://github.com/{UpdateRepoOwner}/{UpdateRepoName}/` 프리픽스로 시작하는지 `OrdinalIgnoreCase` 비교한다. 신뢰된 CA 를 가진 MITM 프록시가 응답을 조작해 `file:///`·`javascript:`·`ms-settings:` 등을 주입하면 `requireAdministrator` 프로세스에서 EoP 로 번질 수 있으므로 방어 차원에서 일치 검증을 강제한다. 불일치 시 `Logger.Warning` 후 즉시 반환
+- **URL 스킴 화이트리스트**: `Tray.OpenUpdatePage` 는 `ShellExecuteW` 호출 전에 GitHub API 응답의 `html_url` 이 `https://github.com/{UpdateRepoOwner}/{UpdateRepoName}/` 프리픽스로 시작하는지 `OrdinalIgnoreCase` 비교한다. PR-03 후 `asInvoker` 라 Admin 토큰 EoP 표면은 사라졌지만, 외부 응답을 그대로 `ShellExecute` 에 넘기면 신뢰된 CA MITM 이 조작한 `file:///`·`javascript:`·`ms-settings:` 등의 임의 핸들러가 사용자 컨텍스트에서 기동될 수 있어 방어를 유지한다. 불일치 시 `Logger.Warning` 후 즉시 반환
 - **버전 비교**: `UpdateChecker.NormalizeVersion` 이 `ReadOnlySpan<char>` 로 앞의 `v`/`V` 접두어와 semver prerelease/build 접미어 (`-beta.1`, `+build.42`) 를 제거한 뒤 `System.Version.TryParse` 로 `N.N.N[.N]` 파싱. `IsNewer(current, latest)` 는 `latestV > currentV`. prerelease 정렬 (`1.0.0-alpha < 1.0.0`) 은 의도적으로 무시 — prerelease 태그는 `release.Prerelease || release.Draft` 체크에서 skip 되므로 알림 경로에 닿지 않는다
 - **크로스 스레드 마샬링**: 백그라운드 스레드의 `onUpdateFound` 콜백 → `Program.OnUpdateCheckResult` 에서 `Program._pendingUpdate` (`private static volatile UpdateInfo?`) 에 쓰고 `User32.PostMessageW(hwndMain, WM_APP_UPDATE_FOUND, 0, 0)` 호출. 메인 스레드의 WndProc 가 메시지를 받아 `HandleUpdateFound` → `Tray.OnUpdateFound(info)` 를 호출. 감지 스레드와 동일한 `WM_APP+N` 패턴을 재사용해 크로스 스레드 신호 경로를 일관되게 유지
 - **트레이 메뉴 헤더 라인 라벨 전환**: `Tray._pendingUpdate` (비 volatile — WM_APP_UPDATE_FOUND 처리 이후는 메인 스레드 단독 접근) 가 non-null 이면 `ShowMenu` 가 헤더 라인의 라벨을 `KoEnVue v{cur} → {newTag} — 다운로드` 로 합성, null 이면 평소 라벨 `KoEnVue v{cur} — GitHub`. 별도 메뉴 항목·구분선 추가 없이 같은 `IDM_HOMEPAGE = 4010` 항목 한 줄에서 라벨만 전환되므로 메뉴 시각 구조가 두 모드 사이에 변하지 않는다 (v0.9.2.6 에서 v0.8.9.0 의 별도 `IDM_UPDATE_DOWNLOAD = 4008` 블록을 통합)
@@ -243,12 +243,13 @@ KoEnVue v0.9.2.5 — GitHub              ← 항상 최상단 헤더 (MF_DEFAULT
 ## 5. 설정 (config.json)
 
 ### 5.1 파일 위치
-- **exe 디렉토리의 `config.json`** — 완전 포터블 정책. exe 만 있으면 첫 실행 시 자동 생성된다
-- APPDATA 등 외부 경로를 일체 사용하지 않는다. `app.manifest requireAdministrator` (P5) 덕분에 exe 폴더는 항상 쓰기 가능
+- **기본은 exe 디렉토리의 `config.json`** — 포터블 정책. exe 만 있으면 첫 실행 시 자동 생성된다
+- **v0.10.0 (PR-03) 부터 `%LOCALAPPDATA%\KoEnVue\` 로 자동 fallback** — `app.manifest` 를 `asInvoker` 로 전환하면서 exe 폴더가 user-non-writable 한 경우(예: `Program Files` 설치)를 [App/Config/PortablePath](../App/Config/PortablePath.cs) 가 결정. 결정 우선순위: `BaseDirectory\config.json` 이 이미 있으면 그 경로(v0.9.x → v0.10.x 마이그레이션) → BaseDirectory writable 이면 BaseDirectory → `%LOCALAPPDATA%\KoEnVue\config.json`
+- `koenvue.log` 도 동일 fallback. `config.json:log_file_path` 사용자 지정 값은 `PortablePath.SanitizeLogPath` 가 허용 루트(BaseDirectory / `%LOCALAPPDATA%\KoEnVue`) 하위인지 검증해 위반 시 기본 경로로 폴백 + `Logger.Warning`
 - **첫 실행**: 파일이 없으면 기본 `AppConfig` 를 즉시 디스크에 저장해 사용자 눈에 바로 보이게 한다
 - **원자적 저장**: `JsonSettingsFile.WriteAllText` 는 `path + ".tmp"` 로 먼저 쓴 뒤 `File.Move(tmp, path, overwrite: true)` — 내부적으로 `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` 이므로 같은 볼륨에서 원자적 교체가 보장된다. 저장 중 크래시 / 전원 차단이 일어나도 잘린 `config.json` 이 남지 않으며, 핫 리로드의 "삭제 감지" 가드와 호환된다
 - **파싱 실패**: 기본값을 메모리에서만 사용하고 디스크는 덮어쓰지 않는다(수동 복구 여지 보존). 동시에 손상된 파일의 mtime 을 캐시에 반영해 5 초 폴링이 `WM_CONFIG_CHANGED` 를 무한 재발송하지 않도록 한다
-- **완전 삭제**: exe 폴더만 지우면 `config.json` + `koenvue.log` 가 함께 제거된다 (§ 9 참고)
+- **완전 삭제**: 포터블 경로면 exe 폴더만 지우면 끝. fallback 경로를 쓴 경우 `%LOCALAPPDATA%\KoEnVue\` 도 함께 지워야 `config.json` + `koenvue.log` 가 모두 제거된다 (§ 9 참고)
 
 ### 5.2 주요 설정 카테고리
 
@@ -395,7 +396,7 @@ dotnet publish -r win-x64 -c Release  # NativeAOT 릴리스 퍼블리시
 
 - NativeAOT 단일 exe (~4.7 MB)
 - .NET 런타임 설치 불필요
-- `app.manifest` : UAC `requireAdministrator` (P5)
+- `app.manifest` : UAC `asInvoker` (P5, v0.10.0~). Program Files 등 user-non-writable 위치 설치 시 `%LOCALAPPDATA%\KoEnVue\` 로 config/log 자동 fallback
 - **디버그·릴리스 둘 다 빌드 필수** — 디버그만 돌리면 릴리스 exe 가 낡은 상태로 남음
 
 ---
@@ -404,9 +405,10 @@ dotnet publish -r win-x64 -c Release  # NativeAOT 릴리스 퍼블리시
 
 1. 트레이 메뉴에서 **시작 프로그램 등록** 해제 (이미 해제 상태면 생략)
 2. KoEnVue 종료
-3. exe 폴더 삭제 — `config.json` 과 `koenvue.log` 도 exe 옆에 있으므로 함께 제거된다
+3. exe 폴더 삭제 — 포터블 경로(BaseDirectory)면 `config.json` 과 `koenvue.log` 도 exe 옆에 있으므로 함께 제거된다
+4. **fallback 경로를 쓴 경우** (Program Files 등 user-non-writable 위치 설치) `%LOCALAPPDATA%\KoEnVue\` 폴더도 함께 삭제
 
-외부 레지스트리/APPDATA 변경이 전혀 없으므로 폴더 삭제로 흔적이 완전히 사라진다.
+레지스트리 변경은 전혀 없다. schtasks 시작 등록을 사전에 해제했다면 폴더 삭제로 흔적이 완전히 사라진다.
 
 ---
 

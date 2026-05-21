@@ -88,4 +88,6 @@
 
 ## 6. 세션 진행 로그
 
-(empty)
+| Date | What happened | Next |
+|------|---------------|------|
+| 2026-05-21 | 코드 + 문서 일괄 구현. app.manifest asInvoker 전환, App/Config/PortablePath.cs 신규 (write-probe 캐시 + BaseDirectory ↔ %LOCALAPPDATA%\KoEnVue fallback + SanitizeLogPath), Settings.Load/Save 가 PortablePath.ResolveConfigPath 사용, Program.cs Logger.Initialize 두 호출처에 SanitizeLogPath + reject-reason reissue, Tray.cs RunLevel LeastPrivilege + tempPath Guid:N + FileMode.CreateNew + FileShare.None + SyncStartupPathCore 의 RunLevel 동기화 (HighestAvailable 잔재 자동 재등록), ShellExecute prefix 검증 주석 정당화 갱신. CLAUDE.md P5 갱신 + invariant 2종 추가. 문서 6건 (CHANGELOG / conventions / PRD §4.3·§5.1·§§6 빌드·§§9 완전삭제·§보안 / README / User_Guide / implementation-notes §config-location·§manifest) + dev-notes 신규. Tier-1 debug build 0 경고 / 0 오류 + AOT publish clean (4.48 MB, +4 KB). Tier-2 grep 가드 4종 통과 (코멘트 단어 우회 정정 후) — `requireAdministrator` app.manifest 0매치, `RunLevel.*HighestAvailable` App/ 0매치, `asInvoker` app.manifest 3매치, `LOCALAPPDATA` App/Config/ 2매치. invariant 4종 0매치. | 사용자 Tier-3 다중 시나리오 (A~F) smoke 검증 |

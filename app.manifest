@@ -3,12 +3,17 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges>
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>
+        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
       </requestedPrivileges>
     </security>
   </trustInfo>
   <!--
-    PR-03 에서 asInvoker 로 마이그레이션 예정 (BREAKING). 현재는 requireAdministrator 유지.
+    asInvoker — PR-03 (v0.10.0) 에서 이전 admin-elevation 매니페스트에서 전환. 본 앱은 인디케이터 렌더링,
+    IME 감지, WinEventHook, WTSRegisterSessionNotification, schtasks /sc onlogon (LeastPrivilege),
+    config.json write 모두 사용자 권한으로 충분하다. asInvoker 채택으로 매 부팅 UAC 프롬프트가 사라지고
+    Admin 토큰을 전제한 보안 표면(write-anywhere log path, schtasks symlink, Admin-elevated notepad)
+    이 자연 해소된다. exe 가 Program Files 처럼 user-non-writable 한 위치에 있으면 config/log 는
+    %LOCALAPPDATA%\KoEnVue\ 로 자동 fallback — App/Config/PortablePath.cs 참고.
     supportedOS: Win10/11 (단일 GUID). 본 앱은 Win11 personalization accent / DwmGetColorizationColor 등
     Win10 1607+ API 만 사용 — 더 오래된 OS 는 명시적으로 unsupported.
     longPathAware: Win10 1607+. 사용자가 config.json 을 매우 깊은 디렉토리에 두는 경우 대비.

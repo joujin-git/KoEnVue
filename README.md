@@ -18,7 +18,9 @@ Windows 한/영 IME 상태 인디케이터 — 드래그 가능한 플로팅 오
 
 ## 다운로드
 
-[Releases](../../releases) 에서 `KoEnVue.exe` 를 받아 원하는 폴더에 두고 실행하면 됩니다. Windows 10/11 x64, 관리자 권한이 필요합니다 (`app.manifest requireAdministrator`).
+[Releases](../../releases) 에서 `KoEnVue.exe` 를 받아 원하는 폴더에 두고 실행하면 됩니다. Windows 10/11 x64. v0.10.0 부터 관리자 권한이 필요 없습니다 (`app.manifest asInvoker`) — UAC 프롬프트 없이 바로 실행됩니다.
+
+**권장 설치 위치**: `%USERPROFILE%` 하위(예: 바탕화면, 문서 폴더), 또는 USB 같은 사용자가 쓰기 가능한 위치. `Program Files` 처럼 사용자 쓰기 불가 위치에 두면 `config.json` 과 `koenvue.log` 가 자동으로 `%LOCALAPPDATA%\KoEnVue\` 로 fallback 합니다(완전 포터블 시나리오를 원하면 user-writable 위치 권장).
 
 첫 공개 릴리스는 **v0.8.9.0** (2026-04-14) 입니다. 이 빌드부터 부팅 시 GitHub Releases 에서 새 버전을 1회 자동 확인해, 새 버전이 있으면 트레이 메뉴 최상단 헤더 라벨이 평소 `KoEnVue v{ver} — GitHub` 에서 `KoEnVue v{cur} → v{new} — 다운로드` 로 자동 전환됩니다(자동 설치는 아니며 사용자가 직접 새 exe 로 교체). 싫으면 `config.json` 에서 `update_check_enabled: false`.
 

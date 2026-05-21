@@ -14,7 +14,7 @@ Related: [architecture.md](architecture.md) (structural rules), [implementation-
 | **P2** | UI text defaults to Korean. Log messages and config keys in English |
 | **P3** | No magic numbers → `const`/`enum`/config. No string comparisons → `enum` |
 | **P4** | No duplicate implementations — the same functionality must never be re-implemented in a second location; always reach for the shared module |
-| **P5** | `app.manifest` UAC `requireAdministrator` — guarantees exe folder is writable (single source of truth for portable config) |
+| **P5** | `app.manifest` UAC `asInvoker` (PR-03, v0.10.0). exe 폴더가 user-non-writable 인 경우 `%LOCALAPPDATA%\KoEnVue\` 로 config.json/koenvue.log 자동 fallback ([App/Config/PortablePath](../App/Config/PortablePath.cs)). schtasks 시작 등록은 `LeastPrivilege` |
 | **P6** | One-way layer dependency: `App/` may import `Core/`, but `Core/` must not import `App/` |
 
 ### P4 in practice

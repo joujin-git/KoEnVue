@@ -115,8 +115,14 @@ internal static partial class Program
         _config = Settings.Load();
 
         // 4. 로거 + I18n 초기화
+        //    asInvoker 전환 (PR-03) 후 log_file_path 는 PortablePath.SanitizeLogPath 가 허용 루트
+        //    (BaseDirectory / %LOCALAPPDATA%\KoEnVue) 외 값을 거부. 거부 사유는 Logger.Initialize 이후
+        //    reissue 해야 koenvue.log 에도 남는다 (Trace 만 남는 PR-01 패턴과 동일).
         Logger.SetLevel(_config.LogLevel);
-        Logger.Initialize(_config.LogToFile, _config.LogFilePath, _config.LogMaxSizeMb);
+        string resolvedLogPath = PortablePath.SanitizeLogPath(_config.LogFilePath, out string? logPathReject);
+        Logger.Initialize(_config.LogToFile, resolvedLogPath, _config.LogMaxSizeMb);
+        if (logPathReject is not null)
+            Logger.Warning($"{logPathReject}; using '{resolvedLogPath}'");
 
         Logger.Debug($"Config: TrayEnabled={_config.TrayEnabled}, DisplayMode={_config.DisplayMode}, EventDisplayDurationMs={_config.EventDisplayDurationMs}, PollIntervalMs={_config.PollIntervalMs}");
         I18n.Load(_config.Language);
@@ -652,7 +658,10 @@ internal static partial class Program
     {
         _config = Settings.Load();
         Logger.SetLevel(_config.LogLevel);
-        Logger.Initialize(_config.LogToFile, _config.LogFilePath, _config.LogMaxSizeMb);
+        string resolvedLogPath = PortablePath.SanitizeLogPath(_config.LogFilePath, out string? logPathReject);
+        Logger.Initialize(_config.LogToFile, resolvedLogPath, _config.LogMaxSizeMb);
+        if (logPathReject is not null)
+            Logger.Warning($"{logPathReject}; using '{resolvedLogPath}'");
         I18n.Load(_config.Language);
         Settings.ClearProfileCache();
         ImeStatus.UpdateDetectionMethod(_config.DetectionMethod);

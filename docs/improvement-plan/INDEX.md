@@ -1,8 +1,8 @@
 # Improvement Plan — Progress Index
 
 **Last updated**: 2026-05-21
-**Current branch**: main (idle, PR-14 머지 완료)
-**Next PR**: PR-03 (BREAKING) 또는 PR-04/05/06/08/09/10/11 자유 선택
+**Current branch**: feat/pr-03-asinvoker (Tier-1+2 통과, Tier-3 사용자 검증 대기)
+**Next PR**: PR-03 Tier-3 smoke 후 머지 → PR-04/05/06/08/09/10/11 자유 선택
 
 ## Progress matrix
 
@@ -11,7 +11,7 @@
 | 00 | AbandonedMutex 캐치                     | ✅     | (merged → main, c4de0bd)        | Low     | S    | Tier-1+2 통과, Tier-3 deadlock 부재 확인 (catch 자체는 race 좁아 미trigger) |
 | 01 | MergeProfile pipeline + WM_THEMECHANGED | ✅     | (merged → main, 4bca33d)        | Low     | M    | A1+A4+B3+H5. Tier-3 에서 PR-13 신설 근거 발견 |
 | 02 | Analyzers + manifest hardening          | ✅     | (merged → main, 91621a4)        | Medium  | M    | G2+G3. Tier-1+2+3 통과. 분석기 활성 시점에 위반 0건. manifest PE 임베드 확인 |
-| 03 | asInvoker migration (BREAKING)          | ⏳     | feat/pr-03-asinvoker            | High    | L    | v0.10.0 후보. CLAUDE.md P5 갱신 |
+| 03 | asInvoker migration (BREAKING)          | 🚧     | feat/pr-03-asinvoker            | High    | L    | v0.10.0 후보. CLAUDE.md P5 갱신. Tier-1+2 통과 (4.48 MB) |
 | 04 | Tray.cs decomposition                   | ⏳     | feat/pr-04-tray-decomposition   | Low     | M    | C1+C2+D9+D10 |
 | 05 | Theme + DefaultConfig consolidation     | ⏳     | feat/pr-05-theme-and-defaults   | Low     | M    | D2+D5+N3+D7+H4-c |
 | 06 | I18n + Language enum                    | ⏳     | feat/pr-06-i18n-language        | Low     | M    | D3+D4 |
@@ -78,3 +78,4 @@ PR별 Tier-2 grep 가드 + Tier-3 수동 smoke은 각 `PR-NN-*.md` §3 참조.
 | 2026-05-21 | PR-13 | Tier-3 수동 smoke 통과 — 사용자 가시 확인 (notepad 다크 / opacity 0.3 / enabled:false). 사용자 1차 config 오타 실패 → 정정 후 재시험 정상. FF merge to main (11c3ec5) + 브랜치 삭제 | 다음 PR 선택 대기 |
 | 2026-05-21 | PR-14 | PR-01 Tier-3 ④ 잔존 결함 해소 PR 신설. `Dwmapi.DwmGetColorizationColor` + `TryGetColorizationRgb` 헬퍼 추가. `ApplySystemTheme` 가 DWM 우선 + `GetSysColor(COLOR_HIGHLIGHT)` 폴백 2단 분기. `WM_DWMCOLORIZATIONCOLORCHANGED = 0x0320` 상수 추가 + WndProc fall-through 머지. Tier-1 debug + clean AOT publish 모두 경고 0 (4.47 MB). Tier-2 grep 가드 4종 통과 (DwmGetColorizationColor Core/ 2, WM_DWMCOLORIZATIONCOLORCHANGED Program.cs 1 + Win32Types.cs 1, TryGetColorizationRgb 1). invariant 4종 0매치. 문서 4건 갱신 | Tier-3 사용자 smoke (강조색 변경 시 인디 색 즉시 전환) 후 머지 |
 | 2026-05-21 | PR-14 | Tier-3 수동 smoke 통과 (사용자 가시 확인 — 강조색 변경 시 인디 색 즉시 전환). FF merge to main (4818cd2) + 브랜치 삭제. PR-01 Tier-3 잔존 결함 전부 해소 | 다음 PR 선택 대기 |
+| 2026-05-21 | PR-03 | BREAKING `requireAdministrator → asInvoker` + schtasks `LeastPrivilege` + App/Config/PortablePath.cs 신규 (BaseDirectory ↔ %LOCALAPPDATA%\KoEnVue fallback + SanitizeLogPath) + Settings/Logger 배선 + Tray.cs tempPath Guid:N + CreateNew + SyncStartupPathCore 가 RunLevel 동기화. CLAUDE.md P5 갱신 + invariant 2종 추가. 문서 6건 + dev-notes. Tier-1 debug + AOT publish clean (4.48 MB, +4 KB). Tier-2 grep 가드 4종 통과 (코멘트 단어 우회 정정 후). invariant 4종 0매치 | Tier-3 다중 시나리오 (A~F) 사용자 smoke 검증 후 머지 |

@@ -55,22 +55,25 @@ internal static class Settings
     // Public 속성
     // ================================================================
 
-    /// <summary>현재 활성 config 파일 경로. Load 이후에는 항상 exe 디렉토리의 config.json 경로.</summary>
+    /// <summary>
+    /// 현재 활성 config 파일 경로. <see cref="PortablePath.ResolveConfigPath"/> 가 결정 — exe 폴더가
+    /// writable 이면 <c>BaseDirectory\config.json</c>, 아니면 <c>%LOCALAPPDATA%\KoEnVue\config.json</c>.
+    /// </summary>
     public static string? ConfigFilePath => _manager?.FilePath;
 
     // ================================================================
-    // Load — exe 디렉토리 단일 경로
+    // Load — PortablePath 가 BaseDirectory ↔ %LOCALAPPDATA% fallback 결정
     // ================================================================
 
     /// <summary>
-    /// exe 디렉토리의 config.json을 로드.
+    /// config.json 을 로드. 경로 결정은 <see cref="PortablePath.ResolveConfigPath"/>.
     /// - 파일 존재 + 정상: 로드
     /// - 파일 존재 + 파싱 실패: 덮어쓰지 않고 기본값 반환 (복구 가능성 보존). mtime 갱신으로 폴링 스팸 차단.
     /// - 파일 없음: 기본값을 즉시 디스크에 생성 (포터블 UX: exe만 있어도 config.json이 바로 나타남).
     /// </summary>
     public static AppConfig Load()
     {
-        string path = Path.Combine(AppContext.BaseDirectory, DefaultConfig.ConfigFileName);
+        string path = PortablePath.ResolveConfigPath();
         _manager ??= new AppSettingsManager(path, AppConfigJsonContext.Default.AppConfig);
         return _manager.Load();
     }
@@ -80,13 +83,14 @@ internal static class Settings
     // ================================================================
 
     /// <summary>
-    /// config.json 저장. path 미지정 시 현재 활성 경로 또는 기본 경로 사용.
+    /// config.json 저장. path 미지정 시 현재 활성 경로 또는 <see cref="PortablePath.ResolveConfigPath"/>
+    /// 가 결정한 기본 경로 사용.
     /// </summary>
     public static void Save(AppConfig config, string? path = null)
     {
         if (_manager is null || (path is not null && path != _manager.FilePath))
         {
-            string targetPath = path ?? Path.Combine(AppContext.BaseDirectory, DefaultConfig.ConfigFileName);
+            string targetPath = path ?? PortablePath.ResolveConfigPath();
             _manager = new AppSettingsManager(targetPath, AppConfigJsonContext.Default.AppConfig);
         }
         _manager.Save(config);

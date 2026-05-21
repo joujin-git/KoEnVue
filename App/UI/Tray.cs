@@ -610,9 +610,10 @@ internal static class Tray
     /// <para>
     /// <b>URL 프리픽스 검증</b> — <c>info.HtmlUrl</c> 은 GitHub API 응답 JSON 의 <c>html_url</c> 필드에서 왔다.
     /// 신뢰된 CA 를 가진 MITM 프록시가 응답을 조작하거나 계정이 탈취되면 <c>file:///</c>·<c>javascript:</c>·
-    /// <c>ms-settings:</c> 등의 스킴이 주입될 가능성이 있다. 앱이 <c>requireAdministrator</c> 로 기동되므로
-    /// 임의 스킴 실행은 EoP 로 번질 수 있다. 따라서 예상 릴리스 페이지 URL 프리픽스
-    /// (<c>https://github.com/{owner}/{name}/</c>) 와 일치하지 않으면 열지 않는다.
+    /// <c>ms-settings:</c> 등의 스킴이 주입될 가능성이 있다. PR-03 후 asInvoker 라 Admin 토큰 EoP 표면은
+    /// 사라졌지만, 외부 응답을 그대로 ShellExecute 에 넘기면 사용자 컨텍스트의 임의 핸들러 실행으로 번질
+    /// 수 있어 검증을 유지한다. 예상 릴리스 페이지 URL 프리픽스 (<c>https://github.com/{owner}/{name}/</c>)
+    /// 와 일치하지 않으면 열지 않는다.
     /// </para>
     /// </summary>
     private static void OpenUpdatePage()
@@ -852,17 +853,27 @@ internal static class Tray
     /// <summary>
     /// LogonTrigger.Delay 를 포함한 Task Scheduler 2.0 XML 을 생성해 schtasks /xml 로 등록한다.
     /// /tr 방식과 달리 초 단위 지연이 지정 가능 — Shell(explorer) 트레이 초기화 레이스 회피.
+    /// <para>
+    /// tempPath 는 GUID 기반 unpredictable 이름 + <see cref="FileMode.CreateNew"/> + <see cref="FileShare.None"/>
+    /// 로 작성한다. 같은 위치에 사전 placed symlink 가 있어도 CreateNew 가 실패하므로 schtasks 가
+    /// 가짜 XML 을 읽어들이는 TOCTOU 표면이 차단된다 (B2). PR-03 asInvoker 전환 후 Admin 토큰 표면은
+    /// 사라졌지만, 양식 차원의 안전망 + 동시 등록 race 방어 목적으로 유지.
+    /// </para>
     /// </summary>
     private static void RegisterStartupTaskWithXml(string exePath)
     {
         string xml = BuildStartupTaskXml(exePath);
-        // 프로세스별 유니크 이름으로 동시 등록 충돌 방지. %TEMP% 는 per-user 이므로 다른 사용자 간
-        // 충돌도 없다.
-        string tempPath = Path.Combine(Path.GetTempPath(), $"koenvue-task-{Environment.ProcessId}.xml");
+        // %TEMP% 는 per-user. GUID 로 attacker 가 미리 같은 경로를 점유하지 못하게 한다.
+        string tempPath = Path.Combine(Path.GetTempPath(), $"koenvue-task-{Guid.NewGuid():N}.xml");
         try
         {
             // schtasks /xml 은 UTF-16 LE + BOM 을 기대한다. Encoding.Unicode 가 정확히 그 포맷.
-            File.WriteAllText(tempPath, xml, System.Text.Encoding.Unicode);
+            // FileMode.CreateNew + FileShare.None: pre-placed file/symlink 발견 시 IOException 발생.
+            using (var fs = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var sw = new StreamWriter(fs, System.Text.Encoding.Unicode))
+            {
+                sw.Write(xml);
+            }
             RunSchtasks($"/create /tn \"{TaskName}\" /xml \"{tempPath}\" /f");
         }
         finally
@@ -895,7 +906,7 @@ internal static class Tray
     <Principal id="Author">
       <UserId>{userId}</UserId>
       <LogonType>InteractiveToken</LogonType>
-      <RunLevel>HighestAvailable</RunLevel>
+      <RunLevel>LeastPrivilege</RunLevel>
     </Principal>
   </Principals>
   <Actions Context="Author">
@@ -933,7 +944,7 @@ internal static class Tray
     {
         try
         {
-            var (registeredCommand, registeredDelay) = QueryRegisteredTask();
+            var (registeredCommand, registeredDelay, registeredRunLevel) = QueryRegisteredTask();
             if (registeredCommand is null)
             {
                 // 등록 안 돼 있거나 쿼리 실패 — 정상 케이스 (대부분 사용자는 startup 안 씀)
@@ -951,15 +962,19 @@ internal static class Tray
             bool pathMatches = PathsEqual(registeredPath, currentPath);
             // 구 버전(/tr 방식)은 <Delay> 요소가 없어 null. 이 경우도 마이그레이션 대상.
             bool delayMatches = string.Equals(registeredDelay, StartupTaskDelay, StringComparison.Ordinal);
+            // v0.9.x 는 admin RunLevel 잔재. PR-03 (v0.10.0) 에서 LeastPrivilege 로 전환됐으므로
+            // 업그레이드한 사용자의 기존 task 를 강제 재등록해야 부팅 시 UAC 프롬프트가 사라진다.
+            bool runLevelMatches = string.Equals(registeredRunLevel, "LeastPrivilege", StringComparison.Ordinal);
 
-            if (pathMatches && delayMatches)
+            if (pathMatches && delayMatches && runLevelMatches)
             {
-                Logger.Debug("Startup task already in sync (path + delay)");
+                Logger.Debug("Startup task already in sync (path + delay + runlevel)");
                 return;
             }
 
             Logger.Info(
-                $"Startup task out of sync (path='{registeredPath}' delay='{registeredDelay ?? "<none>"}'), re-registering with delay {StartupTaskDelay}");
+                $"Startup task out of sync (path='{registeredPath}' delay='{registeredDelay ?? "<none>"}' "
+                + $"runlevel='{registeredRunLevel ?? "<none>"}'), re-registering with delay {StartupTaskDelay} + LeastPrivilege");
             RegisterStartupTaskWithXml(currentPath);
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
@@ -972,9 +987,11 @@ internal static class Tray
     }
 
     /// <summary>
-    /// 등록된 시작 프로그램 태스크의 실행 명령 경로를 반환. 미등록 또는 실패 시 null.
+    /// 등록된 시작 프로그램 태스크의 실행 명령 경로 / LogonTrigger 지연 / RunLevel 을 반환.
+    /// 미등록 또는 실패 시 모두 null. RunLevel 은 PR-03 (v0.10.0) admin-elevation → LeastPrivilege
+    /// 마이그레이션 감지 목적.
     /// </summary>
-    private static (string? Command, string? Delay) QueryRegisteredTask()
+    private static (string? Command, string? Delay, string? RunLevel) QueryRegisteredTask()
     {
         try
         {
@@ -986,12 +1003,13 @@ internal static class Tray
                 RedirectStandardError = true,
             };
             using var proc = Process.Start(psi);
-            if (proc is null) return (null, null);
+            if (proc is null) return (null, null, null);
             string xml = proc.StandardOutput.ReadToEnd();
             proc.WaitForExit(SchtasksQueryTimeoutMs);
-            if (proc.ExitCode != 0) return (null, null);
+            if (proc.ExitCode != 0) return (null, null, null);
             return (ExtractTagFromXml(xml, "Command", unescape: true),
-                    ExtractTagFromXml(xml, "Delay", unescape: false));
+                    ExtractTagFromXml(xml, "Delay", unescape: false),
+                    ExtractTagFromXml(xml, "RunLevel", unescape: false));
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
             or InvalidOperationException
@@ -1002,7 +1020,7 @@ internal static class Tray
             // schtasks.exe 실행/stdout 파이프 읽기 실패만 흡수 → null(미등록으로 취급).
             // 로직 버그는 전파.
             _ = ex;
-            return (null, null);
+            return (null, null, null);
         }
     }
 
