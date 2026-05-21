@@ -1,7 +1,7 @@
 # PR-05: Theme + DefaultConfig consolidation + high-contrast
 
-**Status**: 🚧 in progress (Tier-1+2 통과, Tier-3 사용자 smoke 대기)
-**Branch**: feat/pr-05-theme-and-defaults
+**Status**: ✅ merged (deedabe)
+**Branch**: feat/pr-05-theme-and-defaults (deleted)
 **Base**: main (PR-03 후 권장)
 **Risk**: Low
 **Estimated session size**: M (1-2시간)
@@ -135,5 +135,11 @@
 - `docs/conventions.md` P4 sub-rule 신설 ("수치/색상 디폴트는 DefaultConfig 단일 진실원").
 - `docs/improvement-plan/INDEX.md` Sessions log + Progress matrix.
 
-**대기**: Tier-3 수동 smoke 4건 (테마 4종 전환 / Custom 왕복 / 고대비 모드 / SettingsDialog range)
-사용자 검증 후 머지.
+**Tier-3 수동 smoke 완료** (사용자 가시 검증 4건 모두 통과):
+1. 테마 4종 (Minimal/Vivid/Pastel/Dark) 전환 → 색 변경 확인.
+2. Custom → Preset → Custom 왕복 → 원래 색 복원 확인 (`custom_backup_*` 동작).
+3. `Theme.System` + Windows 고대비 모드 ON ↔ OFF 토글 → 인디 색이 contrast-safe 팔레트 ↔ DWM accent
+   사이로 즉시 전환 확인.
+4. SettingsDialog 의 입력 range 일치 확인 — 경계 외 값에 에러 정확 노출.
+
+**머지**: FF merge to main (deedabe) + 브랜치 삭제.
