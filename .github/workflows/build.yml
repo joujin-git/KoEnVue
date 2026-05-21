@@ -15,8 +15,11 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # 테스트 프로젝트를 명시 빌드 — ProjectReference 로 메인 KoEnVue.csproj 도 transitive 빌드된다.
+      # 메인만 빌드하면 tests/KoEnVue.Tests.dll 이 부재해 다음 단계의 `dotnet test --no-build` 가
+      # "test source file not found" 로 실패 (PR-10 Tier-3 회귀).
       - name: Restore + build (Debug)
-        run: dotnet build --configuration Debug
+        run: dotnet build tests/KoEnVue.Tests/ --configuration Debug
 
       - name: Run unit tests
         run: dotnet test tests/KoEnVue.Tests/ --configuration Debug --no-build --verbosity normal
