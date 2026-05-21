@@ -1,8 +1,8 @@
 # Improvement Plan — Progress Index
 
 **Last updated**: 2026-05-21
-**Current branch**: feat/pr-08-core-reuse (Tier-3 smoke 대기)
-**Next PR**: PR-08 머지 후 PR-10/11 자유 선택
+**Current branch**: main (PR-08 머지 완료)
+**Next PR**: PR-10/11 자유 선택
 
 ## Progress matrix
 
@@ -16,7 +16,7 @@
 | 05 | Theme + DefaultConfig consolidation     | ✅     | (merged → main, deedabe)        | Low     | M    | D2+D5+N3+D7+H4-c. Tier-1+2+3 통과. AppConfig 디폴트 ↔ DefaultConfig ↔ Validate ↔ Dialog 4-축 단일 진실원 + ThemeColors record + 고대비 분기 |
 | 06 | I18n + Language enum                    | ✅     | (merged → main, f1fb11c)        | Low     | M    | D3+D4 + Tier-3 즉시반영 fix. Tier-1+2+3 통과. AOT 4.82 MB |
 | 07 | DialogShell + a11y baseline             | ✅     | (merged → main, e30407c)        | Medium  | L    | C3+H4-b. Tier-1+2+3 통과. Tier-3 회귀 1건 (CleanupDialog 결과 수집 타이밍) 발견 후 fix. 라인 카운트 슬립 명시 (-13~-21%) |
-| 08 | Core reuse restoration                  | 🚧     | feat/pr-08-core-reuse           | Low     | M    | C4+C6+C5(TopmostWatchdog만)+E1+E2+E3. Tier-1+2 통과, Tier-3 smoke 대기 |
+| 08 | Core reuse restoration                  | ✅     | (merged → main, 399f6ad)        | Low     | M    | C4+C6+C5(부분)+E1+E2+E3. Tier-1+2+3 통과. WindowSnapHelper/TopmostWatchdog/ImeConstants 신규 + MeasureLabels string[] 일반화 + 폰트 파라미터화 |
 | 09 | Logging policy + ILogSink               | ✅     | (merged → main, 30b2275)        | Low     | M    | E4+E5+F1+F3+F4+F5 + pre-Init 버퍼. Tier-1+2+3 통과 (AOT 4.80 MB, -16 KB). PR-06 ④ 잔재 해소 |
 | 10 | CI + first tests                        | ⏳     | feat/pr-10-ci-tests             | Low     | M    | G1+G5 |
 | 11 | Version single-source + SHA256 release  | ⏳     | feat/pr-11-version-signing      | Medium  | L    | D6+G4 |
@@ -93,3 +93,4 @@ PR별 Tier-2 grep 가드 + Tier-3 수동 smoke은 각 `PR-NN-*.md` §3 참조.
 | 2026-05-21 | PR-07 | Tier-3 회귀 발견 + fix. CleanupDialog 가 1차 리팩토링에서 결과 수집을 `DialogShell.Run` 반환 **후** `_checkboxHandles[i]` 에 `BM_GETCHECK` 로 수행하던 결함 — `DialogShell.Run` 의 `try/finally DestroyWindow` 가 이미 HWND 를 무효화한 뒤라 모든 체크가 0 반환 → 빈 선택 → 실제 삭제 동작 안 함 (사용자는 "삭제 후에도 인디 위치 그대로" 로만 체감). Fix: SettingsDialog/ScaleInputDialog 와 동일한 `tryCommit` 콜백 패턴 통일 — `_items` + `_selectedItems` 정적 필드 신규 + `CommitSelections() → bool` 가 WM_COMMAND IDOK 처리 시점(모달 안, HWND 유효) 에 체크 상태를 `_selectedItems` 에 박아둠 + `HandleStandardCommands` 호출에 `tryCommit: CommitSelections` 추가 + Show() 는 `_selectedItems` 만 반환. Tier-1 재검증 통과 (0 경고, 4.80 MB 유지). 문서 3건 갱신 (CHANGELOG / dev-notes §"회귀 위험" / PR-07 §6 + INDEX) | Tier-3 재테스트 (CleanupDialog 항목 삭제 후 인디 위치 변경 확인) 후 머지 |
 | 2026-05-21 | PR-07 | Tier-3 재테스트 모두 통과 — CleanupDialog 항목 삭제 후 인디 위치 정상 갱신 + SettingsDialog/ScaleInputDialog 회귀 부재 확인. FF merge to main (2 commits: f4552dc, e30407c) + 브랜치 삭제. PR-07 (DialogShell 추출 + 3 다이얼로그 라이프사이클 통합 + a11y baseline + Tier-3 회귀 fix) 완료 | 다음 PR (08/10/11) 자유 선택 |
 | 2026-05-21 | PR-08 | C4+C6+C5(부분)+E1+E2+E3 6 항목 구현. 신규 Core/Windowing/WindowSnapHelper.cs (167줄, 창 엣지 스냅 모듈) + Core/Windowing/TopmostWatchdog.cs (67줄, HWND_TOPMOST 재적용 워치독) + App/Detector/ImeConstants.cs (37줄, IME 9 상수 App 이전). LayeredOverlayBase 900→767 (-133, WindowSnapHelper 위임). OverlayAnimator 554→546 (-8, TopmostWatchdog 위임 — 단일 트랙이라 라인 슬립). OverlayStyle.MeasureLabels (string,string,string) → string[] + 명시적 Equals/GetHashCode 오버라이드 (SequenceEqual 시퀀스 동등성, flip-flop 가드 유지). LayeredOverlayBase._cachedLabelMeasureKey string[]? 로 변경. Overlay.ComputeCornerAnchor 단일화 (2 메서드 → 1 헬퍼). Win32DialogHelper.CreateDialogFont(uint, string) 폰트 패밀리 필수 인자, DialogShell.Run 에 dialogFontFamily 파라미터 추가, App 측 DefaultConfig.DefaultDialogFontFamily const 신규. Tier-1 debug + AOT publish clean (0 경고, 4.80 MB). Tier-2 grep 가드 통과: Hangul/English/NonKorean Core/ 0, 맑은 고딕 Core/ 0, WindowSnapHelper/TopmostWatchdog ns 1 each, LayeredOverlayBase < 800 ✓, OverlayAnimator 라인 슬립 명시. invariant 4종 + P5 2종 0매치. 문서 5건 갱신 (CHANGELOG / architecture / conventions / dev-notes 신규 / PR-08 §6). | Tier-3 사용자 smoke (드래그+스냅 / topmost 유지 / 3 다이얼로그 / IME 인디 표시) 후 머지 |
+| 2026-05-21 | PR-08 | Tier-3 사용자 smoke 모두 통과 — 드래그+스냅 / topmost 유지 / 3 다이얼로그 폰트·포어그라운드 / IME 인디 표시 모두 정상. FF merge to main (399f6ad) + 브랜치 삭제. PR-08 (Core reuse contract 회복 — WindowSnapHelper + TopmostWatchdog + ImeConstants 분리 + MeasureLabels string[] 일반화 + 폰트 파라미터화 + ComputeCornerAnchor 단일화) 완료 | 다음 PR (10/11) 자유 선택 |
