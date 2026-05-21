@@ -1,8 +1,8 @@
 # Improvement Plan — Progress Index
 
 **Last updated**: 2026-05-21
-**Current branch**: feat/pr-09-logging-policy (Tier-1+2+3 통과, FF 머지 진행 중)
-**Next PR**: PR-09 머지 후 PR-07/08/10/11 자유 선택
+**Current branch**: main (PR-09 머지 완료)
+**Next PR**: PR-07/08/10/11 자유 선택
 
 ## Progress matrix
 
@@ -17,7 +17,7 @@
 | 06 | I18n + Language enum                    | ✅     | (merged → main, f1fb11c)        | Low     | M    | D3+D4 + Tier-3 즉시반영 fix. Tier-1+2+3 통과. AOT 4.82 MB |
 | 07 | DialogShell + a11y baseline             | ⏳     | feat/pr-07-dialog-shell         | Medium  | L    | C3+H4-b. 수동 smoke 필요 |
 | 08 | Core reuse restoration                  | ⏳     | feat/pr-08-core-reuse           | Low     | M    | C4+C6+C5(TopmostWatchdog만)+E1+E2+E3 |
-| 09 | Logging policy + ILogSink               | ✅     | feat/pr-09-logging-policy       | Low     | M    | E4+E5+F1+F3+F4+F5 + pre-Init 버퍼. Tier-1+2+3 통과 (AOT 4.80 MB, -16 KB) |
+| 09 | Logging policy + ILogSink               | ✅     | (merged → main, 30b2275)        | Low     | M    | E4+E5+F1+F3+F4+F5 + pre-Init 버퍼. Tier-1+2+3 통과 (AOT 4.80 MB, -16 KB). PR-06 ④ 잔재 해소 |
 | 10 | CI + first tests                        | ⏳     | feat/pr-10-ci-tests             | Low     | M    | G1+G5 |
 | 11 | Version single-source + SHA256 release  | ⏳     | feat/pr-11-version-signing      | Medium  | L    | D6+G4 |
 | 12 | Documentation alignment                 | ⏳     | feat/pr-12-docs                 | Low     | S    | H1+H2+H3 |
