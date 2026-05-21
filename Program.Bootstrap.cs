@@ -32,15 +32,28 @@ internal static partial class Program
 
     private static bool TryAcquireMutex()
     {
-        _mutex = new Mutex(true, DefaultConfig.MutexName, out bool createdNew);
-        if (!createdNew)
+        try
         {
-            Logger.Info("Another instance already running, exiting");
-            _mutex.Dispose();
-            _mutex = null;
-            return false;
+            _mutex = new Mutex(true, DefaultConfig.MutexName, out bool createdNew);
+            if (!createdNew)
+            {
+                Logger.Info("Another instance already running, exiting");
+                _mutex.Dispose();
+                _mutex = null;
+                return false;
+            }
+            return true;
         }
-        return true;
+        catch (AbandonedMutexException ex)
+        {
+            // 이전 인스턴스가 비정상 종료 → WAIT_ABANDONED.
+            // .NET 런타임이 우리 호출자에게 자동으로 소유권을 넘긴 상태이므로 createdNew=true 와
+            // 동일하게 진행한다. 캐치 시점에 _mutex 필드 set 여부는 런타임 버전마다 다르므로
+            // null 인 경우만 재취득 (이미 우리가 소유한 named mutex 라 즉시 반환).
+            Logger.Warning($"Mutex was abandoned by previous crashed instance: {ex.Message}");
+            _mutex ??= new Mutex(true, DefaultConfig.MutexName, out _);
+            return true;
+        }
     }
 
     /// <summary>

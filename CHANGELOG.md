@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### 수정
+
+- **이전 인스턴스가 비정상 종료한 직후 두 번째 인스턴스가 `AbandonedMutexException` 으로 영구 실행 불가 상태 (잠재 deadlock) 가 되던 가능성 제거** — `Program.Bootstrap.TryAcquireMutex` 가 `new Mutex(true, name, out createdNew)` 의 명명된 mutex 결과를 그대로 받기만 했음. Win32 mutex 는 소유 스레드가 `ReleaseMutex` 없이 종료(크래시·강제 종료) 하면 다음 acquirer 에게 `WAIT_ABANDONED` 가 통지되는데, .NET 7+ 의 `Mutex(initiallyOwned: true, …)` 생성자는 이 상태를 만나면 implicit `WaitOne` 단계에서 `AbandonedMutexException` 을 throw 한다. 본 코드는 `WaitOne` 을 직접 호출하지 않지만 생성자가 그 의미상 한 번 wait 하는 것과 동치이므로 같은 경로로 노출. 현재 코드는 try/catch 없이 예외가 `Main` 의 마지막 `try` 로 buble-up → `koenvue_crash.txt` 기록 후 즉시 종료. 사용자 입장에선 "한 번 비정상 종료한 뒤 재실행이 안 된다" 는 deadlock 형태. 방어책: `TryAcquireMutex` 에 `catch (AbandonedMutexException ex)` 추가 → `Logger.Warning` 1줄 + `_mutex` 의 null 여부에 따라 `??=` 재취득 (런타임 버전마다 필드 set 전/후 throw 가 달라 안전망) + `return true` (mutex 소유권은 이미 우리 호출자 쪽으로 자동 인수됨). createdNew=true 와 의미적으로 동일하게 정상 부팅 경로로 진행. 트리거: 사용자가 trace 폴더 또는 작업 관리자에서 KoEnVue 를 `taskkill /f` 로 강제 종료 → 즉시 재실행 (실측은 windows scheduler 영향으로 항상 재현되진 않음, 잠재 결함 차원으로 처리). 로그 한 줄로 발생 사실이 가시화되어 운영 중에도 사례 수집 가능. 본 PR 는 P5 (administrator manifest) 변경 없음, BREAKING 아님 (PR-00, [docs/improvement-plan/PR-00-mutex-abandoned.md](docs/improvement-plan/PR-00-mutex-abandoned.md)). 자세한 재현/대안 분석 → [docs/dev-notes/2026-05-21-mutex-abandoned-handling.md](docs/dev-notes/2026-05-21-mutex-abandoned-handling.md)
+
 ## [0.9.2.8] — 2026-05-05
 
 ### 수정

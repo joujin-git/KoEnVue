@@ -1,14 +1,14 @@
 # Improvement Plan — Progress Index
 
 **Last updated**: 2026-05-21
-**Current branch**: main (idle)
-**Next PR**: PR-00
+**Current branch**: feat/pr-00-mutex-abandoned (in progress — Tier-1 빌드 사용자 환경 확인 대기)
+**Next PR**: PR-01 (PR-00 빌드 확인 후)
 
 ## Progress matrix
 
 | #  | Title                                   | Status | Branch                          | Risk    | Size | Notes |
 |----|-----------------------------------------|--------|---------------------------------|---------|------|-------|
-| 00 | AbandonedMutex 캐치                     | ⏳     | feat/pr-00-mutex-abandoned      | Low     | S    | 잠재 deadlock 제거 |
+| 00 | AbandonedMutex 캐치                     | 🚧     | feat/pr-00-mutex-abandoned      | Low     | S    | 코드+문서 완료. Tier-1 빌드 사용자 확인 대기 |
 | 01 | MergeProfile pipeline + WM_THEMECHANGED | ⏳     | feat/pr-01-merge-profile        | Low     | M    | A1+A4+B3+H5 묶음 |
 | 02 | Analyzers + manifest hardening          | ⏳     | feat/pr-02-analyzers-manifest   | Medium  | M    | G2+G3 |
 | 03 | asInvoker migration (BREAKING)          | ⏳     | feat/pr-03-asinvoker            | High    | L    | v0.10.0 후보. CLAUDE.md P5 갱신 |
@@ -66,3 +66,4 @@ PR별 Tier-2 grep 가드 + Tier-3 수동 smoke은 각 `PR-NN-*.md` §3 참조.
 | Date | PR | What happened | Next |
 |---|---|---|---|
 | 2026-05-21 | setup | improvement-plan 셋업 완료 (16 파일 + 메모리) | PR-00 시작 |
+| 2026-05-21 | PR-00 | TryAcquireMutex catch 추가 + CHANGELOG + dev-notes. invariant 4종 + Tier-2 grep 통과. Tier-1 빌드는 sandbox NuGet 부재로 사용자 환경 확인 합의 | 사용자 빌드 확인 → ✅ + PR-01 |
