@@ -128,10 +128,11 @@ docs/
 - `docs/sessions/YYYY-MM-DD.md` 끝에 `## [HH:MM] turn` 블록 append
 
 ### `SessionEnd` → `session-end.ps1`
-- dirty tree 면 `wip: session YYYY-MM-DD HH:MM — session end (reason)` 자동 커밋
-- 커밋 후 + 기존 unpushed commit 도 함께 `git push` 자동 시도 ("커밋 = 푸시 항상 같이" fallback)
-- 이 세션의 최근 10분 커밋 정리
-- 오늘 세션 파일에 `## [HH:MM] session-end (reason)` 블록 append + push 상태 (`pushed` / `no-upstream` / `failed`)
+- dirty tree 가 있으면:
+  1. **먼저** 오늘 세션 파일에 `## [HH:MM] session-end (reason)` 블록 append (이 세션의 최근 10분 커밋 목록 + "방금 wip — 이 마무리 블록 포함" 한 줄)
+  2. **그 다음** `wip: session YYYY-MM-DD HH:MM — session end (reason)` 커밋 — block 변경분 + 기존 dirty 가 같은 wip 커밋에 묶임 (다음 세션 시작 시 dirty 잔여물 0 보장)
+- dirty tree 가 없으면 nothing — 마무리 블록도 안 적고 wip 커밋도 만들지 않음 (잡음 0)
+- 위 처리 후 unpushed commit 이 있으면 `git push` 자동 시도 ("커밋 = 푸시 항상 같이" fallback)
 
 ### `InstructionsLoaded` → `claude-md-size-check.ps1`
 - 로드된 파일이 `CLAUDE.md` 이면 줄 수 검사
