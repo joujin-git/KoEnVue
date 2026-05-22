@@ -14,14 +14,22 @@ model: inherit
 리뷰 시작 시 **반드시 다음 순서로 진행**:
 
 1. `Read` 도구로 [docs/conventions.md](../../docs/conventions.md) 를 새로 읽기 — 기억/캐시 의존 금지.
-2. 다음 **4 섹션의 `git grep` 검증 명령을 모두 추출** (한 섹션에 모여있지 않으니 누락 주의):
-   - **§P6 verification invariants** — P규칙 메인 게이트 (8개 grep + "0 matches" 라벨)
-   - **§P6 sub-rule** — `App/Config/` → `App/Detector/` import 차단 (1개 grep, → 0)
-   - **§Silent catch §8 (Core ↔ Logger 단방향 추상화)** — Logger / LogProvider / Sink?.Debug "failed" 검증 (3개 grep)
-   - **§AOT specifics § "AOT/Trim/SingleFile 분석기 정책" 의 § "검증"** — `EnableAotAnalyzer` / `EnableTrimAnalyzer` / `EnableSingleFileAnalyzer` 활성화 확인 (3개 grep, → 1)
+2. **검증 명령 전수 추출** — 두 방법 병행:
+
+   **방법 A (1차, 자동 — 누락 0 보장)**: 본 파일에서 `git grep` 토큰이 포함된 **모든 라인**을 추출 — line 시작(코드 블록 안), 본문 인라인 백틱 안(` `git grep ...` `), 우측 주석/기대값 모두. `Grep` 도구 또는 `Select-String -Pattern 'git grep'` 로 한 번에. 각 라인의 우측 주석(`# ...`) 또는 행 끝의 기대값(`→ 0`, `→ 1`, `0 매치`, `must return 0` 등)을 함께 보존. 새 invariant 가 conventions.md 에 추가돼도 자동 흡수.
+
+   **방법 B (2차, 현재 알려진 5 위치 cross-check — drift 감지용)**:
+   - 헤더 **`### P6 verification invariants`** 아래 ` ```bash ` 블록 — P규칙 메인 8개 grep (라벨: "must return 0 matches")
+   - 같은 § 아래 본문 문단 **`Additional sub-rule — App/Config/ must not import App/Detector/`** 다음 ` ```bash ` 블록 — 1개 grep (`→ 0`)
+   - 헤더 **`### 8. Core ↔ Logger 단방향 추상화 (PR-09)`** 본문의 **`검증:`** bullet — 인라인 `git grep` 2개 (`Logger.Debug|Info|Warning|Error` 0 매치 외 + `LogProvider.` 1+ 매치)
+   - 헤더 **`### 9. Debug 레벨 로그의 "failed" 단어 회피`** 본문의 **`검증:`** bullet — 인라인 `git grep "Sink?.Debug.*failed" Core/` 1개 (0 매치)
+   - 헤더 **`### AOT/Trim/SingleFile 분석기 정책`** 본문의 **`Verification:`** 문단 ` ```bash ` 블록 — 3개 grep (`EnableAotAnalyzer` / `EnableTrimAnalyzer` / `EnableSingleFileAnalyzer` 각 `→ 1`)
+
+   방법 A 결과 = 방법 B 5 위치 합계 (현재 ~15 grep). **두 결과가 다르면 conventions.md 에 새 invariant 가 추가됐다는 신호** — 본 §0 의 5 위치 리스트도 같이 갱신해야 함을 사용자에게 보고.
+
 3. 본 파일(reviewer.md)에는 grep 사본을 절대 보관하지 않음 — drift 방지.
 
-이 단계를 건너뛰면 리뷰 결과는 무효. 매 호출마다 conventions.md 가 갱신됐을 수 있음을 전제로 시작합니다. 새 invariant 추가 시 conventions.md 가 단일 진실원 — 위 4 섹션 중 하나에 들어가도록 유도 (전혀 새 섹션이면 본 §0 의 4 리스트를 함께 갱신).
+이 단계를 건너뛰면 리뷰 결과는 무효. 매 호출마다 conventions.md 가 갱신됐을 수 있음을 전제로 시작합니다.
 
 ### 1. P1–P6 invariant grep (모두 0건이여야 합니다)
 

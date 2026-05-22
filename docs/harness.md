@@ -93,7 +93,7 @@ docs/
 | **historian** | 세션 정리 — `/wrap-up` 또는 SessionEnd 후속 | Read, Write, Edit, Bash |
 | **verifier** | release 전 / 큰 변경 후 — `dotnet build`/`publish`/`test` | Bash, Read, Glob, Grep |
 
-전체 정의는 [.claude/agents/*.md](../.claude/agents/) 참조. **invariant grep 단일 진실원**: reviewer 는 grep 명령을 자체 보유하지 않고 [docs/conventions.md](conventions.md) §P6 invariants 를 참조 — drift 방지.
+전체 정의는 [.claude/agents/*.md](../.claude/agents/) 참조. **invariant grep 단일 진실원**: reviewer 는 grep 명령을 자체 보유하지 않고 [docs/conventions.md](conventions.md) 를 매 호출마다 새로 Read 해 전수 추출 (방법 A) — 현재 알려진 5 위치 (§P6 verification invariants, §P6 Additional sub-rule, §Silent catch §8 Core↔Logger, §Silent catch §9 Debug "failed", §AOT Verification). 자세한 추출 규칙은 [.claude/agents/reviewer.md §0](../.claude/agents/reviewer.md) 참조 — drift 방지.
 
 ## 4. Hook 라이프사이클
 
@@ -111,8 +111,9 @@ docs/
 - "모든 작업은 ultrathink + max effort" 보장
 
 ### `PostToolUse(Edit|Write|NotebookEdit)` → `post-edit-doc-sync.ps1`
-- 변경된 파일 경로를 매핑 테이블에 대조
+- 변경된 파일 경로를 매핑 테이블에 대조. rules 배열은 **first-match-wins** — 더 좁은 패턴 `^Core/Native/` 가 일반 `^Core/` 보다 먼저 정의돼 우선 매칭됨.
 - 영향받는 docs 목록을 이번 턴 컨텍스트로 추가
+- **보안 민감 매핑**: `Core/Native/` (P/Invoke 시그니처), `app.manifest` (UAC 레벨), `KoEnVue.csproj` (NuGet 추가/제거), `NuGet.config` (외부 피드) 변경 시 Reason 메시지에 `/security-review` 권장/필수 문구 자동 포함 — Claude Code 의 built-in 슬래시 커맨드로 보안 점검 유도.
 - `.claude/state/pending-docs.txt` 에 기록 → Stop hook 에서 사용
 - **중복 reminder 억제**: 같은 매핑(예: `App/*` → `docs/architecture.md`)이 한 턴에 여러 번 trigger 되면, 첫 번째만 컨텍스트 reminder. pending-docs.txt 에는 모든 파일 기록 (Stop hook 에서 다 표시).
 
