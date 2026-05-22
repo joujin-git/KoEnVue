@@ -1,78 +1,30 @@
-# CLAUDE.md — KoEnVue Project Guide
+# CLAUDE.md — KoEnVue
 
-Windows Korean/English IME state indicator. Draggable floating overlay showing **한** / **En** / **EN** labels, with optional CAPS LOCK bars on the label edges.
+Windows IME state indicator (한 / En / EN). C# 14 / .NET 10 + NativeAOT single exe (~4.7 MB). Zero external NuGet.
 
-C# 14 / .NET 10 + NativeAOT single exe (~4.7 MB). Zero external NuGet packages.
+## Hard rules (P1–P6)
 
-## Tech stack
+| Rule | What |
+|------|------|
+| P1 | Zero external NuGet in release exe. .NET 10 BCL + Win32 API only. tests/ 는 dev-only 예외 |
+| P2 | UI 한국어, 로그/config 키 영어 |
+| P3 | const/enum/config — no magic numbers, no string compare |
+| P4 | 하나의 구현만 — 공유는 `Core/` |
+| P5 | app.manifest=asInvoker; `%LOCALAPPDATA%\KoEnVue\` fallback |
+| P6 | `App/ → Core/` 단방향 의존 |
 
-- **Target**: `net10.0-windows`, `PublishAot`, `AllowUnsafeBlocks`, `InvariantGlobalization`
-- **Source generators only**: `[LibraryImport]`, `[JsonSerializable]` (`JsonSerializerIsReflectionEnabledByDefault=false`)
-- **P/Invoke**: User32, Imm32, Shell32, Gdi32, Kernel32, Shcore, Ole32, OleAut32, Dwmapi, WinHttp
-- **`[DllImport]` is banned** — always use `[LibraryImport]`
+`[DllImport]` 금지 — `[LibraryImport]` 사용. invariant grep 은 [docs/conventions.md](docs/conventions.md).
 
-## Hard constraints (P1–P6)
+## Workflow
 
-| Rule | Description |
-|------|-------------|
-| **P1** | Zero external NuGet packages in release exe. .NET 10 BCL + Windows API only. **예외**: `tests/` 의 dev-only 의존성 (xUnit, Microsoft.NET.Test.Sdk) — release exe 에 미포함이라 `dotnet publish` 산출물 P1 정신은 유지 |
-| **P2** | UI text defaults to Korean. Log messages and config keys in English |
-| **P3** | No magic numbers → `const`/`enum`/config. No string comparisons → `enum` |
-| **P4** | No duplicate implementations — always reach for shared `Core/` modules |
-| **P5** | `app.manifest` UAC `asInvoker`. exe 가 user-non-writable 위치(Program Files 등)면 `%LOCALAPPDATA%\KoEnVue\` 로 자동 fallback (PortablePath) |
-| **P6** | One-way layer dependency: `App/` may import `Core/`, never the reverse |
-
-Verification invariants — all must return **0 matches**:
-
-```bash
-git grep "KoEnVue\.App"             Core/         # P6 namespace gate
-git grep "ImeState"                 Core/         # Risk 4 enum gate
-git grep "NonKoreanImeMode"         Core/         # Risk 4 enum gate
-git grep -E "(Hangul|English|NonKorean)" Core/    # P6 IME 어휘 누출 (PR-08)
-git grep "맑은 고딕"                 Core/         # P6 한국어 폰트 어휘 누출 (PR-08)
-git grep "\[DllImport"              -- '*.cs'     # banned, use [LibraryImport]
-git grep "requireAdministrator"     app.manifest  # P5: asInvoker only
-git grep "RunLevel.*HighestAvailable" App/        # P5: LeastPrivilege only
-```
-
-## Architecture
-
-Two-thread model:
-
-```
-Main thread (UI):       Message loop + rendering + tray + WM_TIMER animation + CAPS LOCK poll (200 ms)
-Detection thread (BG):  80 ms polling → PostMessageW to main
-```
-
-Two-layer source split (one-way dependency, `App/` → `Core/`):
-
-- **[Core/](Core/)** (`namespace KoEnVue.Core.*`) — reusable Win32/.NET infrastructure. Designed to lift into another Windows desktop project as-is. Zero KoEnVue-specific symbols, zero `AppConfig`, zero IME enums
-- **[App/](App/)** (`namespace KoEnVue.App.*`) — KoEnVue-specific application layer (IME detection, dialogs, tray, themes, update checker)
-- **[Program.cs](Program.cs) + [Program.Bootstrap.cs](Program.Bootstrap.cs)** — entry point + main message loop + bootstrap helpers. Composes both layers, lives at the repo root as `namespace KoEnVue`
-
-Full module breakdown and reuse contract: **[docs/architecture.md](docs/architecture.md)**.
-
-## Build & run
-
-```bash
-dotnet build                          # debug build
-dotnet publish -r win-x64 -c Release  # NativeAOT single exe
-```
-
-**Always run both debug and release builds** — a debug-only build leaves the release exe outdated. [KoEnVue.csproj](KoEnVue.csproj) has `NoWarn=SYSLIB1051` for the .NET 10 `LibraryImport` + `IntPtr` diagnostic.
+- **빌드 = 항상 둘 다**: `dotnet build` (debug) + `dotnet publish -r win-x64 -c Release` (AOT). 한쪽만 하면 release exe outdated.
+- **커밋 = 항상 푸시까지**: `git commit` 후 즉시 `git push`. PostToolUse hook 이 자동 처리 — wip 커밋도 동일.
 
 ## Documentation map
 
 | File | Purpose |
 |------|---------|
-| **[docs/KoEnVue_PRD.md](docs/KoEnVue_PRD.md)** | Product requirements (feature spec, behavior, config) |
-| **[docs/User_Guide.md](docs/User_Guide.md)** | End-user manual (Korean) |
-| **[README.md](README.md)** | Download, build, release entry-point. CI status badge |
-| **[CONTRIBUTING.md](CONTRIBUTING.md)** | 환경 / 빌드 + 테스트 + AOT publish / improvement-plan 절차 / P1~P6 요약 |
-| **[docs/config-reference.md](docs/config-reference.md)** | `config.json` 84개 키 전체 레퍼런스 (PR-12) |
-| **[docs/architecture.md](docs/architecture.md)** | Core/App module list, reuse contract, facade pattern |
-| **[docs/implementation-notes.md](docs/implementation-notes.md)** | Render pipeline, drag/snap, animation, CAPS LOCK, hot reload, dialogs, update check |
-| **[docs/release-procedure.md](docs/release-procedure.md)** | 릴리스 절차 — csproj `<Version>` bump + publish + GitHub Release + SHA256 첨부 (PR-11) |
-| **[docs/conventions.md](docs/conventions.md)** | P1–P6 enforcement, silent catch policy, .NET 10 quirks |
-| **[docs/dev-notes/](docs/dev-notes/)** | Postmortems and lessons learned from failed implementation attempts (avoid re-walking the same traps) |
-| **[CHANGELOG.md](CHANGELOG.md)** | Release history (Keep a Changelog format) |
+| [docs/harness.md](docs/harness.md) | Claude Code 하네스 (subagents, hooks, sessions) |
+| [docs/INDEX.md](docs/INDEX.md) | 문서 전체 인덱스 |
+| [docs/architecture.md](docs/architecture.md) | Core/App 모듈 분리 |
+| [docs/conventions.md](docs/conventions.md) | P1–P6 enforcement, invariant grep |

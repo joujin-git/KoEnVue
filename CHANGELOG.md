@@ -7,6 +7,12 @@
 
 > 다음 릴리스부터는 [Keep a Changelog 한국어 스펙](https://keepachangelog.com/ko/1.1.0/) 표준 헤더 + 짧은 bullet 형식 적용.
 
+### Added
+
+- **Claude Code 하네스 도입** — `.claude/{settings.json,agents/,skills/,hooks/}` + `docs/harness.md` + `docs/sessions/`. 바이브 코딩 워크플로우 최적화: 단일 세션 + 6명 서브에이전트(explorer/planner/reviewer/docs-keeper/historian/verifier), Opus + max effort + thinking 항상, ultrathink 매 턴 자동 주입, 코드 변경 시 docs 동기화 알림, dirty tree 자동 wip 커밋 + `docs/sessions/YYYY-MM-DD.md` 일자별 append 로 장비 간 작업 이어받기. PowerShell hook 7개 (SessionStart / UserPromptSubmit / PostToolUse(Edit+Bash) / Stop / SessionEnd / InstructionsLoaded) + statusLine PowerShell 스크립트 + 5개 슬래시 커맨드 (`/plan`, `/sync-docs`, `/resume-session`, `/wrap-up`, `/harness-status`). CLAUDE.md 는 P1–P6 규칙 + Workflow 규칙(빌드=둘 다, 커밋=푸시까지) + 문서 인덱스만 (≤30줄 하드 제한), 부가 내용은 [docs/harness.md](docs/harness.md) 참조.
+- **워크플로우 규칙 2건 — "빌드 = 항상 둘 다" + "커밋 = 푸시 항상 같이"** — (1) `dotnet build` (debug) + `dotnet publish -r win-x64 -c Release` (AOT) 항상 둘 다 — verifier 서브에이전트 강제. (2) Claude 의 모든 `git commit` 직후 PostToolUse hook(`auto-push.ps1`) 이 자동 `git push`. SessionEnd hook 도 wip 커밋 + 미push commit 통째로 push. upstream 미설정/원격 거부 시 알림. 다른 장비에서 즉시 받을 수 있게 보장. 코드 동작 변경 0 — 개발 환경/워크플로우만.
+- **메모리 위치 E: 드라이브로 영구화** — C: 드라이브 14일 복원 정책에 대비. `settings.json` 의 `autoMemoryDirectory: "${CLAUDE_PROJECT_DIR}/.claude/memory"` 로 메모리를 프로젝트 트리(E:) 로 이동. 기존 5개 파일 (user-role / feedback-harness-design / feedback-workflow-rules / feedback-version-format / MEMORY.md) git 추적. 복원해도 사용자 프로필·워크플로우 규칙·프로젝트 결정 무손실. ⚠️ 민감 정보(회사 기밀, 비밀번호, 토큰)는 메모리에 저장 금지 — push 시 GitHub 노출. 자세한 내용은 [docs/harness.md §11](docs/harness.md).
+
 ## [0.9.3.0] — 2026-05-21
 
 > **BREAKING**: `requireAdministrator` → `asInvoker` 전환. v0.9.2.x 까지의 매 부팅 UAC 프롬프트가 사라지고 `koenvue.log` / `config.json` 경로가 `%LOCALAPPDATA%\KoEnVue\` 로 자동 fallback 됩니다. 자세한 영향과 마이그레이션은 아래 "변경 (BREAKING)" 절.

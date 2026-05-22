@@ -1,0 +1,78 @@
+. (Join-Path $PSScriptRoot 'lib\_common.ps1')
+
+Invoke-HookSafely {
+
+$payload = Read-HookInput
+if (-not $payload) { exit 0 }
+
+$toolInput = $payload.tool_input
+if (-not $toolInput) { exit 0 }
+
+$filePath = [string]$toolInput.file_path
+if ([string]::IsNullOrWhiteSpace($filePath)) {
+    $filePath = [string]$toolInput.path
+}
+if ([string]::IsNullOrWhiteSpace($filePath)) { exit 0 }
+
+# Normalize path relative to project root
+$root = (Get-ProjectRoot).Replace('\', '/')
+$normalized = $filePath.Replace('\', '/')
+if ($normalized.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
+    $normalized = $normalized.Substring($root.Length).TrimStart('/')
+}
+
+# Build mapping rules: source pattern → required docs to sync
+$rules = @(
+    @{ Pattern = '^App/'; Docs = @('docs/architecture.md', 'docs/implementation-notes.md'); Reason = 'App/ 변경 (애플리케이션 레이어)' }
+    @{ Pattern = '^Core/'; Docs = @('docs/architecture.md'); Reason = 'Core/ 변경 (재사용 인프라)' }
+    @{ Pattern = '^Program.*\.cs$'; Docs = @('docs/architecture.md', 'docs/implementation-notes.md'); Reason = '엔트리포인트/부트스트랩 변경' }
+    @{ Pattern = '^app\.manifest$'; Docs = @('CLAUDE.md', 'docs/conventions.md'); Reason = 'manifest 변경 (P5 규칙 영향)' }
+    @{ Pattern = 'KoEnVue\.csproj$'; Docs = @('docs/architecture.md', 'docs/release-procedure.md'); Reason = 'csproj 변경 (빌드/버전 영향)' }
+    @{ Pattern = '^Directory\.Build\.targets$'; Docs = @('docs/architecture.md', 'docs/conventions.md'); Reason = '빌드 타깃 변경' }
+    @{ Pattern = '^NuGet\.config$'; Docs = @('docs/conventions.md'); Reason = 'NuGet 소스 변경 (P1 정신 영향)' }
+    @{ Pattern = '^tests/'; Docs = @('docs/conventions.md'); Reason = '테스트 변경 (CONTRIBUTING 영향)' }
+    @{ Pattern = '^\.github/'; Docs = @('CONTRIBUTING.md'); Reason = 'CI 변경' }
+    @{ Pattern = '^\.claude/'; Docs = @('docs/harness.md'); Reason = '하네스 설정 변경' }
+)
+
+$matched = $null
+foreach ($rule in $rules) {
+    if ($normalized -match $rule.Pattern) { $matched = $rule; break }
+}
+
+if (-not $matched) { exit 0 }
+
+# Check whether this same mapping was already reminded this turn — dedup to avoid noise
+$stateFile = Join-Path (Get-StateDir) 'pending-docs.txt'
+$docsKey = $matched.Docs -join ','
+$alreadyReminded = $false
+if (Test-Path $stateFile) {
+    $existing = Get-Content -Path $stateFile -Encoding UTF8 -ErrorAction SilentlyContinue
+    foreach ($line in $existing) {
+        $parts = $line -split '\|'
+        if ($parts.Count -ge 3 -and $parts[2] -eq $docsKey) {
+            $alreadyReminded = $true
+            break
+        }
+    }
+}
+
+# Always record this entry so Stop hook lists all touched paths (even when reminder is suppressed)
+$entry = ("{0}|{1}|{2}" -f (Get-Date -Format 'HH:mm:ss'), $normalized, $docsKey)
+Add-Content -Path $stateFile -Value $entry -Encoding UTF8
+
+# Suppress duplicate reminder for the same mapping in the same turn
+if ($alreadyReminded) { exit 0 }
+
+$docList = $matched.Docs -join ', '
+$context = "[harness] $($matched.Reason): 이번 턴이 끝나기 전에 다음 문서 동기화 필요 — $docList. docs-keeper 서브에이전트 사용을 고려하세요."
+
+Write-HookOutput @{
+    hookSpecificOutput = @{
+        hookEventName = 'PostToolUse'
+        additionalContext = $context
+    }
+}
+exit 0
+
+}

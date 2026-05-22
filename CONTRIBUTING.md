@@ -9,6 +9,12 @@
 - **Windows 10/11 x64**. Mac/Linux 빌드는 지원하지 않습니다 (`TargetFramework=net10.0-windows`).
 - **.NET 10 SDK**. `dotnet --version` 으로 확인. CI 도 동일한 SDK 메이저 (`10.0.x`) 로 빌드합니다.
 - **NuGet 액세스** — 본 repo 의 [NuGet.config](NuGet.config) 가 nuget.org 단일 소스를 명시합니다. 첫 빌드 시 xUnit 등 dev 패키지를 자동으로 받습니다.
+- **PowerShell 7+** (Claude Code 하네스 hook 실행용). Windows 기본 내장 PowerShell 5.x 만으론 hook 이 작동하지 않습니다. 설치:
+  ```powershell
+  winget install --id Microsoft.PowerShell --source winget
+  pwsh --version   # 7.x 이상 확인
+  ```
+  하네스 미사용 시(Claude Code 안 쓰는 경우) 생략 가능. 자세한 하네스 운영은 [docs/harness.md](docs/harness.md).
 
 ---
 
@@ -61,3 +67,18 @@ dotnet publish -r win-x64 -c Release
 ## 이슈 / 기능 요청
 
 GitHub Issues 에 한국어 또는 영문으로 자유롭게 작성해 주세요. PR 도 같은 언어 정책입니다.
+
+---
+
+## Claude Code 하네스
+
+본 repo 는 [Claude Code](https://claude.com/claude-code) 사용을 전제로 한 하네스를 [.claude/](.claude/) 와 [docs/sessions/](docs/sessions/) 에 포함합니다. 자세한 운영 규칙은 [docs/harness.md](docs/harness.md) 참조.
+
+핵심 워크플로우:
+1. 작업 시작 — `claude` 실행 → `SessionStart` hook 이 최근 세션 컨텍스트 자동 주입
+2. 다중 파일/새 기능/P규칙 변경 — `/plan` 으로 planner 위임
+3. 코드 변경 — Edit/Write hook 이 영향받는 docs 알림
+4. commit 직전 — reviewer 서브에이전트가 P규칙 invariant 검증
+5. release 전 — verifier 서브에이전트가 `dotnet build` + `publish` + `test`
+6. 작업 마무리 — `/wrap-up` 으로 docs-keeper + historian 정리
+7. 다른 장비 이동 — `git pull` 후 `claude` → `/resume-session` 으로 이어가기

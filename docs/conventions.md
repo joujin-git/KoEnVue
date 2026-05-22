@@ -63,6 +63,8 @@ git grep "NonKoreanImeMode"  Core/   # Risk 4 enum gate
 git grep "DllImport"                 # banned, use [LibraryImport]
 git grep -E "Hangul|English|NonKorean" Core/   # PR-08 IME 어휘 게이트
 git grep "맑은 고딕"          Core/   # PR-08 한국어 폰트 어휘 게이트
+git grep "requireAdministrator"     app.manifest   # P5: asInvoker only
+git grep "RunLevel.*HighestAvailable" App/         # P5: schtasks LeastPrivilege only
 ```
 
 Additional sub-rule — `App/Config/` must not import `App/Detector/`:
