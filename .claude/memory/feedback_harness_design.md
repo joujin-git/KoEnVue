@@ -11,7 +11,7 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정).
 
 ## 핵심 규칙
 
-- **모델**: `opus` (Opus 4.7), `effortLevel: "xhigh"` (settings 가 받는 최대), `CLAUDE_CODE_EFFORT_LEVEL=max` (env 로 max 강제)
+- **모델**: `opus` (Opus 4.7). `effortLevel: "max"` (settings 명목 — schema 가 silent ignore / clamp 시에도 env 가 fallback). `CLAUDE_CODE_EFFORT_LEVEL=max` (env 로 실효 max 강제). 검증: statusline payload 가 `effort.level=max` 로 받음.
 - **Thinking 항상**: `alwaysThinkingEnabled: true`. ultrathink 키워드는 `UserPromptSubmit` hook 으로 매 턴 자동 주입
 - **단일 세션 + 항상 서브에이전트**: Agent Team 안 씀 (토큰 3–5배, resume 미지원, 동시 1팀만)
 - **권한**: `bypassPermissions` 전체 — 사용자가 git 으로 책임짐. 속도 우선

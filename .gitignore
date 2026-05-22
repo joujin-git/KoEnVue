@@ -34,3 +34,7 @@ local.settings.json
 .claude/hooks/_tmp/
 .claude/*.tmp
 .claude/scratch/
+# Safety guard: .claude/ 루트의 떠다니는 디버깅 ps1/txt 자동 무시
+# (의도된 hook 들은 .claude/hooks/ 안에 있으므로 영향 없음)
+.claude/*.ps1
+.claude/*.txt
