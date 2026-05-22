@@ -56,7 +56,9 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 │   ├── sync-docs/SKILL.md     /sync-docs
 │   ├── resume-session/SKILL.md /resume-session (다른 장비 이어받기)
 │   ├── wrap-up/SKILL.md       /wrap-up (세션 마무리)
-│   └── harness-status/SKILL.md /harness-status
+│   ├── harness-status/SKILL.md /harness-status
+│   └── cleanup-worktrees/SKILL.md /cleanup-worktrees (worktree 빌드 산출물 정리)
+├── scratch/                   ❌ ignored (디버깅 임시 ps1)
 ├── hooks/                     ✅ committed
 │   ├── lib/_common.ps1        공통 함수 (Hide-Secrets, Invoke-HookSafely, Invoke-Push 포함)
 │   ├── inject-ultrathink.ps1  UserPromptSubmit
@@ -146,15 +148,19 @@ post-edit-doc-sync.ps1 의 매핑 규칙:
 
 | 코드 영역 | 동기화 docs |
 |----------|------------|
+| `Core/Native/*` | docs/architecture.md, docs/conventions.md (+ `/security-review` 권장) |
 | `App/*.cs` | docs/architecture.md, docs/implementation-notes.md |
 | `Core/*.cs` | docs/architecture.md |
 | `Program*.cs` | docs/architecture.md, docs/implementation-notes.md |
-| `app.manifest` | CLAUDE.md, docs/conventions.md |
-| `KoEnVue.csproj` | docs/architecture.md, docs/release-procedure.md |
+| `app.manifest` | CLAUDE.md, docs/conventions.md (UAC 변경 시 `/security-review`) |
+| `KoEnVue.csproj` | docs/architecture.md, docs/release-procedure.md (NuGet 추가 시 `/security-review` 필수) |
 | `Directory.Build.targets` | docs/architecture.md, docs/conventions.md |
+| `NuGet.config` | docs/conventions.md (외부 피드 추가 시 `/security-review` 필수) |
 | `tests/` | docs/conventions.md |
 | `.github/` | CONTRIBUTING.md |
 | `.claude/` | docs/harness.md |
+
+규칙 순서는 더 좁은 패턴(`Core/Native/`)이 더 넓은 패턴(`Core/`)보다 먼저 매칭되도록 [post-edit-doc-sync.ps1](../.claude/hooks/post-edit-doc-sync.ps1) 에서 보장됨 (first-match-wins).
 
 **모든 사용자 가시 변경**은 추가로 `CHANGELOG.md` 의 `## [Unreleased]` 섹션에 항목 추가.
 
@@ -169,6 +175,7 @@ post-edit-doc-sync.ps1 의 매핑 규칙:
 | `/resume-session` | 다른 장비에서 이어 작업 시 — 최근 세션과 git 상태 정리 후 다음 작업 제안 |
 | `/wrap-up` | 세션 마무리 — docs-keeper + historian 호출, dirty tree 정리 |
 | `/harness-status` | 하네스 현재 상태 한눈에 — 모델/effort, hook 동작, 서브에이전트 수, 오늘 세션, dirty tree, 최근 hook 에러 |
+| `/cleanup-worktrees` | `.claude/worktrees/` 의 일주일 이상 미사용 디렉토리 정리 (빌드 산출물 ~GB 누적 방지) |
 
 각 명령은 `.claude/skills/<name>/SKILL.md` 에 정의. Skill 형식은 Claude Code 의 최신 권장. 향후 supporting files 가 필요해지면 같은 디렉토리에 추가 가능 (예: `.claude/skills/release/scripts/build.ps1`).
 
@@ -239,7 +246,8 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 ## 10. 알려진 한계
 
 - `SessionEnd` 의 wip 커밋은 의미 없는 메시지로 묶이므로, 가능하면 `/wrap-up` 으로 의미 있는 커밋 만들고 종료
-- `historian` 의 자동 호출은 hook 으로 불가능 (hook 은 단순 PowerShell 만). 사용자가 `/wrap-up` 실행하거나 메인 세션이 wrap-up 판단 시 위임
+- `SessionEnd` 의 auto-push 실패는 `additionalContext` 로 사용자에게 노출 불가 — `.claude/state/hook-errors.log` 에 기록되고 다음 `SessionStart` 의 "최근 hook 에러" 섹션에서 노출. 즉시 알고 싶다면 종료 직전 `/wrap-up` 사용.
+- `historian` 의 자동 호출은 hook 으로 불가능 (hook 은 단순 PowerShell 만 — subagent 위임 불가). 사용자가 `/wrap-up` 실행하거나 메인 세션이 wrap-up 판단 시 위임
 - `verifier` 는 UI 동작 검증 불가 — KoEnVue 가 IME 인디케이터라 실제 한/En 전환은 사람 손이 필요
 - `.claude/state/` 는 gitignored — 다른 장비 동기화 안 됨 (의도된 동작, 런타임 상태)
 - **Hooks 는 PowerShell 7+ 의존** — 다음 절차로 설치 + 검증:
@@ -257,8 +265,9 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
   pwsh --version   # 7.x 이상 확인
   ```
   Windows PowerShell 5.x (기본 내장) 만으로는 hook 전부 fail. 단 KoEnVue 는 `net10.0-windows` 타깃이라 빌드/실행은 Windows 전용 — Mac/Linux 는 documentation·planning 작업에만 한정.
-- **`/wrap-up` 의 race condition**: 메인 세션이 historian 위임 직후 같은 docs/sessions 파일을 수정하면 append 충돌 가능 (PowerShell `Add-Content` 가 file lock 비보장). 실제 발생 확률 매우 낮음
-- **inject-ultrathink hook 오버헤드**: 매 UserPromptSubmit 마다 PowerShell 프로세스 생성 (~200-500ms). 빠른 응답을 원할 때 부담이지만, "항상 ultrathink" 요구사항을 위한 안전망
+- **`/wrap-up` 의 race condition**: `docs/sessions/YYYY-MM-DD.md` 의 쓰기는 hook(stop-record / session-end) 과 historian subagent 만 수행 — 메인 세션이 직접 같은 파일을 Edit/Write 하면 충돌 가능. [skills/wrap-up/SKILL.md](../.claude/skills/wrap-up/SKILL.md) 의 "쓰기 단일 진실원" 규약 참조.
+- **inject-ultrathink hook 오버헤드**: 매 UserPromptSubmit 마다 PowerShell 프로세스 생성 (~200-500ms). 측정하려면 `Measure-Command { pwsh -NoProfile -File .claude/hooks/inject-ultrathink.ps1 < /dev/null }` (Win 에선 `$null` 입력). 빠른 응답을 원할 때 부담이지만, "항상 ultrathink" 요구사항을 위한 안전망.
+- **`.claude/worktrees/` 의 빌드 산출물 누적**: 서브에이전트가 publish 를 돌리면 worktree 안에 ~150 MB 산출물이 남고 정리 안 함. 주기적으로 `/cleanup-worktrees` SKILL 로 일주일 이상 미사용 worktree 제거 권장.
 
 ## 11. Memory 시스템 — E: 드라이브 영구화
 

@@ -33,8 +33,4 @@ local.settings.json
 .claude/state/
 .claude/hooks/_tmp/
 .claude/*.tmp
-.claude/test-*.ps1
-.claude/test-result.txt
-.claude/find-window.ps1
-.claude/launch-invoker.ps1
-.claude/check-elevation.ps1
+.claude/scratch/

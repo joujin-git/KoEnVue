@@ -65,9 +65,14 @@ function Get-LatestSessionFile {
 
 # Walk dated sessions files newest-to-oldest, return the first one containing a "세션 정리" block.
 # Used when the very latest file has no wrap-up and we want richer resume context from an earlier session.
+# Bound by 30 days (LastWriteTime) — older context is rarely load-bearing and unbounded raw reads
+# would slow SessionStart proportionally to total session-log count.
 function Get-LatestSessionFileWithWrapup {
     $dir = Get-SessionsDir
-    $files = Get-ChildItem -Path $dir -Filter '*.md' -File | Where-Object { $_.Name -match '^\d{4}-\d{2}-\d{2}\.md$' } | Sort-Object Name -Descending
+    $cutoff = (Get-Date).AddDays(-30)
+    $files = Get-ChildItem -Path $dir -Filter '*.md' -File |
+        Where-Object { $_.Name -match '^\d{4}-\d{2}-\d{2}\.md$' -and $_.LastWriteTime -gt $cutoff } |
+        Sort-Object Name -Descending
     foreach ($f in $files) {
         try {
             $content = Get-Content -Path $f.FullName -Raw -Encoding UTF8 -ErrorAction Stop
@@ -142,10 +147,21 @@ function Hide-Secrets {
     $Text = $Text -replace 'gh[psouru]_[A-Za-z0-9]{20,}', 'gh*_***REDACTED***'
     # Anthropic / OpenAI API keys
     $Text = $Text -replace 'sk-(ant-)?[A-Za-z0-9_\-]{20,}', 'sk-***REDACTED***'
+    # Stripe secret keys (sk_test_ / sk_live_) — matched before generic sk- pattern would mistakenly half-redact
+    $Text = $Text -replace 'sk_(test|live)_[0-9a-zA-Z]{24,}', 'sk_$1_***REDACTED***'
     # AWS access keys
     $Text = $Text -replace 'AKIA[0-9A-Z]{16}', 'AKIA***REDACTED***'
     # Bearer tokens
     $Text = $Text -replace '(?i)Bearer\s+[A-Za-z0-9_\-+/=.]{20,}', 'Bearer ***REDACTED***'
+    # JWT (three base64url segments separated by dots, header typically begins with eyJ)
+    $Text = $Text -replace 'eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}', 'eyJ***REDACTED.JWT***'
+    # Twilio Account SID
+    $Text = $Text -replace 'AC[a-f0-9]{32}', 'AC***REDACTED.TWILIO***'
+    # SSH / OpenSSL / PGP private key blocks (multi-line — kept as a single redaction marker)
+    $Text = [regex]::Replace($Text, '(?s)-----BEGIN [A-Z ]+PRIVATE KEY-----.*?-----END [A-Z ]+PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----***REDACTED***-----END PRIVATE KEY-----')
+    # GCP service-account JSON fields (private_key_id, private_key)
+    $Text = $Text -replace '"private_key_id"\s*:\s*"[a-f0-9]+"', '"private_key_id": "***REDACTED***"'
+    $Text = $Text -replace '"private_key"\s*:\s*"-----BEGIN[^"]+"', '"private_key": "***REDACTED***"'
     # Generic API key / password / secret / token assignment
     $Text = $Text -replace '(?i)(api[_-]?key|password|secret|token|access[_-]?key)\s*[:=]\s*["'']?[A-Za-z0-9_+/=.\-]{16,}["'']?', '$1=***REDACTED***'
     # Slack tokens

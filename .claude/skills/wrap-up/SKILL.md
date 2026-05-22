@@ -24,3 +24,19 @@ allowed-tools: Bash, Read, Edit, Write
 추가 인자(있다면): $ARGUMENTS
 
 **중요**: 이 명령 끝나면 세션 종료 가능 + 다른 장비에서 즉시 이어받을 수 있는 상태가 돼야 합니다. SessionEnd hook 이 어차피 wip + push fallback 을 잡지만, 의미 있는 정리는 이 명령에서.
+
+## `docs/sessions/YYYY-MM-DD.md` 쓰기 단일 진실원 규약
+
+같은 파일을 hook + subagent + 메인 세션이 동시에 건드리면 race condition (`Add-Content` 가 file lock 비보장) 으로 데이터 손실 가능. 따라서:
+
+| 주체 | 허용된 작업 |
+|------|------------|
+| `stop-record.ps1` hook | `## [HH:MM] turn` 블록 append (이번 턴 transcript 발췌) |
+| `session-end.ps1` hook | `## [HH:MM] session-end` 블록 append (마무리) |
+| `historian` subagent | `## [HH:MM] 세션 정리` 블록 append |
+| **메인 세션** | **Read 만**. 직접 Edit/Write 금지 — 필요하면 historian 에 위임. |
+
+`/wrap-up` 흐름은 이 순서를 보장:
+1. docs-keeper (다른 docs/ 만 건드림 — sessions/ 는 안 건드림)
+2. historian (sessions/ 단독 쓰기)
+3. 사용자 확정 후 commit (메인 세션은 git 만 — sessions/ 는 안 건드림)

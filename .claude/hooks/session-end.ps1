@@ -46,7 +46,19 @@ if ($dirtyBefore) {
 # 커밋 = 푸시 항상 같이 — push any commit ahead of upstream
 $ahead = Get-UnpushedCommitCount
 if ($ahead -gt 0) {
-    Invoke-Push | Out-Null
+    $pushResult = Invoke-Push
+    if ($pushResult -ne 'pushed') {
+        # SessionEnd 시점엔 additionalContext 를 사용자에게 못 띄우므로
+        # hook-errors.log 에 기록 → 다음 SessionStart 의 "최근 hook 에러" 섹션에서 노출
+        $logPath = Join-Path (Get-StateDir) 'hook-errors.log'
+        $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+        $reasonMsg = switch ($pushResult) {
+            'no-upstream' { 'upstream branch 미설정 — git push -u origin <branch> 필요' }
+            'failed'      { '원격 거부 / 네트워크 실패 — 수동 git push 로 확인' }
+            default       { "unknown ($pushResult)" }
+        }
+        Add-Content -Path $logPath -Value "[$stamp] session-end.ps1 :: auto-push $pushResult (ahead=$ahead) — $reasonMsg" -Encoding UTF8 -ErrorAction SilentlyContinue
+    }
 }
 
 exit 0

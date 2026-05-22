@@ -3,21 +3,29 @@
 Invoke-HookSafely {
 
 $payload = Read-HookInput
-if (-not $payload) { exit 0 }
 
 # InstructionsLoaded payload schema is not fully documented; try known/likely keys
 $path = ''
-foreach ($key in @('file_path', 'path', 'file', 'relative_path', 'instructions_path', 'loaded_file')) {
-    $v = [string]$payload.$key
-    if (-not [string]::IsNullOrWhiteSpace($v)) { $path = $v; break }
+if ($payload) {
+    foreach ($key in @('file_path', 'path', 'file', 'relative_path', 'instructions_path', 'loaded_file')) {
+        $v = [string]$payload.$key
+        if (-not [string]::IsNullOrWhiteSpace($v)) { $path = $v; break }
+    }
 }
-if ([string]::IsNullOrWhiteSpace($path)) { exit 0 }
+
+# Fallback — if payload is missing or schema differs from our guesses, check root/CLAUDE.md
+# directly so the 30-line guard never goes silently dark.
+if ([string]::IsNullOrWhiteSpace($path)) {
+    $path = Join-Path (Get-ProjectRoot) 'CLAUDE.md'
+}
 
 if ($path -notmatch 'CLAUDE\.md$') { exit 0 }
 
 if (-not (Test-Path $path)) { exit 0 }
 
-$lineCount = (Get-Content -Path $path -Encoding UTF8 | Measure-Object -Line).Lines
+# (Get-Content).Count returns the actual line-array length; Measure-Object -Line counts newline
+# characters and undercounts the trailing line.
+$lineCount = (Get-Content -Path $path -Encoding UTF8).Count
 $limit = 30
 
 if ($lineCount -le $limit) { exit 0 }

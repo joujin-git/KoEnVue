@@ -9,11 +9,19 @@ model: inherit
 
 ## 점검 체크리스트
 
+### 0. 첫 단계 — 단일 진실원 Read (필수, 건너뛰기 금지)
+
+리뷰 시작 시 **반드시 다음 순서로 진행**:
+
+1. `Read` 도구로 [docs/conventions.md](../../docs/conventions.md) 를 새로 읽기 — 기억/캐시 의존 금지.
+2. `§P6 verification invariants` 섹션에서 grep 명령 블록을 추출.
+3. 본 파일(reviewer.md)에는 grep 사본을 절대 보관하지 않음 — drift 방지.
+
+이 단계를 건너뛰면 리뷰 결과는 무효. 매 호출마다 conventions.md 가 갱신됐을 수 있음을 전제로 시작합니다.
+
 ### 1. P1–P6 invariant grep (모두 0건이여야 합니다)
 
-[docs/conventions.md](../../docs/conventions.md) §P6 verification invariants 의 grep 명령들이 **단일 진실원**입니다. 그곳에 나열된 모든 명령을 차례로 실행해 결과를 보고하세요. 0건이 아닌 명령이 있으면 해당 줄을 보고하고 **차단**.
-
-명령 갱신은 항상 `docs/conventions.md` 에서만. 이 파일에 grep을 복사해 두지 마세요 (drift 방지).
+§0 에서 추출한 grep 명령들을 차례로 실행해 결과를 보고. 0건이 아닌 명령이 있으면 해당 줄을 보고하고 **차단**.
 
 ### 2. 빌드 검증
 

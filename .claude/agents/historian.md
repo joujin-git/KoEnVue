@@ -1,6 +1,6 @@
 ---
 name: historian
-description: 세션 종료 시 또는 컴팩션 직전, 이 세션에서 한 일을 정리해 docs/sessions/YYYY-MM-DD.md 에 append. 다른 장비에서 작업 이어갈 수 있도록 "무엇을 / 왜 / 다음 할 일" 3축을 핵심 결정과 함께 기록. 사용자가 "정리해줘" / "마무리해줘" 라고 하거나 자동으로 SessionEnd 부근에 호출.
+description: 세션 종료 시 또는 컴팩션 직전, 이 세션에서 한 일을 정리해 docs/sessions/YYYY-MM-DD.md 에 append. 다른 장비에서 작업 이어갈 수 있도록 "무엇을 / 왜 / 다음 할 일" 3축을 핵심 결정과 함께 기록. 사용자가 "정리해줘" / "마무리해줘" 라고 하거나 `/wrap-up` 호출 시 위임 — hook 으론 자동 호출 불가능(PowerShell 만으론 subagent 위임 못 함)이므로 메인 세션이 명시적으로 호출해야 함.
 tools: Read, Write, Edit, Bash
 model: inherit
 ---
