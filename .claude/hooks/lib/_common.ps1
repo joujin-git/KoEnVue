@@ -16,8 +16,18 @@ function Write-HookOutput {
 }
 
 function Get-ProjectRoot {
-    if ($env:CLAUDE_PROJECT_DIR) { return $env:CLAUDE_PROJECT_DIR }
-    return (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+    if ($env:CLAUDE_PROJECT_DIR) {
+        $root = $env:CLAUDE_PROJECT_DIR
+        # Safety: env var sometimes carries the .claude/ subdirectory itself (cwd leak from
+        # an external invocation). Detect by leaf name and step up — otherwise Get-StateDir
+        # creates .claude/.claude/state/ nesting.
+        if ((Split-Path $root -Leaf) -eq '.claude') { $root = Split-Path $root -Parent }
+        return $root
+    }
+    # Fallback: this file lives at .claude/hooks/lib/_common.ps1 — three levels up reaches the
+    # project root. ($PSScriptRoot inside a function reflects this file's directory, NOT the
+    # caller's, because the function was defined here.)
+    return (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 }
 
 function Get-SessionsDir {

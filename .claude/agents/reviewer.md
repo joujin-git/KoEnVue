@@ -14,10 +14,14 @@ model: inherit
 리뷰 시작 시 **반드시 다음 순서로 진행**:
 
 1. `Read` 도구로 [docs/conventions.md](../../docs/conventions.md) 를 새로 읽기 — 기억/캐시 의존 금지.
-2. `§P6 verification invariants` 섹션에서 grep 명령 블록을 추출.
+2. 다음 **4 섹션의 `git grep` 검증 명령을 모두 추출** (한 섹션에 모여있지 않으니 누락 주의):
+   - **§P6 verification invariants** — P규칙 메인 게이트 (8개 grep + "0 matches" 라벨)
+   - **§P6 sub-rule** — `App/Config/` → `App/Detector/` import 차단 (1개 grep, → 0)
+   - **§Silent catch §8 (Core ↔ Logger 단방향 추상화)** — Logger / LogProvider / Sink?.Debug "failed" 검증 (3개 grep)
+   - **§AOT specifics § "AOT/Trim/SingleFile 분석기 정책" 의 § "검증"** — `EnableAotAnalyzer` / `EnableTrimAnalyzer` / `EnableSingleFileAnalyzer` 활성화 확인 (3개 grep, → 1)
 3. 본 파일(reviewer.md)에는 grep 사본을 절대 보관하지 않음 — drift 방지.
 
-이 단계를 건너뛰면 리뷰 결과는 무효. 매 호출마다 conventions.md 가 갱신됐을 수 있음을 전제로 시작합니다.
+이 단계를 건너뛰면 리뷰 결과는 무효. 매 호출마다 conventions.md 가 갱신됐을 수 있음을 전제로 시작합니다. 새 invariant 추가 시 conventions.md 가 단일 진실원 — 위 4 섹션 중 하나에 들어가도록 유도 (전혀 새 섹션이면 본 §0 의 4 리스트를 함께 갱신).
 
 ### 1. P1–P6 invariant grep (모두 0건이여야 합니다)
 

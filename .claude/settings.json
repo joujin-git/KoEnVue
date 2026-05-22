@@ -59,7 +59,6 @@
         ]
       },
       {
-        "_comment": "matcher=Bash 로 모든 Bash 호출에 발화 — auto-push.ps1 가 stdin tool_input.command 를 검사해 'git commit' 일 때만 실제 push 수행. Claude Code hook 스키마에 'if' 분기가 없어 스크립트 내부 필터로 통일.",
         "matcher": "Bash",
         "hooks": [
           {

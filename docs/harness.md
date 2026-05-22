@@ -266,7 +266,7 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
   ```
   Windows PowerShell 5.x (기본 내장) 만으로는 hook 전부 fail. 단 KoEnVue 는 `net10.0-windows` 타깃이라 빌드/실행은 Windows 전용 — Mac/Linux 는 documentation·planning 작업에만 한정.
 - **`/wrap-up` 의 race condition**: `docs/sessions/YYYY-MM-DD.md` 의 쓰기는 hook(stop-record / session-end) 과 historian subagent 만 수행 — 메인 세션이 직접 같은 파일을 Edit/Write 하면 충돌 가능. [skills/wrap-up/SKILL.md](../.claude/skills/wrap-up/SKILL.md) 의 "쓰기 단일 진실원" 규약 참조.
-- **inject-ultrathink hook 오버헤드**: 매 UserPromptSubmit 마다 PowerShell 프로세스 생성 (~200-500ms). 측정하려면 `Measure-Command { pwsh -NoProfile -File .claude/hooks/inject-ultrathink.ps1 < /dev/null }` (Win 에선 `$null` 입력). 빠른 응답을 원할 때 부담이지만, "항상 ultrathink" 요구사항을 위한 안전망.
+- **inject-ultrathink hook 오버헤드**: 매 UserPromptSubmit 마다 PowerShell 프로세스 생성. 측정(Win): `Measure-Command { '{"prompt":""}' | pwsh -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/inject-ultrathink.ps1 }`. 실측 **~381 ms** (Opus 4.7, 2026-05-22, fresh pwsh 시동 1회). "항상 ultrathink" 요구사항을 위한 안전망이지만, 빠른 응답을 원할 때 부담.
 - **`.claude/worktrees/` 의 빌드 산출물 누적**: 서브에이전트가 publish 를 돌리면 worktree 안에 ~150 MB 산출물이 남고 정리 안 함. 주기적으로 `/cleanup-worktrees` SKILL 로 일주일 이상 미사용 worktree 제거 권장.
 
 ## 11. Memory 시스템 — E: 드라이브 영구화
