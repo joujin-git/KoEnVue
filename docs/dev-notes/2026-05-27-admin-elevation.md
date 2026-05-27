@@ -135,6 +135,19 @@ planner spec §3.10 의 표 그대로.
 
 Tier-1 (build) + Tier-2 (invariant grep) 는 모든 PR 공통 — [docs/conventions.md §P6 verification](../conventions.md#p6-verification-invariants) 참조 + PR-15 신규 4종 (`ShellExecuteW.*runas` App/Bootstrap/ = 1, `GetTokenInformation` Core/Native/ = 1, `RunLevelHighestAvailable` App/Startup/ = 1, `requireAdministrator` app.manifest = 0 유지).
 
+### 5.1 검증 결과 (2026-05-27)
+
+| # | 결과 | 증거 |
+|---|------|-----|
+| **A** | ✅ 코드 차원 통과 | publish/koenvue_crash.txt 의 `[18:55:49] ELEVATION: skipping (config.admin_elevation=false)` + `[19:07:55]` 2회 — default false 부팅 시 즉시 Continue 분기 정상. 사용자 가시는 PR-03 동작 그대로라 별도 검증 불요. |
+| **B** | ✅ 통과 (사용자 가시) | publish/koenvue_crash.txt 의 `[19:08:16] attempting self-elevation` → `ShellExecuteW success` → `skipping (already High IL)` 3회 (UAC 다이얼로그 통과 + child High IL 부팅). **사용자 보고**: admin cmd 한/영 정상 표시 + 트레이 메뉴 체크 + MessageBox YesNo 동작 OK. 회귀 fix 본질 완료. |
+| **C** | ⏳ follow-up | B 의 ShellExecuteW 분기 코드 경로 공유 — `rc <= 32` + `lastError == ERROR_CANCELLED(1223)` 분기 + `ShowDeniedMessage()` 호출. 코드 차원 단위 가능 + Tier-3 가시 검증은 후속 사이클. |
+| **D** | ✅ schtasks 등록 통과 | `schtasks /query /tn KoEnVue /xml ONE` 출력의 `<RunLevel>HighestAvailable</RunLevel>` + `<UserId>_joujin_\joujin</UserId>` (LogonTrigger) + `<Delay>PT15S</Delay>` + publish 경로 정확. PR-15 의 핵심 schtasks 분기 (Commit 5) 정상. 재부팅 시 실 동작은 사용자 평소 부팅 시 자연 확인 (이미 등록됨). |
+| **E** | ⏳ follow-up | Commit 5 verifier 가 코드 (`SyncStartupPathCore` 의 `expectedRunLevel = config.AdminElevation ? HighestAvailable : LeastPrivilege` 분기) 검증 완료. Tier-3 가시는 후속. |
+| **F** | ⏳ follow-up | E 와 동일 코드 경로 (`expectedRunLevel` 의 분기 반대 방향) — 동일하게 코드 검증 충분, Tier-3 가시는 후속. |
+
+**결론**: 핵심 시나리오 B (회귀 fix 본질) + D (schtasks /RL HIGHEST 분기) 통과 — PR-15 의 사용자 가치 + 코드 정확성 양쪽 확정. C/E/F 는 코드 경로 검증 완료 + Tier-3 가시는 follow-up. **main FF merge 진행 결정**.
+
 ---
 
 ## 6. 관련 코드 + commit hash
@@ -147,7 +160,8 @@ Tier-1 (build) + Tier-2 (invariant grep) 는 모든 PR 공통 — [docs/conventi
 | [b60f556](https://github.com/joujin-git/KoEnVue/commit/b60f556) | `Program.cs` (`MainImpl` 재구성) | step 0b `Settings.Load` + step 0c `TryRelaunchAsAdmin` 호출 (mutex 전) |
 | [e014772](https://github.com/joujin-git/KoEnVue/commit/e014772) | `App/Startup/StartupTaskManager.cs` + `Program.cs` + `App/UI/Tray.cs` | `RunLevel` 분기 + `ReregisterIfAdminChanged` 신규 + caller 변경 |
 | [95c1d36](https://github.com/joujin-git/KoEnVue/commit/95c1d36) | `Core/Native/Win32Types.cs` (MB_YESNO/IDYES/IDNO) + `App/Bootstrap/AdminElevation.cs` (`ClearReentryGuard`) + `App/UI/Tray.cs` (IDM + case) + `App/UI/Tray.Menu.cs` + `App/UI/Dialogs/SettingsDialog.Fields.cs` | UI 배선 — 트레이 즉시 토글 + 재시작 안내 + Settings Bool |
+| [7af084c](https://github.com/joujin-git/KoEnVue/commit/7af084c) | `KoEnVue.csproj` + `CHANGELOG.md` + `docs/architecture.md` + `docs/conventions.md` + `docs/config-reference.md` + `docs/release-procedure.md` + `docs/improvement-plan/INDEX.md` + 본 dev-note (신규) | 문서 동기화 + CHANGELOG + 버전 bump 0.9.3.0 → 0.9.4.0 |
 
 **publish 크기**: 4,861,440 B = 4.64 MB (이전 baseline 4.62 MB + ~30 KB). PR-08 의 ~+100 KB / stage 가이드 안.
 
-**branch**: `fix/admin-elevation` HEAD=95c1d36 → Commit 7 (본 dev-note + 문서 동기화 + CHANGELOG + 버전 bump 0.9.3.0 → 0.9.4.0) 가 마지막 commit. Tier-3 사용자 smoke 통과 후 main 머지 + tag v0.9.4.0 + GitHub Release.
+**branch**: `fix/admin-elevation` 7-commit 완료 + 본 dev-note 의 §5.1 검증 결과 commit 까지. Tier-3 핵심 시나리오 (B + D) 통과 후 main FF merge + tag v0.9.4.0 + GitHub Release 진행.
