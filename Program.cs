@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using KoEnVue.App.Bootstrap;
 using KoEnVue.App.Config;
 using KoEnVue.App.Detector;
 using KoEnVue.App.Models;
@@ -154,6 +155,19 @@ internal static partial class Program
         //     를 koenvue_crash.txt 에 박제. Logger.Error 도 pre-Init 버퍼 경유로 안전.
         RegisterCrashHandlers();
 
+        // 0b. 설정 로드 — mutex 획득 전 (PR-15). admin_elevation 옵션을 자기 IL / 재진입 가드
+        //     와 함께 검사하려면 config 가 먼저 있어야 한다. Settings.Load 내부의 Logger.Warning
+        //     등은 LogProvider.Sink 의 pre-Init 버퍼 경유로 Logger.Initialize 직후 flush.
+        _config = Settings.Load();
+
+        // 0c. admin_elevation 처리 (PR-15) — UIPI 우회용 self-elevation.
+        //     mutex 획득 전 호출 — 원본이 mutex 안 잡은 상태라 자식 (High IL) 이 깨끗하게 새로
+        //     createdNew=true 획득 (race 0). ExitForChild = 원본 즉시 종료 (자식 spawn 성공).
+        //     Continue / ContinueAfterDenied = 일반 권한으로 계속 (옵션 비활성 / 이미 High IL /
+        //     재진입 가드 트립 / UAC 거부 / ShellExecuteW 실패 — 모든 거부 시 사용자 알림 후 진행).
+        if (AdminElevation.TryRelaunchAsAdmin(_config) == AdminElevation.Result.ExitForChild)
+            return;
+
         // 1. 다중 인스턴스 체크 — 실패 시 기존 인스턴스에 활성화 신호만 보내고 즉시 종료.
         //    Cleanup 보다 먼저 실행해야 "이미 실행 중" 인 정상 인스턴스의 트레이 아이콘을
         //    NIM_DELETE 로 지워버리는 부작용이 없다.
@@ -167,8 +181,7 @@ internal static partial class Program
         //    이전 크래시의 유령이다.
         CleanupPreviousTrayIcon();
 
-        // 3. 설정 로드
-        _config = Settings.Load();
+        // (설정 로드는 PR-15 에서 단계 0b 로 이동 — mutex 전 admin_elevation 검사 위해 선행 필수.)
 
         // 4. 로거 + I18n 초기화
         //    asInvoker 전환 (PR-03) 후 log_file_path 는 PortablePath.SanitizeLogPath 가 허용 루트
