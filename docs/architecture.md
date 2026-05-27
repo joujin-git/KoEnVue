@@ -121,7 +121,7 @@ Every file in `Core/` is reusable in another Windows desktop project; every file
 | [App/UI/AppMessages.cs](../App/UI/AppMessages.cs) | `WM_APP + N` message constants for cross-thread signalling |
 | [App/UI/Dialogs/CleanupDialog.cs](../App/UI/Dialogs/CleanupDialog.cs) | `indicator_positions` management dialog (checkbox list of all entries, scrollable viewport when >15 items) |
 | [App/UI/Dialogs/ScaleInputDialog.cs](../App/UI/Dialogs/ScaleInputDialog.cs) | Custom scale entry dialog (1.0–5.0, spawned at cursor position) |
-| [App/UI/Dialogs/SettingsDialog.cs](../App/UI/Dialogs/SettingsDialog.cs) (+ `.Fields.cs` + `.Scroll.cs`) | Scrollable settings dialog (12 sections) split across 3 partial class files |
+| [App/UI/Dialogs/SettingsDialog.cs](../App/UI/Dialogs/SettingsDialog.cs) (+ `.Fields.cs` + `.Scroll.cs`) | Scrollable settings dialog (13 sections, 12번째 "커서 인디케이터" 10 필드 — DefaultConfig MinCursor*/MaxCursor* const 참조) split across 3 partial class files |
 
 ---
 

@@ -218,6 +218,55 @@ PR-B-3 진입 직전 사용자와 트레이 메뉴 UI 결정:
 - **체크 의미**: MF_CHECKED = ON (활성) — `user_hidden` 의 "체크 = 숨김" 반대 의미와 혼동 가능하나, cursor 인디는 "기능 자체 ON/OFF" 라 일반 토글 의미 (체크 = 켜짐) 가 자연. 사용자도 이 의미 통일에 동의
 - **부수 메뉴 미추가**: 반지름/두께/색상은 config.json 편집 가이드. 디폴트 OFF + 디폴트 사용자가 켜는 첫 순간에 동심원이 즉시 보이므로 GUI 튜닝 미노출 결정
 
+## PR-C: Settings GUI (2026-05-27, PR-B 머지 직후)
+
+PR-B-3 진입 직전 인터뷰 결정 "부수 메뉴 미추가 — config.json 편집 가이드" 의 명시적 **재검토 트리거** 가 cursor-tray 학습 결과 "거부 — 설정 다이얼로그 신규 섹션 / 활성화 사용자 수 충분히 누적되면 다이얼로그 추가 재검토" 였음. PR-B 가 사용자 검증 통과 + 머지 (`6f95038`) 직후 본 트리거가 충족되어 PR-C 로 GUI 노출 결정.
+
+### 무엇
+
+`App/UI/Dialogs/SettingsDialog.Fields.cs` 의 `BuildRowDefs` 에 12번째 섹션 **"커서 인디케이터"** 추가 (기존 12번 "고급" 은 13번으로 이동). 10 필드:
+- Bool ×2: `CursorIndicatorEnabled` / `CursorAlwaysShow`
+- Int ×7: `CursorOuterRadius` / `CursorMiddleRadius` / `CursorInnerRadius` / `CursorCoreThickness` / `CursorHaloThickness` / `CursorIdleDelayMs` / `CursorMotionThresholdPx`
+- Dbl ×1: `CursorHaloOpacity`
+
+docstring 갱신: `BuildRowDefs(12 섹션)` → `BuildRowDefs(13 섹션)`, "60개 설정 필드" → "70개" (`SettingsDialog.cs`).
+
+### 왜 (위치 결정 — 고급 앞 12번째)
+
+대안 비교:
+- **(a) 위치 13번 (고급 뒤, 끝)**: 거부 — "고급" 은 마지막에 두는 관례 (TOPMOST 강제 주기 등 일반 사용자 미접근 항목) 와 충돌
+- **(b) 위치 7번 (색상 뒤, IME 색상 그룹과 인접)**: 거부 — cursor 인디는 IME 색상을 재사용할 뿐 별개 인디라 그룹화하면 의미 혼동 ("커서 표시 토글 vs IME 색상 변경" 이 한 묶음으로 보임)
+- **(c) 위치 12번 (고급 직전)**: **채택** — 메인 인디 관련 항목 (1~11) 다 본 다음 보조 인디 → 다음 "고급". 사용자 학습 흐름 자연 ("주 기능 → 부가 기능 → 고급")
+
+### 왜 (디자인 — 단일 진실원 + 새 컨트롤 0)
+
+**Min/Max 는 `DefaultConfig.MinCursor*` / `MaxCursor*` const 직접 참조**:
+```csharp
+Add(Int("외부 원 반지름 (px)", "Outer radius (px)",
+    DefaultConfig.MinCursorOuterRadius, DefaultConfig.MaxCursorOuterRadius,
+    c => c.CursorOuterRadius, (c, v) => c with { CursorOuterRadius = v }));
+```
+PR-B-2 의 `Settings.ValidateAndRepair` 가 같은 const 로 클램프하므로 GUI 범위와 자동 일치. config-reference.md 표의 "8 ~ 96" 같은 수치를 GUI 에 수동 복제하지 않음 — 한 곳 수정 시 양쪽 동시 갱신.
+
+**새 컨트롤/팩토리/I18n 테이블 변경 0**:
+- 기존 6 팩토리 (`Bool`/`Int`/`Dbl`/`Str`/`ColorField`/`Combo`) 그대로 사용
+- 라벨은 인라인 `("한국어", "English")` 튜플 패턴 (다른 12 섹션과 동일)
+- I18n.cs 의 키-값 테이블에 항목 추가 없음 — 다이얼로그 라벨은 코드 사이트에서 직접 (디자인 결정)
+
+이는 PR-B 의 "콜백 시그니처 본질적 차이" P4 예외와 같은 정신: cursor 인디의 GUI 도 메인 인디의 GUI 컨트롤 인프라를 그대로 사용 가능했고 (인디 종류와 무관한 Bool/Int/Dbl/표 레이아웃 책임), 새 인프라 추가 정당화가 안 됨.
+
+### 부수 영향
+
+- 다이얼로그 스크롤 영역 +10 행 (~250 px 추가) — `SettingsDialog.Scroll.cs` 변경 0 (높이 동적 계산 기반)
+- 빌드 영향: 코드 +39 라인 (Fields.cs), 새 파일 0
+- 디폴트 동작 변경 0 — `CursorIndicatorEnabled = false` 디폴트 유지, 다이얼로그 노출만 추가
+
+### 후속 트리거 (다음 재검토 조건)
+
+다음 조건 시 cursor 인디 노출 추가 고려:
+1. 사용자가 색상 (Inner/Middle/Outer) 도 GUI 편집 요청 — 현재 IME 색상 자동 따라가는 정책이라 별도 색상 노출 안 함
+2. 트레이 메뉴 "커서 인디케이터 숨김" 옆에 빠른 토글 (예: "항상 표시 모드") 직접 노출 요청 — 다이얼로그 진입 없이 한 클릭 변경
+
 ## 콘솔 회귀 사전 진단 (post-PR-C, 2026-05-27)
 
 PR-C (#3) 머지 대기 중 explorer 위임으로 [App/Detector/ImeStatus.cs](../../App/Detector/ImeStatus.cs) + [Program.cs](../../Program.cs) 의 detection 경로 코드 read. 사용자 실측 전 코드만으로 확인 가능한 사실 + 가설 정리 — 다음 진단 사이클 출발점 명확화.
@@ -283,3 +332,4 @@ PR-C (#3) 머지 대기 중 explorer 위임으로 [App/Detector/ImeStatus.cs](..
 - 메인 인디 알파 race fix (선행 PR-A): [dev-notes/2026-05-27-snap-fade-killtimer.md](2026-05-27-snap-fade-killtimer.md)
 - 메인 인디 엔진: [Core/Windowing/LayeredOverlayBase.cs](../../Core/Windowing/LayeredOverlayBase.cs)
 - 본 PR-B-1 의 파일: `Core/Windowing/{CursorStyle,LayeredCursorBase}.cs` + `App/UI/CursorRenderer.cs`
+- PR-C 파일: `App/UI/Dialogs/SettingsDialog.Fields.cs` (+39 라인) + `App/UI/Dialogs/SettingsDialog.cs` (docstring 1 라인)
