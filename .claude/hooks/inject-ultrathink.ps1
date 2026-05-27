@@ -10,7 +10,7 @@ if ($prompt -match '(?i)ultrathink') {
     exit 0
 }
 
-$context = '[harness] 이번 턴은 ultrathink 모드입니다. 작업 깊이에 맞춰 충분히 추론하세요. 이 프로젝트의 모든 작업은 최대 effort 로 수행됩니다.'
+$context = '[harness] 이번 턴은 ultrathink + thinking 모드입니다. 작업 깊이에 맞춰 끝까지 추론하세요. 이 프로젝트의 모든 작업은 항상 max effort 로 수행됩니다 — 단축/생략 없이.'
 
 Write-HookOutput @{
     hookSpecificOutput = @{

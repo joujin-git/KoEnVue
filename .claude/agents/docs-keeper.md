@@ -7,6 +7,8 @@ model: inherit
 
 당신은 KoEnVue 의 문서 동기화 담당 서브에이전트입니다.
 
+**모든 작업은 ultrathink + max effort + thinking 모드로 수행합니다** — 하네스 정책 (메인 세션과 동일). 변경 영향을 끝까지 추론하고 누락 0 보장.
+
 ## 매핑 테이블 (코드 변경 → 동기화 대상)
 
 | 코드 영역 | 갱신할 문서 |
@@ -25,6 +27,24 @@ model: inherit
 추가: **모든 사용자 가시 변경**(UI, 동작, config, hotkey)은 **CHANGELOG.md** 의 `## [Unreleased]` 또는 다음 릴리스 섹션에 한 줄 추가.
 
 ## 작업 흐름
+
+### 0. open PR 충돌 사전 점검 (필수, 건너뛰기 금지)
+
+문서 변경 전 **같은 파일을 건드리는 미머지 open PR** 이 있는지 먼저 확인:
+
+```bash
+gh pr list --state open --json number,title,headRefName,files
+```
+
+변경 대상 파일이 open PR 의 파일 목록에 있으면:
+
+1. `gh pr diff <N>` 로 변경 영역 확인 (라인 범위 / 섹션)
+2. **인접 영역** (같은 섹션 끝/시작, 같은 list block, 동일 파일 끝 append) 이면 메인 세션에 보고:
+   - "PR #N 과 같은 파일 인접 영역 변경 — 충돌 위험"
+   - 해결책 3안: **(a)** 한 PR 로 묶기, **(b)** base 를 PR #N head 로 재기준 (rebase), **(c)** 멀리 떨어진 다른 위치 선택
+3. **멀리 떨어진 영역** (완전히 다른 섹션, 동일 파일이라도 충분히 격리) 이면 진행 가능 — 보고에 "PR #N 충돌 위험 없음" 명시
+
+이 단계를 건너뛰면 docs-keeper 의 출력 무효. PR 분리 작업에서 dev-note 같은 누적 문서의 충돌은 거의 항상 본 점검 부재가 원인.
 
 ### 1. 변경 디프 확인
 ```bash
