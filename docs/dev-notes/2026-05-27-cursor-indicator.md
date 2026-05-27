@@ -218,6 +218,66 @@ PR-B-3 진입 직전 사용자와 트레이 메뉴 UI 결정:
 - **체크 의미**: MF_CHECKED = ON (활성) — `user_hidden` 의 "체크 = 숨김" 반대 의미와 혼동 가능하나, cursor 인디는 "기능 자체 ON/OFF" 라 일반 토글 의미 (체크 = 켜짐) 가 자연. 사용자도 이 의미 통일에 동의
 - **부수 메뉴 미추가**: 반지름/두께/색상은 config.json 편집 가이드. 디폴트 OFF + 디폴트 사용자가 켜는 첫 순간에 동심원이 즉시 보이므로 GUI 튜닝 미노출 결정
 
+## 콘솔 회귀 사전 진단 (post-PR-C, 2026-05-27)
+
+PR-C (#3) 머지 대기 중 explorer 위임으로 [App/Detector/ImeStatus.cs](../../App/Detector/ImeStatus.cs) + [Program.cs](../../Program.cs) 의 detection 경로 코드 read. 사용자 실측 전 코드만으로 확인 가능한 사실 + 가설 정리 — 다음 진단 사이클 출발점 명확화.
+
+### 사실 정정 — 본 dev-note line 33 의 초기 분석 부정확
+
+초기 분석 "`WM_INPUTLANGCHANGE` / `ImmGetConversionStatus` 가 콘솔 윈도우에 도달 안 함" 은 코드와 일치하지 않음:
+
+- **`WM_INPUTLANGCHANGE`**: KoEnVue 코드 전체에서 수신/관찰 0건. 즉 콘솔이 이 메시지 보내는지 자체가 무관.
+- **`ImmGetConversionStatus`**: `App/Detector/ImeStatus.cs:TryTier2` 에서만 호출. `DetectionMethod.ImeContext` 선택 시 또는 `Auto` 의 2단계 fallback 에서만 실행.
+- 즉 콘솔 IME 가 진짜 limitation 인지는 코드만으론 확정 불가. **사용자 실측 진단 필요**.
+
+### 감지 경로 정리 (코드 사실)
+
+두 경로 병행:
+1. **폴링** — [Program.cs:1109 DetectionLoop](../../Program.cs#L1109) 가 `PollIntervalMs` (80ms 디폴트) 주기로 `ImeStatus.Detect(hwndFocus, threadId, DetectionMethod)` 호출. 변화 시 `PostMessage(WM_IME_STATE_CHANGED)`.
+2. **WinEvent 훅** — [App/Detector/ImeStatus.cs:76 RegisterHook](../../App/Detector/ImeStatus.cs#L76) 가 `EVENT_OBJECT_IME_CHANGE` (0x8029, `WINEVENT_OUTOFCONTEXT`) 등록. `OnImeChange` 콜백이 `GetForegroundWindow` → `Detect` → 변화 시 같은 메시지 post.
+
+`Detect()` 의 `Auto` 분기 = 3-tier fallback:
+- **Tier 1**: `ImmGetDefaultIMEWnd` + `SendMessageTimeoutW(WM_IME_CONTROL, IMC_GETOPENSTATUS / IMC_GETCONVERSIONMODE)` + `IME_CMODE_HANGUL` 비트
+- **Tier 2**: `ImmGetContext` + `ImmGetConversionStatus`
+- **Tier 3**: `GetKeyboardLayout(threadId)` + `HKL_IME_DEVICE_SIG` (0xE) 가드 + `LANGID_KOREAN` (0x0412)
+
+콘솔 호스트 분기는 1군데만: [Program.cs:1242 ResolveFocusWindow](../../Program.cs#L1242) 가 `GUITHREADINFO.hwndFocus == 0` 인 경우 `fgClass == ConsoleWindowClass` 일 때만 `hwndFocus = hwndForeground` 폴백. Cascadia / Windows Terminal (`CASCADIA_HOSTING_WINDOW_CLASS`) 별도 분기 0.
+
+### 가장 그럴듯한 회귀 가설
+
+**`TryTier3` 의 `HKL_IME_DEVICE_SIG` (0xE) 가드 (v0.9.1.9 추가)**:
+- conhost 의 IME 미장착 스레드에서 `GetKeyboardLayout(threadId)` 이 IME HKL 시그니처 (0xE) 가 아니라 일반 keyboard layout 만 리턴
+- 가드가 `English` 폴백 → `state.LastImeState` 변화 없음 → `WM_IME_STATE_CHANGED` 미발화
+- 즉 한국어 IME ON 상태에서도 콘솔 포커스면 영문 표시 + 한/영 토글 무반응
+
+가설 검증을 위한 핵심 미지수 (코드만으론 모름, 사용자 실측 필요):
+1. conhost 의 `GetKeyboardLayout` 이 한국어 IME 활성화 시 어떤 HKL 리턴? (시그니처 0xE 가지나 안 가지나)
+2. `EVENT_OBJECT_IME_CHANGE` WinEvent 가 conhost 한/영 키에 발화하는가?
+
+### `fac0251` 회귀 시점 가설 신뢰도 하락
+
+본 dev-note line 80-83 의 진단 방법은 "PR-A 이전 commit (`fac0251`) 빌드로 콘솔 한/영 검증" — 그러나 코드 read 결과:
+
+- `fac0251~3..fac0251` 모두 docs/harness 만 (.cs 변경 0)
+- `ee4e6be..HEAD` 의 .cs 변경도 cursor 인디 신규/fix 만, IME 감지 로직 변경 0
+- **PR-A `SnapToTargetAlpha` 자체는 alpha 조작만** — IME 감지 결과를 인디케이터에 반영하는 경로와 무관
+
+→ **"PR-A 가 회귀 원인" 가설 신뢰도 낮음**. 더 이전 (HKL_IME_DEVICE_SIG 가드 추가 시점, v0.9.1.9) 가능성.
+
+### 다음 진단 단계 (사용자 실측 필요)
+
+1. [App/Detector/ImeStatus.cs:201 TryTier3](../../App/Detector/ImeStatus.cs#L201) 에 HKL 값 + `HKL_IME_DEVICE_SIG` 비교 결과 + `LANGID_KOREAN` 매치 결과 Debug 로깅 임시 추가
+2. config 의 `log_level: "debug"` 확인 + `dotnet publish` 재빌드
+3. 사용자에게: **콘솔 (cmd 또는 powershell)** 실행 + 한국어 IME 활성화 + 한/영 키 5회 토글 + 캡스락 5회 토글 (대조군)
+4. `publish/koenvue.log` 직접 read (메모리 정책 — 사용자에게 요청 X) → trigger 식별:
+   - `Detect` 호출 빈도 + HKL 변화 여부
+   - 가드 통과 / 미통과 분기
+   - `WM_IME_STATE_CHANGED` post 빈도
+5. 결과 분기:
+   - **HKL 변화 + 가드 미통과** → 가드 우회 fix (Tier 3 가드 완화 또는 Tier 1/2 와 다른 폴백 추가)
+   - **HKL 변화 자체 0** → 콘솔 IME 모델 limitation (회귀 아님, dev-note 결론 갱신 + 사용자 안내)
+   - **변화 감지 + 메시지 미발화** → 메시지 라우팅 별도 진단
+
 ## 관련
 
 - 메인 인디 알파 race fix (선행 PR-A): [dev-notes/2026-05-27-snap-fade-killtimer.md](2026-05-27-snap-fade-killtimer.md)
