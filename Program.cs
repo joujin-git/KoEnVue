@@ -115,8 +115,16 @@ internal static partial class Program
     /// <summary>
     /// 비상 크래시 로그 파일에 한 줄 append. Logger 초기화 전에도 동작한다.
     /// I/O · 권한 · 보안 실패는 흡수 — 이미 종료 경로라 추가 복구 불가. 로직 버그는 전파.
+    ///
+    /// <para>
+    /// PR-15: <c>internal</c> 로 노출 — <c>App/Bootstrap/AdminElevation</c> 가
+    /// pre-Init elevation 로그 (Logger.Initialize 전 ShellExecute+Exit 흐름에서
+    /// pre-Init 버퍼가 flush 안 되는 경우) 의 crash.txt fallback 채널로 재사용.
+    /// 태그는 elevation 흐름의 의미 (ELEVATION / ELEVATION-ERR) — 본래 크래시용
+    /// 태그 (FATAL / UNHANDLED / UNOBSERVED) 와 grep 으로 분리 가능.
+    /// </para>
     /// </summary>
-    private static void AppendCrashFile(string tag, object payload)
+    internal static void AppendCrashFile(string tag, object payload)
     {
         try
         {

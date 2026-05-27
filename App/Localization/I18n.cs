@@ -91,6 +91,11 @@ internal static class I18n
 
         // 크기 배율 라벨 — 숫자 뒤에 붙는 단위 접미사 ("2배" vs "2x")
         SizeLabelSuffix,
+
+        // 관리자 권한 (admin_elevation 옵션 — UIPI / admin 콘솔 IME)
+        MenuAdminElevation, MenuAdminElevationTooltip,
+        AdminElevationDeniedTitle, AdminElevationDeniedMessage,
+        AdminElevationRestartPrompt,
     }
 
     private static readonly Dictionary<I18nKey, (string Ko, string En)> _table = new()
@@ -162,6 +167,19 @@ internal static class I18n
         [I18nKey.TooltipNonKorean]          = ("영문 모드 (비한국어)", "English (Non-Korean)"),
 
         [I18nKey.SizeLabelSuffix]           = ("배", "x"),
+
+        // 관리자 권한 (admin_elevation 옵션)
+        [I18nKey.MenuAdminElevation]          = ("관리자 권한으로 실행", "Run as administrator"),
+        [I18nKey.MenuAdminElevationTooltip]   = (
+            "자동 시작과 단일 실행 모두 적용. 단일 실행 시 UAC 1회, 자동 시작 시 UAC 없음.",
+            "Applies to both single launch and autostart. Single launch prompts UAC once, autostart prompts none."),
+        [I18nKey.AdminElevationDeniedTitle]   = ("KoEnVue — 관리자 권한 거부됨", "KoEnVue — Elevation cancelled"),
+        [I18nKey.AdminElevationDeniedMessage] = (
+            "관리자 권한 부여가 취소됐습니다. 일반 권한으로 계속 실행되며, 관리자 권한 콘솔 (관리자 cmd 등) 의 한/영 상태는 표시되지 않습니다. 다음에 적용하려면 트레이 메뉴에서 '관리자 권한으로 실행' 을 다시 켜고 재시작하세요.",
+            "Elevation was cancelled. KoEnVue continues with normal privileges; the IME state in elevated consoles (admin cmd, etc.) will not be visible. To apply later, re-enable 'Run as administrator' in the tray menu and restart."),
+        [I18nKey.AdminElevationRestartPrompt] = (
+            "다음 실행부터 적용됩니다. 지금 재시작하시겠습니까?",
+            "Will apply from next launch. Restart now?"),
     };
 
     /// <summary>
@@ -275,4 +293,11 @@ internal static class I18n
         ImeState.NonKorean => TooltipNonKorean,
         _ => "KoEnVue",
     };
+
+    // 관리자 권한 (admin_elevation 옵션 — UIPI / admin 콘솔 IME)
+    public static string MenuAdminElevation          => Get(I18nKey.MenuAdminElevation);
+    public static string MenuAdminElevationTooltip   => Get(I18nKey.MenuAdminElevationTooltip);
+    public static string AdminElevationDeniedTitle   => Get(I18nKey.AdminElevationDeniedTitle);
+    public static string AdminElevationDeniedMessage => Get(I18nKey.AdminElevationDeniedMessage);
+    public static string AdminElevationRestartPrompt => Get(I18nKey.AdminElevationRestartPrompt);
 }
