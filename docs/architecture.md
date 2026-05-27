@@ -33,7 +33,8 @@ See **[implementation-notes.md § Detection](implementation-notes.md#detection)*
 ```
 KoEnVue/
 ├── Core/                    Reusable infrastructure — namespace KoEnVue.Core.*
-│   ├── Native/              P/Invoke surfaces + Win32Types.cs + SafeGdiHandles.cs
+│   ├── Native/              P/Invoke surfaces + Win32Types.cs + SafeGdiHandles.cs +
+│   │                        Advapi32.cs (process token / SID → integrity level RID)
 │   ├── Color/               ColorHelper (Hex ↔ COLORREF ↔ RGB)
 │   ├── Dpi/                 DpiHelper (per-monitor DPI queries, work area)
 │   ├── Http/                HttpClientLite (WinHTTP-backed sync GET — ~40 KB)
@@ -49,6 +50,7 @@ KoEnVue/
 │
 ├── App/                     KoEnVue-specific layer — namespace KoEnVue.App.*
 │   ├── Models/              AppConfig record + all enums (ImeState, Theme, ...)
+│   ├── Bootstrap/           AdminElevation (admin_elevation self-relaunch, UIPI 우회)
 │   ├── Config/              DefaultConfig, Settings facade, ThemePresets,
 │   │                        AppSettingsManager : JsonSettingsManager<AppConfig>
 │   ├── Detector/            ImeStatus + SystemFilter + ImeConstants
@@ -58,7 +60,12 @@ KoEnVue/
 │       │                    CursorRenderer (analytical AA pixel shader) +
 │       └── Dialogs/         CleanupDialog + ScaleInputDialog + SettingsDialog(×3)
 │
-├── Program.cs               Main message loop + WndProc + detection thread
+├── Program.cs               Main message loop + WndProc + detection thread.
+│                            MainImpl bootstrap 순서: 0 LogProvider.Sink → 0a
+│                            RegisterCrashHandlers → 0b Settings.Load → 0c
+│                            AdminElevation.TryRelaunchAsAdmin (PR-15) → 1 mutex →
+│                            2 cleanup tray → 4 Logger.Initialize → ... (mutex 전
+│                            self-elevation 으로 race 0)
 ├── Program.Bootstrap.cs     partial class: mutex, window classes, teardown,
 │                            second-instance activation, TaskbarCreated tray recovery
 └── KoEnVue.csproj
@@ -74,6 +81,7 @@ Every file in `Core/` is reusable in another Windows desktop project; every file
 |--------|---------|----------------|
 | [Core/Native/*](../Core/Native/) | Raw P/Invoke surface. `Win32Types.cs` centralizes every struct + the `Win32Constants` class (SM/WS/DWMWA/etc.). `SafeGdiHandles.cs` hosts `SafeFontHandle`, `SafeIconHandle`, etc. `WinHttp.cs` hosts `SafeWinHttpHandle : SafeHandleZeroOrMinusOneIsInvalid` | `[LibraryImport]` only, no `[DllImport]` |
 | [Core/Native/Wtsapi32.cs](../Core/Native/Wtsapi32.cs) | WTS session notification for polling-free lock/unlock/logoff detection via `WM_WTSSESSION_CHANGE` — backbone of `HideOnLockScreen` | `WTSRegisterSessionNotification`, `WTSUnRegisterSessionNotification` |
+| [Core/Native/Advapi32.cs](../Core/Native/Advapi32.cs) | Process token + SID 조회로 mandatory integrity level RID 추출 (PR-15). `OpenProcessToken` + `GetTokenInformation(TokenIntegrityLevel)` + `GetSidSubAuthority`/`Count` 4 P/Invoke 를 묶어 `GetCurrentProcessIntegrityLevelRid()` 한 메서드로 노출 — caller 가 `Win32Constants.SECURITY_MANDATORY_HIGH_RID` 등과 직접 비교. UIPI (Medium → High `WM_IME_CONTROL` 차단) 우회 필요 시 `App/Bootstrap/AdminElevation` 이 사용 | `OpenProcessToken`, `GetTokenInformation`, `GetSidSubAuthority`, `GetSidSubAuthorityCount`, `GetCurrentProcessIntegrityLevelRid` |
 | [Core/Color/ColorHelper](../Core/Color/ColorHelper.cs) | Hex ↔ COLORREF ↔ RGB conversion. Malformed hex returns 0 / `(0,0,0)` instead of throwing, so a bad `config.json` doesn't leak GDI handles on the render hot path | `TryNormalizeHex`, `HexToColorRef`, `HexToRgb`, `ColorRefToRgb`, `RgbToHex` |
 | [Core/Dpi/DpiHelper](../Core/Dpi/DpiHelper.cs) | Per-monitor DPI queries. `BASE_DPI = 96` is inlined as a `const int` so the module has no `Config` dependency | `GetScale`, `GetWorkArea`, `GetRawDpi`, `GetMonitorFromPoint` |
 | [Core/Http/HttpClientLite](../Core/Http/HttpClientLite.cs) | Synchronous HTTPS GET wrapper backed by WinHTTP. NativeAOT publish impact ~40 KB (vs ~2.5 MB for `System.Net.Http.HttpClient`). Response body cap 256 KB, all failure paths return `null` | `GetString(userAgent, host, path, extraHeaders?, timeoutMs = 10_000) → string?` |
@@ -102,7 +110,8 @@ Every file in `Core/` is reusable in another Windows desktop project; every file
 | Module | Purpose |
 |--------|---------|
 | [App/Models/](../App/Models/) | `AppConfig` immutable record + all enums (`DisplayMode`, `DetectionMethod`, `ImeState`, `FontWeight`, `Theme`, `NonKoreanImeMode`, `AppProfileMatch`, `AppFilterMode`, `TrayClickAction`, `Corner`, `PositionMode`, `DragModifier`, `AppLanguage`) |
-| [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) | 수치/색상 디폴트 + Validate clamp 범위 + SettingsDialog min/max 의 단일 진실원. `AppConfig` 의 6쌍 init 디폴트 (`FadeInMs`/`FadeOutMs`/`HighlightScale`/`HighlightDurationMs`/`AlwaysIdleTimeoutMs`/`PollIntervalMs`) 가 본 파일의 동명 const 를 참조; `Settings.Validate` 의 clamp 18개 인자 + `SettingsDialog.Fields.cs` 의 Int/Dbl min/max 13개 인자가 모두 본 파일의 `Min/MaxX` const 16쌍 참조. animation timings, pixel offsets, `DetectionBackoff{Step,Max}Ms`, `UpdateRepoOwner/Name`, system-input process list 포함. `AppVersion` 는 본 파일의 `partial` 다른 절에서 [Directory.Build.targets](../Directory.Build.targets) 의 `GenerateVersionConstants` Target 가 `obj/.../Version.g.cs` 로 emit — csproj `<Version>` (현재 `0.9.3.0`) 단일 진실원에서 derive (PR-11 D6) |
+| [App/Bootstrap/AdminElevation.cs](../App/Bootstrap/AdminElevation.cs) | PR-15 — `admin_elevation` 옵션 처리. 자기 IL (`Advapi32.GetCurrentProcessIntegrityLevelRid()`) + 환경 변수 재진입 가드 (`KOENVUE_ELEVATED=1`) 검사 후 `Shell32.ShellExecuteW(verb="runas")` 로 자기 재실행. `Result` enum (`Continue` / `ExitForChild` / `ContinueAfterDenied`) 으로 caller 분기. UAC 거부 시 `User32.MessageBoxW` 안내 후 일반 권한 계속 (fallback c). 매니페스트는 `asInvoker` 유지 (P5 invariant) — 단지 사용자 선택 시 런타임 self-relaunch. `Program.MainImpl` 의 mutex 획득 **전** (step 0c) 호출 — 원본이 mutex 안 잡은 상태라 자식 (High IL) 이 깨끗하게 createdNew=true 획득 (race 0). Logger.Initialize 전 단계라 로그는 `LogProvider.Sink` pre-Init 버퍼 + `Program.AppendCrashFile` 의 `ELEVATION` / `ELEVATION-ERR` 태그 양쪽 기록 ([dev-notes/2026-05-27-admin-elevation.md](dev-notes/2026-05-27-admin-elevation.md)) |
+| [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) | 수치/색상 디폴트 + Validate clamp 범위 + SettingsDialog min/max 의 단일 진실원. `AppConfig` 의 6쌍 init 디폴트 (`FadeInMs`/`FadeOutMs`/`HighlightScale`/`HighlightDurationMs`/`AlwaysIdleTimeoutMs`/`PollIntervalMs`) 가 본 파일의 동명 const 를 참조; `Settings.Validate` 의 clamp 18개 인자 + `SettingsDialog.Fields.cs` 의 Int/Dbl min/max 13개 인자가 모두 본 파일의 `Min/MaxX` const 16쌍 참조. animation timings, pixel offsets, `DetectionBackoff{Step,Max}Ms`, `UpdateRepoOwner/Name`, system-input process list 포함. `AppVersion` 는 본 파일의 `partial` 다른 절에서 [Directory.Build.targets](../Directory.Build.targets) 의 `GenerateVersionConstants` Target 가 `obj/.../Version.g.cs` 로 emit — csproj `<Version>` (현재 `0.9.4.0`) 단일 진실원에서 derive (PR-11 D6). PR-15 의 `AdminElevation : bool` (default `false`) const 도 본 파일에 위치 — `AppConfig.AdminElevation` init 디폴트가 참조 |
 | [App/Config/Settings.cs](../App/Config/Settings.cs) | Static facade delegating to `AppSettingsManager : JsonSettingsManager<AppConfig>`. Handles `Load`/`Save`/`CheckReload`/`ResolveForApp` (per-app profile merge) |
 | [App/Config/PositionCleanupService.cs](../App/Config/PositionCleanupService.cs) | `indicator_positions` 정리 작업의 비-UI 비즈니스 로직. `Compute(config)` 가 양쪽 dict (`IndicatorPositions` + `IndicatorPositionsRelative`) 키 합집합 + 실행 중 프로세스명 접미사 라벨링까지, `RemoveSelected(...)` 가 displayItems → originalNames 매핑 후 두 dict 제거한 새 AppConfig 반환. 다이얼로그 렌더링은 호출자(Tray) 가 담당. PR-04 분해 산물 |
 | [App/Config/ThemePresets.cs](../App/Config/ThemePresets.cs) | 6 theme presets: `Custom`, `Minimal`, `Vivid`, `Pastel`, `Dark`, `System`. 4 정적 preset (Minimal/Vivid/Pastel/Dark) 은 `record ThemeColors(HBg,HFg,EBg,EFg,NBg,NFg)` + `Dictionary<Theme, ThemeColors>` 정적 사전으로 표현 (PR-05 D2). `Theme.System` 분기는 (a) 고대비 모드 ON 이면 `HIGHLIGHT/HIGHLIGHTTEXT/WINDOW/WINDOWTEXT` contrast-safe 팔레트 (PR-05 H4-c), (b) 그 외엔 `DwmGetColorizationColor` 우선 + `GetSysColor(COLOR_HIGHLIGHT)` 폴백으로 accent 추적 (PR-14) 후 영문 배경은 보색. 프리셋 전환 시 커스텀 색상 자동 백업/복원 (`custom_backup_*` 필드) |
@@ -116,7 +125,7 @@ Every file in `Core/` is reusable in another Windows desktop project; every file
 | [App/UI/CursorRenderer.cs](../App/UI/CursorRenderer.cs) | 커서 추종 인디의 distance-field 분석적 AA 픽셀 셰이더. `LayeredCursorBase` 의 `renderToDib` 콜백으로 주입되어 `CursorStyle` + `CursorMetrics` 를 받아 DIB BGRA32 픽셀에 직접 쓴다. 각 동심원 = 코어 (사용자 색상, alpha 1.0, 양옆 0.5px AA) + 헤일로 (흰색 × `HaloOpacity`, 코어 영역 제외 영역만). 코어 vs 헤일로 winner 는 alpha 비교로 결정. CAPS OFF 시 외측 원 skip — distance 계산 자체를 건너뜀 |
 | [App/UI/CursorOverlay.cs](../App/UI/CursorOverlay.cs) | `LayeredCursorBase` 위의 정적 파사드 — `Initialize` / `HandleConfigChanged` / `HandleCursorMotionTimer` / `SetImeState` / `SetCapsLock` / `Dispose`. **`BuildStyle(config, state, capsOn)` 가 `ImeState` + CAPS → `CursorStyle` 합성 단일 진입점** (한글/비한글을 같은 카테고리로 묶어 CAPS Outer 색상이 영문일 때 한글, 그 외엔 영문 — 사용자 인터뷰 결정). 마우스 정지 검출 FSM (`_idleStartTick` + `CursorIdleDelayMs`) 또는 항상 표시 모드 (`CursorAlwaysShow` = 16ms 위치 추종) 분기. 본 파사드 전용 HWND `_hwndCursorOverlay` 는 메인 `_hwndOverlay` 와 별개 윈도우이며 `WS_EX_TRANSPARENT` 영구 ON 으로 클릭 통과 ([dev-notes/2026-05-15-click-through-attempts.md](dev-notes/2026-05-15-click-through-attempts.md) F2 패턴 재사용). `config.CursorIndicatorEnabled = false` 면 lazy 생성 대기 — 트레이 메뉴 토글 시 `Program.EnableCursorOverlay()` 가 윈도우 + 파사드 + 폴링 타이머 일괄 생성 |
 | [App/UI/Tray.cs](../App/UI/Tray.cs) + [Tray.Menu.cs](../App/UI/Tray.Menu.cs) | Static facade over `NotifyIconManager`. 라이프사이클 (Initialize/HandleAddRetryTimer/UpdateState/OnUpdateFound/Recreate/Remove) + WM_COMMAND 디스패치 + `_pendingUpdate` 저장 + helpers (CleanupPositions/SetDefaultPositionToCurrent/BuildTooltip/ApplyQuickOpacity). `Tray.Menu.cs` partial 는 `ShowMenu` 만 분리 (메뉴 빌더). PR-04 분해 — schtasks 는 [App/Startup/StartupTaskManager](../App/Startup/StartupTaskManager.cs), 위치 정리 비즈니스 로직은 `PositionCleanupService`, URL/파일 열기는 `UriLauncher` 로 위임 |
-| [App/Startup/StartupTaskManager.cs](../App/Startup/StartupTaskManager.cs) | Windows Task Scheduler (`schtasks.exe`) 기반 "시작 시 자동 실행" 작업 등록/조회/동기화. UI 와 무관한 XML 조립 + CLI 호출 + 결과 검증 책임. 외부 의존성은 `Logger` + `XmlEntityCodec` 만 — 메뉴 ID 는 모르고 호출자(Tray) 가 ID 와 핸들러를 mapping. PR-04 분해 산물 |
+| [App/Startup/StartupTaskManager.cs](../App/Startup/StartupTaskManager.cs) | Windows Task Scheduler (`schtasks.exe`) 기반 "시작 시 자동 실행" 작업 등록/조회/동기화. UI 와 무관한 XML 조립 + CLI 호출 + 결과 검증 책임. 외부 의존성은 `Logger` + `XmlEntityCodec` 만 — 메뉴 ID 는 모르고 호출자(Tray) 가 ID 와 핸들러를 mapping. PR-04 분해 산물. **PR-15** — `BuildStartupTaskXml(exePath, adminElevation)` 시그니처 확장으로 `<RunLevel>` 을 `LeastPrivilege` (default) vs `HighestAvailable` (admin_elevation=true) 분기 + `SyncStartupPathAsync` 의 `expectedRunLevel` 도 config 에서 derive 해 admin 토글 시 자동 재등록 + 신규 `ReregisterIfAdminChanged(config)` 헬퍼 (Tray/SettingsDialog 토글 직후 호출) |
 | [App/UI/TrayIcon.cs](../App/UI/TrayIcon.cs) | GDI-based dynamic icon bitmap — 캐럿+점(caret+dot) 디자인 고정. IME 상태별 배경색을 `CreateIcon`이 즉석에서 그려 `SafeIconHandle`로 반환 |
 | [App/UI/AppMessages.cs](../App/UI/AppMessages.cs) | `WM_APP + N` message constants for cross-thread signalling |
 | [App/UI/Dialogs/CleanupDialog.cs](../App/UI/Dialogs/CleanupDialog.cs) | `indicator_positions` management dialog (checkbox list of all entries, scrollable viewport when >15 items) |

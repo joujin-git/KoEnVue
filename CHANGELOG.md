@@ -5,7 +5,17 @@
 
 ## [Unreleased]
 
-> 다음 릴리스부터는 [Keep a Changelog 한국어 스펙](https://keepachangelog.com/ko/1.1.0/) 표준 헤더 + 짧은 bullet 형식 적용.
+> 다음 릴리스부터는 [Keep a Changelog 한국어 스펙](https://keepachangelog.com/ko/1.1.0/) 표준 헤더 + 짧은 bullet 형식 적용. **v0.9.4.0 릴리스 항목은 아래 `[0.9.4.0]` 섹션** — 본 `[Unreleased]` 직후의 `### Fixed`/`### Added`/`### Changed` 단락은 v0.9.4.0 직전 누적 (사후 fix / PR-B/PR-C / 하네스) 으로, 릴리스 시 `[0.9.4.0]` 와 함께 병합 정리 예정.
+
+## [0.9.4.0] — PR-15 admin_elevation
+
+### Fixed
+
+- **관리자 권한 콘솔 (관리자 cmd / 관리자 Windows Terminal) 의 한/영 IME 표시 회귀 fix** — v0.9.3.0 [PR-03](docs/improvement-plan/PR-03-asinvoker.md) 의 `app.manifest` `requireAdministrator` → `asInvoker` BREAKING 부작용. UIPI (User Interface Privilege Isolation) 가 Medium IL (asInvoker) KoEnVue → High IL admin 콘솔의 `WM_IME_CONTROL` 메시지를 차단해 `SendMessageTimeoutW(SMTO_ABORTIFHUNG)` 가 즉시 ABORT. 매니페스트는 `asInvoker` 그대로 유지 (P5 invariant 보존, PR-03 의 default UAC 0 정책 보존) — 신규 `admin_elevation: bool` (default `false`) 옵션 추가로 사용자 선택적 admin 권한 실행 가능. 옵션 ON 시 두 메커니즘 분담: (1) 단일 실행 / 직접 실행 경로 — [App/Bootstrap/AdminElevation](App/Bootstrap/AdminElevation.cs) 가 부팅 시 `Shell32.ShellExecuteW(verb="runas")` 로 자기 재실행 (UAC 1회). 환경 변수 `KOENVUE_ELEVATED=1` 재진입 가드로 UAC 거부 후 무한 루프 차단. mutex 획득 **전** 호출 (`Program.MainImpl` step 0c, Settings.Load 가 step 0b 로 선행) 이라 원본 ↔ 자식 race 0. (2) 부팅 자동 시작 경로 — [App/Startup/StartupTaskManager](App/Startup/StartupTaskManager.cs) 의 `BuildStartupTaskXml(exePath, adminElevation)` 가 `<RunLevel>` 을 `LeastPrivilege` (default) vs `HighestAvailable` (admin_elevation=true) 로 분기, 등록 시 UAC 1회 후 부팅마다 UAC 0 으로 admin 부팅 — schtasks `/RL HIGHEST` 가 매 부팅 토큰을 자동 부여. `SyncStartupPathAsync` 가 `expectedRunLevel` 도 config 에서 derive 해 admin 토글 시 자동 재등록 (신규 헬퍼 `ReregisterIfAdminChanged(config)`). UAC 거부 시 fallback: `User32.MessageBoxW` 1회 안내 (`I18n.AdminElevationDeniedMessage` — 한국어 default, English fallback) 후 일반 권한으로 계속 진행 (관리자 콘솔의 한/영 표시는 미작동 — 사용자 인지). 신규 IL 체크: [Core/Native/Advapi32](Core/Native/Advapi32.cs) 의 `OpenProcessToken` + `GetTokenInformation(TokenIntegrityLevel)` + `GetSidSubAuthority` + `GetSidSubAuthorityCount` 4 P/Invoke 를 묶은 `GetCurrentProcessIntegrityLevelRid()` 단일 헬퍼 → `Win32Constants.SECURITY_MANDATORY_HIGH_RID` 비교. 신규 const 6종 ([Core/Native/Win32Types.cs](Core/Native/Win32Types.cs)): `TOKEN_QUERY`, `TokenIntegrityLevel`, `SECURITY_MANDATORY_{LOW,MEDIUM,HIGH,SYSTEM}_RID` + `MB_YESNO`/`IDYES`/`IDNO`. UI: 트레이 메뉴 **"관리자 권한으로 실행"** (시작 프로그램 등록 옆) 즉시 토글 — 클릭 시 schtasks 자동 재등록 + `MessageBoxW(MB_YESNO)` "다음 실행부터 적용됩니다. 지금 재시작하시겠습니까?" 안내, YES 시 `AdminElevation.ClearReentryGuard()` 후 자기 재실행. Settings 다이얼로그 "시스템" 섹션 Bool 필드는 사일런트 (다음 부팅 적용). pre-Init 로그는 `LogProvider.Sink` 버퍼 + `Program.AppendCrashFile("ELEVATION"/"ELEVATION-ERR")` 양쪽 채널 — ExitForChild 흐름에서 Logger.Initialize 가 안 되는 케이스도 koenvue_crash.txt 로 보존. publish 크기 4,861,440 B = 4.64 MB (+30 KB). 자세한 설계 + UIPI 메커니즘 + 사용자 결정 5종 + Tier-3 6-시나리오 매트릭스: [docs/improvement-plan/PR-15-admin-elevation.md](docs/improvement-plan/PR-15-admin-elevation.md) + [docs/dev-notes/2026-05-27-admin-elevation.md](docs/dev-notes/2026-05-27-admin-elevation.md).
+
+---
+
+> 아래는 v0.9.4.0 직전 (2026-05-21 ~ 2026-05-27) 누적된 사후 fix / 신규 PR-B (커서 인디) / PR-C (Settings 노출) / 하네스 도입 항목. 릴리스 시점에 위 PR-15 항목과 함께 정리됩니다.
 
 ### Fixed
 

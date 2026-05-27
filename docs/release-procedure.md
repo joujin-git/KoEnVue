@@ -1,4 +1,4 @@
-# Release Procedure — v0.9.3.0 이후
+# Release Procedure — v0.9.3.0 이후 (현재 v0.9.4.0 준비)
 
 **유지보수자 전용.** 일반 사용자는 [README.md](../README.md) 의 다운로드 섹션을 보세요. 본 문서는 PR-11 (Version 단일 진실원 + SHA256 release) 머지 후 절차입니다.
 
@@ -15,7 +15,7 @@
 **한 곳만 수정합니다** — [KoEnVue.csproj](../KoEnVue.csproj) 의 `<Version>` 요소.
 
 ```xml
-<Version>0.9.3.0</Version>
+<Version>0.9.4.0</Version>
 ```
 
 형식: **`major.minor.build.revision` 4-part 필수** (본 프로젝트 컨벤션). 모든 PE 헤더 필드 (`AssemblyVersion` / `FileVersion` / `InformationalVersion`) 가 동일 4-part 로 박혀 Windows 탐색기 "자세히" 탭에서 혼동 없음. 빌드 시점에 [Directory.Build.targets](../Directory.Build.targets) 의 `GenerateVersionConstants` Target 가 `obj/.../Version.g.cs` 로 `DefaultConfig.AppVersion` partial 조각을 자동 생성하고, PE 헤더 3종도 같은 값에서 derive 합니다.
