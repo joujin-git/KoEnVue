@@ -121,6 +121,25 @@
 
 **진단 2차 (commit 후속)**: detection thread 의 self-ignore 가드에 `_hwndCursorOverlay` 추가 (안전망 — cursor 윈도우 자체가 foreground 되는 케이스 차단) + `ProcessDetectionTick` 에 `FG changed: 0x... (className)` 진단 로그 추가 (foreground 변화 시점 trace). 사용자 publish exe 재실행 후 부팅 후 8초간 FG sequence 식별.
 
+**진단 3차 결과 (publish/koenvue.log 14:55:39 — cursor enable ON)**:
+```
+14:55:39.832 KoEnVue starting
+14:55:39.943 FG changed: CabinetWClass (탐색기 정상)
+14:55:42.369 FG changed: Shell_TrayWnd   ← cursor 첫 표시 (1.5s) 후 ~1초 (= ~2.5s 시점)
+14:55:42.370 Filter triggered HIDE: fgClass=Shell_TrayWnd
+14:55:42.370 HideOverlay called: source=WM_HIDE_INDICATOR
+```
+**14:55:49 cursor OFF 동일 시나리오** — Shell_TrayWnd FG 변화 0 → 메인 인디 표시 유지. → **cursor PR 진짜 회귀 확정**.
+
+**가설 CC (확정)**: cursor 첫 `UpdateLayeredWindow(alpha=255)` (BootGracePeriodMs 1500ms 후 첫 RenderAtCursor) → DWM 합성 → cursor 윈도우의 `WS_EX_TOPMOST` 가 다른 topmost z-band 윈도우 (Shell_TrayWnd 도 topmost) 재정렬 trigger → Shell_TrayWnd 가 약 1초 후 foreground 변경 (DWM 합성 사이클 또는 Windows 의 z-order 갱신 지연) → detection thread → SystemFilter → hide.
+
+**fix (commit 후속)**:
+- `Program.Bootstrap.CreateCursorOverlayWindow` 에서 **`WS_EX_TOPMOST` 제거** — cursor 윈도우는 생성 시 일반 z-order 로 시작. 부팅 sequence 동안 다른 topmost 윈도우 (Shell_TrayWnd) 영향 0.
+- `CursorOverlay.RenderAtCursor` 의 첫 가시화 시 명시 `SetWindowPos(HWND_TOPMOST, SWP_NOSENDCHANGING | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE)` 호출 — topmost 진입 + **`SWP_NOSENDCHANGING` 으로 다른 윈도우에 `WM_WINDOWPOSCHANGING` 알림 차단** → Shell_TrayWnd 등 다른 topmost 재정렬 trigger 없음.
+- `Core/Native/Win32Types.Win32Constants.SWP_NOSENDCHANGING = 0x0400` 신규 (P/Invoke 아닌 const 추가).
+
+탐색기 vs Total Commander 차이 해석 (cursor enable 무관 시): explorer.exe = shell process 라 Shell_TrayWnd 와 같은 프로세스 → 메시지 처리 큐 공유 → race 빈도 높음. Total Commander = 일반 third-party → race 없음.
+
 ## 무엇 (What — PR-B-1 시점)
 
 신규 3 파일로 커서 추종 인디케이터의 렌더 엔진 + Style + Renderer 도착. 사용자 가시 기능 미완성 — PR-B-3 도착 시 트레이 / 설정 다이얼로그 토글로 활성화 가능.

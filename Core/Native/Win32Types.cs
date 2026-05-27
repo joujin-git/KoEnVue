@@ -405,6 +405,10 @@ internal static class Win32Constants
     public const uint SWP_NOMOVE         = 0x0002;
     public const uint SWP_NOSIZE         = 0x0001;
     public const uint SWP_NOACTIVATE     = 0x0010;
+    // SWP_NOSENDCHANGING — WM_WINDOWPOSCHANGING 메시지 안 보냄. cursor 인디의 명시 z-order set
+    // 시 다른 topmost 윈도우 (Shell_TrayWnd 등) 가 z-order 재정렬 알림 받아 잠시 foreground 되는
+    // race 차단.
+    public const uint SWP_NOSENDCHANGING = 0x0400;
 
     // --- 입력 ---
     public const int VK_SHIFT            = 0x10;

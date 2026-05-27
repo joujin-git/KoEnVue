@@ -200,8 +200,14 @@ internal static class CursorOverlay
     /// <summary>
     /// cursor 위치 = DIB 정중앙. ShowAtCenter 가 monitor DPI + bbox 직접 계산해 정확한 좌상단 좌표 set.
     /// Render 가 같은 DPI 로 DIB 생성 → race 없음. 윈도우는 WS_VISIBLE 영구 박혀있어 ShowWindow 호출
-    /// 불요 — Render 의 UpdateLayeredWindow 가 alpha=255 (디폴트) 로 표시. z-order 변경 0 → 트레이
-    /// 메뉴 modal loop 안에서 발화돼도 메뉴 dismiss 트리거 안 함.
+    /// 불요 — Render 의 UpdateLayeredWindow 가 alpha=255 (디폴트) 로 표시.
+    /// <para>
+    /// <b>첫 표시 시 명시 HWND_TOPMOST set</b> — cursor 윈도우는 생성 시 WS_EX_TOPMOST 없이 일반 z-order
+    /// 로 시작 (사용자 보고: cursor enable 부팅 시 cursor 첫 UpdateLayeredWindow 가 DWM 합성에서 다른
+    /// topmost 윈도우 (Shell_TrayWnd) 재정렬 → foreground 잠시 변경 → 메인 인디 SystemFilter hide 회귀).
+    /// 첫 가시화 시 SWP_NOSENDCHANGING + SWP_NOACTIVATE 로 명시 topmost set — 다른 윈도우 z-order
+    /// 변경 알림 차단.
+    /// </para>
     /// </summary>
     private static void RenderAtCursor(POINT cursor)
     {
@@ -209,6 +215,15 @@ internal static class CursorOverlay
 
         _engine.ShowAtCenter(cursor.X, cursor.Y, _currentStyle);
         _engine.Render(_currentStyle);
+
+        if (!_isVisible)
+        {
+            User32.SetWindowPos(_engine.Hwnd, Win32Constants.HWND_TOPMOST,
+                0, 0, 0, 0,
+                Win32Constants.SWP_NOMOVE | Win32Constants.SWP_NOSIZE
+                | Win32Constants.SWP_NOACTIVATE | Win32Constants.SWP_NOSENDCHANGING);
+        }
+
         _isVisible = true;
     }
 
