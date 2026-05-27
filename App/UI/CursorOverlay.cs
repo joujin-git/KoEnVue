@@ -49,8 +49,11 @@ internal static class CursorOverlay
     // Initialize 호출 시점 tick. 부팅 직후 메인 인디 fade race 회피 위해 첫 N ms 동안 cursor
     // 표시 skip (사용자 보고: cursor enable 시 부팅 깜박임 회귀 — cursor motion timer 첫 발화가
     // 메인 인디 fade race trigger 가설). HandleConfigChanged 의 OFF→ON 토글 시에도 리셋.
+    // 500ms grace 가 부족했음 (사용자 2차 보고: 메인 인디 1초 후 사라짐) — cursor RenderAtCursor
+    // 의 ShadeDib (2x2 supersampling) 메인 스레드 점유가 메인 인디 fade tick 누락 trigger 가설.
+    // 1500ms 로 늘림: 메인 인디 fade-in 150ms + EventDisplayDuration 일부 + 안정화 완료 후 cursor 진입.
     private static long _bootTick;
-    private const int BootGracePeriodMs = 500;
+    private const int BootGracePeriodMs = 1500;
 
     // ================================================================
     // Public API
@@ -111,23 +114,9 @@ internal static class CursorOverlay
 
         if (!User32.GetCursorPos(out POINT cursor)) return;
 
-        // 시스템 창 (작업 표시줄 / 바탕화면 / 시스템 UI) 위면 cursor 인디 표시 skip. 시스템 창은
-        // system topmost 라 일반 앱 (cursor 인디 = WS_EX_TOPMOST 이지만 일반) 이 z-order 위로
-        // 못 올라가 표시되어도 가려진다. WindowFromPoint 는 WS_EX_TRANSPARENT 윈도우를 통과해
-        // 아래 윈도우 반환 (dev-notes F2) → cursor 인디 자체는 건너뜀.
-        IntPtr hwndAtCursor = User32.WindowFromPoint(cursor);
-        if (hwndAtCursor != IntPtr.Zero && IsSystemHideWindow(hwndAtCursor))
-        {
-            if (_isVisible)
-            {
-                _engine.Hide();
-                _isVisible = false;
-            }
-            _idleStartTick = 0;
-            _lastCursorX = cursor.X;
-            _lastCursorY = cursor.Y;
-            return;
-        }
+        // 시스템 창 (작업 표시줄 / 시작 버튼 / 검색 박스 / 트레이 아이콘 등) 위에서도 cursor 인디
+        // 일관 표시. 사용자 결정: "작업 표시줄에 가려지겠지만 일관적이면 괜찮음". 이전 SystemHideClasses
+        // 체크 분기 제거.
 
         int dx = Math.Abs(cursor.X - _lastCursorX);
         int dy = Math.Abs(cursor.Y - _lastCursorY);
@@ -263,22 +252,4 @@ internal static class CursorOverlay
         return ((uint)0xFF << 24) | ((uint)r << 16) | ((uint)g << 8) | b;
     }
 
-    /// <summary>
-    /// 마우스 아래 hwnd 의 클래스명이 시스템 hide 목록 (작업 표시줄, 바탕화면, Win11 시스템 UI 등)
-    /// 에 매칭되는지. 메인 인디의 <see cref="App.Detector.SystemFilter"/> 와 같은 목록 사용 — 사용자가
-    /// SystemHideClassesUser 에 추가한 항목도 자동 포함.
-    /// </summary>
-    private static bool IsSystemHideWindow(IntPtr hwnd)
-    {
-        string className = WindowProcessInfo.GetClassName(hwnd);
-        if (string.IsNullOrEmpty(className)) return false;
-
-        foreach (string sys in _config.SystemHideClasses)
-            if (className.Equals(sys, StringComparison.OrdinalIgnoreCase))
-                return true;
-        foreach (string sys in _config.SystemHideClassesUser)
-            if (className.Equals(sys, StringComparison.OrdinalIgnoreCase))
-                return true;
-        return false;
-    }
 }

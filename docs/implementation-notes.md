@@ -102,9 +102,13 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 두 모드 전환은 `HandleConfigChanged` 의 "값 변경" 분기가 `KillTimer` + `SetTimer` 로 polling 주기를 즉시 교체해 흡수한다.
 
-### 부팅 grace period — `BootGracePeriodMs = 500ms`
+### 부팅 grace period — `BootGracePeriodMs = 1500ms`
 
-cursor 인디 enable 상태로 KoEnVue 부팅 시 `HandleCursorMotionTimer` 가 첫 50ms tick 부터 발화 → cursor 첫 표시 (`RenderAtCursor` + `Render` + `UpdateLayeredWindow`) 가 detection thread 의 부팅 직후 메시지 폭주 (PositionUpdated + ImeStateChanged + FocusChanged) 와 race → 메인 인디의 `OverlayAnimator` fade 진행이 cursor 처리 시간만큼 지연되거나 message queue 순서가 변형되어 PR-A 의 `SnapToTargetAlpha` Fade KillTimer fix 가 충분히 차단 못 하는 회귀 가능성. fix: `CursorOverlay.Initialize` 가 `_bootTick = Environment.TickCount64` 마킹 + `HandleCursorMotionTimer` 진입부에 `if (Environment.TickCount64 - _bootTick < BootGracePeriodMs) return;` — 부팅 후 500ms 동안 cursor 표시 자체 skip. 그 사이 detection thread 의 첫 80ms 폴링 사이클 + 메인 인디 부팅 sequence 안정화 완료. HandleConfigChanged 의 OFF→ON 토글 시에도 `_bootTick` 리셋 (`Initialize` 재호출 경로).
+cursor 인디 enable 상태로 KoEnVue 부팅 시 `HandleCursorMotionTimer` 가 첫 50ms tick 부터 발화 → cursor 첫 표시 (`RenderAtCursor` + `Render` + `UpdateLayeredWindow`) 가 detection thread 의 부팅 직후 메시지 폭주 (PositionUpdated + ImeStateChanged + FocusChanged) 와 race → 메인 인디의 `OverlayAnimator` fade 진행이 cursor 처리 시간만큼 지연되거나 message queue 순서가 변형되어 PR-A 의 `SnapToTargetAlpha` Fade KillTimer fix 가 충분히 차단 못 하는 회귀 가능성. fix: `CursorOverlay.Initialize` 가 `_bootTick = Environment.TickCount64` 마킹 + `HandleCursorMotionTimer` 진입부에 `if (Environment.TickCount64 - _bootTick < BootGracePeriodMs) return;` — 부팅 후 1500ms 동안 cursor 표시 자체 skip. 그 사이 detection thread 의 첫 80ms 폴링 사이클 + 메인 인디 fade-in (150ms) + EventDisplayDuration 일부 안정화 완료. `HandleConfigChanged` 의 OFF→ON 토글 시에도 `_bootTick` 리셋 (`Initialize` 재호출 경로). 사용자 2차 보고 — 500ms 가 부족 (메인 인디 1초 후 사라짐 회귀 잔존), 1500ms 로 늘려 안정화.
+
+### 시스템 창 호버 시 cursor 인디 정책 — 일관 표시
+
+마우스가 작업 표시줄 / 시작 버튼 / 검색 박스 / 트레이 아이콘 위에 있을 때 cursor 인디는 일반 영역과 동일하게 표시. 시스템 창은 system topmost 라 cursor 인디 (일반 `WS_EX_TOPMOST`) 가 시각적으로 가려질 수 있으나, 사용자 결정 — "작업 표시줄에 가려지겠지만 일관적이면 괜찮음". 이전 `WindowFromPoint + SystemHideClasses` 매칭 시 hide 분기는 제거됨 + `User32.WindowFromPoint` LibraryImport 도 제거 (cursor 만의 사용처였음).
 
 ### 트레이 메뉴 lazy 생성 / dispose 흐름
 

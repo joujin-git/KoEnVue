@@ -82,6 +82,16 @@
 - 또는 더 이전 회귀 (PR-A 와 무관)
 - 진단 방법: PR-A 이전 commit (`fac0251`) 빌드로 콘솔 한/영 검증 → PR-A 전후 회귀 여부 확인. 회귀 위치 격리 후 fix.
 
+## 사후 fix 6차 (사용자 검증 5차 직후, 2026-05-27)
+
+사용자 추가 보고 2건:
+
+11. **작업 표시줄 / 시작 버튼 / 검색 박스 / 트레이 아이콘 호버 시 cursor 인디 일관 표시 요청** — 사후 fix 3차 (`06d0d3f`) 의 `WindowFromPoint + SystemHideClasses` hide 분기 revert. 사용자 결정: "작업 표시줄에 가려지겠지만 일관적이면 괜찮음". **fix**: `CursorOverlay.HandleCursorMotionTimer` 의 시스템 창 체크 분기 + `IsSystemHideWindow` 함수 + `User32.WindowFromPoint` LibraryImport (cursor 만의 사용처였음) 모두 제거.
+
+12. **부팅 grace 500ms 가 부족** — 사용자 2차 보고: cursor enable 상태로 부팅 시 메인 인디 1초 정도 표시 후 사라짐. 가설: cursor 첫 `RenderAtCursor` 의 `ShadeDib` (2x2 supersampling) 가 메인 스레드 ~수십ms 점유 → 메인 인디 `OverlayAnimator` fade tick (16ms) 1-2 누락 → 잘못된 phase 전이로 빠른 fade-out. **fix**: `BootGracePeriodMs` 500 → 1500ms 로 늘림. 메인 인디 fade-in (150) + EventDisplayDuration 일부 + 안정화 완료 후 cursor 진입. 사용자 가시 — cursor 첫 표시까지 1.5초 지연 (인지 가능하나 부팅 시 1회만 영향, OFF→ON 토글 시에도 동일 grace).
+
+  대안 (미적용, 후속 검토): 가설 F (detection thread 메시지 폭주 자체 줄임) 적용. `HandlePositionUpdated` 가 `_indicatorVisible = true` 세팅한 직후 IME/Focus 메시지 1 tick suppress. 메인 인디 영역 변경이라 cursor PR 범위 밖. 1500ms grace 가 회귀 차단 못 하면 후속 PR 진입.
+
 ## 무엇 (What — PR-B-1 시점)
 
 신규 3 파일로 커서 추종 인디케이터의 렌더 엔진 + Style + Renderer 도착. 사용자 가시 기능 미완성 — PR-B-3 도착 시 트레이 / 설정 다이얼로그 토글로 활성화 가능.
