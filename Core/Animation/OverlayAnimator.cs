@@ -250,16 +250,31 @@ public sealed class OverlayAnimator : IDisposable
 
     /// <summary>
     /// 현재 alpha 를 즉시 target 으로 스냅. Holding/FadingIn 재진입 시 + Idle 탈출 시 사용.
-    /// (Idle 탈출의 경우 BeginFadeIn 이 FadingIn 으로 전이시키지만 본 호출이 현재 alpha 를
-    ///  target 에 맞춰 둠으로써 다음 HandleFadeTimer 프레임까지의 깜빡임을 억제한다 —
-    ///  원본 동작 보존.)
+    /// FadingIn 중 호출 시 Fade 타이머를 KillTimer 하고 Holding 으로 전이 — 다음 Fade 틱이
+    /// <c>_fadeStartAlpha=0</c> 부터 보간한 작은 값으로 alpha 를 되돌리는 race 차단.
     /// </summary>
+    // dev-notes/2026-05-20-post-pr10-attempts-reverted.md 가설 E: 부팅 시 detection thread 가
+    // WM_POSITION_UPDATED + WM_IME_STATE_CHANGED + WM_FOCUS_CHANGED 를 연달아 post → TriggerShow
+    // 3 회 호출. 1번째에서 Hidden→FadingIn 진입 + Fade 타이머 등록 + StartFade(0, 244, 150ms).
+    // 2번째 (FadingIn 재진입) 가 SnapToTargetAlpha 로 alpha 를 즉시 244 로 set 하지만 Fade 타이머는
+    // 안 죽임 → 다음 Fade 틱이 _fadeStartAlpha=0 부터 보간한 작은 값 (예 15) 으로 alpha 를 되돌림
+    // → 사용자는 "보였다가 사라짐" 으로 인식 (회귀 #2/#3).
     private void SnapToTargetAlpha()
     {
         if (_currentAlpha != _targetAlpha)
         {
             _currentAlpha = _targetAlpha;
             _onAlphaChange(_targetAlpha);
+        }
+
+        if (_phase == AnimPhase.FadingIn)
+        {
+            User32.KillTimer(_hwndTimer, _timerIds.Fade);
+            _phase = AnimPhase.Holding;
+            // Idle 분기에서 호출된 경우 Hold 타이머 미등록 — 여기서 보장.
+            // Holding/FadingIn 분기는 이미 line 185-187 에서 재등록함 — 같은 ID 재호출은 replace.
+            User32.SetTimer(_hwndTimer, _timerIds.Hold,
+                (uint)_holdDurationMs, IntPtr.Zero);
         }
     }
 
