@@ -727,26 +727,8 @@ internal static partial class Program
         // 글로벌 기준으로 엔진 캐시 재빌드 — 다음 per-app TriggerShow 가 style 차이 시 추가 무효화.
         Overlay.HandleConfigChanged(_config);
 
-        // 커서 인디 — 3 분기: enabled 토글 / 값 변경.
-        // ON → OFF : Dispose + DestroyWindow + KillTimer
-        // OFF → ON : EnableCursorOverlay 로 lazy 생성
-        // ON 유지 : HandleConfigChanged 가 DPI 캐시 무효화 + DIB 재생성 + 폴링 주기 재조정
-        if (_config.CursorIndicatorEnabled && _hwndCursorOverlay == IntPtr.Zero)
-        {
-            EnableCursorOverlay();
-        }
-        else if (!_config.CursorIndicatorEnabled && _hwndCursorOverlay != IntPtr.Zero)
-        {
-            DisableCursorOverlay();
-        }
-        else if (_config.CursorIndicatorEnabled)
-        {
-            CursorOverlay.HandleConfigChanged(_config);
-            User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION);
-            User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION,
-                _config.CursorAlwaysShow ? DefaultConfig.CursorAlwaysPollMs : DefaultConfig.CursorMotionPollMs,
-                IntPtr.Zero);
-        }
+        // 커서 인디 lifecycle — config.json 리로드 경로. HandleMenuCommand 람다도 동일 헬퍼 호출.
+        ApplyCursorConfigChange();
 
         // 인디가 가시 상태라면 애니메이터 config 갱신 + 새 alpha/크기/색상 즉시 반영 (PR-13: per-app)
         if (!_config.UserHidden && _indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
@@ -850,6 +832,37 @@ internal static partial class Program
         {
             User32.DestroyWindow(_hwndCursorOverlay);
             _hwndCursorOverlay = IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// 커서 인디 lifecycle 3 분기 (OFF→ON / ON→OFF / ON 유지 + 값 변경). HandleConfigChanged
+    /// (config.json 리로드 경로) + HandleMenuCommand 람다 (트레이 메뉴 즉시 적용 경로) 양쪽에서
+    /// 공유. <c>_config</c> 는 호출 전 새 값으로 갱신돼 있어야 한다.
+    /// <para>
+    /// HandleMenuCommand 람다가 직접 본 헬퍼를 호출해야 하는 이유: 람다 내부의 Settings.Save 는
+    /// mtime self-bump 로 WM_CONFIG_CHANGED 를 차단 (감지 스레드의 mtime 폴러가 본인 변경을 다시
+    /// 알리지 않도록). 따라서 HandleConfigChanged 가 호출 안 되고 cursor lifecycle 분기도 자동
+    /// 진입 안 한다 — 람다가 직접 호출 필수.
+    /// </para>
+    /// </summary>
+    private static void ApplyCursorConfigChange()
+    {
+        if (_config.CursorIndicatorEnabled && _hwndCursorOverlay == IntPtr.Zero)
+        {
+            EnableCursorOverlay();
+        }
+        else if (!_config.CursorIndicatorEnabled && _hwndCursorOverlay != IntPtr.Zero)
+        {
+            DisableCursorOverlay();
+        }
+        else if (_config.CursorIndicatorEnabled)
+        {
+            CursorOverlay.HandleConfigChanged(_config);
+            User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION);
+            User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION,
+                _config.CursorAlwaysShow ? DefaultConfig.CursorAlwaysPollMs : DefaultConfig.CursorMotionPollMs,
+                IntPtr.Zero);
         }
     }
 
@@ -966,6 +979,8 @@ internal static partial class Program
                     I18n.Load(_config.Language);
                 ImeStatus.UpdateDetectionMethod(_config.DetectionMethod);
                 Overlay.HandleConfigChanged(_config);
+                // 커서 인디 lifecycle — mtime self-bump 로 HandleConfigChanged 우회되므로 직접 호출.
+                ApplyCursorConfigChange();
 
                 if (wasHidden != _config.UserHidden)
                 {

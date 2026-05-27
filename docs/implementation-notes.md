@@ -110,6 +110,8 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 OFF 토글 시 `DisableCursorOverlay()` 가 역순으로 `KillTimer` → `CursorOverlay.Dispose()` (엔진/DIB/GDI 핸들 해제) → `DestroyWindow(_hwndCursorOverlay)` → `_hwndCursorOverlay = IntPtr.Zero` (lazy 재생성 게이트 복귀). `OnProcessExit` 도 동일 cleanup 을 명시적으로 호출.
 
+3 분기 (OFF→ON / ON→OFF / 값 변경) 는 `Program.ApplyCursorConfigChange()` 헬퍼로 추출되어 **두 경로**에서 호출된다: (1) `HandleConfigChanged()` — `config.json` 직접 편집의 mtime 폴러 리로드 경로, (2) `HandleMenuCommand` 람다 — 트레이 메뉴 즉시 적용 경로. 후자가 헬퍼를 직접 호출하지 않으면 트레이 토글이 작동 안 한다 — 람다 내부 `Settings.Save` 는 mtime self-bump 로 `WM_CONFIG_CHANGED` 를 차단 (감지 스레드 폴러가 본인 변경을 다시 알리지 않게 막는 의도된 정책) 하므로 `HandleConfigChanged` 가 호출되지 않음.
+
 별도 HWND 선택 이유: 메인 `_hwndOverlay` 는 사용자 드래그 (HTCAPTION) 와 hit-test 가 필요해 `WS_EX_TRANSPARENT` 를 켤 수 없는데, cursor 인디는 마우스를 절대 가로채면 안 되므로 영구 클릭 통과가 필수. [dev-notes/2026-05-15-click-through-attempts.md](dev-notes/2026-05-15-click-through-attempts.md) F2 (WS_EX_TRANSPARENT 영구 ON) 패턴 재사용.
 
 ### Render 후 SW_SHOW 호출자 패턴 + alpha 디폴트 255

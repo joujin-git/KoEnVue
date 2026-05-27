@@ -16,7 +16,13 @@
 
 2. **트레이 메뉴 라벨 변경**: "커서 인디케이터" → "커서 인디케이터 숨김" — 메인 인디 "인디케이터 숨김" 과 동일 패턴 (MF_CHECKED = 현재 숨김 상태). 인터뷰 초기 답 ("라벨 자체가 기능명, 체크 = ON") 을 사용자가 검토 후 변경. 의미 반전 (`!config.CursorIndicatorEnabled ? MF_CHECKED : MF_UNCHECKED`).
 
-이번 fix 가 PR-B 의 첫 사용자 가시 검증을 통과시킴.
+**그러나 fix 후 2차 검증에도 cursor 인디 표시 안 됨** — 추가 회귀 발견:
+
+3. **트레이 메뉴 클릭이 cursor lifecycle 진입 안 함** — `Program.HandleMenuCommand` 의 람다 (line 956-990) 는 `mtime self-bump` 정책 때문에 `HandleConfigChanged` 우회하고 `Overlay.HandleConfigChanged` + 등 효과를 직접 호출. **여기에 cursor 인디 lifecycle 분기가 빠져있어** 트레이 토글 클릭 시 `Settings.Save` 만 호출되고 `EnableCursorOverlay` 가 진입 안 됨 — 윈도우/엔진/타이머 미생성.
+
+   **fix**: cursor lifecycle 3 분기를 `Program.ApplyCursorConfigChange()` 헬퍼로 추출. `HandleConfigChanged` 와 `HandleMenuCommand` 람다 양쪽에서 호출. D7 (단일 진실원) 패턴.
+
+이 fix 가 PR-B 의 첫 사용자 가시 검증을 통과시킴.
 
 ## 무엇 (What — PR-B-1 시점)
 
