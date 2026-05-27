@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using KoEnVue.App.Models;
 using KoEnVue.Core.Logging;
 using KoEnVue.Core.Xml;
 
@@ -32,6 +33,12 @@ internal static class StartupTaskManager
     /// <summary>v0.9.3.0 (PR-03) 부터 부여하는 RunLevel — UAC 프롬프트 없는 일반 권한 실행.</summary>
     private const string RunLevelLeastPrivilege = "LeastPrivilege";
 
+    /// <summary>
+    /// PR-15: admin_elevation=true 일 때 부여하는 RunLevel — 부팅 자동 시작 시 UAC 0 으로 admin
+    /// 권한 획득해 UIPI 차단 우회. asInvoker 매니페스트는 그대로 유지 (P5 invariant).
+    /// </summary>
+    private const string RunLevelHighestAvailable = "HighestAvailable";
+
     // P3: 매직 넘버 금지
     private const int SchtasksQueryTimeoutMs = 3000;
     private const int SchtasksCommandTimeoutMs = 5000;
@@ -61,8 +68,11 @@ internal static class StartupTaskManager
         }
     }
 
-    /// <summary>등록 ↔ 해제 토글. 메뉴 핸들러에서 호출.</summary>
-    internal static void ToggleStartupRegistration()
+    /// <summary>
+    /// 등록 ↔ 해제 토글. 메뉴 핸들러에서 호출.
+    /// PR-15: <paramref name="config"/> 의 <c>AdminElevation</c> 으로 RunLevel 분기.
+    /// </summary>
+    internal static void ToggleStartupRegistration(AppConfig config)
     {
         try
         {
@@ -77,10 +87,10 @@ internal static class StartupTaskManager
             else
             {
                 string exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? "";
-                bool createOk = RegisterStartupTaskWithXml(exePath);
+                bool createOk = RegisterStartupTaskWithXml(exePath, config.AdminElevation);
                 // schtasks 가 silent 로 거부하는 케이스가 있어 post-check 로 실제 등록 여부 검증
                 if (createOk && IsStartupRegistered())
-                    Logger.Info("Startup registration created");
+                    Logger.Info($"Startup registration created (admin_elevation={config.AdminElevation})");
                 else
                     Logger.Warning("Startup registration create did not take effect (see schtasks log above)");
             }
@@ -104,9 +114,9 @@ internal static class StartupTaskManager
     /// 사라졌지만, 양식 차원의 안전망 + 동시 등록 race 방어 목적으로 유지.
     /// </para>
     /// </summary>
-    private static bool RegisterStartupTaskWithXml(string exePath)
+    private static bool RegisterStartupTaskWithXml(string exePath, bool adminElevation)
     {
-        string xml = BuildStartupTaskXml(exePath);
+        string xml = BuildStartupTaskXml(exePath, adminElevation);
         // %TEMP% 는 per-user. GUID 로 attacker 가 미리 같은 경로를 점유하지 못하게 한다.
         string tempPath = Path.Combine(Path.GetTempPath(), $"koenvue-task-{Guid.NewGuid():N}.xml");
         try
@@ -150,13 +160,16 @@ internal static class StartupTaskManager
     /// 두 필드의 의도가 완전히 다르고 둘 다 채우면 다시 admin 요구로 회귀하므로 LogonTrigger 쪽만 채운다.
     /// </para>
     /// </summary>
-    private static string BuildStartupTaskXml(string exePath)
+    private static string BuildStartupTaskXml(string exePath, bool adminElevation)
     {
         // LogonTrigger.<UserId> — trigger 대상 user 식별. 본인 logon 만 발화하도록 명시 필요.
         string userId = XmlEntityCodec.Escape($"{Environment.UserDomainName}\\{Environment.UserName}");
         // /tr 방식의 기존 Command 형식("\"path\"")을 XML 에서도 동일하게 유지 — QueryRegisteredTask 의
         // Trim('"') 로직이 두 방식 모두 호환되어 마이그레이션 후에도 경로 비교가 안정적.
         string command = XmlEntityCodec.Escape($"\"{exePath}\"");
+        // PR-15: admin_elevation=true 시 RunLevel=HighestAvailable (부팅 자동 시작 시 UAC 0 으로 admin).
+        // 매니페스트는 asInvoker 유지 — schtasks 의 RunLevel 만 분기.
+        string runLevel = adminElevation ? RunLevelHighestAvailable : RunLevelLeastPrivilege;
         return $"""
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -170,7 +183,7 @@ internal static class StartupTaskManager
   <Principals>
     <Principal id="Author">
       <LogonType>InteractiveToken</LogonType>
-      <RunLevel>{RunLevelLeastPrivilege}</RunLevel>
+      <RunLevel>{runLevel}</RunLevel>
     </Principal>
   </Principals>
   <Actions Context="Author">
@@ -187,9 +200,9 @@ internal static class StartupTaskManager
     /// 포터블 모드에서 exe를 다른 폴더로 옮겼을 때 태스크 스케줄러가 오래된 절대 경로를 가리키는 문제를 해결.
     /// schtasks 호출 지연(~100~300ms)을 main 스레드에서 분리하기 위해 백그라운드 스레드에서 실행.
     /// </summary>
-    internal static void SyncStartupPathAsync()
+    internal static void SyncStartupPathAsync(AppConfig config)
     {
-        var thread = new Thread(SyncStartupPathCore)
+        var thread = new Thread(() => SyncStartupPathCore(config))
         {
             IsBackground = true,
             Name = "StartupPathSync",
@@ -197,7 +210,7 @@ internal static class StartupTaskManager
         thread.Start();
     }
 
-    private static void SyncStartupPathCore()
+    private static void SyncStartupPathCore(AppConfig config)
     {
         try
         {
@@ -219,9 +232,10 @@ internal static class StartupTaskManager
             bool pathMatches = PathsEqual(registeredPath, currentPath);
             // 구 버전(/tr 방식)은 <Delay> 요소가 없어 null. 이 경우도 마이그레이션 대상.
             bool delayMatches = string.Equals(registeredDelay, StartupTaskDelay, StringComparison.Ordinal);
-            // v0.9.x 는 admin RunLevel 잔재. PR-03 (v0.9.3.0) 에서 LeastPrivilege 로 전환됐으므로
-            // 업그레이드한 사용자의 기존 task 를 강제 재등록해야 부팅 시 UAC 프롬프트가 사라진다.
-            bool runLevelMatches = string.Equals(registeredRunLevel, RunLevelLeastPrivilege, StringComparison.Ordinal);
+            // PR-15: expected RunLevel 을 config.AdminElevation 에서 derive.
+            // v0.9.x admin 잔재 + PR-03 LeastPrivilege 잔재 + PR-15 admin 토글 모두 마이그레이션 대상.
+            string expectedRunLevel = config.AdminElevation ? RunLevelHighestAvailable : RunLevelLeastPrivilege;
+            bool runLevelMatches = string.Equals(registeredRunLevel, expectedRunLevel, StringComparison.Ordinal);
 
             if (pathMatches && delayMatches && runLevelMatches)
             {
@@ -231,8 +245,8 @@ internal static class StartupTaskManager
 
             Logger.Info(
                 $"Startup task out of sync (path='{registeredPath}' delay='{registeredDelay ?? "<none>"}' "
-                + $"runlevel='{registeredRunLevel ?? "<none>"}'), re-registering with delay {StartupTaskDelay} + LeastPrivilege");
-            RegisterStartupTaskWithXml(currentPath);
+                + $"runlevel='{registeredRunLevel ?? "<none>"}'), re-registering with delay {StartupTaskDelay} + {expectedRunLevel}");
+            RegisterStartupTaskWithXml(currentPath, config.AdminElevation);
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
             or PlatformNotSupportedException or FileNotFoundException
@@ -278,6 +292,35 @@ internal static class StartupTaskManager
             // 로직 버그는 전파.
             _ = ex;
             return (null, null, null);
+        }
+    }
+
+    /// <summary>
+    /// PR-15: admin_elevation 옵션 토글 직후 호출 — 이미 등록된 startup task 의 RunLevel 을
+    /// 현재 config 에 맞게 즉시 재등록. 미등록 상태면 noop. 동기 호출 (UI 응답 즉시 반영).
+    /// </summary>
+    internal static void ReregisterIfAdminChanged(AppConfig config)
+    {
+        try
+        {
+            if (!IsStartupRegistered()) return;
+            string exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? "";
+            if (string.IsNullOrEmpty(exePath))
+            {
+                Logger.Warning("ReregisterIfAdminChanged: exe path unavailable");
+                return;
+            }
+            bool ok = RegisterStartupTaskWithXml(exePath, config.AdminElevation);
+            if (ok)
+                Logger.Info($"Startup task re-registered with admin_elevation={config.AdminElevation}");
+            else
+                Logger.Warning($"Startup task re-registration failed for admin_elevation={config.AdminElevation}");
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
+            or PlatformNotSupportedException or FileNotFoundException
+            or IOException or UnauthorizedAccessException)
+        {
+            Logger.Warning($"ReregisterIfAdminChanged: {ex.Message}");
         }
     }
 

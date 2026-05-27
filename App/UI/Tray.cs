@@ -293,7 +293,7 @@ internal static partial class Tray
 
             // --- 시작 프로그램 등록 ---
             case IDM_STARTUP:
-                StartupTaskManager.ToggleStartupRegistration();
+                StartupTaskManager.ToggleStartupRegistration(config);
                 break;
 
             // --- 기본 위치: 현재 위치로 설정 ---
