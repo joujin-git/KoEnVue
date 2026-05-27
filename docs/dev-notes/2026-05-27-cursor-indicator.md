@@ -327,6 +327,30 @@ PR-C (#3) 머지 대기 중 explorer 위임으로 [App/Detector/ImeStatus.cs](..
    - **HKL 변화 자체 0** → 콘솔 IME 모델 limitation (회귀 아님, dev-note 결론 갱신 + 사용자 안내)
    - **변화 감지 + 메시지 미발화** → 메시지 라우팅 별도 진단
 
+### 진행 상태 (2026-05-27)
+
+- **Step 1 진입**: [App/Detector/ImeStatus.cs:201 TryTier3](../../App/Detector/ImeStatus.cs#L201) 에 Debug 로깅 2줄 임시 추가 (`// [TEMP DIAG: 콘솔 한/영 회귀 — 머지 전 제거]` 마킹). Step 2 (`log_level: debug` + publish) 진행 중. 사용자 실측 (Step 3) → 로그 read (Step 4) → 결과 분기 (Step 5) 대기.
+
+- **1차 진단 결과 (TryTier3)**: cmd 에서 `GetKeyboardLayout` 가 HKL=0 (NULL) 반환 — 가설 정정 (가드 미통과 아니라 HKL 자체 NULL). WindowsTerminal/메모장은 Tier1/2 성공으로 정상. 사용자 증언 "이전엔 cmd 에서도 한/영 정상 동작" + git log "v0.9.1.9 이후 ImeStatus 본질 알고리즘 변화 없음" → Windows 환경 변화 가능성. **2차 사이클 진입**: [App/Detector/ImeStatus.cs](../../App/Detector/ImeStatus.cs) `TryTier1` / `TryTier2` 각 분기에 Debug 로깅 추가 (동일 `// [TEMP DIAG]` 마킹) — cmd 에서 Tier1/2 가 어디서 NULL 반환하는지 확정 목적.
+
+- **종결**: 아래 "확정 결론" 절로 본 진행 상태 종료. Step 5 대기 종결 — 임시 진단 코드는 `git checkout HEAD -- App/Detector/ImeStatus.cs` 로 원본 복원 + publish/config.json `log_level` INFO 복구. 코드 변경 0.
+
+### 확정 결론 (2026-05-27)
+
+1. **회귀 원인 확정**: v0.9.3.0 PR-03 의 `app.manifest` `requireAdministrator` → `asInvoker` 전환 (BREAKING). ImeStatus 알고리즘은 v0.9.2.8 과 동일 (`Win32Constants` → `ImeConstants` 단순 리네임만 — `git diff v0.9.2.8..HEAD -- App/Detector/ImeStatus.cs` 확인).
+
+2. **메커니즘 — UIPI (User Interface Privilege Isolation)**: KoEnVue 가 Medium IL (asInvoker) 일 때 admin 권한 콘솔 (High IL) 의 IME 윈도우에 `WM_IME_CONTROL` 메시지 → UIPI 차단 → `SMTO_ABORTIFHUNG` 즉시 ABORT. 1차 진단의 "HKL=0" 결과는 Tier3 폴백이 NULL 반환 시점만 캡처, 진짜 차단 지점은 Tier1 의 `SendMessageTimeoutW` ABORT.
+
+3. **검증 매트릭스 4 케이스**:
+   - asInvoker KoEnVue + admin cmd: **차단** (현재 회귀)
+   - admin KoEnVue + admin cmd: OK (v0.9.2.8 / 사용자 확인 OK)
+   - admin KoEnVue + 일반 cmd: OK (High→Medium 메시지 OK)
+   - asInvoker KoEnVue + 일반 cmd: OK 예상 (Medium↔Medium, 미실측이지만 메모장/WT 가 같은 IL 로 정상)
+
+4. **회귀 아닌 의도된 BREAKING**: PR-03 의 매 부팅 UAC 프롬프트 제거 정책. admin 콘솔 사용은 일반적이지 않음 — 다만 admin 콘솔 자주 쓰는 사용자에게는 부작용.
+
+5. **다음 세션 fix 후보** (사용자 제안): trayMenu "항상 관리자 권한으로 실행" 토글. 매니페스트는 asInvoker 유지 + schtasks `/RL HIGHEST` 통해 elevation. config 키 `auto_admin_elevation: bool` (default false). 별도 PR 설계는 planner 에게 위임.
+
 ## 관련
 
 - 메인 인디 알파 race fix (선행 PR-A): [dev-notes/2026-05-27-snap-fade-killtimer.md](2026-05-27-snap-fade-killtimer.md)
