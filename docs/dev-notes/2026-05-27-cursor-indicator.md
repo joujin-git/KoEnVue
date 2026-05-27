@@ -117,6 +117,10 @@
 
 사용자 재실행 후 koenvue.log 의 부팅 직후 5초 라인 → 정확한 trigger 식별 → 가설 확정 후 fix.
 
+**진단 1차 결과 (publish/koenvue.log 14:43:21)**: `Filter triggered HIDE: fgClass=Shell_TrayWnd` → 작업 표시줄이 foreground → SystemFilter trigger → HideOverlay. 사용자 보고 — 마우스 위치는 탐색기 내였음. foreground (keyboard focus 받는 윈도우) 가 마우스 위치와 무관하게 Shell_TrayWnd 가 된 메커니즘 추적 필요.
+
+**진단 2차 (commit 후속)**: detection thread 의 self-ignore 가드에 `_hwndCursorOverlay` 추가 (안전망 — cursor 윈도우 자체가 foreground 되는 케이스 차단) + `ProcessDetectionTick` 에 `FG changed: 0x... (className)` 진단 로그 추가 (foreground 변화 시점 trace). 사용자 publish exe 재실행 후 부팅 후 8초간 FG sequence 식별.
+
 ## 무엇 (What — PR-B-1 시점)
 
 신규 3 파일로 커서 추종 인디케이터의 렌더 엔진 + Style + Renderer 도착. 사용자 가시 기능 미완성 — PR-B-3 도착 시 트레이 / 설정 다이얼로그 토글로 활성화 가능.
