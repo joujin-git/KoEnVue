@@ -23,7 +23,7 @@
 | 12 | Documentation alignment                 | ✅     | (merged → main, 76a4c3f)        | Low     | S    | H1+H2+H3+H4 + retrospective. Tier-1+2 통과. config-reference.md 신규 (84 키) + 13-PR retrospective dev-note. **모든 PR 작업 종료** |
 | 13 | Per-app rendering config wiring         | ✅     | (merged → main, 11c3ec5)        | Medium  | M    | PR-01 Tier-3 발견. Tier-1+2+3 통과. theme/opacity/enabled:false 모두 사용자 가시 확인 |
 | 14 | Win11 accent — DwmGetColorizationColor  | ✅     | (merged → main, 4818cd2)        | Low     | S-M  | PR-01 Tier-3 ④ 해소. Tier-1+2+3 통과. Windows 강조색 변경 시 인디 색 즉시 전환 가시 확인 |
-| 15 | admin_elevation (admin 콘솔 회귀 fix)   | ✅     | (FF merge → main, fix/admin-elevation) | High    | L    | 7-commit + Tier-3 검증 commit. 핵심 시나리오 B (admin cmd 한/영 정상 — 사용자 가시) + D (schtasks RunLevel=HighestAvailable XML 확정) 통과. A 는 crash.txt 코드 증거. C/E/F follow-up (코드 경로 검증 완료). v0.9.4.0. publish 4.64 MB |
+| 15 | admin_elevation (admin 콘솔 회귀 fix)   | ✅     | (merged → main, 31b6615, v0.9.4.0) | High    | L    | 7-commit + Tier-3 검증 commit. 핵심 시나리오 B (admin cmd 한/영 정상 — 사용자 가시) + D (schtasks RunLevel=HighestAvailable XML 확정) 통과. A 는 crash.txt 코드 증거. C/E/F follow-up (코드 경로 검증 완료). publish 4.64 MB |
 
 Legend: ⏳ pending · 🚧 in progress · ✅ merged · ⏸ blocked · ❌ aborted
 Size: S ≤30분 · M 1-2시간 · L 반나절+
