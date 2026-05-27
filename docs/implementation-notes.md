@@ -63,6 +63,38 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 ---
 
+## Cursor indicator rendering
+
+> 본 섹션은 PR-B (커서 추종 인디케이터) 의 렌더 파이프라인. 메인 인디와는 별도 엔진 (`LayeredCursorBase`) 으로 처리된다. 본 PR-B-1 시점에는 엔진 + Style + Renderer 3 모듈만 도착, App 측 파사드 (`CursorOverlay`) 는 PR-B-3 에서 추가 예정.
+
+### 별도 엔진 사용 (P4 예외)
+
+`Core/Windowing/LayeredCursorBase` 는 `LayeredOverlayBase` 와 책임이 겹치는 ~120 LOC (DIB 생성 / premultiply / `UpdateLayeredWindow`) 를 의도적으로 중복 보유한다. P4 ("하나의 구현만") 예외 정당화: 메인 인디 알파 race 미해결 영역에 변경면을 추가하지 않기 위한 의도적 분리. 메인 엔진은 폰트 / 드래그 / 라벨 측정 / `WindowSnapHelper` 책임이 있어 콜백 시그니처가 `Func<IntPtr hdc, OverlayStyle, OverlayMetrics, (int w, int h)>` (hdc 전달, DIB ppvBits 는 내부에서 `GetCurrentObject` + `GetObjectDibSection` 으로 재추출) 인 반면, cursor 엔진은 GDI 그리기 사용 없이 픽셀 셰이딩만 수행하므로 `Func<IntPtr ppvBits, CursorStyle, CursorMetrics, (int w, int h)>` 로 ppvBits 를 직접 전달 — main 의 `Gdi32.cs` 의 `GetCurrentObject` / `GetObjectDibSection` 헤더 변경 0. 자세한 결정 근거 + cursor-tray 학습 결과는 [dev-notes/2026-05-27-cursor-indicator.md](dev-notes/2026-05-27-cursor-indicator.md).
+
+### Distance-field 분석적 AA 픽셀 셰이딩
+
+`App/UI/CursorRenderer.Render` 는 DIB 의 BGRA32 픽셀에 직접 쓴다 — `DrawTextW` / `RoundRect` 등 GDI 그리기 미사용. 각 픽셀의 원 중심선까지 거리 `d_offset = |d - radius|` 가:
+- `≤ coreT/2` → 코어 색상 (사용자 지정 ARGB) alpha 1.0 (양옆 0.5px AA via `Clamp01(coreHalf + 0.5 - dOffset)`)
+- `≤ haloT/2` → 헤일로 색상 (흰색 × `HaloOpacity`, 코어 영역 제외 영역만)
+
+코어 vs 헤일로 winner 는 각 픽셀에서 alpha 비교 — 큰 쪽 채택. 여러 동심원이 겹치는 경계 영역에서도 가장 강한 ring 의 alpha 가 채택된다 (`EvaluateRing` 의 `ringAlpha > bestAlpha` 비교).
+
+### 헤일로 = 코어 양옆 (haloT - coreT) / 2 확장
+
+사용자 명세 "코어 2px 양옆으로 흰 헤일로 0.5px 씩 비침 → 총 시각 두께 3px" 를 정확히 모델링: 헤일로 (3px) 가 코어 (2px) 보다 양옆 0.5px 씩 외부로 확장. `CursorStyle.BoundingBoxLogicalPx` 는 외측 반지름 + `(haloT - coreT + 1) / 2` (헤일로 외측 확장) + AA 여유 1px 로 DIB 정사각형 한 변을 계산.
+
+### 동심원 3개 + CAPS OFF 시 외측 skip
+
+`Inner` / `Middle` / `Outer` 3 원 — CAPS LOCK ON 시 모두 그려지고, OFF 시 외측 원의 `EvaluateRing` 호출 자체를 건너뜀 (`if (capsOn) EvaluateRing(d, outerR, ...)`). DIB bbox 는 CAPS 상태에 무관하게 항상 외측 반지름 기준이라 CAPS 토글 시 DIB 재생성 없이 같은 bbox 안에서 픽셀만 재계산.
+
+`Render` 루프는 `dy * dy > maxOuterRSq` early exit (한 행 통째 skip) + `distSq > maxOuterRSq` per-pixel skip 으로 외곽 모서리의 빈 영역을 거른다.
+
+### 색상 합성 (App 측 책임)
+
+`CursorStyle` 의 3 색상 (`InnerColorArgb` / `MiddleColorArgb` / `OuterColorArgb`) 합성은 App 측 파사드 (PR-B-3 에서 추가될 `CursorOverlay.BuildStyle`) 의 책임. 외곽 (CAPS LOCK ON 시 표시) 은 "현재 IME 의 반대 카테고리 색상" — 영문 IME → 한글 색상, 한글/비한글 IME → 영문 색상. Core 는 IME 상태를 모르므로 primitive `uint` 만 받는다.
+
+---
+
 ## Indicator positioning
 
 ### Draggable floating window
