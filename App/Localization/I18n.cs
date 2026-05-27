@@ -120,7 +120,7 @@ internal static class I18n
         [I18nKey.MenuDragModifierCtrlAlt]  = ("Ctrl + Alt", "Ctrl + Alt"),
         [I18nKey.MenuCleanup]              = ("위치 기록 정리...", "Clean position history..."),
         [I18nKey.MenuUserHidden]           = ("인디케이터 숨김", "Hide indicator"),
-        [I18nKey.MenuCursorIndicator]      = ("커서 인디케이터", "Cursor indicator"),
+        [I18nKey.MenuCursorIndicator]      = ("커서 인디케이터 숨김", "Hide cursor indicator"),
         [I18nKey.MenuSettings]             = ("상세 설정...", "Settings..."),
         [I18nKey.MenuExit]                 = ("종료", "Exit"),
         [I18nKey.MenuDownload]             = ("다운로드", "Download"),

@@ -45,7 +45,10 @@ internal sealed class LayeredCursorBase : IDisposable
     private CursorStyle? _lastRenderedStyle;
     private int _lastX;
     private int _lastY;
-    private byte _lastAlpha;
+    // cursor 인디는 페이드 없이 항상 alpha=255 로 표시. 메인 인디의 OverlayAnimator alpha 보간과 무관.
+    // 0 으로 두면 첫 Render 의 UpdateLayeredWindow 가 SourceConstantAlpha=0 (완전 투명) 으로 그려져
+    // 사용자가 못 봄.
+    private byte _lastAlpha = 255;
 
     public LayeredCursorBase(
         IntPtr hwnd,

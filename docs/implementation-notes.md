@@ -104,11 +104,19 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 ### 트레이 메뉴 lazy 생성 / dispose 흐름
 
-`config.CursorIndicatorEnabled = false` (디폴트) 시 부팅 시점에 윈도우/엔진/타이머 생성 **안 함** — 메모리/CPU 비용 0. 사용자가 트레이 "커서 인디케이터" 체크박스 클릭 → `IDM_CURSOR_TOGGLE` → `updateConfig(config with { CursorIndicatorEnabled = true })` → `HandleConfigChanged` OFF→ON 분기 → `Program.EnableCursorOverlay()` 가 (1) `CreateCursorOverlayWindow` (별도 HWND, `WS_EX_TRANSPARENT` 영구 ON) → (2) `CursorOverlay.Initialize(hwnd, config, _lastImeState, _lastCapsLockState)` 가 엔진 + 첫 DIB 사전 생성 → (3) `SetTimer(TIMER_ID_CURSOR_MOTION, CursorMotionPollMs or CursorAlwaysPollMs)`.
+`config.CursorIndicatorEnabled = false` (디폴트) 시 부팅 시점에 윈도우/엔진/타이머 생성 **안 함** — 메모리/CPU 비용 0. 사용자가 트레이 "커서 인디케이터 숨김" 체크박스 클릭 → `IDM_CURSOR_TOGGLE` → `updateConfig(config with { CursorIndicatorEnabled = true })` → `HandleConfigChanged` OFF→ON 분기 → `Program.EnableCursorOverlay()` 가 (1) `CreateCursorOverlayWindow` (별도 HWND, `WS_EX_TRANSPARENT` 영구 ON) → (2) `CursorOverlay.Initialize(hwnd, config, _lastImeState, _lastCapsLockState)` 가 엔진 + 첫 DIB 사전 생성 → (3) `SetTimer(TIMER_ID_CURSOR_MOTION, CursorMotionPollMs or CursorAlwaysPollMs)`.
+
+메뉴 체크 의미는 메인 인디 `IDM_USER_HIDDEN` 과 동일 — 라벨 "커서 인디케이터 숨김" + `MF_CHECKED` = **현재 숨김 상태** (= `CursorIndicatorEnabled = false`). 클릭 시 enabled 반전.
 
 OFF 토글 시 `DisableCursorOverlay()` 가 역순으로 `KillTimer` → `CursorOverlay.Dispose()` (엔진/DIB/GDI 핸들 해제) → `DestroyWindow(_hwndCursorOverlay)` → `_hwndCursorOverlay = IntPtr.Zero` (lazy 재생성 게이트 복귀). `OnProcessExit` 도 동일 cleanup 을 명시적으로 호출.
 
 별도 HWND 선택 이유: 메인 `_hwndOverlay` 는 사용자 드래그 (HTCAPTION) 와 hit-test 가 필요해 `WS_EX_TRANSPARENT` 를 켤 수 없는데, cursor 인디는 마우스를 절대 가로채면 안 되므로 영구 클릭 통과가 필수. [dev-notes/2026-05-15-click-through-attempts.md](dev-notes/2026-05-15-click-through-attempts.md) F2 (WS_EX_TRANSPARENT 영구 ON) 패턴 재사용.
+
+### Render 후 SW_SHOW 호출자 패턴 + alpha 디폴트 255
+
+`LayeredCursorBase.Show(x, y)` 는 좌표/DPI 캐시만 갱신하고 `ShowWindow` 를 부르지 않는다. CursorOverlay (호출자) 가 `Render` 직후 명시 `ShowWindow(SW_SHOW)` 호출 — [dev-notes/2026-05-20-post-pr10-attempts-reverted.md](https://github.com/joujin-git/KoEnVue/blob/feat/v094-integration/docs/dev-notes/2026-05-20-post-pr10-attempts-reverted.md) 가설 A 함정 (Render 전 SW_SHOW 가 layered window 비트맵 없이 visible 캐싱 → 후속 UpdateLayeredWindow 가 화면에 안 나타남) 회피. 메인 인디 ([Animation.cs:100](../App/UI/Animation.cs#L100)) 와 동일 `SW_SHOW` 사용.
+
+`_lastAlpha` 디폴트 0 으로 두면 첫 `Render → UpdateLayeredWindow` 가 `SourceConstantAlpha=0` (완전 투명) 으로 그려져 사용자가 못 본다. cursor 인디는 페이드 없이 항상 100% 표시이므로 [`LayeredCursorBase`](../Core/Windowing/LayeredCursorBase.cs) 에서 `_lastAlpha = 255` 디폴트로 초기화. 메인 인디의 OverlayAnimator 알파 보간과 무관.
 
 ---
 

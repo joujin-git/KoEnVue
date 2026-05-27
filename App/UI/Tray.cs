@@ -388,8 +388,9 @@ internal static partial class Tray
                 Logger.Info($"UserHidden toggled via menu: {!config.UserHidden}");
                 break;
 
-            // --- 커서 인디케이터 토글 (메뉴 체크박스 — MF_CHECKED = ON, 클릭 시 enabled 반전) ---
-            // 메뉴 라벨 자체가 "커서 인디케이터" 이므로 체크 상태가 ON 을 의미. 인터뷰 결정.
+            // --- 커서 인디케이터 숨김 토글 (메뉴 체크박스 — MF_CHECKED = 현재 숨김 상태) ---
+            // 메인 인디 IDM_USER_HIDDEN 과 같은 패턴. 라벨 "커서 인디케이터 숨김" + 체크 = 안 보임.
+            // 클릭 시 enabled 반전 (체크 ON → enabled=true → 표시, 체크 OFF → enabled=false → 숨김).
             case IDM_CURSOR_TOGGLE:
                 updateConfig(config with { CursorIndicatorEnabled = !config.CursorIndicatorEnabled });
                 Logger.Info($"CursorIndicatorEnabled toggled via menu: {!config.CursorIndicatorEnabled}");

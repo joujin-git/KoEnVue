@@ -1,4 +1,3 @@
-using KoEnVue.App.Config;
 using KoEnVue.App.Models;
 using KoEnVue.Core.Color;
 using KoEnVue.Core.Logging;
@@ -202,7 +201,13 @@ internal static class CursorOverlay
             _engine.UpdatePosition(cursor.X - halfBbox2, cursor.Y - halfBbox2);
         }
 
-        _engine.UpdateAlpha(255);
+        // 첫 가시화 시 SW_SHOW 명시 호출. LayeredCursorBase.Show 는 좌표/DPI 캐시만 갱신하고
+        // ShowWindow 안 부름 (dev-notes/2026-05-20 가설 A: Render 전 SW_SHOW 가 layered window 비트맵
+        // 없이 visible 캐싱 위험 → 호출자가 Render 후 명시 SW_SHOW 패턴이 안전). 메인 인디 (Animation.cs)
+        // 와 동일 SW_SHOW 사용.
+        if (!_isVisible)
+            User32.ShowWindow(_engine.Hwnd, Win32Constants.SW_SHOW);
+
         _isVisible = true;
     }
 

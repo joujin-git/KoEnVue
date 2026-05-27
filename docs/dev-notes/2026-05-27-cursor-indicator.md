@@ -1,6 +1,22 @@
 # 커서 추종 인디케이터 — 엔진 분리 + P4 예외 정당화 (2026-05-27)
 
-> **상태**: PR-B 완료 (3 commits — PR-B-1 엔진/Style/Renderer + PR-B-2 AppConfig 10 키 + PR-B-3 App 파사드 `CursorOverlay` + 트레이 토글 + 사용자 가시 통합). 사용자가 트레이 메뉴 "커서 인디케이터" 체크박스로 즉시 활성화 가능. 본 섹션은 PR-B 종합 회고.
+> **상태**: PR-B 완료 + 4 fix (3 commits — PR-B-1 엔진/Style/Renderer + PR-B-2 AppConfig 10 키 + PR-B-3 App 파사드 `CursorOverlay` + 트레이 토글 + 사용자 가시 통합 + 1 fix commit). 사용자가 트레이 메뉴 "커서 인디케이터 숨김" 체크박스 (체크 = 현재 숨김) 로 즉시 활성화 가능. 본 섹션은 PR-B 종합 회고.
+
+## 사후 fix (PR-B 첫 사용자 검증 직후, 2026-05-27)
+
+사용자 보고 2건:
+
+1. **커서 인디 표시 안 됨** — 메뉴 토글 후에도 화면에 안 나타남. 원인 2개:
+   - `LayeredCursorBase.Show(x, y)` 가 `ShowWindow(SW_SHOW)` 호출 안 함 — `_isVisible` 플래그만 set. 메인 인디는 `Animation.cs:100` 가 `wasHidden` 분기에서 `SW_SHOW` 호출하는 패턴인데 cursor 의 호출자 (`CursorOverlay.RenderAtCursor`) 도 명시 호출 누락.
+   - `_lastAlpha` 디폴트 `0` — 첫 `Render → UpdateLayeredWindow` 가 `SourceConstantAlpha=0` (완전 투명) 으로 그려져 사용자가 못 봄. cursor 인디는 페이드 없이 항상 alpha 255 인데 초기 0 으로 둔 게 버그.
+
+   **fix**:
+   - `LayeredCursorBase._lastAlpha = 255` 디폴트 (페이드 없는 cursor 인디 의도와 일치).
+   - `CursorOverlay.RenderAtCursor` 끝에 `if (!_isVisible) User32.ShowWindow(_engine.Hwnd, SW_SHOW)` — 호출자 명시 패턴. **dev-notes 가설 A 회피** ([2026-05-20-post-pr10-attempts-reverted.md](https://github.com/joujin-git/KoEnVue/blob/feat/v094-integration/docs/dev-notes/2026-05-20-post-pr10-attempts-reverted.md): Render 전 SW_SHOW 가 layered window 비트맵 없이 visible 캐싱 → 후속 UpdateLayeredWindow 가 화면에 안 나타남). Render 후 호출 패턴이 안전.
+
+2. **트레이 메뉴 라벨 변경**: "커서 인디케이터" → "커서 인디케이터 숨김" — 메인 인디 "인디케이터 숨김" 과 동일 패턴 (MF_CHECKED = 현재 숨김 상태). 인터뷰 초기 답 ("라벨 자체가 기능명, 체크 = ON") 을 사용자가 검토 후 변경. 의미 반전 (`!config.CursorIndicatorEnabled ? MF_CHECKED : MF_UNCHECKED`).
+
+이번 fix 가 PR-B 의 첫 사용자 가시 검증을 통과시킴.
 
 ## 무엇 (What — PR-B-1 시점)
 
