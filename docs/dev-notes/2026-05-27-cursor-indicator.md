@@ -58,9 +58,9 @@
 
 8. **(WS_VISIBLE fix 도입 후) cursor 인디 또 다시 표시 안 됨** — 본 PR 의 사후 fix 3차 (commit 06d0d3f) 가 도입한 회귀. `PrepareResources` 와 `Hide()` 가 `UpdateOverlay(_lastX, _lastY, _w, _h, 0)` 호출 → 내부의 `UpdateOverlay` 가 `_lastAlpha = 0` 으로 캐시 갱신 → 후속 `Render` 가 `UpdateOverlay(_, _, _, _, _lastAlpha=0)` 호출 → **alpha=0 으로 그려져 시각 invisible**. fix: `PrepareResources` 와 `Hide()` 끝에 `_lastAlpha = 255` 명시 복원 — UpdateOverlay 의 alpha 캐시 갱신 후 cursor 인디 의도 (항상 255 표시) 복원. 2줄 fix.
 
-9. **(미해결 추적)** 부팅 시 메인 인디 보였다가 사라짐 회귀 — PR-A 의 `SnapToTargetAlpha Fade KillTimer` fix 가 작동 안 함 (사용자가 PR-A 단독 머지 후 정상 동작 확인했으나 PR-B 머지 후 회귀). cursor 인디 도입이 detection thread 메시지 race 를 trigger 하는 가설 — `EnableCursorOverlay` 의 윈도우 생성 + `SetTimer` 가 부팅 sequence 늘림, 또는 `HandleImeStateChanged` 의 `CursorOverlay.SetImeState` 추가 호출이 fade race 영향. dev-notes/2026-05-20 가설 F (detection thread 메시지 폭주 자체 줄이기) 영역으로 fix 진입 필요. **진단 요청**: cursor 인디 enabled=false 상태에서도 회귀 재현되는지 — 재현되면 cursor PR 무관 (메인 인디 자체 회귀), 정상이면 cursor PR 이 trigger.
+9. **(해결됨 — 사후 fix 5차 + 진단 3차 + 사후 정리 참조)** 부팅 시 메인 인디 보였다가 사라짐 회귀 — PR-A 의 `SnapToTargetAlpha Fade KillTimer` fix 가 작동 안 함 (사용자가 PR-A 단독 머지 후 정상 동작 확인했으나 PR-B 머지 후 회귀). cursor 인디 도입이 detection thread 메시지 race 를 trigger 하는 가설 — `EnableCursorOverlay` 의 윈도우 생성 + `SetTimer` 가 부팅 sequence 늘림, 또는 `HandleImeStateChanged` 의 `CursorOverlay.SetImeState` 추가 호출이 fade race 영향. dev-notes/2026-05-20 가설 F (detection thread 메시지 폭주 자체 줄이기) 영역으로 fix 진입 필요. **진단 요청**: cursor 인디 enabled=false 상태에서도 회귀 재현되는지 — 재현되면 cursor PR 무관 (메인 인디 자체 회귀), 정상이면 cursor PR 이 trigger. → **5차/진단 3차에서 cursor PR 진짜 trigger 확정** → z-order fix (`3d9e0bd`) 가 진짜 원인 (`WS_EX_TOPMOST` z-band 재정렬 → Shell_TrayWnd 잠시 FG → SystemFilter hide) 차단. 사후 정리에서 안전망 (`BootGracePeriodMs` 1500ms, FG changed 진단) 제거 완료.
 
-10. **(미해결 추적)** 콘솔 호스트 한/영 회귀 — 이전 정상 동작 명시. cursor 인디 PR 의 ImeStatus / detection thread 변경 0 이지만 어떤 메커니즘이 영향. **진단 요청**: cursor 인디 enabled=false 상태에서도 회귀 재현되는지.
+10. **(별도 PR 분리됨 — cursor PR 범위 밖)** 콘솔 호스트 한/영 회귀 — 이전 정상 동작 명시. cursor 인디 PR 의 ImeStatus / detection thread 변경 0. **5차 진단 결과**: cursor enable=ON/OFF 둘 다 회귀 → cursor PR 무관 (메인 인디 자체 회귀, PR-A 영역 또는 더 이전). 별도 PR 로 분리.
 
 ## 사후 fix 5차 (사용자 케이스 A/B 진단 결과, 2026-05-27)
 
@@ -88,9 +88,9 @@
 
 11. **작업 표시줄 / 시작 버튼 / 검색 박스 / 트레이 아이콘 호버 시 cursor 인디 일관 표시 요청** — 사후 fix 3차 (`06d0d3f`) 의 `WindowFromPoint + SystemHideClasses` hide 분기 revert. 사용자 결정: "작업 표시줄에 가려지겠지만 일관적이면 괜찮음". **fix**: `CursorOverlay.HandleCursorMotionTimer` 의 시스템 창 체크 분기 + `IsSystemHideWindow` 함수 + `User32.WindowFromPoint` LibraryImport (cursor 만의 사용처였음) 모두 제거.
 
-12. **부팅 grace 500ms 가 부족** — 사용자 2차 보고: cursor enable 상태로 부팅 시 메인 인디 1초 정도 표시 후 사라짐. 가설: cursor 첫 `RenderAtCursor` 의 `ShadeDib` (2x2 supersampling) 가 메인 스레드 ~수십ms 점유 → 메인 인디 `OverlayAnimator` fade tick (16ms) 1-2 누락 → 잘못된 phase 전이로 빠른 fade-out. **fix**: `BootGracePeriodMs` 500 → 1500ms 로 늘림. 메인 인디 fade-in (150) + EventDisplayDuration 일부 + 안정화 완료 후 cursor 진입. 사용자 가시 — cursor 첫 표시까지 1.5초 지연 (인지 가능하나 부팅 시 1회만 영향, OFF→ON 토글 시에도 동일 grace).
+12. **(임시 안전망 — 사후 정리에서 제거됨)** 부팅 grace 500ms 가 부족 — 사용자 2차 보고: cursor enable 상태로 부팅 시 메인 인디 1초 정도 표시 후 사라짐. 가설: cursor 첫 `RenderAtCursor` 의 `ShadeDib` (2x2 supersampling) 가 메인 스레드 ~수십ms 점유 → 메인 인디 `OverlayAnimator` fade tick (16ms) 1-2 누락 → 잘못된 phase 전이로 빠른 fade-out. **임시 fix**: `BootGracePeriodMs` 500 → 1500ms 로 늘림. → **진단 3차에서 가설 오류 확정** — 진짜 원인은 cursor 윈도우의 `WS_EX_TOPMOST` z-band 재정렬 trigger (가설 CC). z-order fix (`3d9e0bd`) 후 `BootGracePeriodMs` 안전망 불요 → 사후 정리에서 **`_bootTick` 필드 + 가드 + 상수 모두 제거**. cursor 첫 표시 = `idle_delay_ms` (100ms) 후.
 
-  대안 (미적용, 후속 검토): 가설 F (detection thread 메시지 폭주 자체 줄임) 적용. `HandlePositionUpdated` 가 `_indicatorVisible = true` 세팅한 직후 IME/Focus 메시지 1 tick suppress. 메인 인디 영역 변경이라 cursor PR 범위 밖. 1500ms grace 가 회귀 차단 못 하면 후속 PR 진입.
+  대안 (미적용, 후속 검토): 가설 F (detection thread 메시지 폭주 자체 줄임) 적용. `HandlePositionUpdated` 가 `_indicatorVisible = true` 세팅한 직후 IME/Focus 메시지 1 tick suppress. 메인 인디 영역 변경이라 cursor PR 범위 밖. → **z-order fix 가 진짜 원인 차단 후 본 대안도 불요.**
 
 ## 사후 진단 로그 추가 (사용자 검증 6차 후, 2026-05-27)
 
