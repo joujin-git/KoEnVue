@@ -332,6 +332,23 @@ internal static class Win32Constants
     // --- ChangeWindowMessageFilterEx 액션 (UIPI 필터) ---
     public const uint MSGFLT_ALLOW       = 1;
 
+    // --- Process Tokens / Integrity Levels (Advapi32 OpenProcessToken/GetTokenInformation) ---
+    // UIPI 가 Medium IL → High IL 사이의 윈도우 메시지 (WM_IME_CONTROL 등) 를 차단하므로,
+    // KoEnVue 가 admin 콘솔의 IME 상태를 잡으려면 자기 IL 을 알아야 한다. asInvoker 매니페스트
+    // 디폴트는 Medium. UAC 거쳐 admin 으로 elevated 되면 High. 비교는 RID 값으로.
+    /// <summary>OpenProcessToken DesiredAccess — TOKEN_QUERY (최소 권한, 정보 조회만).</summary>
+    public const uint TOKEN_QUERY                   = 0x0008;
+    /// <summary>TOKEN_INFORMATION_CLASS enum — TokenIntegrityLevel.</summary>
+    public const int  TokenIntegrityLevel           = 25;
+    /// <summary>Mandatory Integrity Level RID — Low (0x1000). 샌드박스/IE 보호 모드.</summary>
+    public const uint SECURITY_MANDATORY_LOW_RID    = 0x1000;
+    /// <summary>Mandatory Integrity Level RID — Medium (0x2000). asInvoker 디폴트.</summary>
+    public const uint SECURITY_MANDATORY_MEDIUM_RID = 0x2000;
+    /// <summary>Mandatory Integrity Level RID — High (0x3000). UAC 통과 시.</summary>
+    public const uint SECURITY_MANDATORY_HIGH_RID   = 0x3000;
+    /// <summary>Mandatory Integrity Level RID — System (0x4000). 일반적으로 서비스 계정.</summary>
+    public const uint SECURITY_MANDATORY_SYSTEM_RID = 0x4000;
+
     // --- Shell_NotifyIconW ---
     public const uint NIM_ADD            = 0x00000000;
     public const uint NIM_MODIFY         = 0x00000001;
