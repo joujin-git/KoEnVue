@@ -222,6 +222,8 @@ Non-idempotent modifications (like snap) inside `WM_MOVING` accumulate drift bec
 
 Hidden → FadingIn → Holding → FadingOut → Idle, plus highlight and slide sub-phases. All transitions driven by `WM_TIMER`.
 
+**`SnapToTargetAlpha` Fade-track cleanup**: `TriggerShow` 의 `Holding` / `Idle` 분기는 `BeginFadeIn(...)` → `SnapToTargetAlpha()` 패턴으로 alpha 를 즉시 target 으로 끌어와 다음 프레임까지의 가시 깜박임을 억제한다. 단 `SnapToTargetAlpha` 는 set 만 수행하므로, 이 패턴이 `_phase == FadingIn` 상태에서 호출되면 Fade 타이머가 살아남아 다음 16ms 틱이 `_fadeStartAlpha` 부터의 보간 값으로 alpha 를 되돌려 사용자가 "한 번 떴다가 사라졌다가 다시 뜨는" 깜박임을 본다 (부팅 시 detection thread 가 `WM_POSITION_UPDATED + WM_IME_STATE_CHANGED + WM_FOCUS_CHANGED` 를 1ms 내 연쇄 post → `TriggerShow` 3회 호출 → 2~3번째가 FadingIn 재진입). 방어: `SnapToTargetAlpha` 자체가 `_phase == FadingIn` 일 때 Fade 타이머를 `KillTimer` 하고 `_phase` 를 `Holding` 으로 전이 + Hold 타이머를 재등록한다. 호출자 분기가 phase 일관성을 신경 쓰지 않아도 되고 Idle 분기에서도 페이드 인 애니메이션 skip + 즉시 target alpha 표시로 의도 부합. [dev-notes/2026-05-27-snap-fade-killtimer.md](dev-notes/2026-05-27-snap-fade-killtimer.md).
+
 Timer IDs (injected via `AnimationTimerIds` record so Core stays ID-agnostic):
 
 | Timer | Purpose | Source constant |

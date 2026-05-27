@@ -7,6 +7,10 @@
 
 > 다음 릴리스부터는 [Keep a Changelog 한국어 스펙](https://keepachangelog.com/ko/1.1.0/) 표준 헤더 + 짧은 bullet 형식 적용.
 
+### Fixed
+
+- 부팅 직후 메인 인디케이터가 잠깐 보였다가 사라지는 회귀 fix — `Core/Animation/OverlayAnimator.cs:SnapToTargetAlpha()` 가 FadingIn 중 Fade 타이머를 죽이지 않아 다음 틱이 alpha 보간으로 되돌리던 race. FadingIn 분기에서 `KillTimer(Fade)` + `_phase = Holding` + Hold 타이머 재등록으로 차단. 외부 API 변화 0. [dev-notes/2026-05-27-snap-fade-killtimer.md](docs/dev-notes/2026-05-27-snap-fade-killtimer.md).
+
 ### Added
 
 - **Claude Code 하네스 도입** — `.claude/{settings.json,agents/,skills/,hooks/}` + `docs/harness.md` + `docs/sessions/`. 바이브 코딩 워크플로우 최적화: 단일 세션 + 6명 서브에이전트(explorer/planner/reviewer/docs-keeper/historian/verifier), Opus + max effort + thinking 항상, ultrathink 매 턴 자동 주입, 코드 변경 시 docs 동기화 알림, dirty tree 자동 wip 커밋 + `docs/sessions/YYYY-MM-DD.md` 일자별 append 로 장비 간 작업 이어받기. PowerShell hook 7개 (SessionStart / UserPromptSubmit / PostToolUse(Edit+Bash) / Stop / SessionEnd / InstructionsLoaded) + statusLine PowerShell 스크립트 + 5개 슬래시 커맨드 (`/plan`, `/sync-docs`, `/resume-session`, `/wrap-up`, `/harness-status`). CLAUDE.md 는 P1–P6 규칙 + Workflow 규칙(빌드=둘 다, 커밋=푸시까지) + 문서 인덱스만 (≤30줄 하드 제한), 부가 내용은 [docs/harness.md](docs/harness.md) 참조.
