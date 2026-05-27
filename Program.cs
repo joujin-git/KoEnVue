@@ -324,7 +324,7 @@ internal static partial class Program
                 return IntPtr.Zero;
 
             case AppMessages.WM_HIDE_INDICATOR:
-                HideOverlay();
+                HideOverlay("WM_HIDE_INDICATOR");
                 return IntPtr.Zero;
 
             case AppMessages.WM_CONFIG_CHANGED:
@@ -792,8 +792,10 @@ internal static partial class Program
             Tray.Recreate(_lastImeState, _config);
     }
 
-    private static void HideOverlay()
+    private static void HideOverlay(string source = "?")
     {
+        // 진단 로그 — 사용자 회귀 (cursor enable 시 메인 인디 사라짐) 추적. 호출자 식별.
+        Logger.Info($"HideOverlay called: source={source}");
         // forceHidden: Always 모드에서도 Idle이 아닌 완전 숨김으로 전환.
         // 시스템 필터(바탕화면/작업 표시줄), 트레이 토글 OFF 모두
         // "실제로 사라져야 하는" 의도이므로 Always 모드의 dim-idle 유지를 우회.
@@ -950,7 +952,7 @@ internal static partial class Program
         {
             // 숨김 전환: 현재 가시 상태라면 즉시 숨김
             if (_indicatorVisible)
-                HideOverlay();
+                HideOverlay("UserHidden toggle");
         }
         else
         {
@@ -1062,7 +1064,7 @@ internal static partial class Program
             _sessionLocked = true;
             Logger.Info("Session locked");
             if (_config.HideOnLockScreen && _indicatorVisible)
-                HideOverlay();
+                HideOverlay("Session lock");
         }
         else if (sessionEvent == Win32Constants.WTS_SESSION_UNLOCK)
         {
@@ -1223,6 +1225,7 @@ internal static partial class Program
 
         if (!state.LastFiltered && _indicatorVisible)
         {
+            Logger.Info($"ModalGate triggered HIDE: fgPid={fgPid}, processId={Environment.ProcessId}, ModalActive={ModalDialogLoop.IsActive}");
             User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
                 IntPtr.Zero, IntPtr.Zero);
         }
@@ -1267,6 +1270,7 @@ internal static partial class Program
             // 필터 진입 시에만 숨김 메시지 전송 (중복 메시지 억제)
             if (!state.LastFiltered && _indicatorVisible)
             {
+                Logger.Info($"Filter triggered HIDE: hwndFg=0x{hwndForeground.ToInt64():X}, hwndFocus=0x{hwndFocus.ToInt64():X}, resolved_null={resolved is null}, fgClass={WindowProcessInfo.GetClassName(hwndForeground)}");
                 User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
             }

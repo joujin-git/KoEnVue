@@ -92,6 +92,31 @@
 
   대안 (미적용, 후속 검토): 가설 F (detection thread 메시지 폭주 자체 줄임) 적용. `HandlePositionUpdated` 가 `_indicatorVisible = true` 세팅한 직후 IME/Focus 메시지 1 tick suppress. 메인 인디 영역 변경이라 cursor PR 범위 밖. 1500ms grace 가 회귀 차단 못 하면 후속 PR 진입.
 
+## 사후 진단 로그 추가 (사용자 검증 6차 후, 2026-05-27)
+
+사용자 보고 (12) 의 회귀 잔존: cursor enable 상태로 부팅 시 메인 인디 1.5초 (cursor 등장) 후 ~1초 더 보였다가 사라짐. publish 폴더 config 확인 — `display_mode: "always"` 확정. AlwaysMode 면 fade-out 안 되어야 정상인데 cursor ON 시 사라짐 = 진짜 회귀.
+
+**AlwaysMode 에서 사라지는 유일 경로**: `HideOverlay()` → `Animation.TriggerHide(forceHidden: true)` → AlwaysMode 도 fade-out → Hidden. `HideOverlay` 호출자:
+- `WM_HIDE_INDICATOR` 메시지 처리 (line 326)
+- `ApplyUserHiddenTransition` (UserHidden 토글)
+- `HandleSessionChange` (lock screen)
+
+`WM_HIDE_INDICATOR` post 위치:
+- `TryHandleModalGate` (ModalDialogLoop 활성 + foreground 가 KoEnVue 자체)
+- `TryHandleFilter` (resolved=null OR SystemFilter.ShouldHide=true)
+
+부팅 시 ModalDialogLoop 비활성, UserHidden=false, Lock 안 됨 → 후보는 `TryHandleFilter` 의 SystemFilter.ShouldHide.
+
+**진단 로그 추가 (Program.cs)** — 정확한 trigger 식별:
+- `HideOverlay(string source)` 시그니처 변경 + Logger.Info 진입 로그
+- `WM_HIDE_INDICATOR` 메시지 처리 → source = "WM_HIDE_INDICATOR"
+- `ApplyUserHiddenTransition` → source = "UserHidden toggle"
+- `HandleSessionChange` → source = "Session lock"
+- `TryHandleModalGate` post 시 Logger.Info (fgPid + processId + ModalActive)
+- `TryHandleFilter` post 시 Logger.Info (hwndFg + hwndFocus + resolved_null + fgClass)
+
+사용자 재실행 후 koenvue.log 의 부팅 직후 5초 라인 → 정확한 trigger 식별 → 가설 확정 후 fix.
+
 ## 무엇 (What — PR-B-1 시점)
 
 신규 3 파일로 커서 추종 인디케이터의 렌더 엔진 + Style + Renderer 도착. 사용자 가시 기능 미완성 — PR-B-3 도착 시 트레이 / 설정 다이얼로그 토글로 활성화 가능.
