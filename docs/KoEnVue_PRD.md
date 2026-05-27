@@ -160,6 +160,7 @@ KoEnVue v0.9.2.5 — GitHub              ← 항상 최상단 헤더 (MF_DEFAULT
 ☑ 변경 시 강조
 ───
 ☑ 시작 프로그램 등록
+☐ 관리자 권한으로 실행
 ───
 기본 위치 ▸ (현재 위치로 설정 / 초기화)
 위치 모드 ▸ (○ 고정 위치 / ● 창 기준)
@@ -179,9 +180,10 @@ KoEnVue v0.9.2.5 — GitHub              ← 항상 최상단 헤더 (MF_DEFAULT
 - **상세 설정**은 구분선으로 묶어 종료 바로 위에 배치 — 트레이 메뉴로 노출되지 않는 나머지 필드를 편집하는 진입점
 
 ### 4.3 시작 프로그램 등록
-- `schtasks /xml` 기반 등록/해제 (ONLOGON 트리거 + `<Delay>PT15S</Delay>`, `LeastPrivilege` — P5 asInvoker 와 일치, v0.9.3.0 부터 UAC 프롬프트 없음)
+- `schtasks /xml` 기반 등록/해제 (ONLOGON 트리거 + `<Delay>PT15S</Delay>`, 기본 `LeastPrivilege` — P5 asInvoker 와 일치, v0.9.3.0 부터 UAC 프롬프트 없음)
 - **로그온 15초 지연**: 부팅 자동 실행 시 explorer 트레이가 초기화되기 전에 앱이 떠서 `Shell_NotifyIconW NIM_ADD` 가 실패하는 레이스를 회피. (NIM_ADD 재시도로 복구되긴 하지만 매 부팅 warn 로그가 남는 문제 해소 목적)
-- **자동 동기화**: 앱 시작 시 백그라운드 스레드로 등록된 schtasks 항목의 `<Command>` 경로 / `<Delay>` 값 / `<RunLevel>` 을 조회해 현재 `Environment.ProcessPath` · `PT15S` · `LeastPrivilege` 와 비교. 경로가 바뀌었거나 `<Delay>` 가 없거나(구 버전 `/tr` 방식) `<RunLevel>` 이 `HighestAvailable` 이면(v0.9.x 잔재) XML 방식으로 재등록. v0.9.2.x → v0.9.3.x 업그레이드 시 첫 부팅 후 자동 재등록되어 다음 부팅부터 UAC 프롬프트가 사라진다. exe 폴더를 옮겨도 다음 수동 실행부터는 복구된다(이사 직후 첫 자동 부팅은 구 경로를 찌르므로 한 번은 실패할 수 있음)
+- **자동 동기화**: 앱 시작 시 백그라운드 스레드로 등록된 schtasks 항목의 `<Command>` 경로 / `<Delay>` 값 / `<RunLevel>` 을 조회해 현재 `Environment.ProcessPath` · `PT15S` · `expectedRunLevel`(`config.AdminElevation` 에서 derive) 와 비교. 경로가 바뀌었거나 `<Delay>` 가 없거나(구 버전 `/tr` 방식) `<RunLevel>` 이 기대값과 다르면 XML 방식으로 재등록. v0.9.2.x → v0.9.3.x 업그레이드 시 첫 부팅 후 자동 재등록되어 다음 부팅부터 UAC 프롬프트가 사라진다. exe 폴더를 옮겨도 다음 수동 실행부터는 복구된다(이사 직후 첫 자동 부팅은 구 경로를 찌르므로 한 번은 실패할 수 있음)
+- **v0.9.4.0 — 관리자 권한 실행 옵션 (PR-15)**: `config.admin_elevation: true` (트레이 메뉴 "관리자 권한으로 실행" 또는 상세 설정 → 시스템 섹션) 시 (1) 단일 실행 경로 — [App/Bootstrap/AdminElevation](../App/Bootstrap/AdminElevation.cs) 가 mutex 획득 전 `ShellExecuteW("runas")` 로 자기 재실행 (UAC 1회). (2) 부팅 자동 시작 경로 — schtasks `<RunLevel>HighestAvailable</RunLevel>` 분기로 등록 (등록 시 UAC 1회, 부팅마다 UAC 0). 옵션 토글 시 등록된 schtasks 가 즉시 자동 재등록 (`ReregisterIfAdminChanged`). 매니페스트는 `asInvoker` 유지 (P5 invariant). UIPI (User Interface Privilege Isolation — Medium IL → High IL `WM_IME_CONTROL` 차단) 가 일반 권한 KoEnVue 의 관리자 콘솔 IME 감지를 막는 문제를 사용자 선택적으로 우회하기 위함. UAC 거부 시 안내 `MessageBoxW` 후 일반 권한으로 계속 진행
 
 ### 4.4 기본 위치 설정
 - 저장 위치가 없는 앱을 열 때 인디케이터가 나타날 기본 위치를 사용자가 지정. 현재 위치 모드에 따라 저장 대상이 달라짐
@@ -396,7 +398,7 @@ dotnet publish -r win-x64 -c Release  # NativeAOT 릴리스 퍼블리시
 
 - NativeAOT 단일 exe (~4.7 MB)
 - .NET 런타임 설치 불필요
-- `app.manifest` : UAC `asInvoker` (P5, v0.9.3.0~). Program Files 등 user-non-writable 위치 설치 시 `%LOCALAPPDATA%\KoEnVue\` 로 config/log 자동 fallback
+- `app.manifest` : UAC `asInvoker` (P5, v0.9.3.0~). Program Files 등 user-non-writable 위치 설치 시 `%LOCALAPPDATA%\KoEnVue\` 로 config/log 자동 fallback. v0.9.4.0~ `config.admin_elevation: true` 시 런타임 self-elevation + schtasks `HighestAvailable` 분담 — 매니페스트는 그대로 (PR-15)
 - **디버그·릴리스 둘 다 빌드 필수** — 디버그만 돌리면 릴리스 exe 가 낡은 상태로 남음
 
 ---
