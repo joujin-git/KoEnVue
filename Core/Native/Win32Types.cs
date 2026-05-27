@@ -248,6 +248,14 @@ internal static class Win32Constants
     // --- 다이얼로그 표준 ID ---
     public const int IDOK               = 1;
     public const int IDCANCEL           = 2;
+    /// <summary>MessageBox Yes/No 응답 — 사용자가 "예" 선택.</summary>
+    public const int IDYES              = 6;
+    /// <summary>MessageBox Yes/No 응답 — 사용자가 "아니오" 선택.</summary>
+    public const int IDNO               = 7;
+
+    // --- MessageBox 스타일 ---
+    /// <summary>MessageBox Yes/No 두 버튼.</summary>
+    public const uint MB_YESNO          = 0x00000004;
 
     // --- GetWindowLongW 인덱스 ---
     public const int GWL_STYLE           = -16;

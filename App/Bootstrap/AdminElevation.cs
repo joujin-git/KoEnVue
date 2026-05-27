@@ -187,4 +187,14 @@ internal static class AdminElevation
         LogProvider.Sink?.Error($"AdminElevation: {msg}");
         Program.AppendCrashFile(CrashTagError, msg);
     }
+
+    /// <summary>
+    /// Tray 의 "재시작" 안내 (admin_elevation 토글 후) 다음에 호출 — 자식이 새 config
+    /// 기준으로 self-check 를 다시 거치도록 환경 변수 가드 해제. 호출 후 즉시 ShellExecuteW
+    /// ("open") + 원본 WM_CLOSE 시퀀스 권장.
+    /// </summary>
+    internal static void ClearReentryGuard()
+    {
+        Environment.SetEnvironmentVariable(ElevatedEnvVarName, null);
+    }
 }

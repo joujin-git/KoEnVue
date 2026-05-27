@@ -152,6 +152,9 @@ internal static partial class Tray
         bool isStartup = StartupTaskManager.IsStartupRegistered();
         User32.AppendMenuW(hMenu, isStartup ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED,
             (nuint)IDM_STARTUP, I18n.MenuStartup);
+        // PR-15: 관리자 권한 토글 — UIPI 우회 (admin 콘솔의 한/영 표시). 시작 프로그램 등록 바로 옆에 배치.
+        uint adminElevationFlags = config.AdminElevation ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
+        User32.AppendMenuW(hMenu, adminElevationFlags, (nuint)IDM_ADMIN_ELEVATION, I18n.MenuAdminElevation);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
             (nuint)(nint)hDefaultPosMenu, I18n.MenuDefaultPosition);

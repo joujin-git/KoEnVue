@@ -277,6 +277,10 @@ internal static partial class SettingsDialog
             c => c.LogMaxSizeMb, (c, v) => c with { LogMaxSizeMb = v }));
         Add(Bool("부팅 시 업데이트 확인", "Check for updates on startup",
             c => c.UpdateCheckEnabled, (c, v) => c with { UpdateCheckEnabled = v }));
+        // PR-15: admin_elevation — UIPI 우회 (admin 콘솔 한/영 표시). Settings 토글은 다음 부팅 적용
+        // (SyncStartupPathAsync 가 자동 재등록). 즉시 적용 원하면 트레이 메뉴 사용 — 결정 #4 (Settings 사일런트).
+        Add(Bool("관리자 권한으로 실행", "Run as administrator",
+            c => c.AdminElevation, (c, v) => c with { AdminElevation = v }));
 
         // ================================================================
         // 11. 인디케이터 조작

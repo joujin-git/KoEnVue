@@ -1,3 +1,4 @@
+using KoEnVue.App.Bootstrap;
 using KoEnVue.App.Config;
 using KoEnVue.App.Localization;
 using KoEnVue.App.Models;
@@ -60,6 +61,8 @@ internal static partial class Tray
     private const int IDM_CHANGE_HIGHLIGHT   = 4007;
     private const int IDM_USER_HIDDEN        = 4009;
     private const int IDM_CURSOR_TOGGLE      = 4011;
+    /// <summary>PR-15: admin_elevation 토글 (UIPI 우회용 관리자 권한 실행 옵션).</summary>
+    private const int IDM_ADMIN_ELEVATION    = 4012;
     // IDM_HOMEPAGE: 메뉴 최상단 헤더 라인의 단일 진입점. `_pendingUpdate` 상태에 따라
     // OpenUpdatePage(릴리스 페이지) / OpenHomepage(레포 루트) 로 동적 분기.
     // 4008 슬롯은 v0.9.2.5 까지 IDM_UPDATE_DOWNLOAD 가 점유했으나 헤더 통합으로 dead 가 되어 제거 —
@@ -294,6 +297,31 @@ internal static partial class Tray
             // --- 시작 프로그램 등록 ---
             case IDM_STARTUP:
                 StartupTaskManager.ToggleStartupRegistration(config);
+                break;
+
+            // --- 관리자 권한 토글 (PR-15) ---
+            case IDM_ADMIN_ELEVATION:
+                {
+                    AppConfig newAdminConfig = config with { AdminElevation = !config.AdminElevation };
+                    updateConfig(newAdminConfig);
+                    // schtasks 의 RunLevel 즉시 갱신 — 등록 안 됐으면 noop.
+                    StartupTaskManager.ReregisterIfAdminChanged(newAdminConfig);
+                    // 결정 #4 (트레이): 즉시 재시작 안내. Yes = 일반 권한 재실행 → 자식의
+                    // self-check 가 새 config 기준으로 (true 면) UAC 1회 띄우거나 (false 면) 즉시 진행.
+                    int answer = User32.MessageBoxW(hwndMain,
+                        I18n.AdminElevationRestartPrompt, "KoEnVue",
+                        Win32Constants.MB_YESNO);
+                    if (answer == Win32Constants.IDYES)
+                    {
+                        string? exePath = Environment.ProcessPath;
+                        if (!string.IsNullOrEmpty(exePath))
+                        {
+                            AdminElevation.ClearReentryGuard();
+                            UriLauncher.Open(exePath);
+                            User32.PostMessageW(hwndMain, Win32Constants.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                        }
+                    }
+                }
                 break;
 
             // --- 기본 위치: 현재 위치로 설정 ---
