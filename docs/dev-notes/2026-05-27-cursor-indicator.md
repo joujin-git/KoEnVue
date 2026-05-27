@@ -1,6 +1,6 @@
 # 커서 추종 인디케이터 — 엔진 분리 + P4 예외 정당화 (2026-05-27)
 
-> **상태**: PR-B 진행 중. 본 문서는 PR-B-1 (Core 엔진 + Style + Renderer 3 모듈 도착) 시점에 작성. PR-B-2 (감지 / 타이밍 / 위치 추종) + PR-B-3 (App 파사드 `CursorOverlay` + 트레이 / 설정 다이얼로그 통합 + CHANGELOG narrative) 진행하며 본 문서 update.
+> **상태**: PR-B 완료 (3 commits — PR-B-1 엔진/Style/Renderer + PR-B-2 AppConfig 10 키 + PR-B-3 App 파사드 `CursorOverlay` + 트레이 토글 + 사용자 가시 통합). 사용자가 트레이 메뉴 "커서 인디케이터" 체크박스로 즉시 활성화 가능. 본 섹션은 PR-B 종합 회고.
 
 ## 무엇 (What — PR-B-1 시점)
 
@@ -40,31 +40,30 @@ CLAUDE.md P4: "하나의 구현만 — 공유는 `Core/`". `LayeredOverlayBase` 
 2. 양 엔진 모두에 동일한 회귀 (예: Win32 API 변경, DPI 정책 변경, DIB 생성 실패 처리 변경) 가 반복 3회 이상 발생해 중복 유지 비용이 회귀 차단 가치를 초과
 3. cursor 엔진에 폰트 / 드래그 / 라벨 등 책임이 추가되어 책임 표면 차이 우위가 사라짐
 
-## cursor-tray 브랜치 학습 결과 (To Be Filled)
-
-> 사용자가 PR-B-2/3 진행하며 채울 영역. PR-B-1 시점에는 placeholder.
+## cursor-tray 브랜치 학습 결과
 
 cursor-tray 브랜치 (19 commits, 실험적 prototyping) 의 결과를 본 PR-B 에서 무엇 채택 / 무엇 거부했는지:
 
-- 채택:
-  - (TBD — PR-B-2/3 진행하며 추가)
-- 거부:
-  - (TBD)
-- 부분 채택 / 수정 채택:
-  - (TBD)
+- **채택**:
+  - **WS_EX_TRANSPARENT 영구 ON** — cursor 인디 윈도우는 사용자 드래그/hit-test 가 필요 없으므로 클릭 통과를 OS 차원에서 보장하는 가장 단순한 방식. [dev-notes/2026-05-15-click-through-attempts.md](2026-05-15-click-through-attempts.md) F2 패턴을 메인 인디에는 못 썼지만 cursor 인디에는 자연 적용
+  - **별도 HWND** — 메인 `_hwndOverlay` 와 분리. 같은 윈도우 클래스로 두 인스턴스 생성 가능 (WNDCLASSEXW 1회 등록 + CreateWindowExW 2회 호출)
+  - **트레이 메뉴 체크박스 토글** — 라벨 자체가 기능명 (`I18n.MenuCursorIndicator = "커서 인디케이터" / "Cursor indicator"`), MF_CHECKED = ON. "고급 → 보조 인디" 같은 서브메뉴 계층 없이 우클릭 메뉴 한 클릭 노출 — 발견 가능성 우위
+- **거부**:
+  - **`WH_MOUSE_LL` 글로벌 마우스 후킹** — NativeAOT 콜백 risk + 300ms OS timeout 위반 시 silent 비활성화 + 다중 모니터 좌표 정규화 부담. `WM_TIMER` 50ms 폴링이 cursor 정지 검출에 충분하고 항상 표시 모드도 16ms 폴링으로 사용자 인지 가능 부드러움 달성
+  - **`WM_INPUT` (raw input)** — 마우스 device handle 등록 + 메시지 분기 + 좌표 변환 비용이 정지 검출 정도의 요구에 과대. 폴링 모델로 충분
+  - **설정 다이얼로그 신규 섹션** — cursor 인디는 디폴트 OFF 라 다이얼로그 노출 시 일반 사용자 대상 노이즈. config.json 직접 편집으로 가이드 (config-reference.md). 활성화 사용자 수 충분히 누적되면 다이얼로그 추가 재검토
+- **부분 채택**:
+  - **항상 표시 모드** — cursor-tray 의 "항상 표시 + fade" 디자인에서 fade 부분 제거. 정지 검출 모드와 항상 표시 모드 양분, fade 는 alpha race 와 상호작용 위험 회피
+  - **CAPS 정책** — cursor-tray 의 "CAPS 별도 색상" 에서 "한글/비한글 같은 카테고리, 영문만 반대편" 으로 단순화 (사용자 인터뷰). 색상 3개 (Hangul/English/NonKorean) 중 2개 만 cursor 인디에 노출, 다이얼로그 단순화
 
-## 다음 단계 (PR-B-2/3 진입 조건)
+## PR-B-3 트레이 메뉴 정책 인터뷰 결정
 
-- **PR-B-2** (감지 / 타이밍 / 위치 추종):
-  - 커서 위치 추적 메커니즘 (`WM_TIMER` poll vs `WH_MOUSE_LL` hook vs `WM_INPUT` raw input)
-  - IME 상태 변경 시 인디 표시 / fade-out 타이밍
-  - 다중 모니터 / DPI 변경 처리
-- **PR-B-3** (App 파사드 + 통합):
-  - `App/UI/CursorOverlay.cs` 파사드 — `LayeredCursorBase` 인스턴스 보유 + `BuildStyle(config, state)` 가 `ImeState` → `CursorStyle` 합성
-  - 트레이 메뉴 토글 + 설정 다이얼로그 섹션 (반지름 / 두께 / 색상 / `HaloOpacity` 등)
-  - `docs/config-reference.md` 신규 키 등재
-  - `docs/User_Guide.md` 사용자 가이드 항목 추가
-  - CHANGELOG `## [Unreleased]` `### Added` narrative 한 줄 (사용자 가시 기능 완성 시점)
+PR-B-3 진입 직전 사용자와 트레이 메뉴 UI 결정:
+
+- **위치**: `IDM_USER_HIDDEN` ("인디케이터 숨김") 바로 아래. 기존 사용자 가시 인디 토글 라인과 함께 묶어 "인디 ON/OFF" 의미 그룹화
+- **라벨**: "커서 인디케이터" — 기능명을 라벨로 직접. 별도 ▸ 화살표 + 서브메뉴 계층 없이 한 클릭 토글. 기능 1개 = 메뉴 항목 1개
+- **체크 의미**: MF_CHECKED = ON (활성) — `user_hidden` 의 "체크 = 숨김" 반대 의미와 혼동 가능하나, cursor 인디는 "기능 자체 ON/OFF" 라 일반 토글 의미 (체크 = 켜짐) 가 자연. 사용자도 이 의미 통일에 동의
+- **부수 메뉴 미추가**: 반지름/두께/색상은 config.json 편집 가이드. 디폴트 OFF + 디폴트 사용자가 켜는 첫 순간에 동심원이 즉시 보이므로 GUI 튜닝 미노출 결정
 
 ## 관련
 

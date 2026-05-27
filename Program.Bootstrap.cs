@@ -144,6 +144,29 @@ internal static partial class Program
         return hwnd;
     }
 
+    /// <summary>
+    /// 커서 인디케이터 전용 별도 HWND. 메인 overlay 와 동일 클래스 (한 클래스가 두 WS_POPUP 인스턴스
+    /// 를 가질 수 있음) + WS_EX_TRANSPARENT 추가로 마우스 hit-test 통과 보장 (커서 인디 위 클릭이
+    /// 아래 창으로 자연 통과). dev-notes/2026-05-15-click-through-attempts.md F2: WS_EX_TRANSPARENT
+    /// 영구 ON 이 OS 차원에서 유일한 신뢰 가능 클릭 통과 방식.
+    /// </summary>
+    private static IntPtr CreateCursorOverlayWindow()
+    {
+        IntPtr hwnd = User32.CreateWindowExW(
+            Win32Constants.WS_EX_LAYERED
+                | Win32Constants.WS_EX_TOPMOST | Win32Constants.WS_EX_TOOLWINDOW
+                | Win32Constants.WS_EX_NOACTIVATE | Win32Constants.WS_EX_TRANSPARENT,
+            _config.Advanced.OverlayClassName, "",
+            Win32Constants.WS_POPUP,
+            0, 0, 0, 0,
+            IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+
+        if (hwnd == IntPtr.Zero)
+            Logger.Error("Failed to create cursor overlay window");
+
+        return hwnd;
+    }
+
     // ================================================================
     // 종료 처리
     // ================================================================
@@ -163,6 +186,10 @@ internal static partial class Program
         if (_hwndMain != IntPtr.Zero)
             User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_CAPS);
 
+        // 2a. 커서 인디 모션 폴링 타이머 명시적 해제 (활성 중일 때만 등록되어 있음)
+        if (_hwndMain != IntPtr.Zero)
+            User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION);
+
         // 3. 트레이 아이콘 제거 — 내부의 StopAddRetryTimer 가 KillTimer(_hwndMain, …) 를 호출하므로
         //    DestroyWindow 전에 실행해 죽은 hwnd 에 Win32 호출이 나가는 걸 방지.
         //    NIM_DELETE 자체는 NIF_GUID 기반이라 hwnd 유효성과 무관하지만 타이머 정리 경로가 있음.
@@ -171,10 +198,13 @@ internal static partial class Program
         // 4. 애니메이션 + 렌더링 리소스 해제 (윈도우 파괴 전)
         Animation.Dispose();
         Overlay.Dispose();
+        CursorOverlay.Dispose();
 
         // 5. 오버레이 + 메인 윈도우 파괴
         if (_hwndOverlay != IntPtr.Zero)
             User32.DestroyWindow(_hwndOverlay);
+        if (_hwndCursorOverlay != IntPtr.Zero)
+            User32.DestroyWindow(_hwndCursorOverlay);
         if (_hwndMain != IntPtr.Zero)
             User32.DestroyWindow(_hwndMain);
 

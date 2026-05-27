@@ -216,6 +216,10 @@ internal static class Win32Constants
     public const uint WS_EX_TOOLWINDOW   = 0x00000080;
     public const uint WS_EX_NOACTIVATE   = 0x08000000;
     public const uint WS_EX_COMPOSITED   = 0x02000000;
+    // WS_EX_TRANSPARENT — OS hit-test 단계에서 윈도우를 건너뛰어 마우스 메시지가 아래 창으로 라우팅됨.
+    // SetCapture 보다 강함 (F2). cursor 추종 인디는 사용자 드래그 / hit-test 가 필요 없어 영구 ON 으로
+    // 클릭 통과 자연 보장. dev-notes/2026-05-15-click-through-attempts.md F2 참조.
+    public const uint WS_EX_TRANSPARENT  = 0x00000020;
 
     // --- 윈도우 스타일 ---
     public const uint WS_POPUP           = 0x80000000;

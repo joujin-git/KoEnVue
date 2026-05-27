@@ -142,6 +142,10 @@
 
 ---
 
+## 후속 — F2 패턴이 cursor 인디에 재적용 (2026-05-27)
+
+본 문서가 메인 인디에서 거부한 `WS_EX_TRANSPARENT` 영구 ON (F2) 패턴은 PR-B-3 의 커서 추종 인디 (`_hwndCursorOverlay`, 별도 HWND) 에 자연 적용됨. cursor 인디는 사용자 드래그 / 위치 저장 / hit-test 가 본질적으로 필요 없어 "클릭 통과 vs 드래그 개시" 충돌 자체가 없음 — F2 의 실패 조건이 무효화된 사례. 자세한 적용은 [2026-05-27-cursor-indicator.md](2026-05-27-cursor-indicator.md).
+
 ## 참고 자료
 
 - MSDN: [Window Features — Layered Windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#layered-windows)

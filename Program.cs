@@ -34,6 +34,10 @@ internal static partial class Program
     // 윈도우 핸들
     private static IntPtr _hwndMain;
     private static IntPtr _hwndOverlay;
+    // 커서 추종 인디 전용 별도 HWND. config.CursorIndicatorEnabled = false 면 IntPtr.Zero — lazy 생성
+    // 패턴 (HandleConfigChanged 의 OFF→ON 분기에서 첫 생성). 메인 _hwndOverlay 와 같은 클래스이나
+    // WS_EX_TRANSPARENT 가 추가로 박힌다 (Program.Bootstrap.CreateCursorOverlayWindow).
+    private static IntPtr _hwndCursorOverlay;
 
     // 스레드 간 공유 상태 (volatile — 원자적 참조/값 교체)
     private static volatile AppConfig _config = null!;
@@ -241,6 +245,11 @@ internal static partial class Program
         _lastCapsLockState = (User32.GetKeyState(Win32Constants.VK_CAPITAL) & 1) != 0;
         User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_CAPS, DefaultConfig.CapsLockPollMs, IntPtr.Zero);
 
+        // 9e. 커서 추종 인디 — config.CursorIndicatorEnabled = true 일 때만 윈도우 + 엔진 + 폴링 타이머
+        //     생성. false 면 비활성 — 메모리/CPU 0. HandleConfigChanged 의 OFF→ON 분기에서 lazy 생성.
+        if (_config.CursorIndicatorEnabled)
+            EnableCursorOverlay();
+
         // 10. 감지 스레드 시작
         StartDetectionThread();
 
@@ -343,6 +352,8 @@ internal static partial class Program
                     HandleCapsLockTimer();
                 else if ((nuint)(nint)wParam == AppMessages.TIMER_ID_TRAY_ADD_RETRY)
                     Tray.HandleAddRetryTimer();
+                else if ((nuint)(nint)wParam == AppMessages.TIMER_ID_CURSOR_MOTION)
+                    CursorOverlay.HandleCursorMotionTimer();
                 else
                     HandleTimer(wParam);
                 return IntPtr.Zero;
@@ -437,6 +448,10 @@ internal static partial class Program
         // 트레이 아이콘은 항상 IME 상태 반영 — 트레이는 글로벌 영역 (per-app 비대상)
         if (_config.TrayEnabled)
             Tray.UpdateState(newState, _config);
+
+        // 커서 인디는 IME 변경 시 색상 갱신 (가시 중이면 즉시 재렌더). enabled=false 면 무동작.
+        if (_config.CursorIndicatorEnabled)
+            CursorOverlay.SetImeState(newState);
 
         if (_config.UserHidden) return;
         if (_lastForegroundHwnd == IntPtr.Zero) return;
@@ -711,6 +726,28 @@ internal static partial class Program
         ImeStatus.UpdateDetectionMethod(_config.DetectionMethod);
         // 글로벌 기준으로 엔진 캐시 재빌드 — 다음 per-app TriggerShow 가 style 차이 시 추가 무효화.
         Overlay.HandleConfigChanged(_config);
+
+        // 커서 인디 — 3 분기: enabled 토글 / 값 변경.
+        // ON → OFF : Dispose + DestroyWindow + KillTimer
+        // OFF → ON : EnableCursorOverlay 로 lazy 생성
+        // ON 유지 : HandleConfigChanged 가 DPI 캐시 무효화 + DIB 재생성 + 폴링 주기 재조정
+        if (_config.CursorIndicatorEnabled && _hwndCursorOverlay == IntPtr.Zero)
+        {
+            EnableCursorOverlay();
+        }
+        else if (!_config.CursorIndicatorEnabled && _hwndCursorOverlay != IntPtr.Zero)
+        {
+            DisableCursorOverlay();
+        }
+        else if (_config.CursorIndicatorEnabled)
+        {
+            CursorOverlay.HandleConfigChanged(_config);
+            User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION);
+            User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION,
+                _config.CursorAlwaysShow ? DefaultConfig.CursorAlwaysPollMs : DefaultConfig.CursorMotionPollMs,
+                IntPtr.Zero);
+        }
+
         // 인디가 가시 상태라면 애니메이터 config 갱신 + 새 alpha/크기/색상 즉시 반영 (PR-13: per-app)
         if (!_config.UserHidden && _indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
         {
@@ -782,6 +819,40 @@ internal static partial class Program
         _indicatorVisible = false;
     }
 
+    /// <summary>
+    /// 커서 인디 lazy 활성화 — MainImpl 부팅 (config.CursorIndicatorEnabled=true) 또는
+    /// HandleConfigChanged 의 OFF→ON 분기에서 호출. 윈도우 생성 → CursorOverlay.Initialize →
+    /// 모션 폴링 타이머 등록 (50ms 또는 16ms).
+    /// </summary>
+    private static void EnableCursorOverlay()
+    {
+        _hwndCursorOverlay = CreateCursorOverlayWindow();
+        if (_hwndCursorOverlay == IntPtr.Zero)
+        {
+            Logger.Warning("Cursor overlay window creation failed; cursor indicator disabled");
+            return;
+        }
+        CursorOverlay.Initialize(_hwndCursorOverlay, _config, _lastImeState, _lastCapsLockState);
+        User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION,
+            _config.CursorAlwaysShow ? DefaultConfig.CursorAlwaysPollMs : DefaultConfig.CursorMotionPollMs,
+            IntPtr.Zero);
+    }
+
+    /// <summary>
+    /// 커서 인디 비활성화 — HandleConfigChanged 의 ON→OFF 분기에서 호출. 타이머 해제 + 엔진 dispose +
+    /// 윈도우 파괴. _hwndCursorOverlay = IntPtr.Zero 로 리셋 (lazy 재생성 게이트).
+    /// </summary>
+    private static void DisableCursorOverlay()
+    {
+        User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION);
+        CursorOverlay.Dispose();
+        if (_hwndCursorOverlay != IntPtr.Zero)
+        {
+            User32.DestroyWindow(_hwndCursorOverlay);
+            _hwndCursorOverlay = IntPtr.Zero;
+        }
+    }
+
     // --- Phase 04+ 스텁 ---
 
     private static void HandleTimer(IntPtr timerId)
@@ -804,6 +875,10 @@ internal static partial class Program
         Overlay.SetCapsLock(current);
         if (_indicatorVisible)
             Overlay.UpdateColor(_lastImeState, ResolveCurrent());
+
+        // 커서 인디도 CAPS 토글에 따라 Outer 원 표시/숨김 + 색상 갱신
+        if (_config.CursorIndicatorEnabled)
+            CursorOverlay.SetCapsLock(current);
     }
 
     private static void HandleTrayCallback(IntPtr lParam)

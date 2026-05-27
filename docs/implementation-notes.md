@@ -65,7 +65,7 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 ## Cursor indicator rendering
 
-> 본 섹션은 PR-B (커서 추종 인디케이터) 의 렌더 파이프라인. 메인 인디와는 별도 엔진 (`LayeredCursorBase`) 으로 처리된다. 본 PR-B-1 시점에는 엔진 + Style + Renderer 3 모듈만 도착, App 측 파사드 (`CursorOverlay`) 는 PR-B-3 에서 추가 예정.
+> 본 섹션은 PR-B (커서 추종 인디케이터) 의 렌더 + 정지 검출 + 파사드 통합 파이프라인. 메인 인디와는 별도 엔진 (`LayeredCursorBase`) + 별도 HWND (`_hwndCursorOverlay`) 로 처리된다. PR-B 완료 — 사용자가 트레이 메뉴 "커서 인디케이터" 체크박스로 활성화 가능.
 
 ### 별도 엔진 사용 (P4 예외)
 
@@ -91,7 +91,24 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 ### 색상 합성 (App 측 책임)
 
-`CursorStyle` 의 3 색상 (`InnerColorArgb` / `MiddleColorArgb` / `OuterColorArgb`) 합성은 App 측 파사드 (PR-B-3 에서 추가될 `CursorOverlay.BuildStyle`) 의 책임. 외곽 (CAPS LOCK ON 시 표시) 은 "현재 IME 의 반대 카테고리 색상" — 영문 IME → 한글 색상, 한글/비한글 IME → 영문 색상. Core 는 IME 상태를 모르므로 primitive `uint` 만 받는다.
+`CursorStyle` 의 3 색상 (`InnerColorArgb` / `MiddleColorArgb` / `OuterColorArgb`) 합성은 App 측 파사드 [`CursorOverlay.BuildStyle`](../App/UI/CursorOverlay.cs) 의 책임. Inner/Middle 은 현재 IME 색상 (`config.HangulBg` / `EnglishBg` / `NonKoreanBg` 중 하나). Outer (CAPS LOCK ON 시 표시) 는 "한글/비한글을 같은 카테고리로 묶고 영문만 반대편 카테고리" 정책 — 영문 IME → 한글 색상, 한글/비한글 IME → 영문 색상 (사용자 인터뷰 결정). Core 는 IME 상태를 모르므로 primitive `uint` (ARGB) 만 받는다.
+
+### 정지 검출 FSM + 항상 표시 모드
+
+`CursorOverlay.HandleCursorMotionTimer` 는 두 모드로 동작:
+
+- **정지 검출 모드 (디폴트, `CursorAlwaysShow = false`)** — `TIMER_ID_CURSOR_MOTION` 이 `CursorMotionPollMs = 50ms` 로 호출. 매 tick `GetCursorPos` → 이전 좌표와 맨해튼 거리 `(|dx| + |dy|) > CursorMotionThresholdPx (5)` 이면 "이동" 으로 분류해 `_idleStartTick = 0` 리셋 + 가시 중이면 즉시 `Hide()`. "정지" 분류면 `_idleStartTick` 가 0 이면 현재 tick 으로 마킹, 이후 매 tick `now - _idleStartTick >= CursorIdleDelayMs (100ms)` 검사 → 도달 시 `RenderAtCursor` 호출 + 마킹 해제. 가시 상태에서는 정지 추가 검출 skip (이미 표시 중)
+- **항상 표시 모드 (`CursorAlwaysShow = true`)** — 타이머가 `CursorAlwaysPollMs = 16ms` 로 빠르게 호출. 이동/정지 분류 자체를 skip 하고 매 tick `RenderAtCursor` 만 호출 → cursor 위치 추종. 숨기지 않음
+
+두 모드 전환은 `HandleConfigChanged` 의 "값 변경" 분기가 `KillTimer` + `SetTimer` 로 polling 주기를 즉시 교체해 흡수한다.
+
+### 트레이 메뉴 lazy 생성 / dispose 흐름
+
+`config.CursorIndicatorEnabled = false` (디폴트) 시 부팅 시점에 윈도우/엔진/타이머 생성 **안 함** — 메모리/CPU 비용 0. 사용자가 트레이 "커서 인디케이터" 체크박스 클릭 → `IDM_CURSOR_TOGGLE` → `updateConfig(config with { CursorIndicatorEnabled = true })` → `HandleConfigChanged` OFF→ON 분기 → `Program.EnableCursorOverlay()` 가 (1) `CreateCursorOverlayWindow` (별도 HWND, `WS_EX_TRANSPARENT` 영구 ON) → (2) `CursorOverlay.Initialize(hwnd, config, _lastImeState, _lastCapsLockState)` 가 엔진 + 첫 DIB 사전 생성 → (3) `SetTimer(TIMER_ID_CURSOR_MOTION, CursorMotionPollMs or CursorAlwaysPollMs)`.
+
+OFF 토글 시 `DisableCursorOverlay()` 가 역순으로 `KillTimer` → `CursorOverlay.Dispose()` (엔진/DIB/GDI 핸들 해제) → `DestroyWindow(_hwndCursorOverlay)` → `_hwndCursorOverlay = IntPtr.Zero` (lazy 재생성 게이트 복귀). `OnProcessExit` 도 동일 cleanup 을 명시적으로 호출.
+
+별도 HWND 선택 이유: 메인 `_hwndOverlay` 는 사용자 드래그 (HTCAPTION) 와 hit-test 가 필요해 `WS_EX_TRANSPARENT` 를 켤 수 없는데, cursor 인디는 마우스를 절대 가로채면 안 되므로 영구 클릭 통과가 필수. [dev-notes/2026-05-15-click-through-attempts.md](dev-notes/2026-05-15-click-through-attempts.md) F2 (WS_EX_TRANSPARENT 영구 ON) 패턴 재사용.
 
 ---
 

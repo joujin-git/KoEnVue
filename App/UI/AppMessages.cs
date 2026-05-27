@@ -71,6 +71,7 @@ internal static class AppMessages
     public const nuint TIMER_ID_SLIDE         = 5;  // ~16ms, 슬라이드 위치 보간
     public const nuint TIMER_ID_CAPS          = 6;  // 200ms, CAPS LOCK 토글 폴링 (메인 스레드)
     public const nuint TIMER_ID_TRAY_ADD_RETRY = 7; // 1000ms, NIM_ADD 재시도 (부팅 레이스 복구)
+    public const nuint TIMER_ID_CURSOR_MOTION  = 8; // 50ms (정지 검출) 또는 16ms (항상 표시 모드), cursor 인디 마우스 모션 폴링
 
     // --- WM_USER 기반 ---
 
