@@ -38,6 +38,20 @@
    - (c) 두 인디가 동시 위치한 상태 (cursor 가 메인 인디 위에 호버 — 인터뷰 답 "별도 처리 없음")
    - 사용자 추가 정보 대기 후 진단.
 
+추가 보고 (5)~(7) — 사용자 가시 추적:
+
+5. **트레이 메뉴가 즉시 사라짐 + 메인 인디 잠시 cursor 따라 이동**: cursor 인디 `ShowWindow(SW_SHOW)` 호출이 z-order 변경 트리거 → 트레이 메뉴 modal loop 가 다른 윈도우 활성화로 인지 → dismiss. 메인 인디 점프는 `SetForegroundWindow(_hwndMain)` (트레이 ShowMenu 워크어라운드) → WinEvent hook → `HandleFocusChanged` → `TriggerShow` → 메인 인디가 `_hwndMain` (0x0 hidden) 기준 위치로 점프. cursor 인디는 cursor 위치, 메인 인디는 (0, 0) 근처 — 사용자 시각엔 "함께 이동" 으로 인지.
+
+   **fix**: cursor 윈도우를 **WS_VISIBLE 영구 박음** + `Hide()` 가 `SW_HIDE` 대신 `SourceConstantAlpha=0` 으로 `UpdateLayeredWindow` 호출 (시각만 완전 투명, z-order 변경 0). `PrepareResources` 가 첫 alpha=0 UpdateLayeredWindow 호출해 dev-notes 가설 A (Render 전 visible → 비트맵 없이 캐싱) 회피. `CursorOverlay.RenderAtCursor` 의 `ShowWindow` 호출 제거. 메뉴 dismiss + 메인 인디 점프 둘 다 차단 (메인 인디 점프는 cursor 의 z-order 변경이 trigger 였을 가능성).
+
+6. **작업 표시줄 위 cursor 인디 가려짐**: 작업 표시줄은 system topmost, 일반 앱 `WS_EX_TOPMOST` 라도 위로 못 올라감.
+
+   **fix**: `WindowFromPoint(cursor)` → 클래스명 → `config.SystemHideClasses` 매칭 시 cursor 인디 즉시 hide. 메인 인디의 `SystemFilter` 와 같은 목록 (`Shell_TrayWnd` / `Progman` / `WorkerW` / Win11 시스템 UI) 재사용. `WindowFromPoint` 는 `WS_EX_TRANSPARENT` 윈도우 통과 (dev-notes F2) → cursor 인디 자체 미감지. `Core/Native/User32.WindowFromPoint` LibraryImport 신규 1건.
+
+7. **cursor 인디 원 가장자리 깍뚜기 (jagged edge)**: 1x sample box-filter AA 가 코어 2px 좁은 가장자리에서 충분히 부드럽지 않음.
+
+   **fix**: **2x2 supersampling** — 픽셀당 4 sub-sample (0.25/0.75 오프셋) → alpha-weighted 색상 평균 + alpha 평균. 가장자리 4배 부드러움. 비용 ~4배지만 DIB 96x96 + early exit 후 ~30% 실효 영역 + Render 가 정지 시점에만 호출 → 폴링 50ms 안에서 무시.
+
 ## 무엇 (What — PR-B-1 시점)
 
 신규 3 파일로 커서 추종 인디케이터의 렌더 엔진 + Style + Renderer 도착. 사용자 가시 기능 미완성 — PR-B-3 도착 시 트레이 / 설정 다이얼로그 토글로 활성화 가능.

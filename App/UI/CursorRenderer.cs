@@ -60,6 +60,12 @@ internal static class CursorRenderer
         return (w, h);
     }
 
+    /// <summary>
+    /// 2x2 supersampling — 픽셀당 4 sub-sample (0.25 / 0.75 오프셋) 평가 후 alpha-weighted 색상
+    /// 평균 + alpha 평균. 1x sample 의 box-filter AA 보다 가장자리 4배 부드러움. 비용도 ~4배지만
+    /// cursor 인디 DIB 가 작고 (디폴트 96x96, early exit 후 실효 ~30%), Render 가 매 motion tick 마다
+    /// 아닌 cursor 정지 시점에 한 번 그리고 픽셀 캐시되므로 폴링 50ms 안에서 무시 가능.
+    /// </summary>
     private static unsafe void ShadeDib(
         IntPtr ppvBits, int w, int h, double cx, double cy,
         double outerR, double middleR, double innerR,
@@ -71,10 +77,11 @@ internal static class CursorRenderer
 
         for (int y = 0; y < h; y++)
         {
-            double dy = y + HalfPixel - cy;
-            double dy2 = dy * dy;
-
-            if (dy2 > maxOuterRSq)
+            // row early exit — 2 sub-y (0.25, 0.75) 중 가장 가까운 거리 기준
+            double dyTop = Math.Abs(y + 0.25 - cy);
+            double dyBot = Math.Abs(y + 0.75 - cy);
+            double dyMin = Math.Min(dyTop, dyBot);
+            if (dyMin * dyMin > maxOuterRSq)
             {
                 ptr += w * BytesPerPixel;
                 continue;
@@ -82,36 +89,55 @@ internal static class CursorRenderer
 
             for (int x = 0; x < w; x++)
             {
-                double dx = x + HalfPixel - cx;
-                double distSq = dx * dx + dy2;
+                double accumA = 0.0;
+                double accumR = 0.0, accumG = 0.0, accumB = 0.0;
 
-                if (distSq > maxOuterRSq)
+                for (int sy = 0; sy < 2; sy++)
                 {
-                    ptr += BytesPerPixel;
-                    continue;
+                    double subY = y + (sy == 0 ? 0.25 : 0.75);
+                    double dy = subY - cy;
+                    double dy2 = dy * dy;
+                    if (dy2 > maxOuterRSq) continue;
+
+                    for (int sx = 0; sx < 2; sx++)
+                    {
+                        double subX = x + (sx == 0 ? 0.25 : 0.75);
+                        double dx = subX - cx;
+                        double distSq = dx * dx + dy2;
+                        if (distSq > maxOuterRSq) continue;
+
+                        double d = Math.Sqrt(distSq);
+
+                        double sampleAlpha = 0.0;
+                        byte sampleR = 0, sampleG = 0, sampleB = 0;
+
+                        EvaluateRing(d, innerR, coreHalf, haloHalf, haloOpacity, innerColorArgb,
+                            ref sampleAlpha, ref sampleR, ref sampleG, ref sampleB);
+                        EvaluateRing(d, middleR, coreHalf, haloHalf, haloOpacity, middleColorArgb,
+                            ref sampleAlpha, ref sampleR, ref sampleG, ref sampleB);
+                        if (capsOn)
+                            EvaluateRing(d, outerR, coreHalf, haloHalf, haloOpacity, outerColorArgb,
+                                ref sampleAlpha, ref sampleR, ref sampleG, ref sampleB);
+
+                        if (sampleAlpha > 0.0)
+                        {
+                            accumA += sampleAlpha;
+                            accumR += sampleAlpha * sampleR;
+                            accumG += sampleAlpha * sampleG;
+                            accumB += sampleAlpha * sampleB;
+                        }
+                    }
                 }
 
-                double d = Math.Sqrt(distSq);
-
-                double bestAlpha = 0.0;
-                byte bestR = 0, bestG = 0, bestB = 0;
-
-                EvaluateRing(d, innerR, coreHalf, haloHalf, haloOpacity, innerColorArgb,
-                    ref bestAlpha, ref bestR, ref bestG, ref bestB);
-                EvaluateRing(d, middleR, coreHalf, haloHalf, haloOpacity, middleColorArgb,
-                    ref bestAlpha, ref bestR, ref bestG, ref bestB);
-                if (capsOn)
-                    EvaluateRing(d, outerR, coreHalf, haloHalf, haloOpacity, outerColorArgb,
-                        ref bestAlpha, ref bestR, ref bestG, ref bestB);
-
-                if (bestAlpha > 0.0)
+                double avgAlpha = accumA * 0.25;
+                if (avgAlpha > 0.0)
                 {
-                    ptr[0] = bestB;
-                    ptr[1] = bestG;
-                    ptr[2] = bestR;
-                    ptr[3] = (byte)Math.Round(bestAlpha * 255.0);
+                    // alpha-weighted 색상 평균 (sub-sample alpha 합으로 정규화)
+                    ptr[0] = (byte)Math.Round(accumB / accumA);
+                    ptr[1] = (byte)Math.Round(accumG / accumA);
+                    ptr[2] = (byte)Math.Round(accumR / accumA);
+                    ptr[3] = (byte)Math.Round(avgAlpha * 255.0);
                 }
-
                 ptr += BytesPerPixel;
             }
         }

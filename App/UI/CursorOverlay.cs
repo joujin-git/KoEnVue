@@ -4,6 +4,8 @@ using KoEnVue.Core.Logging;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Windowing;
 
+// Win32Constants / POINT 등은 KoEnVue.Core.Native — using 위.
+
 namespace KoEnVue.App.UI;
 
 /// <summary>
@@ -95,6 +97,24 @@ internal static class CursorOverlay
         if (!_initialized || _engine is null) return;
         if (!User32.GetCursorPos(out POINT cursor)) return;
 
+        // 시스템 창 (작업 표시줄 / 바탕화면 / 시스템 UI) 위면 cursor 인디 표시 skip. 시스템 창은
+        // system topmost 라 일반 앱 (cursor 인디 = WS_EX_TOPMOST 이지만 일반) 이 z-order 위로
+        // 못 올라가 표시되어도 가려진다. WindowFromPoint 는 WS_EX_TRANSPARENT 윈도우를 통과해
+        // 아래 윈도우 반환 (dev-notes F2) → cursor 인디 자체는 건너뜀.
+        IntPtr hwndAtCursor = User32.WindowFromPoint(cursor);
+        if (hwndAtCursor != IntPtr.Zero && IsSystemHideWindow(hwndAtCursor))
+        {
+            if (_isVisible)
+            {
+                _engine.Hide();
+                _isVisible = false;
+            }
+            _idleStartTick = 0;
+            _lastCursorX = cursor.X;
+            _lastCursorY = cursor.Y;
+            return;
+        }
+
         int dx = Math.Abs(cursor.X - _lastCursorX);
         int dy = Math.Abs(cursor.Y - _lastCursorY);
         bool moving = (dx + dy) > _config.CursorMotionThresholdPx;
@@ -176,8 +196,9 @@ internal static class CursorOverlay
 
     /// <summary>
     /// cursor 위치 = DIB 정중앙. ShowAtCenter 가 monitor DPI + bbox 직접 계산해 정확한 좌상단 좌표 set.
-    /// Render 가 같은 DPI 로 DIB 생성 → race 없음 (이전 패턴은 GetBaseSize 가 이전 DPI 기준 → 새 모니터
-    /// 진입 시 한 프레임 잘못된 위치 표시 + UpdatePosition 으로 보정하는 비대칭).
+    /// Render 가 같은 DPI 로 DIB 생성 → race 없음. 윈도우는 WS_VISIBLE 영구 박혀있어 ShowWindow 호출
+    /// 불요 — Render 의 UpdateLayeredWindow 가 alpha=255 (디폴트) 로 표시. z-order 변경 0 → 트레이
+    /// 메뉴 modal loop 안에서 발화돼도 메뉴 dismiss 트리거 안 함.
     /// </summary>
     private static void RenderAtCursor(POINT cursor)
     {
@@ -185,14 +206,6 @@ internal static class CursorOverlay
 
         _engine.ShowAtCenter(cursor.X, cursor.Y, _currentStyle);
         _engine.Render(_currentStyle);
-
-        // 첫 가시화 시 SW_SHOW 명시 호출. LayeredCursorBase.Show 는 좌표/DPI 캐시만 갱신하고
-        // ShowWindow 안 부름 (dev-notes/2026-05-20 가설 A: Render 전 SW_SHOW 가 layered window 비트맵
-        // 없이 visible 캐싱 위험 → 호출자가 Render 후 명시 SW_SHOW 패턴이 안전). 메인 인디 (Animation.cs)
-        // 와 동일 SW_SHOW 사용.
-        if (!_isVisible)
-            User32.ShowWindow(_engine.Hwnd, Win32Constants.SW_SHOW);
-
         _isVisible = true;
     }
 
@@ -234,5 +247,24 @@ internal static class CursorOverlay
     {
         var (r, g, b) = ColorHelper.HexToRgb(hex);
         return ((uint)0xFF << 24) | ((uint)r << 16) | ((uint)g << 8) | b;
+    }
+
+    /// <summary>
+    /// 마우스 아래 hwnd 의 클래스명이 시스템 hide 목록 (작업 표시줄, 바탕화면, Win11 시스템 UI 등)
+    /// 에 매칭되는지. 메인 인디의 <see cref="App.Detector.SystemFilter"/> 와 같은 목록 사용 — 사용자가
+    /// SystemHideClassesUser 에 추가한 항목도 자동 포함.
+    /// </summary>
+    private static bool IsSystemHideWindow(IntPtr hwnd)
+    {
+        string className = WindowProcessInfo.GetClassName(hwnd);
+        if (string.IsNullOrEmpty(className)) return false;
+
+        foreach (string sys in _config.SystemHideClasses)
+            if (className.Equals(sys, StringComparison.OrdinalIgnoreCase))
+                return true;
+        foreach (string sys in _config.SystemHideClassesUser)
+            if (className.Equals(sys, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
     }
 }

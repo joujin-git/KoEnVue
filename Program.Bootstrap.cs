@@ -152,12 +152,16 @@ internal static partial class Program
     /// </summary>
     private static IntPtr CreateCursorOverlayWindow()
     {
+        // WS_VISIBLE 처음부터 박음 — 이후 ShowWindow 호출이 일체 없어야 z-order 변경 0 → 트레이
+        // 메뉴 modal loop 안에서 cursor 가 표시되어도 메뉴 dismiss 트리거 안 함. CreateCursorOverlayWindow
+        // 직후 CursorOverlay.Initialize → PrepareResources 가 alpha=0 으로 첫 UpdateLayeredWindow
+        // 호출해 dev-notes/2026-05-20 가설 A (Render 전 visible → 비트맵 없이 캐싱) 회피.
         IntPtr hwnd = User32.CreateWindowExW(
             Win32Constants.WS_EX_LAYERED
                 | Win32Constants.WS_EX_TOPMOST | Win32Constants.WS_EX_TOOLWINDOW
                 | Win32Constants.WS_EX_NOACTIVATE | Win32Constants.WS_EX_TRANSPARENT,
             _config.Advanced.OverlayClassName, "",
-            Win32Constants.WS_POPUP,
+            Win32Constants.WS_POPUP | Win32Constants.WS_VISIBLE,
             0, 0, 0, 0,
             IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
 
