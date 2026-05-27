@@ -113,24 +113,34 @@ internal sealed class LayeredCursorBase : IDisposable
     /// 윈도우는 항상 WS_VISIBLE 상태 유지 (CreateCursorOverlayWindow 에서 박음) — Hide 시 SW_HIDE 가
     /// 아닌 SourceConstantAlpha=0 으로 UpdateLayeredWindow 호출해 시각만 완전 투명. z-order 변경 0
     /// → 트레이 메뉴 modal loop 안에서 호출되어도 메뉴 dismiss 트리거 안 함.
+    /// <para>
+    /// <c>_lastAlpha</c> 는 255 로 복원 — 다음 Render 의 UpdateOverlay 가 alpha=255 로 정상 표시.
+    /// (UpdateOverlay 가 _lastAlpha 캐시 갱신하므로 별도 복원 필요.)
+    /// </para>
     /// </summary>
     public void Hide()
     {
         if (_hwnd != IntPtr.Zero && _currentWidth > 0)
+        {
             UpdateOverlay(_lastX, _lastY, _currentWidth, _currentHeight, 0);
+            _lastAlpha = 255;
+        }
         _isVisible = false;
     }
 
     /// <summary>
     /// DIB 사전 생성 + alpha=0 으로 첫 UpdateLayeredWindow 호출 — WS_VISIBLE 윈도우의 비트맵 캐시
     /// 보장 (dev-notes/2026-05-20 가설 A: Render 전 visible → 비트맵 없이 캐싱 → 후속 UpdateLayeredWindow
-    /// 안 그려짐 회피). 시각적으론 완전 투명 (alpha=0).
+    /// 안 그려짐 회피). 시각적으론 완전 투명 (alpha=0). Hide 와 동일하게 _lastAlpha 는 255 복원.
     /// </summary>
     public void PrepareResources(CursorStyle style)
     {
         EnsureDib(style);
         if (_currentWidth > 0)
+        {
             UpdateOverlay(_lastX, _lastY, _currentWidth, _currentHeight, 0);
+            _lastAlpha = 255;
+        }
     }
 
     /// <summary>

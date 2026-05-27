@@ -52,6 +52,16 @@
 
    **fix**: **2x2 supersampling** — 픽셀당 4 sub-sample (0.25/0.75 오프셋) → alpha-weighted 색상 평균 + alpha 평균. 가장자리 4배 부드러움. 비용 ~4배지만 DIB 96x96 + early exit 후 ~30% 실효 영역 + Render 가 정지 시점에만 호출 → 폴링 50ms 안에서 무시.
 
+## 사후 fix 4차 (사용자 검증 4차 직후, 2026-05-27)
+
+사용자 보고 1건 + 추가 2건:
+
+8. **(WS_VISIBLE fix 도입 후) cursor 인디 또 다시 표시 안 됨** — 본 PR 의 사후 fix 3차 (commit 06d0d3f) 가 도입한 회귀. `PrepareResources` 와 `Hide()` 가 `UpdateOverlay(_lastX, _lastY, _w, _h, 0)` 호출 → 내부의 `UpdateOverlay` 가 `_lastAlpha = 0` 으로 캐시 갱신 → 후속 `Render` 가 `UpdateOverlay(_, _, _, _, _lastAlpha=0)` 호출 → **alpha=0 으로 그려져 시각 invisible**. fix: `PrepareResources` 와 `Hide()` 끝에 `_lastAlpha = 255` 명시 복원 — UpdateOverlay 의 alpha 캐시 갱신 후 cursor 인디 의도 (항상 255 표시) 복원. 2줄 fix.
+
+9. **(미해결 추적)** 부팅 시 메인 인디 보였다가 사라짐 회귀 — PR-A 의 `SnapToTargetAlpha Fade KillTimer` fix 가 작동 안 함 (사용자가 PR-A 단독 머지 후 정상 동작 확인했으나 PR-B 머지 후 회귀). cursor 인디 도입이 detection thread 메시지 race 를 trigger 하는 가설 — `EnableCursorOverlay` 의 윈도우 생성 + `SetTimer` 가 부팅 sequence 늘림, 또는 `HandleImeStateChanged` 의 `CursorOverlay.SetImeState` 추가 호출이 fade race 영향. dev-notes/2026-05-20 가설 F (detection thread 메시지 폭주 자체 줄이기) 영역으로 fix 진입 필요. **진단 요청**: cursor 인디 enabled=false 상태에서도 회귀 재현되는지 — 재현되면 cursor PR 무관 (메인 인디 자체 회귀), 정상이면 cursor PR 이 trigger.
+
+10. **(미해결 추적)** 콘솔 호스트 한/영 회귀 — 이전 정상 동작 명시. cursor 인디 PR 의 ImeStatus / detection thread 변경 0 이지만 어떤 메커니즘이 영향. **진단 요청**: cursor 인디 enabled=false 상태에서도 회귀 재현되는지.
+
 ## 무엇 (What — PR-B-1 시점)
 
 신규 3 파일로 커서 추종 인디케이터의 렌더 엔진 + Style + Renderer 도착. 사용자 가시 기능 미완성 — PR-B-3 도착 시 트레이 / 설정 다이얼로그 토글로 활성화 가능.
