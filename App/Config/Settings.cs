@@ -138,6 +138,16 @@ internal static class Settings
             BorderWidth = Math.Clamp(config.BorderWidth, DefaultConfig.MinBorderWidth, DefaultConfig.MaxBorderWidth),
             IndicatorScale = Math.Round(Math.Clamp(config.IndicatorScale, DefaultConfig.MinIndicatorScale, DefaultConfig.MaxIndicatorScale), 1),
 
+            // 커서 인디케이터
+            CursorOuterRadius = Math.Clamp(config.CursorOuterRadius, DefaultConfig.MinCursorOuterRadius, DefaultConfig.MaxCursorOuterRadius),
+            CursorMiddleRadius = Math.Clamp(config.CursorMiddleRadius, DefaultConfig.MinCursorMiddleRadius, DefaultConfig.MaxCursorMiddleRadius),
+            CursorInnerRadius = Math.Clamp(config.CursorInnerRadius, DefaultConfig.MinCursorInnerRadius, DefaultConfig.MaxCursorInnerRadius),
+            CursorCoreThickness = Math.Clamp(config.CursorCoreThickness, DefaultConfig.MinCursorCoreThickness, DefaultConfig.MaxCursorCoreThickness),
+            CursorHaloThickness = Math.Clamp(config.CursorHaloThickness, DefaultConfig.MinCursorHaloThickness, DefaultConfig.MaxCursorHaloThickness),
+            CursorHaloOpacity = Math.Clamp(config.CursorHaloOpacity, DefaultConfig.MinCursorHaloOpacity, DefaultConfig.MaxCursorHaloOpacity),
+            CursorIdleDelayMs = Math.Clamp(config.CursorIdleDelayMs, DefaultConfig.MinCursorIdleDelayMs, DefaultConfig.MaxCursorIdleDelayMs),
+            CursorMotionThresholdPx = Math.Clamp(config.CursorMotionThresholdPx, DefaultConfig.MinCursorMotionThresholdPx, DefaultConfig.MaxCursorMotionThresholdPx),
+
             // 시스템
             LogMaxSizeMb = Math.Clamp(config.LogMaxSizeMb, DefaultConfig.MinLogMaxSizeMb, DefaultConfig.MaxLogMaxSizeMb),
 

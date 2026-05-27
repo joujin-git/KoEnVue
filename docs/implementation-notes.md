@@ -63,6 +63,86 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 ---
 
+## Cursor indicator rendering
+
+> 본 섹션은 PR-B (커서 추종 인디케이터) 의 렌더 + 정지 검출 + 파사드 통합 파이프라인. 메인 인디와는 별도 엔진 (`LayeredCursorBase`) + 별도 HWND (`_hwndCursorOverlay`) 로 처리된다. PR-B 완료 — 사용자가 트레이 메뉴 "커서 인디케이터" 체크박스로 활성화 가능.
+
+### 별도 엔진 사용 (P4 예외)
+
+`Core/Windowing/LayeredCursorBase` 는 `LayeredOverlayBase` 와 책임이 겹치는 ~120 LOC (DIB 생성 / premultiply / `UpdateLayeredWindow`) 를 의도적으로 중복 보유한다. P4 ("하나의 구현만") 예외 정당화: 메인 인디 알파 race 미해결 영역에 변경면을 추가하지 않기 위한 의도적 분리. 메인 엔진은 폰트 / 드래그 / 라벨 측정 / `WindowSnapHelper` 책임이 있어 콜백 시그니처가 `Func<IntPtr hdc, OverlayStyle, OverlayMetrics, (int w, int h)>` (hdc 전달, DIB ppvBits 는 내부에서 `GetCurrentObject` + `GetObjectDibSection` 으로 재추출) 인 반면, cursor 엔진은 GDI 그리기 사용 없이 픽셀 셰이딩만 수행하므로 `Func<IntPtr ppvBits, CursorStyle, CursorMetrics, (int w, int h)>` 로 ppvBits 를 직접 전달 — main 의 `Gdi32.cs` 의 `GetCurrentObject` / `GetObjectDibSection` 헤더 변경 0. 자세한 결정 근거 + cursor-tray 학습 결과는 [dev-notes/2026-05-27-cursor-indicator.md](dev-notes/2026-05-27-cursor-indicator.md).
+
+### Distance-field 분석적 AA 픽셀 셰이딩
+
+`App/UI/CursorRenderer.Render` 는 DIB 의 BGRA32 픽셀에 직접 쓴다 — `DrawTextW` / `RoundRect` 등 GDI 그리기 미사용. 각 픽셀의 원 중심선까지 거리 `d_offset = |d - radius|` 가:
+- `≤ coreT/2` → 코어 색상 (사용자 지정 ARGB) alpha 1.0 (양옆 0.5px AA via `Clamp01(coreHalf + 0.5 - dOffset)`)
+- `≤ haloT/2` → 헤일로 색상 (흰색 × `HaloOpacity`, 코어 영역 제외 영역만)
+
+코어 vs 헤일로 winner 는 각 픽셀에서 alpha 비교 — 큰 쪽 채택. 여러 동심원이 겹치는 경계 영역에서도 가장 강한 ring 의 alpha 가 채택된다 (`EvaluateRing` 의 `ringAlpha > bestAlpha` 비교).
+
+### 헤일로 = 코어 양옆 (haloT - coreT) / 2 확장
+
+사용자 명세 "코어 2px 양옆으로 흰 헤일로 0.5px 씩 비침 → 총 시각 두께 3px" 를 정확히 모델링: 헤일로 (3px) 가 코어 (2px) 보다 양옆 0.5px 씩 외부로 확장. `CursorStyle.BoundingBoxLogicalPx` 는 외측 반지름 + `(haloT - coreT + 1) / 2` (헤일로 외측 확장) + AA 여유 1px 로 DIB 정사각형 한 변을 계산.
+
+### 동심원 3개 + CAPS OFF 시 외측 skip
+
+`Inner` / `Middle` / `Outer` 3 원 — CAPS LOCK ON 시 모두 그려지고, OFF 시 외측 원의 `EvaluateRing` 호출 자체를 건너뜀 (`if (capsOn) EvaluateRing(d, outerR, ...)`). DIB bbox 는 CAPS 상태에 무관하게 항상 외측 반지름 기준이라 CAPS 토글 시 DIB 재생성 없이 같은 bbox 안에서 픽셀만 재계산.
+
+`Render` 루프는 `dy * dy > maxOuterRSq` early exit (한 행 통째 skip) + `distSq > maxOuterRSq` per-pixel skip 으로 외곽 모서리의 빈 영역을 거른다.
+
+### 색상 합성 (App 측 책임)
+
+`CursorStyle` 의 3 색상 (`InnerColorArgb` / `MiddleColorArgb` / `OuterColorArgb`) 합성은 App 측 파사드 [`CursorOverlay.BuildStyle`](../App/UI/CursorOverlay.cs) 의 책임. Inner/Middle 은 현재 IME 색상 (`config.HangulBg` / `EnglishBg` / `NonKoreanBg` 중 하나). Outer (CAPS LOCK ON 시 표시) 는 "한글/비한글을 같은 카테고리로 묶고 영문만 반대편 카테고리" 정책 — 영문 IME → 한글 색상, 한글/비한글 IME → 영문 색상 (사용자 인터뷰 결정). Core 는 IME 상태를 모르므로 primitive `uint` (ARGB) 만 받는다.
+
+### 정지 검출 FSM + 항상 표시 모드
+
+`CursorOverlay.HandleCursorMotionTimer` 는 두 모드로 동작:
+
+- **정지 검출 모드 (디폴트, `CursorAlwaysShow = false`)** — `TIMER_ID_CURSOR_MOTION` 이 `CursorMotionPollMs = 50ms` 로 호출. 매 tick `GetCursorPos` → 이전 좌표와 맨해튼 거리 `(|dx| + |dy|) > CursorMotionThresholdPx (5)` 이면 "이동" 으로 분류해 `_idleStartTick = 0` 리셋 + 가시 중이면 즉시 `Hide()`. "정지" 분류면 `_idleStartTick` 가 0 이면 현재 tick 으로 마킹, 이후 매 tick `now - _idleStartTick >= CursorIdleDelayMs (100ms)` 검사 → 도달 시 `RenderAtCursor` 호출 + 마킹 해제. 가시 상태에서는 정지 추가 검출 skip (이미 표시 중)
+- **항상 표시 모드 (`CursorAlwaysShow = true`)** — 타이머가 `CursorAlwaysPollMs = 16ms` 로 빠르게 호출. 이동/정지 분류 자체를 skip 하고 매 tick `RenderAtCursor` 만 호출 → cursor 위치 추종. 숨기지 않음
+
+두 모드 전환은 `HandleConfigChanged` 의 "값 변경" 분기가 `KillTimer` + `SetTimer` 로 polling 주기를 즉시 교체해 흡수한다.
+
+### cursor 윈도우 z-order 정책 — `WS_EX_TOPMOST` 생성 시 제거 + 첫 표시 시 명시 set
+
+cursor 인디 enable 부팅 + 탐색기 실행 시 메인 인디가 ~2.5초 후 사라지던 회귀의 **진짜 원인** — cursor 윈도우의 첫 `UpdateLayeredWindow(alpha=255)` 가 DWM 합성 단계에서 `WS_EX_TOPMOST` z-band 의 다른 윈도우 (`Shell_TrayWnd` 도 topmost) 재정렬 trigger → ~1초 후 `Shell_TrayWnd` 가 잠시 foreground 변경 → detection thread `SystemFilter` 매칭 → `WM_HIDE_INDICATOR` → 메인 인디 hide. **explorer.exe** 가 shell process 라 `Shell_TrayWnd` 와 메시지 큐 공유 → race 빈도 높음. **Total Commander** 등 일반 third-party launcher 에서는 race 없음 (사용자 진단 확정).
+
+fix:
+- [`Program.Bootstrap.CreateCursorOverlayWindow`](../Program.Bootstrap.cs) 에서 `WS_EX_TOPMOST` **제거** — cursor 윈도우 생성 시 일반 z-order 로 시작. 부팅 sequence 동안 다른 topmost 윈도우 영향 0.
+- [`CursorOverlay.RenderAtCursor`](../App/UI/CursorOverlay.cs) 첫 가시화 시 `SetWindowPos(HWND_TOPMOST, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING)` 명시 호출 — topmost 진입 + `SWP_NOSENDCHANGING` 으로 `WM_WINDOWPOSCHANGING` 알림 차단 (다른 윈도우 z-order 재정렬 trigger 없음).
+- `Win32Constants.SWP_NOSENDCHANGING = 0x0400` 신규 const.
+
+이전 안전망 `BootGracePeriodMs (500→1500ms)` 는 z-order fix 가 진짜 원인 차단 후 불요 — 제거. cursor 첫 표시는 `idle_delay_ms` (100ms) 후 정상 등장.
+
+### 시스템 창 호버 시 cursor 인디 정책 — 일관 표시
+
+마우스가 작업 표시줄 / 시작 버튼 / 검색 박스 / 트레이 아이콘 위에 있을 때 cursor 인디는 일반 영역과 동일하게 표시. 시스템 창은 system topmost 라 cursor 인디 (일반 `WS_EX_TOPMOST`) 가 시각적으로 가려질 수 있으나, 사용자 결정 — "작업 표시줄에 가려지겠지만 일관적이면 괜찮음". 이전 `WindowFromPoint + SystemHideClasses` 매칭 시 hide 분기는 제거됨 + `User32.WindowFromPoint` LibraryImport 도 제거 (cursor 만의 사용처였음).
+
+### 트레이 메뉴 lazy 생성 / dispose 흐름
+
+`config.CursorIndicatorEnabled = false` (디폴트) 시 부팅 시점에 윈도우/엔진/타이머 생성 **안 함** — 메모리/CPU 비용 0. 사용자가 트레이 "커서 인디케이터 숨김" 체크박스 클릭 → `IDM_CURSOR_TOGGLE` → `updateConfig(config with { CursorIndicatorEnabled = true })` → `HandleConfigChanged` OFF→ON 분기 → `Program.EnableCursorOverlay()` 가 (1) `CreateCursorOverlayWindow` (별도 HWND, `WS_EX_TRANSPARENT` 영구 ON) → (2) `CursorOverlay.Initialize(hwnd, config, _lastImeState, _lastCapsLockState)` 가 엔진 + 첫 DIB 사전 생성 → (3) `SetTimer(TIMER_ID_CURSOR_MOTION, CursorMotionPollMs or CursorAlwaysPollMs)`.
+
+메뉴 체크 의미는 메인 인디 `IDM_USER_HIDDEN` 과 동일 — 라벨 "커서 인디케이터 숨김" + `MF_CHECKED` = **현재 숨김 상태** (= `CursorIndicatorEnabled = false`). 클릭 시 enabled 반전.
+
+OFF 토글 시 `DisableCursorOverlay()` 가 역순으로 `KillTimer` → `CursorOverlay.Dispose()` (엔진/DIB/GDI 핸들 해제) → `DestroyWindow(_hwndCursorOverlay)` → `_hwndCursorOverlay = IntPtr.Zero` (lazy 재생성 게이트 복귀). `OnProcessExit` 도 동일 cleanup 을 명시적으로 호출.
+
+3 분기 (OFF→ON / ON→OFF / 값 변경) 는 `Program.ApplyCursorConfigChange()` 헬퍼로 추출되어 **두 경로**에서 호출된다: (1) `HandleConfigChanged()` — `config.json` 직접 편집의 mtime 폴러 리로드 경로, (2) `HandleMenuCommand` 람다 — 트레이 메뉴 즉시 적용 경로. 후자가 헬퍼를 직접 호출하지 않으면 트레이 토글이 작동 안 한다 — 람다 내부 `Settings.Save` 는 mtime self-bump 로 `WM_CONFIG_CHANGED` 를 차단 (감지 스레드 폴러가 본인 변경을 다시 알리지 않게 막는 의도된 정책) 하므로 `HandleConfigChanged` 가 호출되지 않음.
+
+별도 HWND 선택 이유: 메인 `_hwndOverlay` 는 사용자 드래그 (HTCAPTION) 와 hit-test 가 필요해 `WS_EX_TRANSPARENT` 를 켤 수 없는데, cursor 인디는 마우스를 절대 가로채면 안 되므로 영구 클릭 통과가 필수. [dev-notes/2026-05-15-click-through-attempts.md](dev-notes/2026-05-15-click-through-attempts.md) F2 (WS_EX_TRANSPARENT 영구 ON) 패턴 재사용.
+
+### cursor 중심 정렬 — `ShowAtCenter` API
+
+`LayeredCursorBase.Show(x, y)` 는 좌상단 좌표만 받으므로 호출자가 `halfBbox = GetBaseSize().w / 2` 로 좌상단 계산. 그러나 DPI 다른 모니터로 cursor 가 진입한 직후 첫 호출은 `GetBaseSize` 가 **이전 모니터 DPI 기준** 의 DIB 크기를 반환 → 새 모니터의 정확한 halfBbox 와 어긋남. `Show` 가 `UpdateDpiFromPoint` 로 `_currentDpiScale` 갱신 + 캐시 무효화 → 다음 `Render` 가 새 DPI 기준 DIB 재생성하지만, 이미 잘못된 좌상단으로 한 프레임 표시된 후 `UpdatePosition` 으로 보정하는 비대칭이 사용자에게 "원 크기 변화가 살짝 이상함" 으로 가시화.
+
+`LayeredCursorBase.ShowAtCenter(centerX, centerY, style)` 는 (1) `UpdateDpiFromPoint(centerX, centerY)` 로 새 DPI 갱신, (2) `DpiHelper.Scale(style.BoundingBoxLogicalPx, _currentDpiScale)` 로 정확한 새 bbox 계산, (3) `_lastX = centerX - bbox/2`, `_lastY = centerY - bbox/2` 로 좌상단 직접 산출 — race 없이 정확한 중심 보장. `CursorOverlay.RenderAtCursor` 가 본 API 를 사용해 좌표 정밀도 + DPI 전환 시각 일관성 동시 확보.
+
+### Render 후 SW_SHOW 호출자 패턴 + alpha 디폴트 255
+
+`LayeredCursorBase.Show(x, y)` 는 좌표/DPI 캐시만 갱신하고 `ShowWindow` 를 부르지 않는다. CursorOverlay (호출자) 가 `Render` 직후 명시 `ShowWindow(SW_SHOW)` 호출 — [dev-notes/2026-05-20-post-pr10-attempts-reverted.md](https://github.com/joujin-git/KoEnVue/blob/feat/v094-integration/docs/dev-notes/2026-05-20-post-pr10-attempts-reverted.md) 가설 A 함정 (Render 전 SW_SHOW 가 layered window 비트맵 없이 visible 캐싱 → 후속 UpdateLayeredWindow 가 화면에 안 나타남) 회피. 메인 인디 ([Animation.cs:100](../App/UI/Animation.cs#L100)) 와 동일 `SW_SHOW` 사용.
+
+`_lastAlpha` 디폴트 0 으로 두면 첫 `Render → UpdateLayeredWindow` 가 `SourceConstantAlpha=0` (완전 투명) 으로 그려져 사용자가 못 본다. cursor 인디는 페이드 없이 항상 100% 표시이므로 [`LayeredCursorBase`](../Core/Windowing/LayeredCursorBase.cs) 에서 `_lastAlpha = 255` 디폴트로 초기화. 메인 인디의 OverlayAnimator 알파 보간과 무관.
+
+---
+
 ## Indicator positioning
 
 ### Draggable floating window

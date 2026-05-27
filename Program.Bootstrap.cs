@@ -144,6 +144,39 @@ internal static partial class Program
         return hwnd;
     }
 
+    /// <summary>
+    /// 커서 인디케이터 전용 별도 HWND. 메인 overlay 와 동일 클래스 (한 클래스가 두 WS_POPUP 인스턴스
+    /// 를 가질 수 있음) + WS_EX_TRANSPARENT 추가로 마우스 hit-test 통과 보장 (커서 인디 위 클릭이
+    /// 아래 창으로 자연 통과). dev-notes/2026-05-15-click-through-attempts.md F2: WS_EX_TRANSPARENT
+    /// 영구 ON 이 OS 차원에서 유일한 신뢰 가능 클릭 통과 방식.
+    /// <para>
+    /// <b>WS_EX_TOPMOST 생성 시 제거</b> — 진단 결과 cursor 윈도우 첫 UpdateLayeredWindow 가 DWM 합성
+    /// 시 다른 topmost 윈도우 (Shell_TrayWnd 도 topmost) 재정렬 trigger → Shell_TrayWnd 잠시
+    /// foreground → 메인 인디 SystemFilter hide 회귀. cursor 윈도우는 생성 시 일반 z-order 로 시작,
+    /// 첫 표시 (RenderAtCursor) 시점에 명시 SetWindowPos(HWND_TOPMOST, SWP_NOSENDCHANGING) 으로
+    /// topmost 진입 — 다른 윈도우에 z-order 변경 알림 차단.
+    /// </para>
+    /// </summary>
+    private static IntPtr CreateCursorOverlayWindow()
+    {
+        // WS_VISIBLE 처음부터 박음 — 이후 ShowWindow 호출이 일체 없어야 z-order 변경 0 → 트레이
+        // 메뉴 modal loop 안에서 cursor 가 표시되어도 메뉴 dismiss 트리거 안 함.
+        // WS_EX_TOPMOST 의도적 제거 (위 주석 참조) — CursorOverlay.RenderAtCursor 가 첫 표시 시 명시 set.
+        IntPtr hwnd = User32.CreateWindowExW(
+            Win32Constants.WS_EX_LAYERED
+                | Win32Constants.WS_EX_TOOLWINDOW
+                | Win32Constants.WS_EX_NOACTIVATE | Win32Constants.WS_EX_TRANSPARENT,
+            _config.Advanced.OverlayClassName, "",
+            Win32Constants.WS_POPUP | Win32Constants.WS_VISIBLE,
+            0, 0, 0, 0,
+            IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+
+        if (hwnd == IntPtr.Zero)
+            Logger.Error("Failed to create cursor overlay window");
+
+        return hwnd;
+    }
+
     // ================================================================
     // 종료 처리
     // ================================================================
@@ -163,6 +196,10 @@ internal static partial class Program
         if (_hwndMain != IntPtr.Zero)
             User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_CAPS);
 
+        // 2a. 커서 인디 모션 폴링 타이머 명시적 해제 (활성 중일 때만 등록되어 있음)
+        if (_hwndMain != IntPtr.Zero)
+            User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION);
+
         // 3. 트레이 아이콘 제거 — 내부의 StopAddRetryTimer 가 KillTimer(_hwndMain, …) 를 호출하므로
         //    DestroyWindow 전에 실행해 죽은 hwnd 에 Win32 호출이 나가는 걸 방지.
         //    NIM_DELETE 자체는 NIF_GUID 기반이라 hwnd 유효성과 무관하지만 타이머 정리 경로가 있음.
@@ -171,10 +208,13 @@ internal static partial class Program
         // 4. 애니메이션 + 렌더링 리소스 해제 (윈도우 파괴 전)
         Animation.Dispose();
         Overlay.Dispose();
+        CursorOverlay.Dispose();
 
         // 5. 오버레이 + 메인 윈도우 파괴
         if (_hwndOverlay != IntPtr.Zero)
             User32.DestroyWindow(_hwndOverlay);
+        if (_hwndCursorOverlay != IntPtr.Zero)
+            User32.DestroyWindow(_hwndCursorOverlay);
         if (_hwndMain != IntPtr.Zero)
             User32.DestroyWindow(_hwndMain);
 

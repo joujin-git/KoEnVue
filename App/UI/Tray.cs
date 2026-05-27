@@ -59,6 +59,7 @@ internal static partial class Tray
     private const int IDM_ANIMATION_ENABLED  = 4006;
     private const int IDM_CHANGE_HIGHLIGHT   = 4007;
     private const int IDM_USER_HIDDEN        = 4009;
+    private const int IDM_CURSOR_TOGGLE      = 4011;
     // IDM_HOMEPAGE: 메뉴 최상단 헤더 라인의 단일 진입점. `_pendingUpdate` 상태에 따라
     // OpenUpdatePage(릴리스 페이지) / OpenHomepage(레포 루트) 로 동적 분기.
     // 4008 슬롯은 v0.9.2.5 까지 IDM_UPDATE_DOWNLOAD 가 점유했으나 헤더 통합으로 dead 가 되어 제거 —
@@ -385,6 +386,14 @@ internal static partial class Tray
             case IDM_USER_HIDDEN:
                 updateConfig(config with { UserHidden = !config.UserHidden });
                 Logger.Info($"UserHidden toggled via menu: {!config.UserHidden}");
+                break;
+
+            // --- 커서 인디케이터 숨김 토글 (메뉴 체크박스 — MF_CHECKED = 현재 숨김 상태) ---
+            // 메인 인디 IDM_USER_HIDDEN 과 같은 패턴. 라벨 "커서 인디케이터 숨김" + 체크 = 안 보임.
+            // 클릭 시 enabled 반전 (체크 ON → enabled=true → 표시, 체크 OFF → enabled=false → 숨김).
+            case IDM_CURSOR_TOGGLE:
+                updateConfig(config with { CursorIndicatorEnabled = !config.CursorIndicatorEnabled });
+                Logger.Info($"CursorIndicatorEnabled toggled via menu: {!config.CursorIndicatorEnabled}");
                 break;
 
             // --- 상세 설정 ---

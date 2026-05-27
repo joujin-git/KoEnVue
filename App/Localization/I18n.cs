@@ -70,6 +70,7 @@ internal static class I18n
         MenuCleanup, MenuUserHidden, MenuSettings, MenuExit,
         MenuDownload,
         MenuSizeCustom,
+        MenuCursorIndicator,
 
         // 상세 설정 다이얼로그
         SettingsDialogTitle, SettingsDialogDescription,
@@ -119,6 +120,7 @@ internal static class I18n
         [I18nKey.MenuDragModifierCtrlAlt]  = ("Ctrl + Alt", "Ctrl + Alt"),
         [I18nKey.MenuCleanup]              = ("위치 기록 정리...", "Clean position history..."),
         [I18nKey.MenuUserHidden]           = ("인디케이터 숨김", "Hide indicator"),
+        [I18nKey.MenuCursorIndicator]      = ("커서 인디케이터 숨김", "Hide cursor indicator"),
         [I18nKey.MenuSettings]             = ("상세 설정...", "Settings..."),
         [I18nKey.MenuExit]                 = ("종료", "Exit"),
         [I18nKey.MenuDownload]             = ("다운로드", "Download"),
@@ -200,6 +202,7 @@ internal static class I18n
     public static string MenuDragModifierCtrlAlt  => Get(I18nKey.MenuDragModifierCtrlAlt);
     public static string MenuCleanup              => Get(I18nKey.MenuCleanup);
     public static string MenuUserHidden           => Get(I18nKey.MenuUserHidden);
+    public static string MenuCursorIndicator      => Get(I18nKey.MenuCursorIndicator);
     public static string MenuSettings             => Get(I18nKey.MenuSettings);
     public static string MenuExit                 => Get(I18nKey.MenuExit);
 

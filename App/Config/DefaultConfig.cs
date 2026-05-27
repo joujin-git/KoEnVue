@@ -201,6 +201,49 @@ internal static partial class DefaultConfig
     public const int    MinForceTopmostMs        = 0;
     public const int    MaxForceTopmostMs        = 60000;
 
+    // === 커서 인디케이터 (D7 — Settings.Validate clamp + SettingsDialog field range 단일 진실원) ===
+    // AppConfig 의 init 디폴트가 이 const 를 참조하므로 한 곳에서 값을 변경하면 양쪽이 자동 동기화.
+
+    public const bool   CursorIndicatorEnabled     = false;
+    public const bool   CursorAlwaysShow           = false;
+    public const int    CursorOuterRadius          = 45;
+    public const int    CursorMiddleRadius         = 30;
+    public const int    CursorInnerRadius          = 15;
+    public const int    CursorCoreThickness        = 2;
+    public const int    CursorHaloThickness        = 3;
+    public const double CursorHaloOpacity          = 0.5;
+    public const int    CursorIdleDelayMs          = 100;
+    public const int    CursorMotionThresholdPx    = 5;
+
+    public const int    MinCursorOuterRadius       = 8;
+    public const int    MaxCursorOuterRadius       = 96;
+    public const int    MinCursorMiddleRadius      = 6;
+    public const int    MaxCursorMiddleRadius      = 80;
+    public const int    MinCursorInnerRadius       = 4;
+    public const int    MaxCursorInnerRadius       = 64;
+    public const int    MinCursorCoreThickness     = 1;
+    public const int    MaxCursorCoreThickness     = 8;
+    public const int    MinCursorHaloThickness     = 0;
+    public const int    MaxCursorHaloThickness     = 12;
+    public const double MinCursorHaloOpacity       = 0.0;
+    public const double MaxCursorHaloOpacity       = 1.0;
+    public const int    MinCursorIdleDelayMs       = 0;
+    public const int    MaxCursorIdleDelayMs       = 2000;
+    public const int    MinCursorMotionThresholdPx = 1;
+    public const int    MaxCursorMotionThresholdPx = 32;
+
+    /// <summary>cursor 인디 마우스 모션 폴링 주기 (정지 검출 모드 — 50ms).</summary>
+    public const uint   CursorMotionPollMs         = 50;
+
+    /// <summary>cursor 인디 마우스 모션 폴링 주기 (항상 표시 모드 — 16ms ≈ 60fps 추종).</summary>
+    public const uint   CursorAlwaysPollMs         = 16;
+
+    /// <summary>cursor 인디 페이드 인 지속 시간 (정지 진입 시).</summary>
+    public const int    CursorFadeInMs             = 150;
+
+    /// <summary>cursor 인디 페이드 아웃 지속 시간 (이동 진입 시).</summary>
+    public const int    CursorFadeOutMs            = 100;
+
     // === 설정 파일 ===
 
     /// <summary>설정 파일명 (exe 디렉토리에 생성됨 — 완전 포터블).</summary>

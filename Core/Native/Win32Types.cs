@@ -216,6 +216,10 @@ internal static class Win32Constants
     public const uint WS_EX_TOOLWINDOW   = 0x00000080;
     public const uint WS_EX_NOACTIVATE   = 0x08000000;
     public const uint WS_EX_COMPOSITED   = 0x02000000;
+    // WS_EX_TRANSPARENT — OS hit-test 단계에서 윈도우를 건너뛰어 마우스 메시지가 아래 창으로 라우팅됨.
+    // SetCapture 보다 강함 (F2). cursor 추종 인디는 사용자 드래그 / hit-test 가 필요 없어 영구 ON 으로
+    // 클릭 통과 자연 보장. dev-notes/2026-05-15-click-through-attempts.md F2 참조.
+    public const uint WS_EX_TRANSPARENT  = 0x00000020;
 
     // --- 윈도우 스타일 ---
     public const uint WS_POPUP           = 0x80000000;
@@ -401,6 +405,10 @@ internal static class Win32Constants
     public const uint SWP_NOMOVE         = 0x0002;
     public const uint SWP_NOSIZE         = 0x0001;
     public const uint SWP_NOACTIVATE     = 0x0010;
+    // SWP_NOSENDCHANGING — WM_WINDOWPOSCHANGING 메시지 안 보냄. cursor 인디의 명시 z-order set
+    // 시 다른 topmost 윈도우 (Shell_TrayWnd 등) 가 z-order 재정렬 알림 받아 잠시 foreground 되는
+    // race 차단.
+    public const uint SWP_NOSENDCHANGING = 0x0400;
 
     // --- 입력 ---
     public const int VK_SHIFT            = 0x10;
