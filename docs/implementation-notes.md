@@ -102,6 +102,10 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 두 모드 전환은 `HandleConfigChanged` 의 "값 변경" 분기가 `KillTimer` + `SetTimer` 로 polling 주기를 즉시 교체해 흡수한다.
 
+### 부팅 grace period — `BootGracePeriodMs = 500ms`
+
+cursor 인디 enable 상태로 KoEnVue 부팅 시 `HandleCursorMotionTimer` 가 첫 50ms tick 부터 발화 → cursor 첫 표시 (`RenderAtCursor` + `Render` + `UpdateLayeredWindow`) 가 detection thread 의 부팅 직후 메시지 폭주 (PositionUpdated + ImeStateChanged + FocusChanged) 와 race → 메인 인디의 `OverlayAnimator` fade 진행이 cursor 처리 시간만큼 지연되거나 message queue 순서가 변형되어 PR-A 의 `SnapToTargetAlpha` Fade KillTimer fix 가 충분히 차단 못 하는 회귀 가능성. fix: `CursorOverlay.Initialize` 가 `_bootTick = Environment.TickCount64` 마킹 + `HandleCursorMotionTimer` 진입부에 `if (Environment.TickCount64 - _bootTick < BootGracePeriodMs) return;` — 부팅 후 500ms 동안 cursor 표시 자체 skip. 그 사이 detection thread 의 첫 80ms 폴링 사이클 + 메인 인디 부팅 sequence 안정화 완료. HandleConfigChanged 의 OFF→ON 토글 시에도 `_bootTick` 리셋 (`Initialize` 재호출 경로).
+
 ### 트레이 메뉴 lazy 생성 / dispose 흐름
 
 `config.CursorIndicatorEnabled = false` (디폴트) 시 부팅 시점에 윈도우/엔진/타이머 생성 **안 함** — 메모리/CPU 비용 0. 사용자가 트레이 "커서 인디케이터 숨김" 체크박스 클릭 → `IDM_CURSOR_TOGGLE` → `updateConfig(config with { CursorIndicatorEnabled = true })` → `HandleConfigChanged` OFF→ON 분기 → `Program.EnableCursorOverlay()` 가 (1) `CreateCursorOverlayWindow` (별도 HWND, `WS_EX_TRANSPARENT` 영구 ON) → (2) `CursorOverlay.Initialize(hwnd, config, _lastImeState, _lastCapsLockState)` 가 엔진 + 첫 DIB 사전 생성 → (3) `SetTimer(TIMER_ID_CURSOR_MOTION, CursorMotionPollMs or CursorAlwaysPollMs)`.

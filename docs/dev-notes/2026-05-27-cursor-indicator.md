@@ -62,6 +62,26 @@
 
 10. **(미해결 추적)** 콘솔 호스트 한/영 회귀 — 이전 정상 동작 명시. cursor 인디 PR 의 ImeStatus / detection thread 변경 0 이지만 어떤 메커니즘이 영향. **진단 요청**: cursor 인디 enabled=false 상태에서도 회귀 재현되는지.
 
+## 사후 fix 5차 (사용자 케이스 A/B 진단 결과, 2026-05-27)
+
+사용자가 cursor enable=ON/OFF 두 케이스 비교 검증 보고:
+
+| 케이스 | (2) 부팅 깜박임 | (3) 콘솔 한/영 |
+|--------|--------------|--------------|
+| A (cursor ON) | 회귀 | 회귀 |
+| B (cursor OFF) | 정상 | 회귀 |
+
+해석:
+- **(2) cursor ON 에서만 회귀** → cursor PR 이 trigger. 가설: cursor motion timer 첫 발화 (50ms 후) 가 detection thread 메시지 폭주 + 메인 인디 fade race 와 충돌. PR-A 의 `SnapToTargetAlpha` fix 가 cursor 추가 race window 에서 충분히 차단 못 함.
+- **(3) cursor ON/OFF 둘 다 회귀** → **cursor PR 무관**. 메인 인디 자체 회귀 (PR-A 영역 또는 더 이전). 별도 PR 로 분리.
+
+**(2) fix**: cursor 인디 부팅 grace period 500ms 도입. `CursorOverlay.Initialize` 가 `_bootTick = Environment.TickCount64` 마킹, `HandleCursorMotionTimer` 진입부에 `if (TickCount - _bootTick < 500) return;`. 부팅 직후 500ms 동안 cursor 표시 skip → detection thread 첫 80ms 폴링 + 메인 인디 SnapToTargetAlpha 안정화 완료 후 cursor 첫 표시. cursor 가시 첫 표시 지연 = 500ms 라 사용자 인지 미세. HandleConfigChanged 의 OFF→ON 토글 시에도 `_bootTick` 리셋 (`Initialize` 재호출 경로).
+
+**(3) 별도 PR 분리**: cursor PR 머지 후 진단. 가설:
+- PR-A 의 `SnapToTargetAlpha` fix 가 콘솔 호스트의 한/영 IME 시각 갱신 시 다른 race 영향
+- 또는 더 이전 회귀 (PR-A 와 무관)
+- 진단 방법: PR-A 이전 commit (`fac0251`) 빌드로 콘솔 한/영 검증 → PR-A 전후 회귀 여부 확인. 회귀 위치 격리 후 fix.
+
 ## 무엇 (What — PR-B-1 시점)
 
 신규 3 파일로 커서 추종 인디케이터의 렌더 엔진 + Style + Renderer 도착. 사용자 가시 기능 미완성 — PR-B-3 도착 시 트레이 / 설정 다이얼로그 토글로 활성화 가능.

@@ -46,6 +46,12 @@ internal static class CursorOverlay
     // 정지 진입 tick (Environment.TickCount64 ms). 0 = 아직 정지 진입 안 함 / 이동 중.
     private static long _idleStartTick;
 
+    // Initialize 호출 시점 tick. 부팅 직후 메인 인디 fade race 회피 위해 첫 N ms 동안 cursor
+    // 표시 skip (사용자 보고: cursor enable 시 부팅 깜박임 회귀 — cursor motion timer 첫 발화가
+    // 메인 인디 fade race trigger 가설). HandleConfigChanged 의 OFF→ON 토글 시에도 리셋.
+    private static long _bootTick;
+    private const int BootGracePeriodMs = 500;
+
     // ================================================================
     // Public API
     // ================================================================
@@ -64,6 +70,7 @@ internal static class CursorOverlay
         _engine.PrepareResources(_currentStyle);
         _isVisible = false;
         _idleStartTick = 0;
+        _bootTick = Environment.TickCount64;
         _initialized = true;
         Logger.Info("CursorOverlay initialized");
     }
@@ -95,6 +102,13 @@ internal static class CursorOverlay
     public static void HandleCursorMotionTimer()
     {
         if (!_initialized || _engine is null) return;
+
+        // 부팅 grace period — Initialize 후 BootGracePeriodMs (500ms) 동안 cursor 표시 skip.
+        // cursor enable 부팅에서 메인 인디가 부팅 깜박임 회귀 보고 (cursor motion timer 첫 발화가
+        // detection thread 의 메시지 폭주 + 메인 인디 fade race trigger 가설). 500ms 면 detection
+        // thread 의 첫 80ms 폴링 + 메인 인디 SnapToTargetAlpha 안정화 완료.
+        if (Environment.TickCount64 - _bootTick < BootGracePeriodMs) return;
+
         if (!User32.GetCursorPos(out POINT cursor)) return;
 
         // 시스템 창 (작업 표시줄 / 바탕화면 / 시스템 UI) 위면 cursor 인디 표시 skip. 시스템 창은
