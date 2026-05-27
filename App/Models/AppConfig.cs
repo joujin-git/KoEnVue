@@ -107,6 +107,11 @@ internal sealed record AppConfig
     public string LogFilePath { get; init; } = "";
     public int LogMaxSizeMb { get; init; } = 10;
 
+    // [시스템 — 권한] UIPI / admin 콘솔 IME 표시. false (기본) = asInvoker 그대로 (PR-03 정책).
+    // true = 단일 실행 UAC 1회 (자체 elevation) + 부팅 자동은 schtasks /RL HIGHEST (UAC 0).
+    // 상세: docs/improvement-plan/PR-15-admin-elevation.md
+    public bool AdminElevation { get; init; } = DefaultConfig.AdminElevation;
+
     // [업데이트]
     // 부팅 시 GitHub Releases API 1회 조회. 새 버전이 있으면 트레이 메뉴 최상단 헤더 라벨이
     // "KoEnVue v{cur} — GitHub" 에서 "KoEnVue v{cur} → {newTag} — 다운로드" 로 자동 전환.

@@ -257,4 +257,14 @@ internal static partial class DefaultConfig
     /// <summary>SendMessageTimeout 타임아웃 (ms)</summary>
     public const uint ImeMessageTimeoutMs = 100;
 
+    // === 시스템 권한 (UIPI / admin 콘솔 IME) ===
+
+    /// <summary>
+    /// admin 권한 자동 elevation 기본값. false = asInvoker 그대로 (PR-03 정책 보존).
+    /// true 시 자체 elevation (단일 실행, UAC 1회) + schtasks /RL HIGHEST (부팅 자동, UAC 0)
+    /// 분담으로 UIPI 차단 우회. <see cref="AppConfig.AdminElevation"/> 의 디폴트.
+    /// 상세: docs/improvement-plan/PR-15-admin-elevation.md
+    /// </summary>
+    public const bool AdminElevation = false;
+
 }
