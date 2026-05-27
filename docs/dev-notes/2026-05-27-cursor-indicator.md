@@ -24,6 +24,20 @@
 
 이 fix 가 PR-B 의 첫 사용자 가시 검증을 통과시킴.
 
+## 사후 fix 2차 (사용자 가시 검증 직후, 2026-05-27)
+
+사용자가 4가지 문제 보고:
+
+1. **커서/캐럿 위치가 원 중심과 정확하지 않음** + 2. **DPI 다른 모니터로 cursor 이동 시 원 크기 변화가 살짝 이상함** — 같은 근본 원인. `CursorOverlay.RenderAtCursor` 가 `_engine.GetBaseSize().w / 2` 로 halfBbox 계산해 `Show(cursor.X - halfBbox, cursor.Y - halfBbox)` 호출. 그러나 GetBaseSize 가 이전 DIB 크기 (이전 모니터 DPI 기준) → DPI 다른 모니터 진입 시 한 프레임 잘못된 위치 표시 + 후속 `UpdatePosition` 으로 보정하는 비대칭. **fix**: `LayeredCursorBase.ShowAtCenter(centerX, centerY, style)` API 신설 — 내부에서 `UpdateDpiFromPoint` 갱신 + `BoundingBoxLogicalPx * 새 DPI scale` 직접 계산해 정확한 좌상단 set. RenderAtCursor 가 본 API 사용 → race 없음 + 좌표 정밀도 = 픽셀.
+
+3. **콘솔 호스트에서 한/영 전환 미감지 (캡스락은 정상)** — **메인 인디의 기존 limitation**. 콘솔 호스트 (conhost.exe / Windows Terminal legacy) 의 IME 모델이 일반 Win32 IME 와 달라 `WM_INPUTLANGCHANGE` / `ImmGetConversionStatus` 가 콘솔 윈도우에 도달 안 함. 캡스락은 글로벌 `GetKeyState(VK_CAPITAL)` 로 감지하므로 콘솔 무관. **본 PR (cursor 인디) 범위 밖** — 메인 인디도 같은 증상. 별도 작업으로 분리 (legacy console IME 감지는 `INPUT_RECORD` 폴링 또는 별도 hook 필요, 비용 큼).
+
+4. **인디와 cursor 인디가 함께 이동하는 케이스** — 시나리오 구체 확인 필요. 가설:
+   - (a) 메인 인디 드래그 중 cursor 도 마우스 따라 이동 (정상 — 드래그가 마우스 위치 따라가니 cursor 인디도 cursor 위치 따라감)
+   - (b) cursor 인디 좌표 계산에 메인 인디 위치 영향 받는 버그 (코드상 cursor 좌표만 사용하므로 가능성 낮음)
+   - (c) 두 인디가 동시 위치한 상태 (cursor 가 메인 인디 위에 호버 — 인터뷰 답 "별도 처리 없음")
+   - 사용자 추가 정보 대기 후 진단.
+
 ## 무엇 (What — PR-B-1 시점)
 
 신규 3 파일로 커서 추종 인디케이터의 렌더 엔진 + Style + Renderer 도착. 사용자 가시 기능 미완성 — PR-B-3 도착 시 트레이 / 설정 다이얼로그 토글로 활성화 가능.

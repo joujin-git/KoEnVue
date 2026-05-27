@@ -175,31 +175,16 @@ internal static class CursorOverlay
     // ================================================================
 
     /// <summary>
-    /// cursor 위치 = DIB 정중앙. Show 가 monitor DPI 갱신 + 좌표 캐시 → Render 가 DIB 재생성/픽셀 셰이딩 +
-    /// UpdateLayeredWindow. flip-flop 가드가 동일 스타일 + 동일 DPI 케이스에서 DIB 재생성 skip.
+    /// cursor 위치 = DIB 정중앙. ShowAtCenter 가 monitor DPI + bbox 직접 계산해 정확한 좌상단 좌표 set.
+    /// Render 가 같은 DPI 로 DIB 생성 → race 없음 (이전 패턴은 GetBaseSize 가 이전 DPI 기준 → 새 모니터
+    /// 진입 시 한 프레임 잘못된 위치 표시 + UpdatePosition 으로 보정하는 비대칭).
     /// </summary>
     private static void RenderAtCursor(POINT cursor)
     {
         if (_engine is null) return;
 
-        // PrepareResources 가 호출됐으므로 GetBaseSize 가 유효 — 다만 DPI 변경 직후 0 가능.
-        var (w, _) = _engine.GetBaseSize();
-        int halfBbox = w / 2;
-        // halfBbox 가 0 이면 첫 진입 또는 DPI 무효화 직후 — Show 가 DPI 갱신 후 Render 가 EnsureDib 호출.
-        // 그 시점에 다시 GetBaseSize 호출하면 valid. 단순화를 위해 첫 진입은 PrepareResources 후속
-        // Render 로 처리되도록 함.
-
-        _engine.Show(cursor.X - halfBbox, cursor.Y - halfBbox);
+        _engine.ShowAtCenter(cursor.X, cursor.Y, _currentStyle);
         _engine.Render(_currentStyle);
-
-        // DPI 갱신 후 base size 바뀌었으면 좌표 재보정. Render 가 EnsureDib 호출했으므로 GetBaseSize 가
-        // 새 값. 차이가 있으면 UpdatePosition 으로 좌상단 재조정.
-        var (w2, _) = _engine.GetBaseSize();
-        if (w2 != w && w2 > 0)
-        {
-            int halfBbox2 = w2 / 2;
-            _engine.UpdatePosition(cursor.X - halfBbox2, cursor.Y - halfBbox2);
-        }
 
         // 첫 가시화 시 SW_SHOW 명시 호출. LayeredCursorBase.Show 는 좌표/DPI 캐시만 갱신하고
         // ShowWindow 안 부름 (dev-notes/2026-05-20 가설 A: Render 전 SW_SHOW 가 layered window 비트맵

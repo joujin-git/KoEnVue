@@ -114,6 +114,12 @@ OFF 토글 시 `DisableCursorOverlay()` 가 역순으로 `KillTimer` → `Cursor
 
 별도 HWND 선택 이유: 메인 `_hwndOverlay` 는 사용자 드래그 (HTCAPTION) 와 hit-test 가 필요해 `WS_EX_TRANSPARENT` 를 켤 수 없는데, cursor 인디는 마우스를 절대 가로채면 안 되므로 영구 클릭 통과가 필수. [dev-notes/2026-05-15-click-through-attempts.md](dev-notes/2026-05-15-click-through-attempts.md) F2 (WS_EX_TRANSPARENT 영구 ON) 패턴 재사용.
 
+### cursor 중심 정렬 — `ShowAtCenter` API
+
+`LayeredCursorBase.Show(x, y)` 는 좌상단 좌표만 받으므로 호출자가 `halfBbox = GetBaseSize().w / 2` 로 좌상단 계산. 그러나 DPI 다른 모니터로 cursor 가 진입한 직후 첫 호출은 `GetBaseSize` 가 **이전 모니터 DPI 기준** 의 DIB 크기를 반환 → 새 모니터의 정확한 halfBbox 와 어긋남. `Show` 가 `UpdateDpiFromPoint` 로 `_currentDpiScale` 갱신 + 캐시 무효화 → 다음 `Render` 가 새 DPI 기준 DIB 재생성하지만, 이미 잘못된 좌상단으로 한 프레임 표시된 후 `UpdatePosition` 으로 보정하는 비대칭이 사용자에게 "원 크기 변화가 살짝 이상함" 으로 가시화.
+
+`LayeredCursorBase.ShowAtCenter(centerX, centerY, style)` 는 (1) `UpdateDpiFromPoint(centerX, centerY)` 로 새 DPI 갱신, (2) `DpiHelper.Scale(style.BoundingBoxLogicalPx, _currentDpiScale)` 로 정확한 새 bbox 계산, (3) `_lastX = centerX - bbox/2`, `_lastY = centerY - bbox/2` 로 좌상단 직접 산출 — race 없이 정확한 중심 보장. `CursorOverlay.RenderAtCursor` 가 본 API 를 사용해 좌표 정밀도 + DPI 전환 시각 일관성 동시 확보.
+
 ### Render 후 SW_SHOW 호출자 패턴 + alpha 디폴트 255
 
 `LayeredCursorBase.Show(x, y)` 는 좌표/DPI 캐시만 갱신하고 `ShowWindow` 를 부르지 않는다. CursorOverlay (호출자) 가 `Render` 직후 명시 `ShowWindow(SW_SHOW)` 호출 — [dev-notes/2026-05-20-post-pr10-attempts-reverted.md](https://github.com/joujin-git/KoEnVue/blob/feat/v094-integration/docs/dev-notes/2026-05-20-post-pr10-attempts-reverted.md) 가설 A 함정 (Render 전 SW_SHOW 가 layered window 비트맵 없이 visible 캐싱 → 후속 UpdateLayeredWindow 가 화면에 안 나타남) 회피. 메인 인디 ([Animation.cs:100](../App/UI/Animation.cs#L100)) 와 동일 `SW_SHOW` 사용.

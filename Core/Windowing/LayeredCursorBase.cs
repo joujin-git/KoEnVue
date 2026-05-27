@@ -89,6 +89,26 @@ internal sealed class LayeredCursorBase : IDisposable
         _isVisible = true;
     }
 
+    /// <summary>
+    /// cursor 가 위치한 모니터의 DPI 를 사전 계산해 정확한 bbox 중심 좌표로 위치 캐시 세팅.
+    /// <para>
+    /// <see cref="Show(int, int)"/> 는 좌상단 좌표만 받아 호출자가 halfBbox 를 미리 계산해야 했는데,
+    /// 호출자가 직전 DIB 크기 (이전 모니터 DPI 기준) 로 halfBbox 계산 → DPI 다른 모니터 진입 시
+    /// 한 프레임 위치 race + 좌표 오차 발생. 본 메서드는 (1) 새 DPI 갱신, (2) style.BoundingBoxLogicalPx
+    /// 를 새 DPI 로 스케일, (3) cursor center 기준 좌상단 = (centerX - bbox/2, centerY - bbox/2) 직접
+    /// 계산 — race 없이 정확한 중심 보장.
+    /// </para>
+    /// </summary>
+    public void ShowAtCenter(int centerX, int centerY, CursorStyle style)
+    {
+        UpdateDpiFromPoint(centerX, centerY);
+        int targetSize = DpiHelper.Scale(style.BoundingBoxLogicalPx, _currentDpiScale);
+        int halfBbox = targetSize / 2;
+        _lastX = centerX - halfBbox;
+        _lastY = centerY - halfBbox;
+        _isVisible = true;
+    }
+
     public void Hide()
     {
         if (_hwnd != IntPtr.Zero)
