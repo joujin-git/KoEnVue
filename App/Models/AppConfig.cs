@@ -148,6 +148,18 @@ internal sealed record AppConfig
     // Shift 는 드래그 중 축 고정에 선점되어 제외.
     public DragModifier DragModifier { get; init; } = DragModifier.None;
 
+    // [커서 인디케이터]
+    public bool CursorIndicatorEnabled { get; init; } = DefaultConfig.CursorIndicatorEnabled;
+    public bool CursorAlwaysShow { get; init; } = DefaultConfig.CursorAlwaysShow;
+    public int CursorOuterRadius { get; init; } = DefaultConfig.CursorOuterRadius;
+    public int CursorMiddleRadius { get; init; } = DefaultConfig.CursorMiddleRadius;
+    public int CursorInnerRadius { get; init; } = DefaultConfig.CursorInnerRadius;
+    public int CursorCoreThickness { get; init; } = DefaultConfig.CursorCoreThickness;
+    public int CursorHaloThickness { get; init; } = DefaultConfig.CursorHaloThickness;
+    public double CursorHaloOpacity { get; init; } = DefaultConfig.CursorHaloOpacity;
+    public int CursorIdleDelayMs { get; init; } = DefaultConfig.CursorIdleDelayMs;
+    public int CursorMotionThresholdPx { get; init; } = DefaultConfig.CursorMotionThresholdPx;
+
     // [고급]
     public AdvancedConfig Advanced { get; init; } = new();
 }
