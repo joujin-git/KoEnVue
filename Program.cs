@@ -1179,17 +1179,12 @@ internal static partial class Program
         if (state.PollCount % DefaultConfig.ConfigCheckIntervalPolls == 0)
             Settings.CheckConfigFileChange(_hwndMain);
 
-        // 1. 포그라운드 윈도우 확인 — 자기 자신 무시 (메인/오버레이/커서 인디 3 hwnd 모두)
+        // 1. 포그라운드 윈도우 확인 — 자기 자신 무시 (메인/오버레이/커서 인디 3 hwnd 모두).
+        // _hwndCursorOverlay 가드는 cursor 윈도우가 어떤 이유로 foreground 잡혀 SystemFilter 가
+        // cursor 클래스 평가하는 race 차단 (안전망).
         IntPtr hwndForeground = User32.GetForegroundWindow();
         if (hwndForeground == _hwndMain || hwndForeground == _hwndOverlay || hwndForeground == _hwndCursorOverlay)
             return;
-
-        // 진단 — foreground 변화 시점 trace (cursor PR 회귀 추적용 임시).
-        if (hwndForeground != state.LastHwndForeground)
-        {
-            string fgClassDiag = WindowProcessInfo.GetClassName(hwndForeground);
-            Logger.Info($"FG changed: 0x{hwndForeground.ToInt64():X} ({fgClassDiag})");
-        }
 
         // 모달 게이트용 PID 와 GUITHREADINFO 용 threadId 를 한 번에 확보.
         uint threadId = User32.GetWindowThreadProcessId(hwndForeground, out uint fgPid);

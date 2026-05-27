@@ -140,6 +140,21 @@
 
 탐색기 vs Total Commander 차이 해석 (cursor enable 무관 시): explorer.exe = shell process 라 Shell_TrayWnd 와 같은 프로세스 → 메시지 처리 큐 공유 → race 빈도 높음. Total Commander = 일반 third-party → race 없음.
 
+## 사후 정리 (사용자 검증 통과 후, 2026-05-27)
+
+z-order fix (`3d9e0bd`) 가 진짜 원인 차단 확정 (사용자 검증: cursor enable 부팅 + 탐색기 실행 → 13초 동안 Shell_TrayWnd FG 변화 0건, 메인 인디 정상 유지). 이전 안전망 코드 정리:
+
+1. **`BootGracePeriodMs` (1500ms) 제거** — z-order fix 가 진짜 race 차단 후 cursor 첫 표시까지 인위적 지연 불요. `_bootTick` 필드 + 가드 + 상수 모두 제거. cursor 첫 표시 = `idle_delay_ms` (100ms) 후 — 사용자 가시 즉시 등장.
+
+2. **`FG changed` 진단 Logger.Info 제거** — 임시 진단용 (회귀 trigger 식별 완료), 매 foreground 변화 시 라인 → log noise. `ProcessDetectionTick` 의 trace 분기 제거.
+
+3. **유지 (영구 — 회귀 재발 시 즉시 trigger 식별 가치)**:
+   - `HideOverlay(string source)` + Logger.Info 진입 로그
+   - `Filter triggered HIDE: ...` (hwndFg + hwndFocus + resolved_null + fgClass)
+   - `ModalGate triggered HIDE: ...` (fgPid + processId + ModalActive)
+   - `_hwndCursorOverlay` 자기 무시 가드 (안전망 — cursor 윈도우가 어떤 이유로 foreground 잡혀 SystemFilter 평가하는 race 차단)
+   - WS_EX_TOPMOST 제거 + SetWindowPos(SWP_NOSENDCHANGING) (fix 자체)
+
 ## 무엇 (What — PR-B-1 시점)
 
 신규 3 파일로 커서 추종 인디케이터의 렌더 엔진 + Style + Renderer 도착. 사용자 가시 기능 미완성 — PR-B-3 도착 시 트레이 / 설정 다이얼로그 토글로 활성화 가능.

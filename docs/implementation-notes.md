@@ -102,9 +102,16 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 두 모드 전환은 `HandleConfigChanged` 의 "값 변경" 분기가 `KillTimer` + `SetTimer` 로 polling 주기를 즉시 교체해 흡수한다.
 
-### 부팅 grace period — `BootGracePeriodMs = 1500ms`
+### cursor 윈도우 z-order 정책 — `WS_EX_TOPMOST` 생성 시 제거 + 첫 표시 시 명시 set
 
-cursor 인디 enable 상태로 KoEnVue 부팅 시 `HandleCursorMotionTimer` 가 첫 50ms tick 부터 발화 → cursor 첫 표시 (`RenderAtCursor` + `Render` + `UpdateLayeredWindow`) 가 detection thread 의 부팅 직후 메시지 폭주 (PositionUpdated + ImeStateChanged + FocusChanged) 와 race → 메인 인디의 `OverlayAnimator` fade 진행이 cursor 처리 시간만큼 지연되거나 message queue 순서가 변형되어 PR-A 의 `SnapToTargetAlpha` Fade KillTimer fix 가 충분히 차단 못 하는 회귀 가능성. fix: `CursorOverlay.Initialize` 가 `_bootTick = Environment.TickCount64` 마킹 + `HandleCursorMotionTimer` 진입부에 `if (Environment.TickCount64 - _bootTick < BootGracePeriodMs) return;` — 부팅 후 1500ms 동안 cursor 표시 자체 skip. 그 사이 detection thread 의 첫 80ms 폴링 사이클 + 메인 인디 fade-in (150ms) + EventDisplayDuration 일부 안정화 완료. `HandleConfigChanged` 의 OFF→ON 토글 시에도 `_bootTick` 리셋 (`Initialize` 재호출 경로). 사용자 2차 보고 — 500ms 가 부족 (메인 인디 1초 후 사라짐 회귀 잔존), 1500ms 로 늘려 안정화.
+cursor 인디 enable 부팅 + 탐색기 실행 시 메인 인디가 ~2.5초 후 사라지던 회귀의 **진짜 원인** — cursor 윈도우의 첫 `UpdateLayeredWindow(alpha=255)` 가 DWM 합성 단계에서 `WS_EX_TOPMOST` z-band 의 다른 윈도우 (`Shell_TrayWnd` 도 topmost) 재정렬 trigger → ~1초 후 `Shell_TrayWnd` 가 잠시 foreground 변경 → detection thread `SystemFilter` 매칭 → `WM_HIDE_INDICATOR` → 메인 인디 hide. **explorer.exe** 가 shell process 라 `Shell_TrayWnd` 와 메시지 큐 공유 → race 빈도 높음. **Total Commander** 등 일반 third-party launcher 에서는 race 없음 (사용자 진단 확정).
+
+fix:
+- [`Program.Bootstrap.CreateCursorOverlayWindow`](../Program.Bootstrap.cs) 에서 `WS_EX_TOPMOST` **제거** — cursor 윈도우 생성 시 일반 z-order 로 시작. 부팅 sequence 동안 다른 topmost 윈도우 영향 0.
+- [`CursorOverlay.RenderAtCursor`](../App/UI/CursorOverlay.cs) 첫 가시화 시 `SetWindowPos(HWND_TOPMOST, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING)` 명시 호출 — topmost 진입 + `SWP_NOSENDCHANGING` 으로 `WM_WINDOWPOSCHANGING` 알림 차단 (다른 윈도우 z-order 재정렬 trigger 없음).
+- `Win32Constants.SWP_NOSENDCHANGING = 0x0400` 신규 const.
+
+이전 안전망 `BootGracePeriodMs (500→1500ms)` 는 z-order fix 가 진짜 원인 차단 후 불요 — 제거. cursor 첫 표시는 `idle_delay_ms` (100ms) 후 정상 등장.
 
 ### 시스템 창 호버 시 cursor 인디 정책 — 일관 표시
 
