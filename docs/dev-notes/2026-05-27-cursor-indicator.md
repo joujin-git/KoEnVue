@@ -349,7 +349,33 @@ PR-C (#3) 머지 대기 중 explorer 위임으로 [App/Detector/ImeStatus.cs](..
 
 4. **회귀 아닌 의도된 BREAKING**: PR-03 의 매 부팅 UAC 프롬프트 제거 정책. admin 콘솔 사용은 일반적이지 않음 — 다만 admin 콘솔 자주 쓰는 사용자에게는 부작용.
 
-5. **다음 세션 fix 후보** (사용자 제안): trayMenu "항상 관리자 권한으로 실행" 토글. 매니페스트는 asInvoker 유지 + schtasks `/RL HIGHEST` 통해 elevation. config 키 `auto_admin_elevation: bool` (default false). 별도 PR 설계는 planner 에게 위임.
+5. **다음 세션 fix 설계 (통합)** — 사용자 제안 기반 단일 옵션, 모든 실행 경로 통합:
+
+   **단일 config 키**: `admin_elevation: bool` (default false). 매니페스트는 `asInvoker` 유지 (PR-03 정책 보존). 옵션 비활성 사용자에겐 UAC 0.
+
+   **메커니즘 분담** (두 경로 동시 커버):
+   - **자체 elevation (self-check)**: KoEnVue 시작 시 config + 자기 IL 확인. `true + Medium` → `ShellExecute("runas")` 자기 자신 재실행 + 원본 종료. 단일 실행 / 직접 실행 경로 커버. UAC 1회 (사용자 인지 시점).
+   - **schtasks `/RL HIGHEST`**: 부팅 자동 시작 사용자를 위해 추가. 등록 시점 UAC 1회 후 부팅마다 자동 admin (자체 elevation 우회 — 이미 admin IL 이라 self-check 미트리거).
+
+   **UAC 빈도 매트릭스**:
+
+   | 옵션 | 부팅 자동 시작 | 단일 실행 |
+   |------|--------------|----------|
+   | OFF (default) | UAC 0 | UAC 0 |
+   | ON | UAC 0 (schtasks elevation) | UAC 1회 (자체 elevation, 사용자 인지 시점) |
+
+   **Portable 영향**:
+   - **자체 elevation 만 사용 (단일 실행 on-demand 패턴)**: config 만 동행 → portable 100%. schtasks 불필요.
+   - **schtasks 추가 (부팅 자동 시작 패턴)**: schtasks 작업은 시스템 영역 — 새 PC 에서 재등록 (1회 UAC).
+
+   **UI** — Settings 다이얼로그 또는 트레이 메뉴에 단일 체크박스 **"관리자 권한으로 실행"**:
+   - 도움말 툴팁: *"자동 시작과 단일 실행 모두 적용. 단일 실행 시 UAC 프롬프트 1회, 자동 시작 시 UAC 없음."*
+
+   **Planner 검토 항목**:
+   - Fallback 정책 — UAC 거부 시 (a) 일반 권한 계속 / (b) 종료 / (c) 1회 알림 후 일반 진행
+   - exe path 이동 감지 — schtasks 등록 path 와 자기 ImagePath 불일치 시 자동 갱신 제안
+   - schtasks 등록 실패 graceful 처리 (Group Policy 차단 등)
+   - 구현 분담 — `App/Bootstrap/AdminElevation.cs` (신규) + `App/Autostart/SchtasksHelper.cs` (기존 확장) + `App/Config/AppConfig.cs` + Settings/TrayMenu UI + `App/Program.cs` (Main 진입점 self-check 호출)
 
 ## 관련
 
