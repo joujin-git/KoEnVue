@@ -141,6 +141,10 @@ OFF 토글 시 `DisableCursorOverlay()` 가 역순으로 `KillTimer` → `Cursor
 
 `_lastAlpha` 디폴트 0 으로 두면 첫 `Render → UpdateLayeredWindow` 가 `SourceConstantAlpha=0` (완전 투명) 으로 그려져 사용자가 못 본다. cursor 인디는 페이드 없이 항상 100% 표시이므로 [`LayeredCursorBase`](../Core/Windowing/LayeredCursorBase.cs) 에서 `_lastAlpha = 255` 디폴트로 초기화. 메인 인디의 OverlayAnimator 알파 보간과 무관.
 
+### Settings 다이얼로그 노출 (PR-C)
+
+PR-C 에서 cursor 10 config 키를 트레이 메뉴 "상세 설정" 다이얼로그의 12번째 섹션 "커서 인디케이터" 로 GUI 노출 (기존 12번 "고급" 은 13번으로 이동). 새 컨트롤/팩토리/I18n 테이블 변경 0 — 기존 Bool/Int/Dbl 팩토리 + 인라인 `("한국어", "English")` 튜플 패턴 재사용. Min/Max 는 `DefaultConfig.MinCursor*` / `MaxCursor*` const 를 직접 참조해 **단일 진실원** 유지 (config-reference.md 표의 범위와 자동 일치). 디폴트 OFF 정책 유지 — 다이얼로그 노출은 발견 가능성만 높이고 활성 사용자 비용은 그대로.
+
 ---
 
 ## Indicator positioning

@@ -11,7 +11,7 @@ namespace KoEnVue.App.UI.Dialogs;
 /// <summary>
 /// SettingsDialog 의 필드 정의/팩토리/빌더 분할.
 /// FieldDef/RowDef 메타데이터, 6개 팩토리(Bool/Int/Dbl/Str/ColorField/Combo),
-/// BuildRowDefs(12 섹션), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
+/// BuildRowDefs(13 섹션), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
 /// </summary>
 internal static partial class SettingsDialog
 {
@@ -58,7 +58,7 @@ internal static partial class SettingsDialog
     // ================================================================
 
     /// <summary>
-    /// 12개 섹션의 RowDef 리스트를 빌드하며 _fields를 채운다.
+    /// 13개 섹션의 RowDef 리스트를 빌드하며 _fields를 채운다.
     /// 각 섹션 제목, 라벨, 검증 범위는 언어(I18n.IsKorean)에 따라 결정된다.
     /// </summary>
     private static List<RowDef> BuildRowDefs()
@@ -292,7 +292,40 @@ internal static partial class SettingsDialog
             (c, i) => c with { DragModifier = (DragModifier)Math.Clamp(i, 0, 3) }));
 
         // ================================================================
-        // 12. 고급
+        // 12. 커서 인디케이터
+        // ================================================================
+        Sec("커서 인디케이터", "Cursor Indicator");
+        Add(Bool("커서 인디케이터 사용", "Enable cursor indicator",
+            c => c.CursorIndicatorEnabled, (c, v) => c with { CursorIndicatorEnabled = v }));
+        Add(Bool("항상 표시 (마우스 추종)", "Always show (follow cursor)",
+            c => c.CursorAlwaysShow, (c, v) => c with { CursorAlwaysShow = v }));
+        Add(Int("외부 원 반지름 (px)", "Outer radius (px)",
+            DefaultConfig.MinCursorOuterRadius, DefaultConfig.MaxCursorOuterRadius,
+            c => c.CursorOuterRadius, (c, v) => c with { CursorOuterRadius = v }));
+        Add(Int("중간 원 반지름 (px)", "Middle radius (px)",
+            DefaultConfig.MinCursorMiddleRadius, DefaultConfig.MaxCursorMiddleRadius,
+            c => c.CursorMiddleRadius, (c, v) => c with { CursorMiddleRadius = v }));
+        Add(Int("내부 원 반지름 (px)", "Inner radius (px)",
+            DefaultConfig.MinCursorInnerRadius, DefaultConfig.MaxCursorInnerRadius,
+            c => c.CursorInnerRadius, (c, v) => c with { CursorInnerRadius = v }));
+        Add(Int("코어 두께 (px)", "Core thickness (px)",
+            DefaultConfig.MinCursorCoreThickness, DefaultConfig.MaxCursorCoreThickness,
+            c => c.CursorCoreThickness, (c, v) => c with { CursorCoreThickness = v }));
+        Add(Int("헤일로 두께 (px)", "Halo thickness (px)",
+            DefaultConfig.MinCursorHaloThickness, DefaultConfig.MaxCursorHaloThickness,
+            c => c.CursorHaloThickness, (c, v) => c with { CursorHaloThickness = v }));
+        Add(Dbl("헤일로 불투명도", "Halo opacity",
+            DefaultConfig.MinCursorHaloOpacity, DefaultConfig.MaxCursorHaloOpacity,
+            c => c.CursorHaloOpacity, (c, v) => c with { CursorHaloOpacity = v }));
+        Add(Int("유휴 전환 지연 (ms)", "Idle delay (ms)",
+            DefaultConfig.MinCursorIdleDelayMs, DefaultConfig.MaxCursorIdleDelayMs,
+            c => c.CursorIdleDelayMs, (c, v) => c with { CursorIdleDelayMs = v }));
+        Add(Int("이동 임계값 (px)", "Motion threshold (px)",
+            DefaultConfig.MinCursorMotionThresholdPx, DefaultConfig.MaxCursorMotionThresholdPx,
+            c => c.CursorMotionThresholdPx, (c, v) => c with { CursorMotionThresholdPx = v }));
+
+        // ================================================================
+        // 13. 고급
         // ================================================================
         Sec("고급", "Advanced");
         Add(Int("TOPMOST 강제 주기 (ms)", "Force topmost interval (ms)",
