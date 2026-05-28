@@ -225,21 +225,7 @@ internal sealed class LayeredCursorBase : IDisposable
         if (targetSize == _currentWidth && targetSize == _currentHeight && _currentBitmap is not null)
             return;
 
-        var bmi = new BITMAPINFOHEADER
-        {
-            biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>(),
-            biWidth = targetSize,
-            biHeight = -targetSize,
-            biPlanes = 1,
-            biBitCount = 32,
-            biCompression = Win32Constants.BI_RGB
-        };
-
-        IntPtr hBitmap = Gdi32.CreateDIBSection(
-            IntPtr.Zero, ref bmi, Win32Constants.DIB_RGB_COLORS,
-            out IntPtr ppvBits, IntPtr.Zero, 0);
-
-        if (hBitmap == IntPtr.Zero)
+        if (!DibSectionFactory.TryCreate(_memDC, targetSize, targetSize, out var bitmap, out var ppvBits))
         {
             if (!_dibFailureLogged)
             {
@@ -251,11 +237,8 @@ internal sealed class LayeredCursorBase : IDisposable
 
         _dibFailureLogged = false;
         _ppvBits = ppvBits;
-
-        Gdi32.SelectObject(_memDC, hBitmap);
         _currentBitmap?.Dispose();
-        _currentBitmap = new SafeBitmapHandle(hBitmap, true);
-
+        _currentBitmap = bitmap;
         _currentWidth = targetSize;
         _currentHeight = targetSize;
         _lastRenderedStyle = null;
