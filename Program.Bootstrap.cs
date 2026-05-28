@@ -185,6 +185,12 @@ internal static partial class Program
     {
         _stopping = true;
 
+        // 0. 감지 스레드 합류 — _stopping=true 신호 후 한 폴링 주기 안에 자발 종료한다.
+        //    IsBackground=true 라 OS 가 어차피 강제 종료하지만, hwnd 파괴 시점과
+        //    detection 의 PostMessageW(_hwndMain, ...) marshal 이 겹치는 짧은 race
+        //    (last-error=1400 / Invalid handle) 를 명시적 Join 으로 차단.
+        _detectionThread?.Join(500);
+
         // 1. IME 훅 해제
         ImeStatus.UnregisterHook();
 

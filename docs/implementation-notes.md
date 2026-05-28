@@ -849,9 +849,13 @@ Separately registered (shared WndProc with main window). `WM_DESTROY` guard chec
 7. Mutex 해제 (`Dispose` only — `ReleaseMutex`는 소유 스레드에서만 가능하나 `ProcessExit`는 다른 스레드일 수 있음)
 8. 종료 로그 기록 + 로거 종료 (`Logger.Info` → `Logger.Shutdown`)
 
+step 1 의 `_stopping = true` 와 step 5 의 `DestroyWindow(_hwndMain)` 사이에는 **step 0 — 감지 스레드 합류** 가 끼어 race window 를 좁힌다 (PR-19). `Program.cs` 의 `_detectionThread` field (`StartDetectionThread` 가 로컬 변수 대신 field 에 보관) 를 `_detectionThread?.Join(500)` 으로 합류시켜, `_stopping=true` 신호 후 한 폴링 주기 (50ms) 안에 자발 종료하는 감지 스레드가 step 5 이전에 끝나도록 강제한다. 감지 스레드는 `IsBackground = true` 라 OS 가 프로세스 종료 시 강제 회수하지만, 그 사이 `DestroyWindow(_hwndMain)` 과 감지 스레드의 `PostMessageW(_hwndMain, WM_UPDATE_INDICATOR, ...)` 가 겹치면 `GetLastWin32Error = 1400 (ERROR_INVALID_WINDOW_HANDLE)` marshal race 가 발생할 수 있다. 500 ms 타임아웃은 stuck 스레드가 메인 종료를 영구 블록하지 않게 하는 상한 — IsBackground 안전망과 명시 합류의 절충.
+
 COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자동 수행하므로 `ProcessExit` 에서는 건드리지 않는다. `ProcessExit` 는 finalizer 스레드에서 돌기 때문에 여기서 `CoUninitialize` 를 불러도 메인 스레드 apartment 와 매칭되지 않는다.
 
 `Logger.Shutdown`은 반드시 마지막에 호출하여 이전 단계의 로그가 모두 기록되도록 보장한다. 타이머 해제와 윈도우 파괴는 리소스 해제(5단계) 이후에 수행하여 타이머 콜백이 해제된 리소스를 참조하는 것을 방지한다.
+
+`ProcessExit` 미발화 경로 (FailFast / Access Violation Exception 등 비정상 종료) 에서는 `Program.cs` 의 `AppDomain.CurrentDomain.UnhandledException` 핸들러가 `Logger.Shutdown` 전에 `CleanupPreviousTrayIcon()` 을 best-effort 호출해 트레이 좀비 아이콘을 줄인다 (PR-19). 핸들러가 실패해도 다음 부팅의 `CleanupPreviousTrayIcon` 자기치유 (mutex 획득 직후 step 2) 가 안전망 — 즉시 재실행 시 셸 알림 영역의 좀비 잔류 시간만 좁히는 보조 차단.
 
 ### `InvariantGlobalization`
 

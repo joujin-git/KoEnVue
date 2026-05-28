@@ -60,6 +60,10 @@ internal static partial class Program
     // 라이프사이클 (감지 스레드에서 읽고 OnProcessExit에서 씀 → volatile)
     private static volatile bool _stopping;
 
+    // 감지 스레드 참조 — OnProcessExit 가 _stopping=true 신호 후 Join(500) 으로 합류해
+    // hwnd 파괴와 PostMessageW(_hwndMain, ...) 가 겹치는 짧은 race window 를 차단한다.
+    private static Thread? _detectionThread;
+
     // 세션 잠금 상태 — WM_WTSSESSION_CHANGE 핸들러(메인 스레드)가 쓰고 감지 스레드가 읽음.
     // HideOnLockScreen 이 켜져 있고 이 플래그가 true 이면 감지 루프가 한 틱을 skip 해서
     // LogonUI 가 필터를 뚫어도 인디가 다시 켜지지 않도록 보장한다.
@@ -103,6 +107,11 @@ internal static partial class Program
             object exObj = e.ExceptionObject;
             AppendCrashFile("UNHANDLED", exObj);
             Logger.Error($"UnhandledException (terminating={e.IsTerminating}): {exObj}");
+            // FailFast / AVE 등으로 ProcessExit 가 발화하지 않는 경로에서 트레이 좀비 아이콘이
+            // 남는 회귀를 차단. NIM_DELETE 는 NIF_GUID 기반이라 hwnd / 스레드 affinity 무관 +
+            // bool 반환 ignored (이미 종료 경로). 다음 부팅의 CleanupPreviousTrayIcon
+            // 자기치유는 그대로 유지 — 본 호출은 사용자가 즉시 재실행할 때를 위한 best-effort.
+            CleanupPreviousTrayIcon();
             Logger.Shutdown();
         };
         TaskScheduler.UnobservedTaskException += (_, e) =>
@@ -1106,12 +1115,12 @@ internal static partial class Program
 
     private static void StartDetectionThread()
     {
-        var thread = new Thread(DetectionLoop)
+        _detectionThread = new Thread(DetectionLoop)
         {
             IsBackground = true,
             Name = "KoEnVue-Detection",
         };
-        thread.Start();
+        _detectionThread.Start();
     }
 
     /// <summary>
