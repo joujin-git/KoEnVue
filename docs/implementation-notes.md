@@ -89,6 +89,15 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 `Render` 루프는 `dy * dy > maxOuterRSq` early exit (한 행 통째 skip) + `distSq > maxOuterRSq` per-pixel skip 으로 외곽 모서리의 빈 영역을 거른다.
 
+### MinVisibleAlpha 가드 + cursor 전용 premultiply 정리 (외곽 잡티 차단)
+
+2x2 supersampling 의 평균 알파 (`avgAlpha = accumA * 0.25`) 가 양수더라도 `Math.Round(avgAlpha * 255)` 가 0 으로 떨어지는 외곽 sub-sample 1개만 살짝 들어오는 픽셀 ("round-down 부산 픽셀") 이 발생한다. 이 픽셀이 출력에 들어가면 alpha=0 + RGB!=0 상태로 DIB 에 잔류해 `LayeredCursorBase.ApplyPremultipliedAlpha` 단계에 도달한다.
+
+- **셰이더 가드** (`App/UI/CursorRenderer.cs`): `MinVisibleAlpha = 1.0 / 255.0` 상수를 두고 `ShadeDib` 픽셀 출력 분기를 `avgAlpha > 0.0` → `avgAlpha >= MinVisibleAlpha` 로 강화 — round-down 부산 픽셀 자체를 출력에서 제외
+- **엔진 가드** (`Core/Windowing/LayeredCursorBase.cs`): `ApplyPremultipliedAlpha` 의 `a == 0 && (r | g | b) != 0` 분기에서 메인 `LayeredOverlayBase` 동명 가드 (GDI AA 엣지 보존 — `a = 255` 복구) 와 **의미가 다르게** RGB 도 0 으로 정리. cursor 셰이더는 GDI 그리기를 안 쓰고 alpha 를 명시적으로 쓰므로, 그 패턴의 픽셀은 GDI AA 엣지가 아니라 셰이더의 round-down 부산물이라 fully-opaque 점으로 복구하면 안 됨
+
+두 가드는 중복 방어 — 셰이더 가드가 1차 차단, 엔진 가드가 셰이더 외 경로에서도 안전망. 메인 인디는 `DrawTextW` AA 가 alpha=0 RGB!=0 픽셀을 유효 엣지로 출력하므로 동명 가드의 의미가 정반대. 동일 이름 함수의 의미 차이가 cursor 도입 시 메인 가드의 무의식적 복사로 외곽 잡티 회귀를 만들었던 학습 — [dev-notes/2026-05-27-cursor-indicator.md "잠재 버그 fix — 외곽 잡티"](dev-notes/2026-05-27-cursor-indicator.md).
+
 ### 색상 합성 (App 측 책임)
 
 `CursorStyle` 의 3 색상 (`InnerColorArgb` / `MiddleColorArgb` / `OuterColorArgb`) 합성은 App 측 파사드 [`CursorOverlay.BuildStyle`](../App/UI/CursorOverlay.cs) 의 책임. Inner/Middle 은 현재 IME 색상 (`config.HangulBg` / `EnglishBg` / `NonKoreanBg` 중 하나). Outer (CAPS LOCK ON 시 표시) 는 "한글/비한글을 같은 카테고리로 묶고 영문만 반대편 카테고리" 정책 — 영문 IME → 한글 색상, 한글/비한글 IME → 영문 색상 (사용자 인터뷰 결정). Core 는 IME 상태를 모르므로 primitive `uint` (ARGB) 만 받는다.

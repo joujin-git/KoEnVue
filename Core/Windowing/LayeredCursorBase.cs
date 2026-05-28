@@ -276,8 +276,16 @@ internal sealed class LayeredCursorBase : IDisposable
 
             if (a == 0)
             {
+                // cursor 인디 셰이더는 alpha 를 명시적으로 쓰므로 a==0 && RGB!=0 픽셀은 ShadeDib 의
+                // round-down 부산물 (avgAlpha × 255 < 0.5). 메인 LayeredOverlayBase 의 동명 가드는
+                // GDI AA 엣지 보존 목적으로 a=255 복구하지만, cursor 인디에선 그 픽셀이 fully-opaque
+                // 점이 되어 외곽 잡티의 원인 — RGB 까지 0 으로 정리한다.
                 if ((r | g | b) != 0)
-                    ptr[offset + 3] = 255;
+                {
+                    ptr[offset] = 0;
+                    ptr[offset + 1] = 0;
+                    ptr[offset + 2] = 0;
+                }
                 continue;
             }
 

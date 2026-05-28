@@ -377,6 +377,42 @@ PR-C (#3) 머지 대기 중 explorer 위임으로 [App/Detector/ImeStatus.cs](..
    - schtasks 등록 실패 graceful 처리 (Group Policy 차단 등)
    - 구현 분담 — `App/Bootstrap/AdminElevation.cs` (신규) + `App/Autostart/SchtasksHelper.cs` (기존 확장) + `App/Config/AppConfig.cs` + Settings/TrayMenu UI + `App/Program.cs` (Main 진입점 self-check 호출)
 
+## 잠재 버그 fix — 외곽 잡티 (점 픽셀)
+
+> **상태**: PR-B-1 의 회귀가 아닌 **처음 도입 시 잠재 버그**. PR-B 영역의 메인 인디 알파 race (선행 PR-A 가 부분 해소) 와 무관한 별도 이슈. cursor 인디 enable 상태로 살펴보면 동심원의 외곽 ~1px 거리에 옅은 점(또는 1px 가량의 흩어진 도트) 들이 보이는 현상.
+
+### 증상
+
+cursor 인디 동심원의 시각적 외곽 (코어 + 헤일로 영역 밖) 에서 1px 가량의 부산 픽셀이 산발적으로 또는 띄엄띄엄 보임. 동심원 자체는 정상 — 외곽 모서리에만 점.
+
+### 원인
+
+두 단계의 의미 불일치가 결합:
+
+1. **셰이더 출력 threshold 부재** — [`App/UI/CursorRenderer.cs`](../../App/UI/CursorRenderer.cs) 의 `ShadeDib` 가 2x2 supersampling 후 `avgAlpha > 0.0` 픽셀이면 일단 출력. avgAlpha 가 양수 (예: 0.0008) 라도 `Math.Round(avgAlpha * 255)` 가 0 으로 떨어지는 외곽 sub-sample 1개만 살짝 들어오는 픽셀이 있음. 출력 시 alpha=0 + RGB!=0 으로 DIB 에 잔류 ("round-down 부산 픽셀").
+
+2. **엔진 가드의 의미 불일치** — [`Core/Windowing/LayeredCursorBase.cs:277-289`](../../Core/Windowing/LayeredCursorBase.cs#L277) 의 `ApplyPremultipliedAlpha` 가 메인 [`LayeredOverlayBase.ApplyPremultipliedAlpha`](../../Core/Windowing/LayeredOverlayBase.cs) 의 `a == 0 && RGB != 0 → a = 255` 가드를 그대로 복사. 그러나 두 엔진의 셰이더 의미가 정반대:
+   - 메인 엔진: `DrawTextW` AA 가 alpha=0 RGB!=0 픽셀을 정당한 글자 엣지로 출력 → 알파 복구가 올바름
+   - cursor 엔진: alpha 를 명시적으로 셰이더가 결정 → alpha=0 RGB!=0 픽셀은 셰이더 round-down 부산물뿐 → 알파 복구하면 부산 픽셀이 fully-opaque 점으로 변환되어 잡티가 됨
+
+v0.9.2.8 → 현재 cursor 인디 (`2528ce2` 이후) 의 본 가드가 메인 가드로부터 의미 검토 없이 복사된 것이 문제. PR-B 의 P4 예외 ("별도 엔진 신규 작성") 선택 시 두 엔진 사이의 동명 함수가 의미 검토 없이 같은 구현이 된 한 사례.
+
+### Fix
+
+1. **셰이더에 MinVisibleAlpha threshold** (`App/UI/CursorRenderer.cs`):
+   - 상수 `MinVisibleAlpha = 1.0 / 255.0` 추가 (L31)
+   - `ShadeDib` 픽셀 출력 분기를 `avgAlpha > 0.0` → `avgAlpha >= MinVisibleAlpha` 로 강화 (L132~140) — round-down 부산 픽셀을 출력에서 제외
+
+2. **엔진 가드 의미 정정** (`Core/Windowing/LayeredCursorBase.cs:277-289`):
+   - `a == 0 && (r | g | b) != 0` 분기에서 `a = 255` 부풀림 → `RGB = 0` 으로 정리
+   - 주석에 메인 동명 가드와의 의미 차이 명시 (GDI AA 엣지 보존 vs cursor 셰이더 round-down 부산 픽셀 정리)
+
+두 가드는 중복 방어 — 셰이더 가드가 1차 차단 (출력 자체 제외), 엔진 가드가 셰이더 외 경로에서도 안전망 (출력되더라도 정리).
+
+### 학습
+
+P4 예외로 별도 엔진 신규 작성 시 메인 엔진의 동명 함수를 의미 검토 없이 복사하면 정반대 의미를 가진 동일 코드가 잔류할 수 있다. PR-B 영역에서는 셰이더 패턴이 정반대 (GDI 그리기 vs 픽셀 셰이딩) 라 동일 코드가 정반대 결과를 만들었음. 향후 cursor 엔진과 메인 엔진의 형제 함수에 추가 변경 시 의미 차이를 다시 점검할 것.
+
 ## 관련
 
 - 메인 인디 알파 race fix (선행 PR-A): [dev-notes/2026-05-27-snap-fade-killtimer.md](2026-05-27-snap-fade-killtimer.md)

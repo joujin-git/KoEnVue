@@ -28,6 +28,9 @@ internal static class CursorRenderer
 {
     private const int BytesPerPixel = 4;
     private const double HalfPixel = 0.5;
+    // avgAlpha × 255 가 round-down 으로 0 이 되는 픽셀은 셰이더 출력에서 제외. 미만이면 RGB 만 남고
+    // alpha=0 인 부산 픽셀이 되어 LayeredCursorBase.ApplyPremultipliedAlpha 의 정리 분기에 의존하게 된다.
+    private const double MinVisibleAlpha = 1.0 / 255.0;
 
     public static (int w, int h) Render(IntPtr ppvBits, CursorStyle style, CursorMetrics metrics)
     {
@@ -130,7 +133,7 @@ internal static class CursorRenderer
                 }
 
                 double avgAlpha = accumA * 0.25;
-                if (avgAlpha > 0.0)
+                if (avgAlpha >= MinVisibleAlpha)
                 {
                     // alpha-weighted 색상 평균 (sub-sample alpha 합으로 정규화)
                     ptr[0] = (byte)Math.Round(accumB / accumA);
