@@ -37,9 +37,9 @@ internal sealed record AppConfig
     public string EnglishFg { get; init; } = "#FFFFFF";
     public string NonKoreanBg { get; init; } = "#6B7280";
     public string NonKoreanFg { get; init; } = "#FFFFFF";
-    public double Opacity { get; init; } = 0.85;
-    public double IdleOpacity { get; init; } = 0.55;
-    public double ActiveOpacity { get; init; } = 0.95;
+    public double Opacity { get; init; } = DefaultConfig.Opacity;
+    public double IdleOpacity { get; init; } = DefaultConfig.IdleOpacity;
+    public double ActiveOpacity { get; init; } = DefaultConfig.ActiveOpacity;
     // [외관 -- 텍스트]
     public string FontFamily { get; init; } = "맑은 고딕";
     public int FontSize { get; init; } = DefaultConfig.FontSize;
@@ -67,7 +67,7 @@ internal sealed record AppConfig
     public double HighlightScale { get; init; } = DefaultConfig.HighlightScale;
     public int HighlightDurationMs { get; init; } = DefaultConfig.HighlightDurationMs;
     public bool SlideAnimation { get; init; } = false;
-    public int SlideSpeedMs { get; init; } = 100;
+    public int SlideSpeedMs { get; init; } = DefaultConfig.SlideSpeedMs;
 
     // [동작 -- 감지]
     public int PollIntervalMs { get; init; } = DefaultConfig.PollIntervalMs;
