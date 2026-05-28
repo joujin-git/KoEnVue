@@ -33,12 +33,15 @@ internal static partial class Program
     // ================================================================
 
     // 윈도우 핸들
-    private static IntPtr _hwndMain;
-    private static IntPtr _hwndOverlay;
+    // 모두 cross-thread access — 메인 스레드 write (CreateMainWindow / CreateOverlayWindow /
+    // CreateCursorOverlayWindow) vs 감지 스레드 read (PostMessageW, IsKoenvueWindow). x64 TSO 에서는
+    // 단일 init-then-read 패턴 덕에 회귀 0 이지만, ARM64 weak memory model 회귀 방어용 volatile.
+    private static volatile IntPtr _hwndMain;
+    private static volatile IntPtr _hwndOverlay;
     // 커서 추종 인디 전용 별도 HWND. config.CursorIndicatorEnabled = false 면 IntPtr.Zero — lazy 생성
     // 패턴 (HandleConfigChanged 의 OFF→ON 분기에서 첫 생성). 메인 _hwndOverlay 와 같은 클래스이나
     // WS_EX_TRANSPARENT 가 추가로 박힌다 (Program.Bootstrap.CreateCursorOverlayWindow).
-    private static IntPtr _hwndCursorOverlay;
+    private static volatile IntPtr _hwndCursorOverlay;
 
     // 스레드 간 공유 상태 (volatile — 원자적 참조/값 교체)
     private static volatile AppConfig _config = null!;
