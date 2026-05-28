@@ -68,6 +68,7 @@ git grep "requireAdministrator"     app.manifest   # P5: asInvoker only (manifes
 git grep "RunAsVerb"                App/Bootstrap/ # PR-15: 1+ (AdminElevation 의 verb="runas" const 추출 후 실 호출 site 검증 — PR-15 도입 당시 "ShellExecuteW.*runas" grep 은 doc comment 만 매치하고 ShellExecuteW(..., RunAsVerb, ...) 실 호출은 미매치되는 stale 상태)
 git grep "GetTokenInformation"      Core/Native/   # PR-15: 1 (Advapi32 RID 추출)
 git grep "RunLevelHighestAvailable" App/Startup/   # PR-15: 1 (StartupTaskManager admin 분기 const)
+git grep "RelaunchParentPidEnvVarName" App/Bootstrap/   # PR-15 후속 fix (2026-05-28): 1 (AdminElevation 의 KOENVUE_RELAUNCH_PARENT_PID env var 명 단일 const — 트레이 토글 재시작 race 차단 핵심 패턴, KOENVUE_ELEVATED 와 동일 명명 prefix `KOENVUE_*`)
 git grep -n "User32.UpdateLayeredWindow" Core/Windowing/LayeredOverlayBase.cs   # PR-18: 0 (LayeredWindowBlit 위임)
 git grep -n "User32.UpdateLayeredWindow" Core/Windowing/LayeredCursorBase.cs    # PR-18: 0 (LayeredWindowBlit 위임)
 git grep -n "Gdi32.CreateDIBSection"     Core/Windowing/LayeredOverlayBase.cs   # PR-18: 0 (DibSectionFactory 위임)

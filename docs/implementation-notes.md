@@ -780,6 +780,23 @@ While the tray popup is showing, `TrackPopupMenu` runs an internal message pump 
 
 Mutex 획득 성공은 "이전 인스턴스가 존재하지 않는다" 는 보장이므로(크래시 시 OS 가 Mutex 를 자동 해제), 이 조건 하에서만 Cleanup 이 안전하게 "이전 크래시의 유령 아이콘을 정리" 한다는 의미를 가진다.
 
+### Self-relaunch race blocking — KOENVUE_RELAUNCH_PARENT_PID + WaitForExit
+
+PR-15 의 부팅 시점 self-elevation 경로는 "원본이 mutex 안 잡은 상태에서 자식 spawn → 자식이 깨끗하게 createdNew=true" 흐름이라 race 0. 하지만 **트레이 메뉴 "관리자 권한으로 실행" 토글 재시작 경로** ([`Tray.cs`](../App/UI/Tray.cs) `IDM_ADMIN_ELEVATION` YES 분기) 는 원본이 mutex + trayicon GUID + WTS notification + IME hook + log file lock 등 모든 리소스를 보유한 정상 실행 상태에서 자식을 spawn 한다. 원본의 `OnProcessExit` cleanup 시퀀스 (PR-19 step 0~7) 가 `_mutex?.Dispose()` 까지 수백 ms 소요되어 자식이 그 사이 mutex `createdNew=false` + 부가 리소스 race 에 빠진다 — `Logger.Initialize` 도달 전 종료라 `koenvue.log` 의 starting 라인이 없고 `koenvue_crash.txt` 만 남는 진단 패턴.
+
+fix (PR-15 후속, 2026-05-28) — **자식이 mutex 시도 전 부모 종료를 명시 wait** 하는 환경변수 패턴:
+
+- `KOENVUE_RELAUNCH_PARENT_PID=<PID>` — `ShellExecuteW` 의 환경변수 상속을 이용해 자식 (또는 손자) 에 부모 PID 전달. `KOENVUE_ELEVATED` 와 동일 명명 prefix
+- [`Program.MainImpl`](../Program.cs) 의 step 0b-1 (`Settings.Load` 직후, `TryRelaunchAsAdmin` 직전) 에서 `AdminElevation.WaitForRelaunchParentIfAny()` 호출 — 환경변수에 PID 있으면 `Process.GetProcessById(N).WaitForExit(5000)` + 환경변수 클리어. 정상 부팅 (환경변수 없음) 에는 첫 줄에서 noop
+- 호출 site 3 곳:
+  - `Tray.HandleMenuCommand` `IDM_ADMIN_ELEVATION` YES 분기의 `ClearReentryGuard` 직후 + `UriLauncher.Open` 직전 → `AdminElevation.SetRelaunchParentPidForTrayRestart()`
+  - `AdminElevation.TryRelaunchAsAdmin` 의 `ShellExecuteW("runas")` 직전 → 환경변수 재설정 (손자 generation 에도 정확한 부모 PID = 자식 PID 전달)
+  - `Program.MainImpl` step 0b-1 → `WaitForRelaunchParentIfAny` consume
+
+catch narrowing 4 타입 (`ArgumentException or InvalidOperationException or Win32Exception or SystemException`) — `Process.GetProcessById` / `WaitForExit` 의 가능 예외 흡수, 모두 "wait 불가, 진행" 동일 처리. PID 재사용 paranoid (부모 종료 후 OS 가 같은 PID 재할당 → `GetProcessById` 가 새 프로세스 wait) 와 부모 hang 두 케이스는 5초 timeout 으로 영구 hang 회피 — race window 0 에 매우 가깝지만 절대 0 보장은 timeout 무한 대기만 가능하므로 정직하게 timeout + Log 명시.
+
+본 패턴이 차단하는 race 5종 (mutex / trayicon GUID NIM_ADD/DELETE / WTS notification / IME hook 중복 등록 / log file sharing violation) 은 모두 부모 프로세스 객체가 살아있는 한 OS 가 핸들/리소스 ownership 을 유지하기 때문에, **부모 종료 wait 한 메커니즘이 모두를 한 번에 해결**. Option A (원본 spawn 직전 명시 `_mutex?.Dispose()`) 는 mutex 외 race 미해결, Option C (Mutex Wait + Retry) 는 KoEnVue 의 단일 인스턴스 정책과 충돌 — Option B (본 패턴) 가 최적. 자세한 시계열 진단 + 가설 비교 + 검증 매트릭스: [dev-notes/2026-05-28-pr-15-relaunch-race.md](dev-notes/2026-05-28-pr-15-relaunch-race.md).
+
 ### Second-instance activation signal
 
 `TryAcquireMutex` 실패 시 `NotifyExistingInstance` 가 호출된다. 메인 윈도우 클래스명(`"KoEnVueMain"`)으로 `User32.FindWindowW` 호출 → 기존 인스턴스의 HWND 를 얻고 `PostMessageW(hwnd, AppMessages.WM_APP_ACTIVATE, 0, 0)`. 두 번째 인스턴스는 즉시 종료한다.

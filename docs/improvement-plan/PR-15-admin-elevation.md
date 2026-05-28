@@ -163,6 +163,81 @@ dev-note 가 적은 경로의 정정:
 
 **UAC 거부 시 race**: ShellExecuteW("runas") 가 UAC 거부 (1223) 반환 → 원본은 fallback (c) 로 진행 → mutex 획득. 자식은 spawn 안 됨 (UAC 거부 시 자식 프로세스 생성 자체가 일어나지 않음). race 없음.
 
+### 7.1 트레이 토글 재시작 경로 race 차단 (PR-15 후속 fix, 2026-05-28)
+
+위 §7 의 "원본이 mutex 안 잡은 상태" 가정은 **부팅 시점 self-elevation 한정** 으로 valid. 하지만 **트레이 메뉴 토글 재시작 경로** (`Tray.HandleMenuCommand` 의 `IDM_ADMIN_ELEVATION` YES 분기) 에서는 원본이 mutex + trayicon GUID + WTS notification + IME hook + log file lock 등 모든 리소스를 이미 보유한 정상 실행 상태에서 자식을 spawn 한다. `OnProcessExit` cleanup 시퀀스 (PR-19 step 0~7) 가 `_mutex?.Dispose()` 까지 수백 ms 소요되어 자식이 그 사이 mutex `createdNew=false` + 부가 리소스 race 에 빠진다.
+
+진단 시계열 (사용자 보고 → `koenvue.log` + `koenvue_crash.txt` 매핑):
+
+```
+T₀     원본 (admin 권한) Tray YES 분기 → ShellExecuteW("open", exe) 자식 spawn
+T₀+   자식 부팅 → Mutex(true, MutexName, out createdNew) 시도
+       → createdNew=false (원본이 아직 mutex 보유 중)
+       → NotifyExistingInstance(원본) → return
+       → Logger.Initialize 도달 전 종료 (koenvue.log starting 라인 없음 — crash.txt 만)
+T₀+989ms 원본 stopped (cleanup 완료)
+사용자: 재시작 안 됨 → 수동 재실행
+```
+
+**fix (Option B — 부모 PID + WaitForExit)**:
+
+```csharp
+// App/Bootstrap/AdminElevation.cs
+private const string RelaunchParentPidEnvVarName = "KOENVUE_RELAUNCH_PARENT_PID";
+private const int RelaunchParentWaitMs = 5000;
+
+internal static void SetRelaunchParentPidForTrayRestart()
+{
+    Environment.SetEnvironmentVariable(
+        RelaunchParentPidEnvVarName,
+        Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+}
+
+internal static void WaitForRelaunchParentIfAny()
+{
+    string? pidStr = Environment.GetEnvironmentVariable(RelaunchParentPidEnvVarName);
+    if (string.IsNullOrEmpty(pidStr)) return;
+    Environment.SetEnvironmentVariable(RelaunchParentPidEnvVarName, null);  // consume
+    if (!int.TryParse(pidStr, ..., out int parentPid)) return;
+    try
+    {
+        using var parent = Process.GetProcessById(parentPid);
+        parent.WaitForExit(RelaunchParentWaitMs);
+    }
+    catch (Exception ex) when (ex is ArgumentException
+        or InvalidOperationException
+        or Win32Exception
+        or SystemException)
+    {
+        // 부모가 이미 종료 / 접근 거부 / detached — "wait 불가, 진행"
+    }
+}
+```
+
+배선:
+
+| 호출 위치 | 호출 메서드 | 의도 |
+|----------|------------|------|
+| [`App/UI/Tray.cs`](../../App/UI/Tray.cs) IDM_ADMIN_ELEVATION YES 분기 (`ClearReentryGuard` 직후, `UriLauncher.Open` 직전) | `SetRelaunchParentPidForTrayRestart()` | 자식 spawn 직전 본 인스턴스 PID 를 환경변수 set — `ShellExecuteW` 가 자식에 자동 상속 |
+| [`Program.cs`](../../Program.cs) `MainImpl` 의 step 0b-1 (Settings.Load 직후, TryRelaunchAsAdmin 직전) | `WaitForRelaunchParentIfAny()` | 자식이 mutex 시도 전 부모 종료 wait (5초 timeout) |
+| [`App/Bootstrap/AdminElevation.cs`](../../App/Bootstrap/AdminElevation.cs) `TryRelaunchAsAdmin` 의 ShellExecuteW("runas") 직전 | `SetEnvironmentVariable(RelaunchParentPidEnvVarName, Environment.ProcessId.ToString(...))` | 손자 (High IL) generation 에도 정확한 부모 PID (= 자식 PID) 전달 |
+
+`WaitForRelaunchParentIfAny` 는 환경변수 read 직후 클리어 — 정상 부팅으로 진입한 인스턴스에 stale PID 가 남지 않게. 정상 부팅 (환경변수 없음) 에는 첫 줄 `if (string.IsNullOrEmpty(pidStr)) return;` 로 noop.
+
+**왜 Option B 채택 (vs A/C)**:
+
+| 옵션 | 메커니즘 | 거부 사유 |
+|------|---------|----------|
+| A | 원본이 spawn 직전 `_mutex?.Dispose()` 명시 호출 | mutex 외 race (trayicon GUID / WTS / IME hook / log file lock) 미해결. cleanup ordering 두 곳 분기 → 회귀 위험 |
+| **B** | 자식이 부모 종료를 명시 wait (환경변수 + `WaitForExit(5000)`) | **채택** — 모든 race 근본 차단 (OS 레벨 리소스 ownership 자동 해제). 자식 코드만 변경 |
+| C | Mutex Wait + Retry | KoEnVue 의 단일 인스턴스 정책 (createdNew=false → NotifyExistingInstance + 종료) 과 정면 충돌 |
+
+**race 잔존 명시**: 5초 timeout 후 강행 → 부모가 5초 안에 안 죽는 극단 케이스에 race 잔존. 다만 (a) `OnProcessExit` 가 5초 넘는 케이스는 drain thread hang / NIM_DELETE 셸 무한 대기 = OS 강제 종료 시나리오, (b) timeout 5초는 사용자 인내심 (재시작 안 됨 → 수동 재실행) 상한. timeout 도달 시 Log 명시 ("did not exit within 5000ms — proceeding") 후 사용자 진단 가능. **race window 0 에 매우 가까운 차단 — 절대 0 보장은 timeout 무한 대기만 가능**.
+
+PID 재사용 paranoid: 부모 종료 후 OS 가 같은 PID 다른 프로세스에 재할당하면 `Process.GetProcessById` 가 새 프로세스 wait → 최대 5초 후 진행. 자식 spawn ↔ `GetProcessById` 간격이 ms 단위라 재할당 확률 0 에 가깝지만 timeout 이 안전망.
+
+자세한 시계열 + 가설 비교 + 검증 매트릭스: [docs/dev-notes/2026-05-28-pr-15-relaunch-race.md](../dev-notes/2026-05-28-pr-15-relaunch-race.md).
+
 ### 8. P 규칙 영향
 
 | 규칙 | 영향 | 대응 |
