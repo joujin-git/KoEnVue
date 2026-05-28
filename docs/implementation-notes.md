@@ -797,6 +797,27 @@ catch narrowing 4 타입 (`ArgumentException or InvalidOperationException or Win
 
 본 패턴이 차단하는 race 5종 (mutex / trayicon GUID NIM_ADD/DELETE / WTS notification / IME hook 중복 등록 / log file sharing violation) 은 모두 부모 프로세스 객체가 살아있는 한 OS 가 핸들/리소스 ownership 을 유지하기 때문에, **부모 종료 wait 한 메커니즘이 모두를 한 번에 해결**. Option A (원본 spawn 직전 명시 `_mutex?.Dispose()`) 는 mutex 외 race 미해결, Option C (Mutex Wait + Retry) 는 KoEnVue 의 단일 인스턴스 정책과 충돌 — Option B (본 패턴) 가 최적. 자세한 시계열 진단 + 가설 비교 + 검증 매트릭스: [dev-notes/2026-05-28-pr-15-relaunch-race.md](dev-notes/2026-05-28-pr-15-relaunch-race.md).
 
+### Admin elevation toggle — 4-case 분기 매트릭스 (PR-15 후속 fix #2)
+
+위 self-relaunch race 차단이 자식 spawn 자체의 race 를 차단한 다음 단계 — **`IDM_ADMIN_ELEVATION` 토글의 4 출발/도착 케이스가 각자 다른 동작** 을 가지며 그 중 한 케이스 (admin → 일반 권한 down-grade) 는 Windows token 모델 한계로 자동 spawn 자체가 불가하다. [`Shell32.ShellExecuteW("open")`](../App/UI/Tray.cs) 가 부모 토큰을 상속하므로 admin 부모는 일반 권한 자식을 spawn 할 수 없음 — 권한 강등은 사용자 동의 없이 발생할 수 없다는 OS 보안 정책 (UAC 는 반대 방향 medium → high 전용).
+
+[`Tray.HandleMenuCommand`](../App/UI/Tray.cs) 의 `IDM_ADMIN_ELEVATION` 핸들러는 `updateConfig(newAdminConfig)` + `StartupTaskManager.ReregisterIfAdminChanged(newAdminConfig)` 직후 4-case 분기:
+
+| # | 출발 | 도착 | `newAdminConfig.AdminElevation` | `AdminElevation.IsCurrentProcessElevated()` | `isDowngrade` | 동작 |
+|---|------|------|---|---|---|------|
+| 1 | 일반 | admin | `true` | `false` | `false` | YESNO → YES 시 spawn → 자식이 PR-15 self-check 로 UAC 1회 (기존 흐름) |
+| 2 | 일반 | 일반 | `false` | `false` | `false` | YESNO → YES 시 spawn → 자식이 일반 권한 (기존 흐름, 일반 부모 토큰 상속) |
+| 3 | admin | admin | `true` | `true` | `false` | YESNO → YES 시 spawn → 자식이 admin 토큰 상속 (기존 흐름, 의도 일치) |
+| 4 | admin | 일반 | `false` | `true` | **`true`** | **MB_OK 안내만 + 자동 spawn 안 함** (신규) — 사용자 트레이 "종료" + 수동 재실행 필요 |
+
+case 4 만 신규 분기 (`isDowngrade = !newAdminConfig.AdminElevation && AdminElevation.IsCurrentProcessElevated()` → `true` 면 `User32.MessageBoxW(I18n.AdminElevationDowngradeNotice, Win32Constants.MB_OK) + break`). case 1/2/3 의 기존 자동 spawn 흐름 (`ClearReentryGuard` → `SetRelaunchParentPidForTrayRestart` → `UriLauncher.Open` → `PostMessageW(WM_CLOSE)`) 은 한 줄도 변경 안 됨.
+
+**보완 동작**: 분기 직전 이미 `updateConfig` + `StartupTaskManager.ReregisterIfAdminChanged` 가 실행됨 — config.json 의 `admin_elevation: false` 즉시 저장 + schtasks `<RunLevel>LeastPrivilege</RunLevel>` 재등록. case 4 의 사용자 수동 종료/재실행은 **"지금 즉시 적용" 만의 비용** — 다음 부팅부터는 schtasks 가 무조건 일반 권한으로 자동 시작.
+
+**메시지 액션 단어 일관성**: `I18n.AdminElevationDowngradeNotice` 의 한국어 '종료' / 영어 'Exit' 단어가 `I18n.MenuExit` 라벨과 정확 일치해야 한다 — 사용자가 안내 메시지의 "트레이 메뉴의 '종료'" 를 읽고 트레이 메뉴를 열었을 때 정확히 동일 단어를 찾을 수 있게. 메시지 안 액션 단어 ↔ 메뉴 라벨 일관성은 silent fail 정책 정신과 정합 (UI 마찰 silent 회피).
+
+우회 후보 (Option A `SaferCreateLevel` + `CreateProcessAsUserW` / Option B explorer.exe COM 위임) 는 변경면 +200 LOC + 회귀 표면 다층이라 거부. 미래 진입 조건 + 4-case 매트릭스 + Option A/B/C 비교 + Windows token 모델 분석: [dev-notes/2026-05-28-pr-15-admin-downgrade.md](dev-notes/2026-05-28-pr-15-admin-downgrade.md) + [improvement-plan/PR-15-admin-elevation.md §7.2](improvement-plan/PR-15-admin-elevation.md).
+
 ### Second-instance activation signal
 
 `TryAcquireMutex` 실패 시 `NotifyExistingInstance` 가 호출된다. 메인 윈도우 클래스명(`"KoEnVueMain"`)으로 `User32.FindWindowW` 호출 → 기존 인스턴스의 HWND 를 얻고 `PostMessageW(hwnd, AppMessages.WM_APP_ACTIVATE, 0, 0)`. 두 번째 인스턴스는 즉시 종료한다.
