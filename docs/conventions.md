@@ -65,7 +65,7 @@ git grep "DllImport"                 # banned, use [LibraryImport]
 git grep -E "Hangul|English|NonKorean" Core/   # PR-08 IME 어휘 게이트
 git grep "맑은 고딕"          Core/   # PR-08 한국어 폰트 어휘 게이트
 git grep "requireAdministrator"     app.manifest   # P5: asInvoker only (manifest invariant)
-git grep "ShellExecuteW.*runas"     App/Bootstrap/ # PR-15: 1 (AdminElevation self-relaunch)
+git grep "RunAsVerb"                App/Bootstrap/ # PR-15: 1+ (AdminElevation 의 verb="runas" const 추출 후 실 호출 site 검증 — PR-15 도입 당시 "ShellExecuteW.*runas" grep 은 doc comment 만 매치하고 ShellExecuteW(..., RunAsVerb, ...) 실 호출은 미매치되는 stale 상태)
 git grep "GetTokenInformation"      Core/Native/   # PR-15: 1 (Advapi32 RID 추출)
 git grep "RunLevelHighestAvailable" App/Startup/   # PR-15: 1 (StartupTaskManager admin 분기 const)
 git grep -n "User32.UpdateLayeredWindow" Core/Windowing/LayeredOverlayBase.cs   # PR-18: 0 (LayeredWindowBlit 위임)
@@ -281,11 +281,14 @@ The `SafeFontHandle` `using` pattern is critical — early release would crash `
 
 ## Testing
 
-No unit test project. Verification is:
+[tests/KoEnVue.Tests/](../tests/KoEnVue.Tests/) xUnit project (PR-10, dev-only — release exe 미포함 → P1 예외). `InternalsVisibleTo("KoEnVue.Tests")` 가 KoEnVue.csproj 에 박혀 internal API 접근 가능. 검증 매트릭스:
 
 - **Debug + Release build both clean** (0 warnings, 0 errors). A debug-only build leaves the release exe outdated
+- **`dotnet test tests/KoEnVue.Tests/`** — 현재 baseline **65 PASS** (PR-10 40 + PR-20 25). Unit/ 디렉토리 6 파일:
+  - **PR-10** (G1): `ColorHelperTests` (Hex ↔ COLORREF 5 메서드) / `DpiHelperTests` (Scale 2 + BASE_DPI) / `SettingsValidateTests` (Validate clamp 12 케이스)
+  - **PR-20**: `StartupTaskXmlTests` (schtasks XML 6 PASS — PR-03 D LogonTrigger.UserId + PR-15 RunLevel 분기 + Command escape) / `XmlEntityCodecTests` (XML 1.0 5 entity + 순서 invariant 9 PASS) / `SanitizeLogPathTests` (4 거부 + 4 허용/폴백 10 PASS, NUL 문자 invalid char — `|<>*` 는 .NET 8+ throw 안 할 수 있음)
 - **Smoke gate matrix** exercised manually: boot → tray icon appears → indicator follows foreground → IME toggle changes color → drag works → drag with Shift locks axis → drag with snap sticks to edges → CAPS LOCK toggles bars → config hot-reload → corrupted config spam check → update check (both branches: no update / new version) → Start Menu ESC dismissal hides indicator → Search bar ESC dismissal hides indicator
 - **`git grep` invariants** (listed above) all return 0
 - **Byte-size tracking** against the previous stage's baseline
 
-The feedback loop is short enough that unit tests haven't earned their keep — the entire app is essentially a single Win32 message pump with a handful of pure helper functions, and most of the interesting behavior is in the interaction between GDI / user32 / DWM / the IME stack, which mocking can't simulate usefully.
+자동화 가능한 표면 — XML 조립, 문자열 codec, 경로 정규화처럼 입출력이 명확하고 외부 의존성 0 — 은 단위 테스트로 박제 (PR-20 의 19 메서드 매트릭스 = 회귀 차단 baseline). 외부 의존성이 큰 표면 — `LayeredOverlayBase` 의 GDI 핫 패스, `OverlayAnimator` 의 WM_TIMER FSM, IME 스택과의 상호작용, schtasks.exe 실 호출 — 은 여전히 수동 smoke 가 정직한 검증 ([dev-notes/2026-05-28-pr-20-unit-tests.md](dev-notes/2026-05-28-pr-20-unit-tests.md)).

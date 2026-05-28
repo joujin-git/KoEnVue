@@ -73,10 +73,24 @@ KoEnVue/
 │                            회귀 표면을 회복.
 ├── Program.Bootstrap.cs     partial class: mutex, window classes, teardown,
 │                            second-instance activation, TaskbarCreated tray recovery
-└── KoEnVue.csproj
+├── KoEnVue.csproj
+│
+└── tests/KoEnVue.Tests/     xUnit project (dev-only, P1 예외). InternalsVisibleTo
+    └── Unit/                — KoEnVue.csproj 가 KoEnVue.Tests 에 internal 노출 (PR-10).
+        ├── ColorHelperTests.cs        (PR-10)  Hex ↔ COLORREF 5 메서드
+        ├── DpiHelperTests.cs          (PR-10)  Scale 2 오버로드 + BASE_DPI
+        ├── SettingsValidateTests.cs   (PR-10)  Validate clamp 12 케이스
+        ├── StartupTaskXmlTests.cs     (PR-20)  schtasks XML 6 PASS — PR-03 D
+        │                                       (LogonTrigger.UserId) + PR-15 RunLevel
+        │                                       분기 + Command escape 박제
+        ├── XmlEntityCodecTests.cs     (PR-20)  XML 1.0 5 entity + 순서 invariant
+        │                                       9 PASS (Theory InlineData 5 분리)
+        └── SanitizeLogPathTests.cs    (PR-20)  4 거부 + 4 허용/폴백 10 PASS
+                                                (PR-03 B1 보안 표면, NUL 문자 invalid
+                                                 char 채택 — .NET 8+ throw 보장)
 ```
 
-Every file in `Core/` is reusable in another Windows desktop project; every file in `App/` is product-specific.
+Every file in `Core/` is reusable in another Windows desktop project; every file in `App/` is product-specific. `tests/` 는 release exe 에 포함되지 않는 dev-only 예외 (P1).
 
 ---
 
