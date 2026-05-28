@@ -134,9 +134,14 @@ internal sealed record AppConfig
     public DefaultPositionConfig? DefaultIndicatorPosition { get; init; } = null;
 
     // [인디케이터 위치 -- 저장 안 된 앱의 기본 표시 위치 (창 기준)]
-    // null = 하드코딩 폴백 (창 TopRight, DefaultConfig.DefaultRelativeOffset*).
-    // 값이 있으면 Corner anchor + delta로 포그라운드 창 DWM 프레임 기준 위치 계산.
-    public RelativePositionConfig? DefaultIndicatorPositionRelative { get; init; } = null;
+    // 디폴트는 DefaultConfig.DefaultRelative* 단일 진실원 참조. 사용자가 명시적으로 null 설정 시
+    // Overlay 가 동일 폴백 const 를 그대로 사용 — 두 경로 일치.
+    public RelativePositionConfig? DefaultIndicatorPositionRelative { get; init; } = new()
+    {
+        Corner = DefaultConfig.DefaultRelativeCorner,
+        DeltaX = DefaultConfig.DefaultRelativeOffsetX,
+        DeltaY = DefaultConfig.DefaultRelativeOffsetY,
+    };
 
     // [인디케이터 위치 -- 드래그 중 창 엣지 스냅]
     // true = 드래그 중 가시 창의 엣지와 모니터 work area 엣지에 자석처럼 붙음.

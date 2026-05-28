@@ -106,8 +106,8 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 `CursorOverlay.HandleCursorMotionTimer` 는 두 모드로 동작:
 
-- **정지 검출 모드 (디폴트, `CursorAlwaysShow = false`)** — `TIMER_ID_CURSOR_MOTION` 이 `CursorMotionPollMs = 50ms` 로 호출. 매 tick `GetCursorPos` → 이전 좌표와 맨해튼 거리 `(|dx| + |dy|) > CursorMotionThresholdPx (5)` 이면 "이동" 으로 분류해 `_idleStartTick = 0` 리셋 + 가시 중이면 즉시 `Hide()`. "정지" 분류면 `_idleStartTick` 가 0 이면 현재 tick 으로 마킹, 이후 매 tick `now - _idleStartTick >= CursorIdleDelayMs (100ms)` 검사 → 도달 시 `RenderAtCursor` 호출 + 마킹 해제. 가시 상태에서는 정지 추가 검출 skip (이미 표시 중)
-- **항상 표시 모드 (`CursorAlwaysShow = true`)** — 타이머가 `CursorAlwaysPollMs = 16ms` 로 빠르게 호출. 이동/정지 분류 자체를 skip 하고 매 tick `RenderAtCursor` 만 호출 → cursor 위치 추종. 숨기지 않음
+- **정지 검출 모드 (`CursorAlwaysShow = false`)** — `TIMER_ID_CURSOR_MOTION` 이 `CursorMotionPollMs = 50ms` 로 호출. 매 tick `GetCursorPos` → 이전 좌표와 맨해튼 거리 `(|dx| + |dy|) > CursorMotionThresholdPx (5)` 이면 "이동" 으로 분류해 `_idleStartTick = 0` 리셋 + 가시 중이면 즉시 `Hide()`. "정지" 분류면 `_idleStartTick` 가 0 이면 현재 tick 으로 마킹, 이후 매 tick `now - _idleStartTick >= CursorIdleDelayMs (100ms)` 검사 → 도달 시 `RenderAtCursor` 호출 + 마킹 해제. 가시 상태에서는 정지 추가 검출 skip (이미 표시 중)
+- **항상 표시 모드 (디폴트, `CursorAlwaysShow = true`)** — 타이머가 `CursorAlwaysPollMs = 16ms` 로 빠르게 호출. 이동/정지 분류 자체를 skip 하고 매 tick `RenderAtCursor` 만 호출 → cursor 위치 추종. 숨기지 않음
 
 두 모드 전환은 `HandleConfigChanged` 의 "값 변경" 분기가 `KillTimer` + `SetTimer` 로 polling 주기를 즉시 교체해 흡수한다.
 
@@ -128,7 +128,7 @@ fix:
 
 ### 트레이 메뉴 lazy 생성 / dispose 흐름
 
-`config.CursorIndicatorEnabled = false` (디폴트) 시 부팅 시점에 윈도우/엔진/타이머 생성 **안 함** — 메모리/CPU 비용 0. 사용자가 트레이 "커서 인디케이터 숨김" 체크박스 클릭 → `IDM_CURSOR_TOGGLE` → `updateConfig(config with { CursorIndicatorEnabled = true })` → `HandleConfigChanged` OFF→ON 분기 → `Program.EnableCursorOverlay()` 가 (1) `CreateCursorOverlayWindow` (별도 HWND, `WS_EX_TRANSPARENT` 영구 ON) → (2) `CursorOverlay.Initialize(hwnd, config, _lastImeState, _lastCapsLockState)` 가 엔진 + 첫 DIB 사전 생성 → (3) `SetTimer(TIMER_ID_CURSOR_MOTION, CursorMotionPollMs or CursorAlwaysPollMs)`.
+디폴트 (`CursorIndicatorEnabled = true`) 에서는 부팅 시 윈도우/엔진/타이머가 정상 생성. 사용자가 트레이 "커서 인디케이터 숨김" 체크박스를 클릭해 `CursorIndicatorEnabled = false` 로 끈 동안에는 윈도우/엔진/타이머 **모두 해제** — 메모리/CPU 비용 0. 다시 켜면 트레이 메뉴 클릭 → `IDM_CURSOR_TOGGLE` → `updateConfig(config with { CursorIndicatorEnabled = true })` → `HandleConfigChanged` OFF→ON 분기 → `Program.EnableCursorOverlay()` 가 (1) `CreateCursorOverlayWindow` (별도 HWND, `WS_EX_TRANSPARENT` 영구 ON) → (2) `CursorOverlay.Initialize(hwnd, config, _lastImeState, _lastCapsLockState)` 가 엔진 + 첫 DIB 사전 생성 → (3) `SetTimer(TIMER_ID_CURSOR_MOTION, CursorMotionPollMs or CursorAlwaysPollMs)`. config.json 으로 `cursor_indicator_enabled = false` 를 명시 저장한 채 부팅하면 lazy 게이트가 동일하게 작동해 비용 0 보장.
 
 메뉴 체크 의미는 메인 인디 `IDM_USER_HIDDEN` 과 동일 — 라벨 "커서 인디케이터 숨김" + `MF_CHECKED` = **현재 숨김 상태** (= `CursorIndicatorEnabled = false`). 클릭 시 enabled 반전.
 
@@ -152,7 +152,7 @@ OFF 토글 시 `DisableCursorOverlay()` 가 역순으로 `KillTimer` → `Cursor
 
 ### Settings 다이얼로그 노출 (PR-C)
 
-PR-C 에서 cursor 10 config 키를 트레이 메뉴 "상세 설정" 다이얼로그의 12번째 섹션 "커서 인디케이터" 로 GUI 노출 (기존 12번 "고급" 은 13번으로 이동). 새 컨트롤/팩토리/I18n 테이블 변경 0 — 기존 Bool/Int/Dbl 팩토리 + 인라인 `("한국어", "English")` 튜플 패턴 재사용. Min/Max 는 `DefaultConfig.MinCursor*` / `MaxCursor*` const 를 직접 참조해 **단일 진실원** 유지 (config-reference.md 표의 범위와 자동 일치). 디폴트 OFF 정책 유지 — 다이얼로그 노출은 발견 가능성만 높이고 활성 사용자 비용은 그대로.
+PR-C 에서 cursor 10 config 키를 트레이 메뉴 "상세 설정" 다이얼로그의 12번째 섹션 "커서 인디케이터" 로 GUI 노출 (기존 12번 "고급" 은 13번으로 이동). 새 컨트롤/팩토리/I18n 테이블 변경 0 — 기존 Bool/Int/Dbl 팩토리 + 인라인 `("한국어", "English")` 튜플 패턴 재사용. Min/Max 는 `DefaultConfig.MinCursor*` / `MaxCursor*` const 를 직접 참조해 **단일 진실원** 유지 (config-reference.md 표의 범위와 자동 일치). PR-C 당시는 디폴트 OFF 였으나 본 PR 에서 디폴트가 ON + 항상 표시 모드로 전환 — 다이얼로그 노출은 끄거나 세부 조정하려는 사용자의 발견 가능성을 보장.
 
 ---
 
@@ -224,7 +224,7 @@ Two nullable config fields store per-mode defaults for apps without a saved posi
 
 Null fallbacks (hardcoded, also logical px — scaled at apply time):
 - Fixed: `DefaultConfig.DefaultIndicatorOffsetX = -200, Y = 10` (top-right of work area, scaled by target-monitor DPI before anchoring)
-- Window: `DefaultConfig.DefaultRelativeCorner = TopRight, X = -50, Y = 10` (inside top-right of window, scaled by target-monitor DPI before anchoring)
+- Window: `DefaultConfig.DefaultRelativeCorner = BottomRight, X = -69, Y = -58` (inside bottom-right of window, scaled by target-monitor DPI before anchoring). `AppConfig.DefaultIndicatorPositionRelative` 의 init 디폴트는 본 3 const 를 직접 참조하는 `RelativePositionConfig` 객체 — 사용자가 명시적으로 `null` 을 저장한 경우에만 Overlay 폴백 경로가 동일 const 를 재참조 (두 경로 단일 진실원 일치)
 
 Multi-monitor / resolution stability: offsets are stored relative to a `Corner` anchor, not as absolute pixel coordinates, and both Fixed-mode default-anchor and Window-mode relative deltas are DPI-normalized to 96 DPI logical pixels. The indicator's visual position relative to the anchor (work area corner for Fixed default, window frame corner for Window) is invariant across monitors of differing DPI scale. See "Window-relative position memory" above for the save/apply math — Fixed-mode default anchor follows the same pattern via `ComputeAnchorFromCurrentPosition` (divide by source monitor scale) and `ResolveAnchor` (multiply by target monitor scale).
 

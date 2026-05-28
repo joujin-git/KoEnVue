@@ -42,6 +42,7 @@
 
 ### Changed
 
+- **빌드 디폴트 3종 변경 (사용자 환경값과 동기화)** — (1) **창 기준 모드 기본 위치 우상단 → 우하단 변경**: `DefaultConfig.DefaultRelativeCorner` `TopRight` → `BottomRight`, `DefaultRelativeOffsetX` `-50` → `-69`, `DefaultRelativeOffsetY` `+10` → `-58`. publish/config.json 자동 생성 결과 + Overlay 의 null 폴백 두 경로 모두 새 값. 기존 사용자 (config.json 에 명시값 있음) 영향 0 — 신규 사용자 (config.json 키 없음) 만 첫 부팅 시 새 폴백 적용. (2) **커서 인디케이터 기본 ON**: `CursorIndicatorEnabled` `false` → `true`, `CursorAlwaysShow` `false` → `true`. 첫 부팅부터 마우스 커서를 따라다니며 표시 (16ms 위치 추종). 트레이 메뉴 "커서 인디케이터 숨김" 으로 끄기 가능. (3) **`AppConfig.DefaultIndicatorPositionRelative` init 디폴트 단일 진실원 강화**: 기존에는 `null` (Overlay 가 const 3개로 폴백) 이었으나 이제 init 디폴트가 직접 `DefaultConfig.DefaultRelative{Corner,OffsetX,OffsetY}` 를 참조하는 `RelativePositionConfig` 객체. 사용자가 명시적으로 `null` 저장 시에도 Overlay 가 동일 const 로 폴백 — 두 경로 단일 진실원 일치 ([docs/config-reference.md](docs/config-reference.md#부록--단일-진실원-매트릭스) 부록 매트릭스 1행 추가).
 - **하네스 effort 정책 강화 + PR 충돌 사전 점검 도입** — 서브에이전트 6개 (explorer / planner / reviewer / docs-keeper / historian / verifier) 본문 첫 단락에 `**모든 작업은 ultrathink + max effort + thinking 모드로 수행합니다**` 한 줄 강제 명시 — UserPromptSubmit hook 미경유 위임 경로에서도 동일 effort 보장. `inject-ultrathink.ps1` 메시지를 "ultrathink + thinking 모드" + "항상 max effort 로 수행 — 단축/생략 없이" 두 축으로 강화. docs-keeper 작업 흐름에 Step 0 (open PR 충돌 사전 점검) 신설 — `gh pr list --state open` 으로 변경 대상 파일이 미머지 PR 의 인접 영역인지 확인 후 3안 (한 PR 묶기 / base rebase / 멀리 떨어진 위치) 보고. 본 세션의 PR #3 vs PR #4 dev-note 충돌 학습 반영. [docs/harness.md §11](docs/harness.md) 신설 — 정책 본문. 코드 동작 변경 0 — 하네스/문서만.
 
 ## [0.9.3.0] — 2026-05-21

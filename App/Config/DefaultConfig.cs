@@ -44,19 +44,18 @@ internal static partial class DefaultConfig
     /// 창 기준 모드 기본 앵커 코너.
     /// AppConfig.DefaultIndicatorPositionRelative가 null일 때 폴백.
     /// </summary>
-    public const Corner DefaultRelativeCorner = Corner.TopRight;
+    public const Corner DefaultRelativeCorner = Corner.BottomRight;
 
     /// <summary>
     /// 창 기준 모드 기본 위치 — 창의 앵커 코너 기준 X 오프셋.
     /// 음수 = 모서리에서 왼쪽으로.
     /// </summary>
-    public const int DefaultRelativeOffsetX = -50;
+    public const int DefaultRelativeOffsetX = -69;
 
     /// <summary>
-    /// 창 기준 모드 기본 위치 — 창의 앵커 코너 기준 Y 오프셋.
-    /// 양수 = 모서리에서 아래로.
+    /// 창 기준 모드 기본 위치 — 창의 앵커 코너 기준 Y 오프셋 (양수 = 아래로, 음수 = 위로).
     /// </summary>
-    public const int DefaultRelativeOffsetY = 10;
+    public const int DefaultRelativeOffsetY = -58;
 
     /// <summary>
     /// 드래그 중 창 엣지 스냅 임계값 (DPI 스케일링 전 px).
@@ -204,8 +203,8 @@ internal static partial class DefaultConfig
     // === 커서 인디케이터 (D7 — Settings.Validate clamp + SettingsDialog field range 단일 진실원) ===
     // AppConfig 의 init 디폴트가 이 const 를 참조하므로 한 곳에서 값을 변경하면 양쪽이 자동 동기화.
 
-    public const bool   CursorIndicatorEnabled     = false;
-    public const bool   CursorAlwaysShow           = false;
+    public const bool   CursorIndicatorEnabled     = true;
+    public const bool   CursorAlwaysShow           = true;
     public const int    CursorOuterRadius          = 45;
     public const int    CursorMiddleRadius         = 30;
     public const int    CursorInnerRadius          = 15;
