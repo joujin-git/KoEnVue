@@ -160,7 +160,12 @@ internal static class StartupTaskManager
     /// 두 필드의 의도가 완전히 다르고 둘 다 채우면 다시 admin 요구로 회귀하므로 LogonTrigger 쪽만 채운다.
     /// </para>
     /// </summary>
-    private static string BuildStartupTaskXml(string exePath, bool adminElevation)
+    /// <remarks>
+    /// PR-20: 본 메서드는 PR-03 D 회귀 (LogonTrigger.UserId 누락) + PR-15 RunLevel 분기의 단일 진실원이라
+    /// 단위 테스트 (<c>StartupTaskXmlTests</c>) 박제 대상. private → internal 완화는 InternalsVisibleTo
+    /// ("KoEnVue.Tests") 만으로 노출되며 App/Core 외부에는 노출 0.
+    /// </remarks>
+    internal static string BuildStartupTaskXml(string exePath, bool adminElevation)
     {
         // LogonTrigger.<UserId> — trigger 대상 user 식별. 본인 logon 만 발화하도록 명시 필요.
         string userId = XmlEntityCodec.Escape($"{Environment.UserDomainName}\\{Environment.UserName}");
