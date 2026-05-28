@@ -317,6 +317,9 @@ internal static partial class Tray
                         if (!string.IsNullOrEmpty(exePath))
                         {
                             AdminElevation.ClearReentryGuard();
+                            // 자식이 본 인스턴스 종료를 명시 대기하도록 PID 환경변수 set —
+                            // OnProcessExit 의 mutex Dispose + NIM_DELETE + WTS unregister 까지 race 차단.
+                            AdminElevation.SetRelaunchParentPidForTrayRestart();
                             UriLauncher.Open(exePath);
                             User32.PostMessageW(hwndMain, Win32Constants.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
                         }

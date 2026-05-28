@@ -1,3 +1,6 @@
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using KoEnVue.App.Localization;
 using KoEnVue.App.Models;
@@ -49,6 +52,18 @@ internal static class AdminElevation
 
     /// <summary>koenvue_crash.txt 의 elevation ERROR 태그.</summary>
     private const string CrashTagError         = "ELEVATION-ERR";
+
+    /// <summary>
+    /// Tray 메뉴 재시작 + self-elevation spawn 시 자식이 부모 종료를 명시 대기하도록 PID 를
+    /// 전달하는 환경 변수. <see cref="WaitForRelaunchParentIfAny"/> 가 consume + 클리어.
+    /// PR-15 후속 fix — mutex / trayicon NIM_ADD/DELETE / WTS notification 등 race 차단.
+    /// </summary>
+    private const string RelaunchParentPidEnvVarName = "KOENVUE_RELAUNCH_PARENT_PID";
+
+    /// <summary>
+    /// <see cref="WaitForRelaunchParentIfAny"/> 의 최대 대기 (ms). 부모가 hang 해도 진행하기 위한 안전 timeout.
+    /// </summary>
+    private const int RelaunchParentWaitMs = 5000;
 
     /// <summary>TryRelaunchAsAdmin 결과 — caller 분기 신호.</summary>
     internal enum Result
@@ -119,6 +134,11 @@ internal static class AdminElevation
 
         // 환경 변수 set — ShellExecuteW 가 spawn 하는 자식 프로세스 환경 상속.
         Environment.SetEnvironmentVariable(ElevatedEnvVarName, ElevatedEnvVarValue);
+        // 손자 (High IL) 가 본 인스턴스 종료를 명시 대기하도록 PID 전달 — mutex / trayicon /
+        // 리소스 ownership race 차단. 본 인스턴스는 ExitForChild 분기로 곧 종료 (mutex 안 잡음).
+        Environment.SetEnvironmentVariable(
+            RelaunchParentPidEnvVarName,
+            Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
 
         Log($"attempting self-elevation (path={exePath})");
         IntPtr rc;
@@ -196,5 +216,78 @@ internal static class AdminElevation
     internal static void ClearReentryGuard()
     {
         Environment.SetEnvironmentVariable(ElevatedEnvVarName, null);
+    }
+
+    /// <summary>
+    /// Tray 메뉴 토글 재시작 경로 (<c>Tray.HandleMenuCommand</c> IDM_ADMIN_ELEVATION 의 YES 분기)
+    /// 에서 호출 — 자식 spawn (<c>UriLauncher.Open</c>) 직전에 본 인스턴스의 PID 를 환경변수에 set.
+    /// 자식은 <see cref="WaitForRelaunchParentIfAny"/> 에서 이 값을 읽어 부모 종료까지 명시 대기.
+    /// <para>
+    /// race 차단 대상: (1) mutex — 자식 createdNew=false 즉시 종료, (2) trayicon GUID NIM_ADD/DELETE
+    /// 순서, (3) WTS notification / IME hook / log file lock 등 리소스 ownership. PR-15 §7
+    /// 의 "원본이 mutex 안 잡은 상태" 가정은 부팅 시점 self-elevation 한정 — Tray 토글 재시작
+    /// 경로에서는 원본이 mutex + 모든 리소스 보유 중이라 별도 동기화 필요.
+    /// </para>
+    /// </summary>
+    internal static void SetRelaunchParentPidForTrayRestart()
+    {
+        Environment.SetEnvironmentVariable(
+            RelaunchParentPidEnvVarName,
+            Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// <c>Program.MainImpl</c> 의 Settings.Load 직후, <see cref="TryRelaunchAsAdmin"/> + mutex
+    /// 시도 전에 호출 — 환경변수에 부모 PID 가 있으면 그 프로세스 종료까지 wait (timeout
+    /// <see cref="RelaunchParentWaitMs"/>). 정상 부팅 (환경변수 없음) 에는 noop.
+    /// <para>
+    /// consume + 클리어 패턴 — wait 후 환경변수 제거. 다만 ShellExecuteW("runas") 분기는
+    /// <see cref="TryRelaunchAsAdmin"/> 안에서 새로 set 하므로 손자 generation 에도 정확한
+    /// 부모 PID (= 자식 PID) 전달.
+    /// </para>
+    /// <para>
+    /// PID 재사용 paranoid 케이스: 부모가 종료된 후 다른 프로세스가 같은 PID 받아도
+    /// <see cref="Process.GetProcessById"/> 가 그 새 프로세스 핸들을 잡고 wait 한다. 자식
+    /// spawn ↔ Process.GetProcessById 사이 ms 단위라 재사용 확률 0 에 가깝지만, 그래도
+    /// 일어나면 새 프로세스 종료까지 최대 5초 대기 후 강행 — 영구 hang 회피.
+    /// </para>
+    /// </summary>
+    internal static void WaitForRelaunchParentIfAny()
+    {
+        string? pidStr = Environment.GetEnvironmentVariable(RelaunchParentPidEnvVarName);
+        if (string.IsNullOrEmpty(pidStr)) return;
+
+        // 환경변수 클리어 — 정상 부팅으로 진입한 인스턴스에 stale PID 가 남지 않도록.
+        // 손자 spawn 경로 (TryRelaunchAsAdmin) 는 별도로 ShellExecuteW 직전 재설정.
+        Environment.SetEnvironmentVariable(RelaunchParentPidEnvVarName, null);
+
+        if (!int.TryParse(pidStr, NumberStyles.Integer, CultureInfo.InvariantCulture,
+                out int parentPid))
+        {
+            Log($"WaitForRelaunchParent: invalid PID env value '{pidStr}'");
+            return;
+        }
+
+        // catch 확장 (reviewer 권장): Process.GetProcessById = ArgumentException / InvalidOperationException,
+        // Process.WaitForExit(int) = Win32Exception (handle 접근 거부 — IL 비대칭) / SystemException
+        // (detached Process). 본 fix 시나리오 (자식이 같은 사용자 + 같은-or-낮은 IL 부모 wait) 잠재성
+        // 낮지만 startup 단계 unhandled 예외 차단 = 영구 사망 회피.
+        try
+        {
+            using var parent = Process.GetProcessById(parentPid);
+            bool exited = parent.WaitForExit(RelaunchParentWaitMs);
+            if (exited)
+                Log($"WaitForRelaunchParent: parent PID {parentPid} exited");
+            else
+                Log($"WaitForRelaunchParent: parent PID {parentPid} did not exit within {RelaunchParentWaitMs}ms — proceeding");
+        }
+        catch (Exception ex) when (ex is ArgumentException
+            or InvalidOperationException
+            or Win32Exception
+            or SystemException)
+        {
+            // 부모가 이미 종료 / 접근 거부 / detached — 모두 "wait 불가, 진행" 으로 동일 처리.
+            Log($"WaitForRelaunchParent: cannot wait for PID {parentPid} ({ex.GetType().Name}) — proceeding (likely already exited or inaccessible)");
+        }
     }
 }

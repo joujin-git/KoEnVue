@@ -172,6 +172,11 @@ internal static partial class Program
         //     등은 LogProvider.Sink 의 pre-Init 버퍼 경유로 Logger.Initialize 직후 flush.
         _config = Settings.Load();
 
+        // 0b-1. PR-15 후속 fix — Tray 메뉴 토글 재시작 + self-elevation 손자 spawn 경로에서
+        //       부모 종료를 명시 대기. 환경변수 KOENVUE_RELAUNCH_PARENT_PID 가 set 돼 있을 때만
+        //       동작 (정상 부팅에는 noop). mutex / trayicon GUID / WTS notification 등 race 차단.
+        AdminElevation.WaitForRelaunchParentIfAny();
+
         // 0c. admin_elevation 처리 (PR-15) — UIPI 우회용 self-elevation.
         //     mutex 획득 전 호출 — 원본이 mutex 안 잡은 상태라 자식 (High IL) 이 깨끗하게 새로
         //     createdNew=true 획득 (race 0). ExitForChild = 원본 즉시 종료 (자식 spawn 성공).
