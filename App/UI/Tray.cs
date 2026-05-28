@@ -306,6 +306,21 @@ internal static partial class Tray
                     updateConfig(newAdminConfig);
                     // schtasks 의 RunLevel 즉시 갱신 — 등록 안 됐으면 noop.
                     StartupTaskManager.ReregisterIfAdminChanged(newAdminConfig);
+
+                    // 분기 — admin → 일반 권한 down-grade 는 Windows token 모델 한계로 자동 spawn
+                    // 불가 (ShellExecuteW("open") 가 부모 admin 토큰 상속 → 자식도 admin). 사용자에게
+                    // 수동 종료/재실행 안내만 노출 + MB_OK. 다른 3 케이스 (일반→admin, 일반→일반,
+                    // admin→admin) 는 기존 자동 spawn 흐름 — UAC 1회 또는 권한 유지.
+                    bool isDowngrade = !newAdminConfig.AdminElevation
+                        && AdminElevation.IsCurrentProcessElevated();
+                    if (isDowngrade)
+                    {
+                        User32.MessageBoxW(hwndMain,
+                            I18n.AdminElevationDowngradeNotice, "KoEnVue",
+                            Win32Constants.MB_OK);
+                        break;
+                    }
+
                     // 결정 #4 (트레이): 즉시 재시작 안내. Yes = 일반 권한 재실행 → 자식의
                     // self-check 가 새 config 기준으로 (true 면) UAC 1회 띄우거나 (false 면) 즉시 진행.
                     int answer = User32.MessageBoxW(hwndMain,

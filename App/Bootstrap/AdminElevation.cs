@@ -188,7 +188,7 @@ internal static class AdminElevation
         User32.MessageBoxW(IntPtr.Zero,
             I18n.AdminElevationDeniedMessage,
             I18n.AdminElevationDeniedTitle,
-            uType: 0);
+            uType: Win32Constants.MB_OK);
     }
 
     // === 로깅 — pre-Init 버퍼 + crash.txt 두 채널 ===

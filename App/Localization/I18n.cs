@@ -96,6 +96,7 @@ internal static class I18n
         MenuAdminElevation, MenuAdminElevationTooltip,
         AdminElevationDeniedTitle, AdminElevationDeniedMessage,
         AdminElevationRestartPrompt,
+        AdminElevationDowngradeNotice,
     }
 
     private static readonly Dictionary<I18nKey, (string Ko, string En)> _table = new()
@@ -180,6 +181,11 @@ internal static class I18n
         [I18nKey.AdminElevationRestartPrompt] = (
             "다음 실행부터 적용됩니다. 지금 재시작하시겠습니까?",
             "Will apply from next launch. Restart now?"),
+        // admin → 일반 권한 down-grade 케이스 — Windows token 모델 한계로 자동 spawn 불가
+        // (ShellExecuteW 가 부모 admin 토큰 상속). 사용자에게 수동 종료/재실행 안내.
+        [I18nKey.AdminElevationDowngradeNotice] = (
+            "관리자 권한 옵션이 비활성화됐습니다. 다음 실행부터 일반 권한으로 시작됩니다. 지금 적용하려면 트레이 메뉴의 '종료' 후 KoEnVue 를 다시 실행하세요.",
+            "Admin elevation has been disabled. KoEnVue will start with normal privileges from the next launch. To apply now, choose 'Exit' from the tray menu and re-run KoEnVue."),
     };
 
     /// <summary>
@@ -300,4 +306,12 @@ internal static class I18n
     public static string AdminElevationDeniedTitle   => Get(I18nKey.AdminElevationDeniedTitle);
     public static string AdminElevationDeniedMessage => Get(I18nKey.AdminElevationDeniedMessage);
     public static string AdminElevationRestartPrompt => Get(I18nKey.AdminElevationRestartPrompt);
+
+    /// <summary>
+    /// admin → 일반 down-grade 케이스 안내 (PR-15 후속 fix #2). Windows token 모델 한계로
+    /// admin 인스턴스가 일반 권한 자식을 자동 spawn 못 함 (ShellExecuteW 가 부모 토큰 상속).
+    /// 사용자에게 트레이 '종료' + 수동 재실행 안내. <see cref="MenuExit"/> 라벨과 메시지 안의
+    /// '종료' / 'Exit' 표기가 일치해야 사용자가 다음 단계를 명확히 인지.
+    /// </summary>
+    public static string AdminElevationDowngradeNotice => Get(I18nKey.AdminElevationDowngradeNotice);
 }

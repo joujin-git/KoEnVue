@@ -254,6 +254,8 @@ internal static class Win32Constants
     public const int IDNO               = 7;
 
     // --- MessageBox 스타일 ---
+    /// <summary>MessageBox 단일 OK 버튼 (기본값 — uType=0 과 동치).</summary>
+    public const uint MB_OK             = 0x00000000;
     /// <summary>MessageBox Yes/No 두 버튼.</summary>
     public const uint MB_YESNO          = 0x00000004;
 
