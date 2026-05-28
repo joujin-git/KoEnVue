@@ -285,18 +285,6 @@ internal sealed class LayeredCursorBase : IDisposable
         _lastAlpha = alpha;
         if (_hwnd == IntPtr.Zero || _memDC == IntPtr.Zero) return;
 
-        var ptDst = new POINT(x, y);
-        var size = new SIZE(displayW, displayH);
-        var ptSrc = new POINT(0, 0);
-        var blend = new BLENDFUNCTION
-        {
-            BlendOp = Win32Constants.AC_SRC_OVER,
-            BlendFlags = 0,
-            SourceConstantAlpha = alpha,
-            AlphaFormat = Win32Constants.AC_SRC_ALPHA
-        };
-
-        User32.UpdateLayeredWindow(_hwnd, IntPtr.Zero, ref ptDst, ref size,
-            _memDC, ref ptSrc, 0, ref blend, Win32Constants.ULW_ALPHA);
+        LayeredWindowBlit.Blit(_hwnd, _memDC, x, y, displayW, displayH, alpha);
     }
 }
