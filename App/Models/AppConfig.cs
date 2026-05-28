@@ -19,16 +19,16 @@ internal sealed record AppConfig
     public EventTriggersConfig EventTriggers { get; init; } = new();
 
     // [외관 -- 스타일]
-    public int LabelWidth { get; init; } = 28;
-    public int LabelHeight { get; init; } = 24;
-    public int LabelBorderRadius { get; init; } = 6;
-    public int BorderWidth { get; init; } = 0;
+    public int LabelWidth { get; init; } = DefaultConfig.LabelWidth;
+    public int LabelHeight { get; init; } = DefaultConfig.LabelHeight;
+    public int LabelBorderRadius { get; init; } = DefaultConfig.LabelBorderRadius;
+    public int BorderWidth { get; init; } = DefaultConfig.BorderWidth;
     public string BorderColor { get; init; } = "#000000";
 
     // [외관 -- 크기 배율] — LabelWidth/Height/FontSize/BorderRadius/BorderWidth + LABEL_PADDING_X에
     // 곱해지는 배율. 트레이 메뉴에서 1.0~5.0 범위, 소수점 1자리까지 조절.
     // DPI 스케일링과 독립적으로 적용된다.
-    public double IndicatorScale { get; init; } = 2.0;
+    public double IndicatorScale { get; init; } = DefaultConfig.IndicatorScale;
 
     // [외관 -- 색상]
     public string HangulBg { get; init; } = "#16A34A";
@@ -42,7 +42,7 @@ internal sealed record AppConfig
     public double ActiveOpacity { get; init; } = 0.95;
     // [외관 -- 텍스트]
     public string FontFamily { get; init; } = "맑은 고딕";
-    public int FontSize { get; init; } = 12;
+    public int FontSize { get; init; } = DefaultConfig.FontSize;
     public FontWeight FontWeight { get; init; } = FontWeight.Bold;
     public string HangulLabel { get; init; } = "한";
     public string EnglishLabel { get; init; } = "En";

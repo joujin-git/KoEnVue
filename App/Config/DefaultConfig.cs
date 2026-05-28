@@ -164,6 +164,18 @@ internal static partial class DefaultConfig
     /// <summary>always 모드 유휴 전환 타임아웃 — <see cref="AppConfig.AlwaysIdleTimeoutMs"/> 의 디폴트.</summary>
     public const int AlwaysIdleTimeoutMs = 3000;
 
+    // === AppConfig 직접 디폴트 (PR-17) ===
+    // 4-축 단일 진실원 (D7) 의 마지막 미참조 1-축 (AppConfig init) 회복.
+    // 본 const 들은 AppConfig 의 해당 필드와 1:1 이름 일치 — Min/Max clamp 와 형제.
+
+    // 외관 -- 스타일/크기
+    public const int    LabelWidth         = 28;
+    public const int    LabelHeight        = 24;
+    public const int    LabelBorderRadius  = 6;
+    public const int    BorderWidth        = 0;
+    public const double IndicatorScale     = 2.0;
+    public const int    FontSize           = 12;
+
     // === Validate clamp / SettingsDialog field range — Min/Max 단일 진실원 (D7) ===
     // Settings.Validate 의 Math.Clamp 인자와 SettingsDialog.Fields.cs 의 min/max 인자를 모두 본 const
     // 참조로 통일한다. 두 곳에 같은 리터럴을 두면 한 쪽만 변경됐을 때 다이얼로그 입력 → Validate 클램프
