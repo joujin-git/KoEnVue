@@ -184,6 +184,18 @@ internal static partial class DefaultConfig
     // 애니메이션
     public const int    SlideSpeedMs       = 100;
 
+    // 표시 모드
+    public const int    EventDisplayDurationMs = 2000;
+
+    // 동작 -- 배치 (SnapThresholdPx 는 트리거 거리, SnapGapPx 는 스냅 후 가시 간격 — 의미 분리)
+    public const int    SnapGapPx              = 10;
+
+    // 시스템
+    public const int    LogMaxSizeMb           = 10;
+
+    // 고급 -- AdvancedConfig
+    public const int    ForceTopmostIntervalMs = 5000;
+
     // === Validate clamp / SettingsDialog field range — Min/Max 단일 진실원 (D7) ===
     // Settings.Validate 의 Math.Clamp 인자와 SettingsDialog.Fields.cs 의 min/max 인자를 모두 본 const
     // 참조로 통일한다. 두 곳에 같은 리터럴을 두면 한 쪽만 변경됐을 때 다이얼로그 입력 → Validate 클램프

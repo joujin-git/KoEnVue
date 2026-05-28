@@ -14,7 +14,7 @@ internal sealed record AppConfig
 {
     // [표시 모드]
     public DisplayMode DisplayMode { get; init; } = DisplayMode.Always;
-    public int EventDisplayDurationMs { get; init; } = 2000;
+    public int EventDisplayDurationMs { get; init; } = DefaultConfig.EventDisplayDurationMs;
     public int AlwaysIdleTimeoutMs { get; init; } = DefaultConfig.AlwaysIdleTimeoutMs;
     public EventTriggersConfig EventTriggers { get; init; } = new();
 
@@ -105,7 +105,7 @@ internal sealed record AppConfig
     public AppLanguage Language { get; init; } = AppLanguage.Auto;
     public bool LogToFile { get; init; } = true;
     public string LogFilePath { get; init; } = "";
-    public int LogMaxSizeMb { get; init; } = 10;
+    public int LogMaxSizeMb { get; init; } = DefaultConfig.LogMaxSizeMb;
 
     // [시스템 — 권한] UIPI / admin 콘솔 IME 표시. false (기본) = asInvoker 그대로 (PR-03 정책).
     // true = 단일 실행 UAC 1회 (자체 elevation) + 부팅 자동은 schtasks /RL HIGHEST (UAC 0).
@@ -149,7 +149,7 @@ internal sealed record AppConfig
 
     // 창 엣지 스냅 시 인디케이터와 타겟 창 사이 간격 (DPI 스케일링 전 px).
     // 0 = 엣지에 밀착, 양수 = 경계선 겹침 방지 여백. 화면 엣지에는 적용 안 됨.
-    public int SnapGapPx { get; init; } = 10;
+    public int SnapGapPx { get; init; } = DefaultConfig.SnapGapPx;
 
     // [인디케이터 위치 -- 드래그 활성 키]
     // 드래그 개시 게이트. None = 모든 좌클릭이 드래그 개시. Ctrl/Alt/CtrlAlt = 해당 키를
@@ -184,7 +184,7 @@ internal sealed record EventTriggersConfig
 
 internal sealed record AdvancedConfig
 {
-    public int ForceTopmostIntervalMs { get; init; } = 5000;
+    public int ForceTopmostIntervalMs { get; init; } = DefaultConfig.ForceTopmostIntervalMs;
     public string OverlayClassName { get; init; } = "KoEnVueOverlay";
 }
 

@@ -51,6 +51,7 @@ Before adding a new helper: **grep Core/ first**.
 - 새 `Settings.Validate` clamp 범위: `Math.Clamp(value, DefaultConfig.MinX, DefaultConfig.MaxX)` — 0/100 등 리터럴 인자 금지.
 - 새 다이얼로그 입력 필드: `Int("...", DefaultConfig.MinX, DefaultConfig.MaxX, getter, setter)` — 다이얼로그 hand-sync 금지.
 - 4-색 preset 추가 시 [App/Config/ThemePresets.cs](../App/Config/ThemePresets.cs) 의 `ThemeColors` record + `_presets` Dictionary 항목 추가 — `Theme.X => backed with { HangulBg=..., ..., NonKoreanFg=... }` 의 6-필드 반복 금지.
+- `AppConfig.cs` 의 모든 numeric init 디폴트가 `DefaultConfig.*` const 를 참조한다 (PR-17, v0.9.5.0). 동일 값을 두 곳에 두면 `fd4373c` 의 "빌드 디폴트 동기화" 류 작업이 누락 누적을 못 잡는다. 검증: `git grep -nE "\}\s*=\s*-?[0-9]+(\.[0-9]+)?\s*;" App/Models/AppConfig.cs` → 0 매치 (array `];` / enum cast `(X)0` / nested record nullable 디폴트는 의도적으로 제외).
 
 ### P6 verification invariants
 
