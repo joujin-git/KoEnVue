@@ -43,7 +43,7 @@ The stock pen from `GetStockObject(NULL_PEN)` is intentionally NOT deleted — i
 
 ### DIB is top-down
 
-Negative `biHeight` in the BITMAPINFO so `(0, 0)` is top-left. Keeps the pixel arithmetic in the post-processing loop consistent with GDI's top-left origin.
+Negative `biHeight` in the BITMAPINFO so `(0, 0)` is top-left. Keeps the pixel arithmetic in the post-processing loop consistent with GDI's top-left origin. PR-18 부터 DIB section 생성 + memory DC `SelectObject` 호출은 [Core/Windowing/DibSectionFactory.TryCreate](../Core/Windowing/DibSectionFactory.cs) 단일 helper 로 위임 — overlay / cursor 두 엔진이 같은 형식 (top-down 32bpp BI_RGB) 의 DIB 를 만들던 ~25 LOC × 2 = 50 LOC 중복 차단. `UpdateLayeredWindow` 호출 + `BLENDFUNCTION`/`POINT`/`SIZE` 인라인 구성도 동일하게 [Core/Windowing/LayeredWindowBlit.Blit](../Core/Windowing/LayeredWindowBlit.cs) 로 위임 (overlay 2 호출 site + cursor 1 호출 site).
 
 ### DIB / DC creation safety
 
@@ -96,7 +96,7 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 - **셰이더 가드** (`App/UI/CursorRenderer.cs`): `MinVisibleAlpha = 1.0 / 255.0` 상수를 두고 `ShadeDib` 픽셀 출력 분기를 `avgAlpha > 0.0` → `avgAlpha >= MinVisibleAlpha` 로 강화 — round-down 부산 픽셀 자체를 출력에서 제외
 - **엔진 가드** (`Core/Windowing/LayeredCursorBase.cs`): `ApplyPremultipliedAlpha` 의 `a == 0 && (r | g | b) != 0` 분기에서 메인 `LayeredOverlayBase` 동명 가드 (GDI AA 엣지 보존 — `a = 255` 복구) 와 **의미가 다르게** RGB 도 0 으로 정리. cursor 셰이더는 GDI 그리기를 안 쓰고 alpha 를 명시적으로 쓰므로, 그 패턴의 픽셀은 GDI AA 엣지가 아니라 셰이더의 round-down 부산물이라 fully-opaque 점으로 복구하면 안 됨
 
-두 가드는 중복 방어 — 셰이더 가드가 1차 차단, 엔진 가드가 셰이더 외 경로에서도 안전망. 메인 인디는 `DrawTextW` AA 가 alpha=0 RGB!=0 픽셀을 유효 엣지로 출력하므로 동명 가드의 의미가 정반대. 동일 이름 함수의 의미 차이가 cursor 도입 시 메인 가드의 무의식적 복사로 외곽 잡티 회귀를 만들었던 학습 — [dev-notes/2026-05-27-cursor-indicator.md "잠재 버그 fix — 외곽 잡티"](dev-notes/2026-05-27-cursor-indicator.md).
+두 가드는 중복 방어 — 셰이더 가드가 1차 차단, 엔진 가드가 셰이더 외 경로에서도 안전망. 메인 인디는 `DrawTextW` AA 가 alpha=0 RGB!=0 픽셀을 유효 엣지로 출력하므로 동명 가드의 의미가 정반대. 동일 이름 함수의 의미 차이가 cursor 도입 시 메인 가드의 무의식적 복사로 외곽 잡티 회귀를 만들었던 학습 — [dev-notes/2026-05-27-cursor-indicator.md "잠재 버그 fix — 외곽 잡티"](dev-notes/2026-05-27-cursor-indicator.md). PR-18 이 DIB 생성 + `UpdateLayeredWindow` 블리트 ~50 LOC 를 공유 helper 로 추출할 때 본 `ApplyPremultipliedAlpha` 는 의미 차이로 의도적 분기 보존 — 자세한 결정 근거 (옵션 A enum 전달 / 옵션 B 콜백 디스패치 양쪽의 거부 이유): [dev-notes/2026-05-28-pr-18-core-windowing.md](dev-notes/2026-05-28-pr-18-core-windowing.md).
 
 ### 색상 합성 (App 측 책임)
 
@@ -835,6 +835,8 @@ Separately registered (shared WndProc with main window). `WM_DESTROY` guard chec
 ### `volatile` + `Action<AppConfig>` callback
 
 `_config` is a `volatile` field, and `ref` cannot be used with volatile, so config updates use an `Action<AppConfig>` callback pattern instead of `ref AppConfig`.
+
+cross-thread 접근하는 `Program.cs` 의 hwnd 3종 (`_hwndMain` / `_hwndOverlay` / `_hwndCursorOverlay`) 도 PR-18 5/5 부터 `volatile` 마킹 — 메인 스레드의 `CreateWindowExW` write 와 감지 스레드의 `PostMessageW` / `IsKoenvueWindow` read 사이의 비대칭 회복. x64 의 TSO (Total Store Order) + 단일 init-then-read 패턴 덕에 회귀 0 이지만, ARM64 weak memory model + NativeAOT codegen 조합의 silent no-op 회귀 (감지 스레드가 첫 폴링 tick 에서 stale `IntPtr.Zero` 읽고 `PostMessageW(0, ...)` silent fail) 방어. cost 0 (keyword 6 글자 × 3), evidence 부재의 방어적 패치 — 자세한 근거: [dev-notes/2026-05-28-pr-18-core-windowing.md](dev-notes/2026-05-28-pr-18-core-windowing.md).
 
 ### `OnProcessExit` cleanup sequence
 

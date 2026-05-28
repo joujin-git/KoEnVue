@@ -68,9 +68,14 @@ git grep "requireAdministrator"     app.manifest   # P5: asInvoker only (manifes
 git grep "ShellExecuteW.*runas"     App/Bootstrap/ # PR-15: 1 (AdminElevation self-relaunch)
 git grep "GetTokenInformation"      Core/Native/   # PR-15: 1 (Advapi32 RID 추출)
 git grep "RunLevelHighestAvailable" App/Startup/   # PR-15: 1 (StartupTaskManager admin 분기 const)
+git grep -n "User32.UpdateLayeredWindow" Core/Windowing/LayeredOverlayBase.cs   # PR-18: 0 (LayeredWindowBlit 위임)
+git grep -n "User32.UpdateLayeredWindow" Core/Windowing/LayeredCursorBase.cs    # PR-18: 0 (LayeredWindowBlit 위임)
+git grep -n "Gdi32.CreateDIBSection"     Core/Windowing/LayeredOverlayBase.cs   # PR-18: 0 (DibSectionFactory 위임)
+git grep -n "Gdi32.CreateDIBSection"     Core/Windowing/LayeredCursorBase.cs    # PR-18: 0 (DibSectionFactory 위임)
+git grep -nE "private static volatile IntPtr (_hwndMain|_hwndOverlay|_hwndCursorOverlay)" Program.cs   # PR-18 5/5: 3
 ```
 
-> `RunLevel.*HighestAvailable` 의 기존 0-매치 가드는 PR-15 에서 무효화됨 — `BuildStartupTaskXml` 가 config 분기로 `HighestAvailable` 을 정당하게 emit. 위 4종 grep 이 새로운 invariant (각 1매치).
+> `RunLevel.*HighestAvailable` 의 기존 0-매치 가드는 PR-15 에서 무효화됨 — `BuildStartupTaskXml` 가 config 분기로 `HighestAvailable` 을 정당하게 emit. 위 4종 grep 이 새로운 invariant (각 1매치). PR-18 의 4 매치 가드는 overlay/cursor 두 엔진이 `UpdateLayeredWindow` / `CreateDIBSection` 을 직접 호출하지 않고 `LayeredWindowBlit` / `DibSectionFactory` helper 에 위임함을 검증 (호출 단일화) — `ApplyPremultipliedAlpha` 는 의미 차이로 의도적 분기 보존이라 동일 가드 미적용.
 
 Additional sub-rule — `App/Config/` must not import `App/Detector/`:
 
