@@ -468,19 +468,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         _lastRenderedStyle = style;
 
         // _isDragging 가드를 우회하여 UpdateLayeredWindow 직접 호출
-        var ptDst = new POINT(x, y);
-        var size = new SIZE(w, h);
-        var ptSrc = new POINT(0, 0);
-        var blend = new BLENDFUNCTION
-        {
-            BlendOp = Win32Constants.AC_SRC_OVER,
-            BlendFlags = 0,
-            SourceConstantAlpha = _lastAlpha,
-            AlphaFormat = Win32Constants.AC_SRC_ALPHA
-        };
-
-        User32.UpdateLayeredWindow(_hwndOverlay, IntPtr.Zero, ref ptDst, ref size,
-            _memDC, ref ptSrc, 0, ref blend, Win32Constants.ULW_ALPHA);
+        LayeredWindowBlit.Blit(_hwndOverlay, _memDC, x, y, w, h, _lastAlpha);
     }
 
     // ================================================================
@@ -733,18 +721,6 @@ internal sealed class LayeredOverlayBase : IDisposable
         if (_hwndOverlay == IntPtr.Zero || _memDC == IntPtr.Zero) return;
         if (_isDragging) return;  // 드래그 중 위치 충돌 방지
 
-        var ptDst = new POINT(x, y);
-        var size = new SIZE(displayW, displayH);
-        var ptSrc = new POINT(0, 0);
-        var blend = new BLENDFUNCTION
-        {
-            BlendOp = Win32Constants.AC_SRC_OVER,
-            BlendFlags = 0,
-            SourceConstantAlpha = alpha,
-            AlphaFormat = Win32Constants.AC_SRC_ALPHA
-        };
-
-        User32.UpdateLayeredWindow(_hwndOverlay, IntPtr.Zero, ref ptDst, ref size,
-            _memDC, ref ptSrc, 0, ref blend, Win32Constants.ULW_ALPHA);
+        LayeredWindowBlit.Blit(_hwndOverlay, _memDC, x, y, displayW, displayH, alpha);
     }
 }
