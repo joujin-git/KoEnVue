@@ -12,7 +12,9 @@ namespace KoEnVue.Core.Windowing;
 /// <para>
 /// P4 ("하나의 구현만") 예외 정당화는 [docs/dev-notes/2026-05-27-cursor-indicator.md](../../docs/dev-notes/2026-05-27-cursor-indicator.md):
 /// 메인 인디 알파 race 미해결 영역에 변경면을 추가하지 않기 위한 의도적 분리. 공유 가능한
-/// ~120 LOC (DIB 생성 / premultiply / UpdateLayeredWindow) 가 중복되나, 회귀 차단 가치가 우선.
+/// ~120 LOC 중 PR-18 의 <see cref="DibSectionFactory"/> + <see cref="LayeredWindowBlit"/> 로
+/// ~50 LOC 가 공유되었고, 남은 ~40 LOC <see cref="ApplyPremultipliedAlpha"/> 는 의미 차이
+/// (overlay = AA 엣지 보존 / cursor = 외곽 잡티 제거) 로 의도적 분기 보존.
 /// </para>
 /// <para>
 /// 콜백 시그니처 — 메인 인디의 콜백 (hdc 받음) 과 다르게 ppvBits 를 직접 받는다. cursor 인디는
