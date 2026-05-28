@@ -187,18 +187,28 @@ internal static class Settings
         => pos is null ? null : pos with { Corner = EnumOrDefault(pos.Corner, Corner.TopRight) };
 
     /// <summary>
-    /// AdvancedConfig 정리. 현재는 <c>OverlayClassName</c> 만 검사한다 — 영문/숫자/언더스코어
-    /// 1-255 자 외 값은 디폴트로 폴백한다. RegisterClassExW 가 받는 문자열이라 비정상 값이면
-    /// 윈도우 클래스 등록 자체가 실패해 앱이 침묵 종료된다.
+    /// AdvancedConfig 정리. <c>OverlayClassName</c> (영문/숫자/언더스코어 1-255 자 외 값은
+    /// 디폴트로 폴백 — RegisterClassExW 가 받는 문자열이라 비정상 값이면 윈도우 클래스 등록
+    /// 자체가 실패해 앱이 침묵 종료된다) + <c>ForceTopmostIntervalMs</c>
+    /// (<see cref="DefaultConfig.MinForceTopmostMs"/>..<see cref="DefaultConfig.MaxForceTopmostMs"/>
+    /// 로 clamp — 음수 / 과대 값이 들어와도 SettingsDialog 입력 범위와 동일하게 보정).
     /// </summary>
     private static AdvancedConfig ValidateAdvanced(AdvancedConfig adv)
     {
-        if (IsValidWindowClassName(adv.OverlayClassName)) return adv;
+        int clampedMs = Math.Clamp(adv.ForceTopmostIntervalMs,
+            DefaultConfig.MinForceTopmostMs, DefaultConfig.MaxForceTopmostMs);
 
-        Logger.Warning(
-            $"Invalid overlay_class_name '{adv.OverlayClassName}' (must be 1-255 chars, "
-            + "ASCII letters/digits/underscore). Falling back to default.");
-        return adv with { OverlayClassName = "KoEnVueOverlay" };
+        if (!IsValidWindowClassName(adv.OverlayClassName))
+        {
+            Logger.Warning(
+                $"Invalid overlay_class_name '{adv.OverlayClassName}' (must be 1-255 chars, "
+                + "ASCII letters/digits/underscore). Falling back to default.");
+            return adv with { OverlayClassName = "KoEnVueOverlay", ForceTopmostIntervalMs = clampedMs };
+        }
+
+        return adv.ForceTopmostIntervalMs == clampedMs
+            ? adv
+            : adv with { ForceTopmostIntervalMs = clampedMs };
     }
 
     private static bool IsValidWindowClassName(string? name)

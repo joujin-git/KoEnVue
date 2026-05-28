@@ -172,7 +172,7 @@ internal static class SystemFilter
             _vdmFailCount++;
             if (_vdmFailCount % VdmFailLogEvery == 0)
                 Logger.Debug($"VDM COM failure count: {_vdmFailCount}");
-            Logger.Debug($"IVirtualDesktopManager.IsWindowOnCurrentVirtualDesktop failed: {ex.Message}");
+            Logger.Debug($"IVirtualDesktopManager.IsWindowOnCurrentVirtualDesktop rejected: {ex.Message}");
             return true;
         }
     }

@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **트레이/메뉴 글로벌 옵션 토글 후 per-app 프로필 머지가 stale 되던 silent 회귀 차단 (PR-16)** — [`Program.cs:HandleMenuCommand`](Program.cs) 의 `updateConfig` 람다가 `Settings.Save` 만 호출하고 `Settings.ClearProfileCache()` 누락. `HandleConfigChanged` / `HandleSettingChange` 두 경로는 이미 호출하지만 이 람다는 mtime self-bump 정책 (감지 스레드 폴러가 본인 변경을 다시 알리지 않게 차단) 으로 두 핸들러를 우회하므로 별도 무효화 필요. 결과: 트레이 메뉴 글로벌 옵션 (예: indicator_enabled / hidden) 토글 직후 per-app 머지 결과가 이전 글로벌 값 기준으로 캐시된 채 표시. fix: 람다 끝에 1줄 추가 + 3줄 의도 주석.
+- **`AdvancedConfig.ForceTopmostIntervalMs` Validate clamp 누락 (PR-16, P4 sub-rule 4-축 단일 진실원 부분 회복)** — [`App/Config/Settings.cs:ValidateAdvanced`](App/Config/Settings.cs) 가 `OverlayClassName` 만 검증해 SettingsDialog 입력 범위 (Min/MaxForceTopmostMs) 와 Validate clamp 가 비대칭. 음수 / 과대 값이 config.json 에 직접 작성되면 silent 통과. fix: `Math.Clamp(value, DefaultConfig.MinForceTopmostMs, DefaultConfig.MaxForceTopmostMs)` 적용 (0..60000) — DefaultConfig 4-축 (init 디폴트 / Validate clamp / Dialog Min/Max / ScaleInput) 단일 진실원 ([docs/conventions.md P4 sub-rule](docs/conventions.md)) 의 빠진 축 회복.
+
+### Changed
+
+- **Debug 로그 "failed" 어휘 회피 3건 (PR-16, [docs/conventions.md §9](docs/conventions.md) 정신 확장)** — `App/` 잔존 위반 3건 정리. (1) [`App/Detector/SystemFilter.cs:175`](App/Detector/SystemFilter.cs) VDM COM 예외 — "failed" → "rejected", (2) [`App/Config/PositionCleanupService.cs:89`](App/Config/PositionCleanupService.cs) `Process.GetProcessName` 예외 — "failed to read process name" → "skipped process name read", (3) [`App/Update/UpdateChecker.cs:54`](App/Update/UpdateChecker.cs) HTTP null body — "HTTP fetch failed (null body)" → "HTTP fetch returned null body". 모두 정상 흐름의 single-call silent fallthrough — Debug 레벨에서 사용자 진단 시 불필요한 불안 유발 차단. 동작 변경 0. PR-16 후 `git grep "Logger\.Debug.*failed" App/` 0 매치 baseline 확립.
+
 ## [0.9.4.0] — 2026-05-28 — PR-15 admin_elevation + PR-B/PR-C + 하네스 + 누적 사후 fix
 
 ### Fixed

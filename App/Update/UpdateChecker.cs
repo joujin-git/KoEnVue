@@ -51,7 +51,7 @@ internal static class UpdateChecker
             string? body = HttpClientLite.GetString(UserAgent, GitHubApiHost, path, AcceptHeader);
             if (body is null)
             {
-                Logger.Debug("UpdateChecker: HTTP fetch failed (null body)");
+                Logger.Debug("UpdateChecker: HTTP fetch returned null body");
                 return;
             }
 

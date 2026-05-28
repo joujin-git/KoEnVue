@@ -1025,6 +1025,10 @@ internal static partial class Program
                 if (_config.TrayEnabled)
                     Tray.UpdateState(_lastImeState, _config);
                 Settings.Save(_config);
+                // 트레이/메뉴 토글로 글로벌 옵션이 바뀌면 per-app 머지 결과가 stale.
+                // HandleConfigChanged/HandleSettingChange 두 경로는 이미 ClearProfileCache 를
+                // 호출하지만 이 람다는 mtime self-bump 가 없어 별도 무효화가 필요하다.
+                Settings.ClearProfileCache();
             });
     }
 

@@ -86,7 +86,7 @@ internal static class PositionCleanupService
                 catch (Exception ex) when (ex is InvalidOperationException
                                              or System.ComponentModel.Win32Exception)
                 {
-                    Logger.Debug($"PositionCleanup: failed to read process name: {ex.Message}");
+                    Logger.Debug($"PositionCleanup: skipped process name read: {ex.Message}");
                 }
                 finally { proc.Dispose(); }
             }
