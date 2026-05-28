@@ -1,8 +1,8 @@
 # Improvement Plan — Progress Index
 
-**Last updated**: 2026-05-27 (PR-15 7-commit + Tier-3 검증 통과 — main FF merge 진행)
+**Last updated**: 2026-05-28 (v0.9.4.0 릴리스 shipped + 사후 fix 2건 main 반영)
 **Current branch**: main (PR-12 머지 완료 — **모든 13-PR 작업 종료**, PR-13/14/15 는 release-후 추가 작업)
-**Status**: ✅ 완료 — v0.9.3.0 릴리스 shipped (commit 456875f, tag v0.9.3.0). 본 디렉토리는 retrospective 참조 + 작업 단위 사례집으로 보존 ([dev-notes/2026-05-21-improvement-plan-retrospective.md](../dev-notes/2026-05-21-improvement-plan-retrospective.md) §결정 참조). **PR-15 (v0.9.4.0)** — PR-03 BREAKING 후 발견된 admin 콘솔 한/영 회귀 fix (UIPI / asInvoker). 단일 옵션 `admin_elevation: bool` + self-elevation (단일 실행) + schtasks `/RL HIGHEST` (부팅 자동) 분담. Tier-3 핵심 시나리오 (B+D) 통과 — main FF merge.
+**Status**: ✅ 완료 — v0.9.4.0 릴리스 shipped (commit 31b6615, tag v0.9.4.0, 2026-05-28). v0.9.3.0 (commit 456875f) 에 이은 두 번째 릴리스. 본 디렉토리는 retrospective 참조 + 작업 단위 사례집으로 보존 ([dev-notes/2026-05-21-improvement-plan-retrospective.md](../dev-notes/2026-05-21-improvement-plan-retrospective.md) §결정 참조). **PR-15 (v0.9.4.0)** — PR-03 BREAKING 후 발견된 admin 콘솔 한/영 회귀 fix (UIPI / asInvoker). 단일 옵션 `admin_elevation: bool` + self-elevation (단일 실행) + schtasks `/RL HIGHEST` (부팅 자동) 분담. Tier-3 핵심 시나리오 (B+D) 통과 — main FF merge. **Post-release**: v0.9.4.0 태그 후 main 에 cursor 잡티 fix (`769a3ef`) + 빌드 디폴트 3종 정렬 (`fd4373c`) + CHANGELOG 정리 (`1c53c7b`) 반영 — 별도 PR 단위 아님 (CHANGELOG [0.9.4.0] 섹션에 누적).
 
 ## Progress matrix
 

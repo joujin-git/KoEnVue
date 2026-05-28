@@ -1,4 +1,4 @@
-# Release Procedure — v0.9.3.0 이후 (현재 v0.9.4.0 준비)
+# Release Procedure — v0.9.4.0 이후 (다음 v0.9.X.Y 준비)
 
 **유지보수자 전용.** 일반 사용자는 [README.md](../README.md) 의 다운로드 섹션을 보세요. 본 문서는 PR-11 (Version 단일 진실원 + SHA256 release) 머지 후 절차입니다.
 
