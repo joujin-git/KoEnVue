@@ -182,8 +182,8 @@ internal static class I18n
         // (1) 일반 권한 재실행 + config=true → TryRelaunchAsAdmin self-elevation (UAC 1회), (2) 일반
         // 권한 재실행 + config=false → 일반 권한 그대로, (3) admin 환경 재실행 → 토큰 상속 (KoEnVue 통제 외).
         [I18nKey.AdminElevationChangeNotice] = (
-            "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. 관리자 권한 옵션은 다음 실행부터 적용됩니다.",
-            "The admin elevation option has been changed. KoEnVue will now exit; the change will apply from the next launch."),
+            "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. KoEnVue를 다시 실행해 주세요.",
+            "The admin elevation option has been changed. KoEnVue will now exit. Please launch KoEnVue again."),
     };
 
     /// <summary>

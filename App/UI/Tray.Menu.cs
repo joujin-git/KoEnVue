@@ -1,3 +1,4 @@
+using KoEnVue.App.Bootstrap;
 using KoEnVue.App.Config;
 using KoEnVue.App.Localization;
 using KoEnVue.App.Models;
@@ -153,7 +154,14 @@ internal static partial class Tray
         User32.AppendMenuW(hMenu, isStartup ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED,
             (nuint)IDM_STARTUP, I18n.MenuStartup);
         // PR-15: 관리자 권한 토글 — UIPI 우회 (admin 콘솔의 한/영 표시). 시작 프로그램 등록 바로 옆에 배치.
-        uint adminElevationFlags = config.AdminElevation ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
+        // 체크 표시 = config.AdminElevation OR IsCurrentProcessElevated() (PR-15 후속 fix #4, 2026-05-29).
+        // OR 의 이유 — admin 환경 외부 spawn (예: admin Total Commander 가 KoEnVue.exe 실행 시 admin
+        // 토큰 상속) 경우, config 가 false 여도 실 권한이 admin 이면 사용자에게 명시적으로 시각 노출.
+        // 다른 메뉴 항목 (Snap/Animation 등) 은 config 직접 반영 — admin 항목만 외부 환경 영향 받는
+        // 유일한 케이스라 OR 정당. 토글 클릭은 여전히 config 만 변경 (Windows token 모델 한계 — 실
+        // 권한은 다음 부팅까지 영향 없음, MessageBoxW 안내가 사용자 가이드).
+        bool isAdminEffective = config.AdminElevation || AdminElevation.IsCurrentProcessElevated();
+        uint adminElevationFlags = isAdminEffective ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
         User32.AppendMenuW(hMenu, adminElevationFlags, (nuint)IDM_ADMIN_ELEVATION, I18n.MenuAdminElevation);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
