@@ -434,6 +434,114 @@ SHA256: `e7dfc79d93836d052d1e8f72aece1397998fd3771d55509b90275418f79a3dc1`.
 
 자세한 시계열 (메시지 단순화 요청 + 메뉴 체크 OR 질문 → ultrathink 분석 → 4-case 매트릭스 → 채택 근거) + 토글 의미 보존 검증 + Windows token 모델 한계 정합 + AOT 페이지 흡수: [docs/dev-notes/2026-05-29-pr-15-tray-menu-or-logic.md](../dev-notes/2026-05-29-pr-15-tray-menu-or-logic.md).
 
+### 7.5 트레이 메뉴 라벨 — case 2 전용 `Config = User` hint suffix (PR-15 후속 fix #5, 2026-05-29)
+
+위 §7.4 의 메뉴 체크 OR 박은 **직후** 사용자 추가 보고/제안 시계열. fix #4 의 OR 가 case 2 (admin 환경 외부 spawn) 의 **실 권한** 시각 노출은 해결했지만, 같은 case 의 **`config.AdminElevation` 값** (사용자 의도) 은 여전히 invisible — 사용자가 admin Total Commander 에서 KoEnVue 실행 후 메뉴 체크가 ON 인 것만 보고 "옵션이 ON 인지 외부 환경 영향인지" 구분 불가.
+
+**1. 사용자 질문 (시계열 시작)**:
+
+> "관리자 권한 total commander 등에서 KoEnVue 실행 시 **설정값도 같이 알 수 있으면 제일 좋을 것 같아**"
+
+fix #4 의 시각 노출 정직성을 한 단계 강화 — 실 권한 + config 값 **두 신호 모두** visible.
+
+**2. ultrathink 옵션 비교 — 자동 동기화 거절**:
+
+옵션 A — case 2 진입 시 `config.AdminElevation` 을 자동 true 저장 (시각 충돌 자동 해결):
+
+| 시나리오 | 흐름 | 부작용 |
+|---------|------|--------|
+| 1 — 의도된 자동화 | 사용자가 admin Total Commander 상시 사용 + KoEnVue 도 항상 admin 으로 시작하길 원함 | OK — 자동 동기화가 사용자 의도와 일치 |
+| **2 — 일회성 admin 환경 사용** | 평소 일반 권한 사용자가 한 번 admin Total Commander 에서 KoEnVue 실행 (다른 작업 중 부차적) | **자동 동기화 → `config.AdminElevation=true` disk 저장 → `StartupTaskManager.ReregisterIfAdminChanged` 가 schtasks `<RunLevel>HighestAvailable</RunLevel>` 재등록 → 사용자가 KoEnVue 종료 후 다음 부팅부터 자동 admin 시작 = UAC 0 admin 자동 진입 — 사용자 명시 의도 0, schtasks 차원 부작용** |
+| **3 — 사용자 명시 토글 직후 외부 spawn** | 사용자가 `config.AdminElevation=false` 명시 토글 (`User` 의도) 직후 case 2 진입 (admin 환경에서 재실행) | **자동 동기화 → 사용자 직전 명시 의도 (User) 가 case 2 진입 한 번에 reset (Admin) — 의도 무시 패턴, 신뢰 손상** |
+
+시나리오 2/3 = 자동 동기화의 본질적 부작용. KoEnVue 의 자동화 정책 = "사용자 명시 의도 100% 존중" 과 정면 충돌. **거절**.
+
+옵션 B — case 2 만 라벨 hint suffix 노출 (자동 동기화 0):
+
+- 시각 정직성: case 2 의 실 권한 (체크 ON) + config 값 (라벨 hint) **두 신호 모두 visible**
+- 자동 동기화 0: `config.AdminElevation` disk 영향 0, schtasks 재등록 0, 사용자 명시 의도 100% 존중
+- 메뉴 항목 추가 0: 라벨 동적 분기만 — 항목 수 변경 없음 → 메뉴 layout 회귀 0
+
+**3. 사용자 직접 제안 채택 — 라벨 표기**:
+
+> "관리자 권한으로 실행 (Config = User) 정도로 표시"
+
+→ 사용자 후속 정정 (괄호 → 쉼표):
+
+> "관리자 권한으로 실행, Config = User"
+
+영문 동등 정정: "Run as administrator (Config = User)" → "Run as administrator, Config = User". 채택.
+
+**ko/en 영문 mix 정당성** (P2 정합 검증):
+
+- ko UI 디폴트 + 영문 fallback (P2) = "메인 텍스트 한국어" — 본 라벨의 메인 동사구 "관리자 권한으로 실행" 그대로 한국어 유지.
+- "Config" / "User" 영문 mix 정당화: (a) **IT 통용어** (Windows 표준 어휘) — Windows admin/User account, config file 어휘 한국어 번역 ("설정값", "사용자") 의 길이/명확성 trade-off, (b) **KoEnVue 의 주 사용자 (admin 콘솔 사용자) 친화** — 개발자/IT 사용자가 즉시 파악 가능, (c) **직설성** — "설정 = 사용자" 보다 "Config = User" 가 어휘 자체로 변수명/값 직관 명시, (d) **길이 trade-off 균형** — 메인 메뉴 한 줄 라벨에 hint 추가 시 길이 누적 부담 ("관리자 권한으로 실행 (설정값 = 사용자)" 보다 짧음).
+
+**4. 4-case 매트릭스 fix #4 → fix #5 변화**:
+
+| # | `config.AdminElevation` | `IsCurrentProcessElevated()` | fix #4 체크 | fix #5 체크 | fix #4 라벨 | **fix #5 라벨** | 의미 |
+|---|---|---|---|---|------|------|------|
+| 1 | `false` | `false` | OFF | OFF | "관리자 권한으로 실행" | "관리자 권한으로 실행" | 일관 OFF |
+| **2** | **`false`** | **`true`** | **ON ✓** | **ON ✓** | **"관리자 권한으로 실행"** | **"관리자 권한으로 실행, Config = User"** | **admin 환경 외부 spawn — fix #4 OR + fix #5 hint** |
+| 3 | `true` | `false` | ON | ON | "관리자 권한으로 실행" | "관리자 권한으로 실행" | 사용자 명시 토글 결과 |
+| 4 | `true` | `true` | ON | ON | "관리자 권한으로 실행" | "관리자 권한으로 실행" | 일관 ON |
+
+case 2 만 fix #5 의 라벨 분기. case 1/3/4 = 기본 라벨 (라벨 hint 없음 — noise 회피, 사용자 명시 의도 반영 케이스).
+
+**case 3 noise 회피 근거**: case 3 = `config.AdminElevation=true` + 일반 권한 (사용자 명시 토글 결과, 다음 실행 self-elevate 대기). 라벨 hint 가 "Config = Admin" 같은 형태로 노출되면 사용자 명시 의도가 이미 config 에 반영된 상태인데도 시각 노이즈 추가. fix #5 는 **외부 환경 영향 시각화** 한정 — 사용자 명시 토글 결과는 기존 체크 표시로 충분.
+
+**5. 구현** (변경 2 파일):
+
+```csharp
+// App/Localization/I18n.cs — I18nKey enum 끝 + _table + public surface
+public enum I18nKey { ..., AdminElevationChangeNotice, MenuAdminElevationExternal }
+
+[I18nKey.MenuAdminElevationExternal] = (
+    "관리자 권한으로 실행, Config = User",
+    "Run as administrator, Config = User"),
+
+public static string MenuAdminElevationExternal => Get(I18nKey.MenuAdminElevationExternal);
+```
+
+```csharp
+// App/UI/Tray.Menu.cs — fix #4 OR 로직 유지 + 라벨 분기 추가
+bool isCurrentlyElevated = AdminElevation.IsCurrentProcessElevated();
+bool isAdminEffective = config.AdminElevation || isCurrentlyElevated;
+bool isExternalElevation = !config.AdminElevation && isCurrentlyElevated;  // case 2
+string adminElevationLabel = isExternalElevation
+    ? I18n.MenuAdminElevationExternal
+    : I18n.MenuAdminElevation;
+uint adminElevationFlags = isAdminEffective ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
+User32.AppendMenuW(hMenu, adminElevationFlags, (nuint)IDM_ADMIN_ELEVATION, adminElevationLabel);
+```
+
+fix #4 의 OR 로직 (`isAdminEffective`) 한 줄도 변경 안 됨 — 체크 표시는 두 신호 OR, 라벨은 case 2 hint 단독. `isCurrentlyElevated` 만 분리해 두 분기 (`isAdminEffective` + `isExternalElevation`) 가 같은 P/Invoke 결과를 공유 — 우클릭마다 `OpenProcessToken` + `GetTokenInformation` 4 P/Invoke 1회.
+
+**6. 검증**:
+
+```
+dotnet build           → 0 warn / 0 error
+dotnet publish -r win-x64 -c Release   → 0 warn / 0 error, 4,865,024 bytes (fix #4 4,864,512 → +512)
+dotnet test            → 65/65 PASS
+```
+
+SHA256: `417A877C66560F6861D6AA1408BD0CE1D2FC29B3F0B0D42FB1F509DB295C024F`.
+
+**AOT 페이지 흡수 없음 (+512 bytes)** — 신규 i18n 키 ko/en 문자열 (UTF-16 ~84 bytes) + enum + `_table` + public surface property + `Tray.Menu.cs` 분기 로직 (~30 bytes IL) 의 합이 AOT 4 KB 페이지 경계를 넘어 +512 bytes 누적. fix #4 의 ±0 (페이지 흡수) → fix #5 의 +512 (페이지 경계 초과) 정직 보고. fix #1 (+2,560) → fix #2 (+1,024) → fix #3 (-512) → fix #4 (±0) → fix #5 (+512) — 누적 +3,584 bytes (v0.9.4.0 base 4,861,440 → 4,865,024).
+
+**7. P 규칙 영향**:
+
+| P | 영향 |
+|---|------|
+| P1 (NuGet 0) | 영향 0 — 기존 API 만 |
+| P2 (UI ko / log en) | 정합 — 메인 동사구 한국어 "관리자 권한으로 실행" + 영문 suffix hint "Config = User" (IT 통용어 + 사용자 직접 표현 + 길이 균형) |
+| P3 (magic 금지) | 정합 — i18n 키로 dispatch, 매직 문자열 0 |
+| P4 (단일 구현) | 정합 — `I18n.MenuAdminElevationExternal` 단일 정의 (I18n 3 spot — enum + _table + public surface) + `Tray.Menu.cs` 단일 호출 site |
+| P5 (asInvoker) | 영향 0 — manifest 무변경 |
+| P6 (App→Core) | 정합 — `I18n` + `Tray.Menu.cs` 모두 App, `AdminElevation.IsCurrentProcessElevated()` 호출도 App→App |
+
+자세한 시계열 (사용자 질문 → 자동 동기화 ultrathink 거절 → 사용자 직접 제안 → 라벨 표기 정정 괄호→쉼표) + 시나리오 2/3 자동 동기화 부작용 정밀 박제 + ko/en 영문 mix 정당성 + 4-case 매트릭스 fix #4 → fix #5 변화: [docs/dev-notes/2026-05-29-pr-15-tray-menu-config-hint.md](../dev-notes/2026-05-29-pr-15-tray-menu-config-hint.md).
+
 ### 8. P 규칙 영향
 
 | 규칙 | 영향 | 대응 |
@@ -500,7 +608,7 @@ Tier-1 (build) + Tier-2 (invariant grep) 는 모든 PR 공통.
 | `App/UI/Tray.cs` | 수정 | `IDM_ADMIN_ELEVATION = 4012` const + `HandleMenuCommand` case + admin 토글 시 schtasks 재등록 호출 + 재시작 안내 MessageBox | +30 |
 | `App/UI/Tray.Menu.cs` | 수정 | 메뉴 항목 + 체크 표시 + 시작 프로그램 등록 메뉴 옆 위치 | +10 |
 | `App/UI/Dialogs/SettingsDialog.Fields.cs` | 수정 | 시스템 섹션에 `Bool("관리자 권한으로 실행", "Run as administrator", ...)` 1 행 | +6 |
-| `App/Localization/I18n.cs` | 수정 | (PR-15 본 PR) `I18nKey` enum 에 `MenuAdminElevation` / `AdminElevationDeniedTitle` / `AdminElevationDeniedMessage` / `AdminElevationRestartPrompt` 4 추가 + `_table` 4 행 + public surface 4 줄. (fix #2) `AdminElevationDowngradeNotice` 1 키 추가. **(fix #3) `AdminElevationRestartPrompt` + `AdminElevationDowngradeNotice` 2 키 제거 + 신규 단일 키 `AdminElevationChangeNotice` 1 키 추가** (4 case 통일 흐름, net -1) | +25 (본 PR) / +5 (fix #2) / -3 (fix #3) |
+| `App/Localization/I18n.cs` | 수정 | (PR-15 본 PR) `I18nKey` enum 에 `MenuAdminElevation` / `AdminElevationDeniedTitle` / `AdminElevationDeniedMessage` / `AdminElevationRestartPrompt` 4 추가 + `_table` 4 행 + public surface 4 줄. (fix #2) `AdminElevationDowngradeNotice` 1 키 추가. (fix #3) `AdminElevationRestartPrompt` + `AdminElevationDowngradeNotice` 2 키 제거 + 신규 단일 키 `AdminElevationChangeNotice` 1 키 추가 (4 case 통일 흐름, net -1). **(fix #5) 신규 키 `MenuAdminElevationExternal` 1 키 추가** (case 2 전용 라벨 hint — "관리자 권한으로 실행, Config = User", net +1, public surface 누적 42 속성) | +25 (본 PR) / +5 (fix #2) / -3 (fix #3) / +12 (fix #5) |
 | `app.manifest` | **변경 없음** | P5 invariant — asInvoker 유지. 주석에 admin_elevation 옵션 언급 추가만. | +3 (주석) |
 | `Program.cs` | 수정 | `MainImpl` 시작부 (Settings.Load 직후, TryAcquireMutex 전) 에 `AdminElevation.TryRelaunchAsAdmin(_config)` 호출 + 결과 분기 (3 분기: Continue / Exit / Error) | +12 |
 | `Program.Bootstrap.cs` | 수정 | (선택) self-elevation 시점 mutex Dispose 안전망 — 현 권장 흐름에선 불필요, 코드 명료성 위해 가드 1줄 | +0~3 |
