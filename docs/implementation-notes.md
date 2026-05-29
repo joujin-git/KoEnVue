@@ -818,6 +818,60 @@ case 4 만 신규 분기 (`isDowngrade = !newAdminConfig.AdminElevation && Admin
 
 우회 후보 (Option A `SaferCreateLevel` + `CreateProcessAsUserW` / Option B explorer.exe COM 위임) 는 변경면 +200 LOC + 회귀 표면 다층이라 거부. 미래 진입 조건 + 4-case 매트릭스 + Option A/B/C 비교 + Windows token 모델 분석: [dev-notes/2026-05-28-pr-15-admin-downgrade.md](dev-notes/2026-05-28-pr-15-admin-downgrade.md) + [improvement-plan/PR-15-admin-elevation.md §7.2](improvement-plan/PR-15-admin-elevation.md).
 
+### Admin elevation toggle — 4 case 통일 흐름 (PR-15 후속 fix #3, 2026-05-29)
+
+위 fix #2 의 4-case 비대칭 (case 1/2/3 자동 spawn + case 4 안내 + `MB_YESNO`) 이 사용자 mental model 충돌 (메시지박스 표시 **전** 에 `updateConfig` + `ReregisterIfAdminChanged` 이미 disk 반영 완료 — Yes/No 컨벤션의 "취소" 직관과 불일치) + 메인 인디 잔존 회귀 (MB_OK + `break` 흐름의 자연 결과 — `WM_CLOSE` 미발화 → `OnProcessExit` 미진입 → `Overlay.Dispose` 미실행) 동시 보고를 사용자 직접 제안 (4 case 단일 메시지 + `MB_OK` 단일 버튼 + 자동 종료) 으로 통합 해결.
+
+[`Tray.HandleMenuCommand`](../App/UI/Tray.cs) 의 `IDM_ADMIN_ELEVATION` 핸들러는 fix #3 부터 **4 단계 단일 흐름** (~14 LOC):
+
+```csharp
+case IDM_ADMIN_ELEVATION:
+{
+    AppConfig newAdminConfig = config with { AdminElevation = !config.AdminElevation };
+    updateConfig(newAdminConfig);                                  // ① config 즉시 저장 (mtime self-bump)
+    StartupTaskManager.ReregisterIfAdminChanged(newAdminConfig);   // ② schtasks RunLevel 즉시 재등록 (등록 안 됐으면 noop)
+    User32.MessageBoxW(hwndMain, I18n.AdminElevationChangeNotice,  // ③ 통일 안내 (단일 메시지 + 단일 OK 버튼)
+        "KoEnVue", Win32Constants.MB_OK);
+    User32.PostMessageW(hwndMain, Win32Constants.WM_CLOSE,         // ④ 자동 종료 → OnProcessExit → Overlay.Dispose
+        IntPtr.Zero, IntPtr.Zero);
+}
+break;
+```
+
+자동 spawn 안 함 — Windows token 모델의 admin→일반 down-grade 한계를 사용자 수동 재실행으로 자연 회피. 사용자가 일반 권한 재실행 시 `config.AdminElevation=true` → [`AdminElevation.TryRelaunchAsAdmin`](../App/Bootstrap/AdminElevation.cs) 가 UAC 1회로 admin 자동 진입, `false` → 일반 권한 그대로. admin 환경 재실행은 토큰 상속 (KoEnVue 통제 외 — fix #2 §7.2 의 down-grade 한계 그대로 보존).
+
+**책임 분담 명료화**:
+
+| 메커니즘 | 책임 | 시점 | 비고 |
+|---------|------|------|------|
+| 트레이 토글 | **옵션 변경** (config 디스크 저장 + schtasks 재등록 + 종료) | 사용자가 트레이 메뉴 클릭 시 | fix #3 의 4 단계 단순 흐름 |
+| 부팅 self-elevation ([`TryRelaunchAsAdmin`](../App/Bootstrap/AdminElevation.cs)) | **옵션 효력 발생** (`config.AdminElevation=true` + 일반 권한 부모 → UAC 1회 + admin 자식) | 사용자 일반 권한 재실행 시 mutex 획득 전 (step 0c) | PR-15 UIPI 우회 가치 자체 |
+
+둘은 별개 책임 — 부팅 self-elevation 제거 시 PR-15 UIPI 우회 가치 (관리자 콘솔 한/영 표시) 자체 소멸. 트레이 토글 자동 spawn 제거 시 `TryRelaunchAsAdmin` 무가치 추론은 **부적절**.
+
+**자연 제거된 메서드** (사용처 0):
+
+- [`AdminElevation.ClearReentryGuard()`](../App/Bootstrap/AdminElevation.cs) — fix #2 의 트레이 YES 분기 직전 호출 site 였으나 fix #3 의 자동 spawn 폐기로 사용처 0
+- [`AdminElevation.SetRelaunchParentPidForTrayRestart()`](../App/Bootstrap/AdminElevation.cs) — 동일 (fix #1 의 race 차단 패턴이 트레이 자동 spawn 흐름 한정 → fix #3 에서 흐름 자체 제거)
+
+**유지 (인프라 가치)**:
+
+- [`TryRelaunchAsAdmin`](../App/Bootstrap/AdminElevation.cs) — 부팅 시점 self-elevation (옵션 효력 발생)
+- [`WaitForRelaunchParentIfAny`](../App/Bootstrap/AdminElevation.cs) — `TryRelaunchAsAdmin` 의 손자 generation 부모 wait (UAC 다이얼로그 통과 후 손자가 자식 종료를 명시 wait — race 차단)
+- 환경변수 2종 (`KOENVUE_ELEVATED` 재진입 가드 + `KOENVUE_RELAUNCH_PARENT_PID` 부모 PID 전파) — 부팅 self-elevation 의 손자 generation race 차단 인프라
+
+**I18n 키 정리**:
+
+| 키 | 변경 | 비고 |
+|---|------|------|
+| `AdminElevationRestartPrompt` | **제거** (fix #3) | `MB_YESNO` "다음 실행부터 적용됩니다. 지금 재시작하시겠습니까?" — Yes/No mental model 충돌 |
+| `AdminElevationDowngradeNotice` | **제거** (fix #3) | fix #2 의 case 4 안내 — 통일 흐름으로 흡수 |
+| `AdminElevationChangeNotice` | **신규** (fix #3) | ko "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. 관리자 권한 옵션은 다음 실행부터 적용됩니다." / en "The admin elevation option has been changed. KoEnVue will now exit; the change will apply from the next launch." |
+
+**트레이드오프 정직**: 일반→admin 케이스 (가장 흔한 use case) 의 자동 UAC spawn UX 가 약간 후퇴 — 기존 fix #2 까지는 `MB_YESNO` → YES → 자동 spawn → 자식이 UAC 1회 → 즉시 admin 인스턴스 시작. fix #3 부터는 사용자가 안내 OK → 자동 종료 → 사용자 수동 재실행 → UAC 1회. 단계 +1 의 마찰 비용. 분담 명료화 ("트레이 토글 = 옵션 변경" / "부팅 self-elevation = 옵션 효력 발생") 로 보상.
+
+자세한 시계열 + 사용자 직접 제안 채택 근거 + 트레이드오프 정직 + 분담 명료화: [dev-notes/2026-05-29-pr-15-tray-toggle-unified.md](dev-notes/2026-05-29-pr-15-tray-toggle-unified.md) + [improvement-plan/PR-15-admin-elevation.md §7.3](improvement-plan/PR-15-admin-elevation.md).
+
 ### Second-instance activation signal
 
 `TryAcquireMutex` 실패 시 `NotifyExistingInstance` 가 호출된다. 메인 윈도우 클래스명(`"KoEnVueMain"`)으로 `User32.FindWindowW` 호출 → 기존 인스턴스의 HWND 를 얻고 `PostMessageW(hwnd, AppMessages.WM_APP_ACTIVATE, 0, 0)`. 두 번째 인스턴스는 즉시 종료한다.

@@ -301,6 +301,82 @@ if (isDowngrade)
 
 자세한 시계열 + Option A/B/C 비교 + Windows token 모델 분석 + 미래 우회 진입 조건: [docs/dev-notes/2026-05-28-pr-15-admin-downgrade.md](../dev-notes/2026-05-28-pr-15-admin-downgrade.md).
 
+### 7.3 트레이 토글 4 case 통일 흐름 (PR-15 후속 fix #3, 2026-05-29)
+
+위 §7.2 의 4-case 비대칭 해결 (case 4 만 분기 + 자동 spawn skip + MB_OK 안내) 박은 후 사용자 추가 보고 2종:
+
+1. **MB_YESNO mental model 충돌** — 메시지박스 표시 **전** 에 `updateConfig(newAdminConfig)` + `StartupTaskManager.ReregisterIfAdminChanged` 이미 disk 반영 완료. 사용자가 "아니오" 클릭 시 표준 Yes/No 컨벤션의 "취소" 직관과 다르게 **이미 옵션 변경 완료** 상태 — 메뉴 체크 표시도 변경됨. PR-15 design doc §3.4 의 "다음 실행부터 적용됩니다" 의도가 메시지에 명시되어 있어도 사용자 직관과 충돌.
+2. **메인 인디 잔존 회귀** — fix #2 의 case 4 (admin → 일반 down-grade) 의 MB_OK + `break` 흐름의 자연 결과. `break` 가 `case IDM_ADMIN_ELEVATION:` switch break → `OnProcessExit` 미진입 → `Overlay.Dispose` 미실행 → 메인 인디 그대로 잔존. 사용자가 안내 메시지 OK → admin 인디 그대로 → 트레이 "종료" 추가 클릭 필요. fix #2 시점에는 "수동 종료/재실행" 안내가 이 단계를 명시했으나 마찰 누적.
+
+**사용자 직접 제안 — 4 case 통일 흐름** (채택):
+
+- 4 case 모두 단일 메시지 + `MB_OK` 단일 버튼 + 자동 종료 (`PostMessageW(WM_CLOSE)`)
+- 자동 spawn 안 함 — admin→일반 down-grade 한계 자연 회피 + 일반→admin / 일반→일반 / admin→admin 도 통일 흐름
+- 메시지: ko "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. 관리자 권한 옵션은 다음 실행부터 적용됩니다." / en "The admin elevation option has been changed. KoEnVue will now exit; the change will apply from the next launch."
+
+**채택 근거**:
+
+1. **mental model 단순화** — Yes/No 컨벤션 충돌 회피 (`MB_OK` 단일 버튼 = "확인" 직관과 정확 일치). 사용자가 OK 클릭 = "안내 읽음 + 종료 동의".
+2. **Windows token 모델 한계 자연 회피** — admin→일반 down-grade 도 사용자 수동 재실행으로 처리 (사용자 셸 = 일반 권한 → ShellExecuteW 토큰 상속 = 일반 권한).
+3. **메인 인디 잔존 회귀 자동 해결** — `WM_CLOSE` → `OnProcessExit` → `Overlay.Dispose` 종료 시퀀스 도달.
+4. **트레이드오프 정직** — 일반→admin (가장 흔한 use case) 자동 UAC spawn UX 약간 후퇴. 단계 +1 (사용자 수동 재실행). 분담 명료화 (**트레이 토글 = "옵션 변경"** / **부팅 self-elevation = "옵션 효력 발생"**) 로 보상.
+
+**책임 분담 명료화**:
+
+| 메커니즘 | 책임 | 시점 | 비고 |
+|---------|------|------|------|
+| 트레이 토글 | **옵션 변경** (config 디스크 저장) | 사용자 메뉴 클릭 시 | fix #3 의 4 단계 단일 흐름 |
+| 부팅 self-elevation ([`TryRelaunchAsAdmin`](../../App/Bootstrap/AdminElevation.cs)) | **옵션 효력 발생** (UAC 1회로 admin 자동 진입) | 사용자 일반 권한 재실행 시 mutex 획득 전 (step 0c) | PR-15 UIPI 우회 가치 자체 |
+
+둘은 별개 책임. 트레이 토글 자동 spawn 제거 (fix #3) ≠ `TryRelaunchAsAdmin` 무가치. 부팅 self-elevation 제거 시 PR-15 UIPI 우회 가치 (관리자 콘솔 한/영 표시) 자체 소멸.
+
+**구현** (변경 3 파일):
+
+```csharp
+// App/UI/Tray.cs — IDM_ADMIN_ELEVATION 분기 (~40 LOC → ~14 LOC)
+case IDM_ADMIN_ELEVATION:
+{
+    AppConfig newAdminConfig = config with { AdminElevation = !config.AdminElevation };
+    updateConfig(newAdminConfig);
+    StartupTaskManager.ReregisterIfAdminChanged(newAdminConfig);
+    User32.MessageBoxW(hwndMain, I18n.AdminElevationChangeNotice, "KoEnVue", Win32Constants.MB_OK);
+    User32.PostMessageW(hwndMain, Win32Constants.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+}
+break;
+```
+
+- [`App/Localization/I18n.cs`](../../App/Localization/I18n.cs) — `AdminElevationRestartPrompt` + `AdminElevationDowngradeNotice` 2 키 제거 + 신규 단일 키 `AdminElevationChangeNotice` (`I18nKey` enum + `_table` ko/en + public surface property).
+- [`App/Bootstrap/AdminElevation.cs`](../../App/Bootstrap/AdminElevation.cs) — `ClearReentryGuard()` + `SetRelaunchParentPidForTrayRestart()` 2 메서드 제거 (트레이 자동 spawn 흐름 폐기로 사용처 0). **유지**: `TryRelaunchAsAdmin` + `WaitForRelaunchParentIfAny` + `KOENVUE_ELEVATED` / `KOENVUE_RELAUNCH_PARENT_PID` 환경변수 2종 (부팅 self-elevation 인프라).
+
+**자연 부수 효과** — `Tray.cs` 의 `using KoEnVue.App.Bootstrap;` import 제거 (`AdminElevation.IsCurrentProcessElevated` / `ClearReentryGuard` / `SetRelaunchParentPidForTrayRestart` 호출 모두 폐기로 사용처 0).
+
+**4-case 매트릭스 변화**:
+
+| # | 출발 | 도착 | fix #2 동작 | fix #3 동작 |
+|---|------|------|------------|------------|
+| 1 | 일반 | admin | YESNO → YES → 자동 spawn (UAC 1회) | 안내 + 자동 종료 → 사용자 수동 재실행 → UAC 1회 |
+| 2 | 일반 | 일반 | YESNO → YES → 자동 spawn (일반 권한 상속) | 안내 + 자동 종료 → 사용자 수동 재실행 |
+| 3 | admin | admin | YESNO → YES → 자동 spawn (admin 토큰 상속) | 안내 + 자동 종료 → 사용자 수동 재실행 (admin 환경 → admin 상속) |
+| 4 | admin | 일반 | MB_OK 안내만 + break (메인 인디 잔존) | 안내 + 자동 종료 → 사용자 수동 재실행 (사용자 셸 = 일반 권한 상속) |
+
+fix #2 → fix #3 변화: 4 case 모두 **동일 흐름** (안내 + 자동 종료) + case 4 의 메인 인디 잔존 회귀 자동 해결.
+
+**보완 동작 유지** — `updateConfig` + `StartupTaskManager.ReregisterIfAdminChanged` 가 안내 메시지 표시 전에 이미 실행 → 다음 부팅부터는 schtasks 가 정확한 RunLevel 로 자동 시작. fix #2 의 보완 동작 그대로 보존.
+
+**검증**:
+
+```
+dotnet build           → 0 warn / 0 error
+dotnet publish -r win-x64 -c Release   → 0 warn / 0 error, 4,864,512 bytes (fix #2 4,865,024 → -512)
+dotnet test            → 65/65 PASS
+```
+
+SHA256: `d2efa84ae876af701ab890310d728a3e86dc4e3e8167c0e0eed3ee0cc836695c`.
+
+사이즈 감소 (-512 bytes) 는 메서드 2개 제거 + 분기 단순화 (~40 LOC → ~14 LOC) 의 IL 감소.
+
+자세한 시계열 + 사용자 직접 제안 채택 근거 + 트레이드오프 정직 + 분담 명료화 + 자연 제거된 메서드: [docs/dev-notes/2026-05-29-pr-15-tray-toggle-unified.md](../dev-notes/2026-05-29-pr-15-tray-toggle-unified.md).
+
 ### 8. P 규칙 영향
 
 | 규칙 | 영향 | 대응 |
@@ -367,7 +443,7 @@ Tier-1 (build) + Tier-2 (invariant grep) 는 모든 PR 공통.
 | `App/UI/Tray.cs` | 수정 | `IDM_ADMIN_ELEVATION = 4012` const + `HandleMenuCommand` case + admin 토글 시 schtasks 재등록 호출 + 재시작 안내 MessageBox | +30 |
 | `App/UI/Tray.Menu.cs` | 수정 | 메뉴 항목 + 체크 표시 + 시작 프로그램 등록 메뉴 옆 위치 | +10 |
 | `App/UI/Dialogs/SettingsDialog.Fields.cs` | 수정 | 시스템 섹션에 `Bool("관리자 권한으로 실행", "Run as administrator", ...)` 1 행 | +6 |
-| `App/Localization/I18n.cs` | 수정 | `I18nKey` enum 에 `MenuAdminElevation` / `AdminElevationDeniedTitle` / `AdminElevationDeniedMessage` / `AdminElevationRestartPrompt` 4 추가 + `_table` 4 행 + public surface 4 줄 | +25 |
+| `App/Localization/I18n.cs` | 수정 | (PR-15 본 PR) `I18nKey` enum 에 `MenuAdminElevation` / `AdminElevationDeniedTitle` / `AdminElevationDeniedMessage` / `AdminElevationRestartPrompt` 4 추가 + `_table` 4 행 + public surface 4 줄. (fix #2) `AdminElevationDowngradeNotice` 1 키 추가. **(fix #3) `AdminElevationRestartPrompt` + `AdminElevationDowngradeNotice` 2 키 제거 + 신규 단일 키 `AdminElevationChangeNotice` 1 키 추가** (4 case 통일 흐름, net -1) | +25 (본 PR) / +5 (fix #2) / -3 (fix #3) |
 | `app.manifest` | **변경 없음** | P5 invariant — asInvoker 유지. 주석에 admin_elevation 옵션 언급 추가만. | +3 (주석) |
 | `Program.cs` | 수정 | `MainImpl` 시작부 (Settings.Load 직후, TryAcquireMutex 전) 에 `AdminElevation.TryRelaunchAsAdmin(_config)` 호출 + 결과 분기 (3 분기: Continue / Exit / Error) | +12 |
 | `Program.Bootstrap.cs` | 수정 | (선택) self-elevation 시점 mutex Dispose 안전망 — 현 권장 흐름에선 불필요, 코드 명료성 위해 가드 1줄 | +0~3 |

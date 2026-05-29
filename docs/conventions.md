@@ -71,7 +71,8 @@ git grep "RunLevelHighestAvailable" App/Startup/   # PR-15: 1 (StartupTaskManage
 git grep "RelaunchParentPidEnvVarName" App/Bootstrap/   # PR-15 후속 fix (2026-05-28): 1 (AdminElevation 의 KOENVUE_RELAUNCH_PARENT_PID env var 명 단일 const — 트레이 토글 재시작 race 차단 핵심 패턴, KOENVUE_ELEVATED 와 동일 명명 prefix `KOENVUE_*`)
 git grep "Win32Constants.MB_OK"        App/             # PR-15 후속 fix #2 (2026-05-28 admin → 일반 down-grade): 2 (Tray.cs 의 down-grade 안내 + AdminElevation.cs 의 ShowDeniedMessage — `uType: 0` hard-code 정리, `MessageBoxW` 의 단일 OK 버튼 호출 site 통일)
 git grep -E "uType:\s*0\b"             App/             # PR-15 후속 fix #2: 0 (이전 AdminElevation.cs 한 곳을 const 화한 후 매직 넘버 0 잔존 없음)
-git grep "AdminElevationDowngradeNotice" App/           # PR-15 후속 fix #2: 4 (I18n.cs 3 — enum 항목 + _table 항목 + public surface property + Tray.cs 1 — IDM_ADMIN_ELEVATION 분기 호출) — 메시지 안 '종료' / 'Exit' 단어가 `MenuExit` 라벨과 정확 일치해야 사용자 다음 단계 인지 (manual 검토, 본 PR 시점에는 자동 grep 미도입)
+git grep "AdminElevationChangeNotice"  App/           # PR-15 후속 fix #3 (2026-05-29, 4 case 통일): 4 (I18n.cs 3 — enum 항목 + _table 항목 + public surface property + Tray.cs 1 — IDM_ADMIN_ELEVATION 분기 호출). fix #2 의 `AdminElevationDowngradeNotice` + `AdminElevationRestartPrompt` 2 키는 fix #3 에서 통합 제거 (단일 메시지 + MB_OK + 자동 종료 로 4 case 통일)
+git grep -E "ClearReentryGuard|SetRelaunchParentPidForTrayRestart" App/   # PR-15 후속 fix #3 (2026-05-29): 0 (트레이 자동 spawn 흐름 폐기로 사용처 0 — 두 메서드 자체 제거). `TryRelaunchAsAdmin` + `WaitForRelaunchParentIfAny` 는 부팅 시점 self-elevation 인프라 (옵션 효력 발생) 로 유지
 git grep -n "User32.UpdateLayeredWindow" Core/Windowing/LayeredOverlayBase.cs   # PR-18: 0 (LayeredWindowBlit 위임)
 git grep -n "User32.UpdateLayeredWindow" Core/Windowing/LayeredCursorBase.cs    # PR-18: 0 (LayeredWindowBlit 위임)
 git grep -n "Gdi32.CreateDIBSection"     Core/Windowing/LayeredOverlayBase.cs   # PR-18: 0 (DibSectionFactory 위임)
