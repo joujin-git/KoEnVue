@@ -950,6 +950,30 @@ case 2 만 라벨 분기 — case 1/3/4 = 기본 라벨 (사용자 명시 의도
 
 자세한 시계열 (사용자 질문 → 자동 동기화 ultrathink 거절 → 사용자 직접 제안 → 라벨 표기 정정) + 시나리오 2/3 자동 동기화 부작용 정밀 박제 + ko/en 영문 mix 정당성 + 4-case 매트릭스 fix #4 → fix #5 변화 + 라벨 표기 정정 시계열: [dev-notes/2026-05-29-pr-15-tray-menu-config-hint.md](dev-notes/2026-05-29-pr-15-tray-menu-config-hint.md) + [improvement-plan/PR-15-admin-elevation.md §7.5](improvement-plan/PR-15-admin-elevation.md).
 
+### Admin elevation MessageBoxW cleanup 트레일 (PR-15 후속 fix #2 cleanup, 2026-05-29)
+
+[fix #2](#admin-elevation-toggle--4-case-분기-매트릭스-pr-15-후속-fix-2) (2026-05-28) 이 [`Win32Constants.MB_OK = 0x00000000`](../Core/Native/Win32Types.cs) const 도입 후 [`Tray.cs`](../App/UI/Tray.cs) 의 down-grade 안내 + [`AdminElevation.cs:ShowDeniedMessage`](../App/Bootstrap/AdminElevation.cs) 2 곳만 정리하고 App/UI 의 나머지 5 spot 이 positional `0` 인 채로 잔존하던 P3 부분 일관성을 **100% 회복**.
+
+**변경 5 spot** (의미 변화 0, 마지막 positional `0` → `uType: Win32Constants.MB_OK`):
+
+| # | 파일 | 호출 site | 분기 |
+|---|------|---------|------|
+| 1 | [`App/UI/Tray.cs:543`](../App/UI/Tray.cs) | `ShowPositionError` | `TrayPositionUnavailable` 안내 박스 |
+| 2 | [`App/UI/Tray.cs:599`](../App/UI/Tray.cs) | `CleanupPositions` empty 분기 | `TrayPositionHistoryEmpty` 안내 박스 |
+| 3 | [`App/UI/Dialogs/SettingsDialog.cs:337`](../App/UI/Dialogs/SettingsDialog.cs) | 필드 commit 에러 | 사용자 입력 invalid 안내 |
+| 4 | [`App/UI/Dialogs/ScaleInputDialog.cs:177`](../App/UI/Dialogs/ScaleInputDialog.cs) | invalid input | 숫자 파싱 실패 박스 |
+| 5 | [`App/UI/Dialogs/ScaleInputDialog.cs:187`](../App/UI/Dialogs/ScaleInputDialog.cs) | out of range | Min/Max 범위 초과 박스 |
+
+`KoEnVue.Core.Native` import 이미 모든 파일에 있어 import 변경 0. 시리즈 카운트: fix #2 시점 2 (Tray.cs + AdminElevation.cs) → [fix #3](#admin-elevation-toggle--4-case-통일-흐름-pr-15-후속-fix-3-2026-05-29) 의 `AdminElevationChangeNotice` 1건 누적 6 → cleanup 5건 추가로 **7 통일** (Tray.cs ×3 + ScaleInputDialog.cs ×2 + SettingsDialog.cs ×1 + AdminElevation.cs ×1). App/UI 의 `MessageBoxW` 단일 OK 버튼 호출 site 100% named `Win32Constants.MB_OK` 패턴.
+
+**신규 invariant grep** ([conventions.md](conventions.md) L73 추가) — 기존 `uType:\s*0\b` 가드는 named argument 만 잡기 때문에 positional 형태는 별도 가드:
+
+```bash
+git grep -nE "User32\.MessageBoxW\([^)]*,\s*0\s*\)" App/   # 0 매치 — positional uType=0 금지
+```
+
+dev-note 신규 불요 (5 LOC cleanup), [PR-15 design doc §7](improvement-plan/PR-15-admin-elevation.md) 도 변경 불요 — 본 단락이 단일 박제처. fix #1~#5 시계열은 그대로 보존 (역사 박제 무손실).
+
 ### Second-instance activation signal
 
 `TryAcquireMutex` 실패 시 `NotifyExistingInstance` 가 호출된다. 메인 윈도우 클래스명(`"KoEnVueMain"`)으로 `User32.FindWindowW` 호출 → 기존 인스턴스의 HWND 를 얻고 `PostMessageW(hwnd, AppMessages.WM_APP_ACTIVATE, 0, 0)`. 두 번째 인스턴스는 즉시 종료한다.

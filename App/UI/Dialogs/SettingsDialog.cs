@@ -334,7 +334,7 @@ internal static partial class SettingsDialog
             if (error != null || result == null)
             {
                 ModalDialogLoop.RunExternal(_hwndDialog, () =>
-                    User32.MessageBoxW(_hwndDialog, error ?? "Error", I18n.SettingsDialogTitle, 0));
+                    User32.MessageBoxW(_hwndDialog, error ?? "Error", I18n.SettingsDialogTitle, uType: Win32Constants.MB_OK));
                 ScrollFieldIntoView(i);
                 User32.SetFocus(hwnd);
                 if (field.Type is FieldType.Int or FieldType.Double

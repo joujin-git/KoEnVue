@@ -540,7 +540,7 @@ internal static partial class Tray
         // MessageBoxW 는 자체 메시지 루프를 돌려 ModalDialogLoop.Run 으로 감쌀 수 없다.
         // RunExternal 로 IsActive 가드만 씌워 박스가 열린 동안 인디 튐을 억제.
         ModalDialogLoop.RunExternal(_hwndMain, () =>
-            User32.MessageBoxW(_hwndMain, I18n.TrayPositionUnavailable, "KoEnVue", 0));
+            User32.MessageBoxW(_hwndMain, I18n.TrayPositionUnavailable, "KoEnVue", uType: Win32Constants.MB_OK));
     }
 
     // ================================================================
@@ -596,7 +596,7 @@ internal static partial class Tray
         {
             // ShowPositionError 와 동일 이유로 RunExternal 사용 (MessageBoxW 자체 메시지 루프).
             ModalDialogLoop.RunExternal(_hwndMain, () =>
-                User32.MessageBoxW(_hwndMain, I18n.TrayPositionHistoryEmpty, "KoEnVue", 0));
+                User32.MessageBoxW(_hwndMain, I18n.TrayPositionHistoryEmpty, "KoEnVue", uType: Win32Constants.MB_OK));
             return;
         }
 

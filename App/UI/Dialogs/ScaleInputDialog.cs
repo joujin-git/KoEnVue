@@ -174,7 +174,7 @@ internal static class ScaleInputDialog
         {
             ModalDialogLoop.RunExternal(_hwndScaleDlg, () =>
                 User32.MessageBoxW(_hwndScaleDlg, I18n.ScaleDialogInvalidInput,
-                    I18n.ScaleDialogTitle, 0));
+                    I18n.ScaleDialogTitle, uType: Win32Constants.MB_OK));
             User32.SetFocus(_hwndScaleEdit);
             User32.SendMessageW(_hwndScaleEdit, Win32Constants.EM_SETSEL, IntPtr.Zero, (IntPtr)(-1));
             return false;
@@ -184,7 +184,7 @@ internal static class ScaleInputDialog
         {
             ModalDialogLoop.RunExternal(_hwndScaleDlg, () =>
                 User32.MessageBoxW(_hwndScaleDlg, I18n.ScaleDialogOutOfRange,
-                    I18n.ScaleDialogTitle, 0));
+                    I18n.ScaleDialogTitle, uType: Win32Constants.MB_OK));
             User32.SetFocus(_hwndScaleEdit);
             User32.SendMessageW(_hwndScaleEdit, Win32Constants.EM_SETSEL, IntPtr.Zero, (IntPtr)(-1));
             return false;
