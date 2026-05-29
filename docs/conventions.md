@@ -73,6 +73,7 @@ git grep "Win32Constants.MB_OK"        App/             # PR-15 후속 fix #2 (2
 git grep -E "uType:\s*0\b"             App/             # PR-15 후속 fix #2: 0 (이전 AdminElevation.cs 한 곳을 const 화한 후 매직 넘버 0 잔존 없음)
 git grep "AdminElevationChangeNotice"  App/           # PR-15 후속 fix #3 (2026-05-29, 4 case 통일): 4 (I18n.cs 3 — enum 항목 + _table 항목 + public surface property + Tray.cs 1 — IDM_ADMIN_ELEVATION 분기 호출). fix #2 의 `AdminElevationDowngradeNotice` + `AdminElevationRestartPrompt` 2 키는 fix #3 에서 통합 제거 (단일 메시지 + MB_OK + 자동 종료 로 4 case 통일)
 git grep -E "ClearReentryGuard|SetRelaunchParentPidForTrayRestart" App/   # PR-15 후속 fix #3 (2026-05-29): 0 (트레이 자동 spawn 흐름 폐기로 사용처 0 — 두 메서드 자체 제거). `TryRelaunchAsAdmin` + `WaitForRelaunchParentIfAny` 는 부팅 시점 self-elevation 인프라 (옵션 효력 발생) 로 유지
+git grep "IsCurrentProcessElevated()" App/UI/   # PR-15 후속 fix #4 (2026-05-29, 메뉴 체크 OR): 1 (Tray.Menu.cs 의 `bool isAdminEffective = config.AdminElevation || AdminElevation.IsCurrentProcessElevated()` — admin 환경 외부 spawn case 2 의 정직한 시각 노출). fix #2 시점 호출처 (Tray.cs 의 `isDowngrade` 분기) 는 fix #3 에서 폐기 → fix #4 가 같은 partial class 의 다른 파일 (`Tray.Menu.cs`) 에 재추가. `Program.cs` 의 부팅 시점 호출처와 합쳐 총 2 호출처
 git grep -n "User32.UpdateLayeredWindow" Core/Windowing/LayeredOverlayBase.cs   # PR-18: 0 (LayeredWindowBlit 위임)
 git grep -n "User32.UpdateLayeredWindow" Core/Windowing/LayeredCursorBase.cs    # PR-18: 0 (LayeredWindowBlit 위임)
 git grep -n "Gdi32.CreateDIBSection"     Core/Windowing/LayeredOverlayBase.cs   # PR-18: 0 (DibSectionFactory 위임)

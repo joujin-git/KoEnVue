@@ -866,11 +866,44 @@ break;
 |---|------|------|
 | `AdminElevationRestartPrompt` | **제거** (fix #3) | `MB_YESNO` "다음 실행부터 적용됩니다. 지금 재시작하시겠습니까?" — Yes/No mental model 충돌 |
 | `AdminElevationDowngradeNotice` | **제거** (fix #3) | fix #2 의 case 4 안내 — 통일 흐름으로 흡수 |
-| `AdminElevationChangeNotice` | **신규** (fix #3) | ko "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. 관리자 권한 옵션은 다음 실행부터 적용됩니다." / en "The admin elevation option has been changed. KoEnVue will now exit; the change will apply from the next launch." |
+| `AdminElevationChangeNotice` | **신규** (fix #3) / **단순화** (fix #4) | ko "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. KoEnVue를 다시 실행해 주세요." / en "The admin elevation option has been changed. KoEnVue will now exit. Please launch KoEnVue again." (fix #3 시점 원본은 "관리자 권한 옵션은 다음 실행부터 적용됩니다." / "the change will apply from the next launch." — 사용자 종료 → 수동 재실행 흐름에서 "다음 실행" 시점 자명, redundant 제거) |
 
 **트레이드오프 정직**: 일반→admin 케이스 (가장 흔한 use case) 의 자동 UAC spawn UX 가 약간 후퇴 — 기존 fix #2 까지는 `MB_YESNO` → YES → 자동 spawn → 자식이 UAC 1회 → 즉시 admin 인스턴스 시작. fix #3 부터는 사용자가 안내 OK → 자동 종료 → 사용자 수동 재실행 → UAC 1회. 단계 +1 의 마찰 비용. 분담 명료화 ("트레이 토글 = 옵션 변경" / "부팅 self-elevation = 옵션 효력 발생") 로 보상.
 
 자세한 시계열 + 사용자 직접 제안 채택 근거 + 트레이드오프 정직 + 분담 명료화: [dev-notes/2026-05-29-pr-15-tray-toggle-unified.md](dev-notes/2026-05-29-pr-15-tray-toggle-unified.md) + [improvement-plan/PR-15-admin-elevation.md §7.3](improvement-plan/PR-15-admin-elevation.md).
+
+### Admin elevation tray menu check — OR logic (PR-15 후속 fix #4, 2026-05-29)
+
+위 fix #3 의 4 case 통일 흐름 박은 직후, 사용자 ultrathink 질문 — "관리자 권한으로 실행된 Total Commander 등에서 KoEnVue 를 실행할 경우, `admin_elevation` 옵션 값과 상관없이 '관리자 권한으로 실행' 항목에 체크가 되어 있어야 하지 않을까?" 가 fix #3 까지의 메뉴 체크 분기 (`config.AdminElevation ? MF_CHECKED : MF_UNCHECKED`) 에서 **case 2** (`config=false` + `IsCurrentProcessElevated()=true`) 의 시각 충돌을 정확히 식별. admin 환경 외부 spawn (admin Total Commander 가 KoEnVue.exe 실행 → admin 토큰 상속) 케이스에서 메뉴 체크는 OFF 인데 실 권한은 admin 인 상태.
+
+[`Tray.Menu.ShowMenu`](../App/UI/Tray.Menu.cs) 의 `IDM_ADMIN_ELEVATION` 항목 체크 표시는 fix #4 부터 **OR 로직**:
+
+```csharp
+// 체크 표시 = config.AdminElevation OR IsCurrentProcessElevated() (PR-15 후속 fix #4, 2026-05-29).
+bool isAdminEffective = config.AdminElevation || AdminElevation.IsCurrentProcessElevated();
+uint adminElevationFlags = isAdminEffective ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
+```
+
+**4-case 매트릭스 (메뉴 체크)**:
+
+| # | `config.AdminElevation` | `IsCurrentProcessElevated()` | fix #3 체크 | fix #4 체크 (OR) | 의미 |
+|---|---|---|---|---|------|
+| 1 | `false` | `false` | OFF | OFF | 일반 권한 + 옵션 OFF |
+| 2 | **`false`** | **`true`** | **OFF (충돌)** | **ON ✓** | **admin 환경 외부 spawn — case 2 해결** |
+| 3 | `true` | `false` | ON | ON | 일반 권한 + 옵션 ON (다음 실행 self-elevate) |
+| 4 | `true` | `true` | ON | ON | admin 권한 + 옵션 ON |
+
+case 2 만 fix #4 의 OR 로 동작 변경 — 다른 3 case 는 fix #3 와 동일. "현재 권한 OR 다음 실행 시 권한" 으로 정직한 시각 노출.
+
+**토글 클릭 의미는 보존** — `IDM_ADMIN_ELEVATION` 분기 (fix #3 의 4 단계 단일 흐름) 는 한 줄도 변경 안 됨. 토글 클릭 = config 만 변경 (`updateConfig(config with { AdminElevation = !config.AdminElevation })`) + schtasks 재등록 + 안내 + `WM_CLOSE`. Windows token 모델 한계로 실 권한은 다음 부팅까지 영향 없음 — 클릭이 "지금 실 권한" 을 바꾸지 못함을 `MessageBoxW` 안내가 사용자 가이드.
+
+**왜 다른 메뉴 항목은 OR 안 함**: Snap / Animation / Cursor indicator 등 다른 메뉴 항목은 모두 `config.*` 직접 반영 — 외부 환경 영향 받는 항목이 0. admin 항목만 **부모 셸 토큰 상속** 이라는 외부 환경 영향을 받는 유일한 케이스라 OR 정당. fix #4 는 메뉴 빌더 한 곳만 OR — 다른 메뉴 빌더에 OR 패턴 확산하지 않음.
+
+**호출처 변화**: `AdminElevation.IsCurrentProcessElevated()` 는 본 fix 이전까지 `Program.cs` (부팅 시점 분기) 단일 호출처. fix #4 부터 `App/UI/Tray.Menu.cs` (메뉴 빌더) 추가 — 2 호출처. fix #3 가 `Tray.cs` 에서 제거했던 `using KoEnVue.App.Bootstrap;` import 가 fix #4 에서 같은 partial class 의 다른 파일 `Tray.Menu.cs` 에 재추가.
+
+**AOT 페이지 흡수**: AOT publish 사이즈 4,864,512 → 4,864,512 bytes (**±0 bytes**). 신규 호출 (`AdminElevation.IsCurrentProcessElevated` 메서드 호출 site 1) + doc comment 추가 IL 분량이 AOT 의 4 KB 페이지 경계 안에 흡수. 65/65 PASS, SHA256 `e7dfc79d93836d052d1e8f72aece1397998fd3771d55509b90275418f79a3dc1`.
+
+자세한 시계열 + 토글 의미 보존 검증 + Windows token 모델 한계 정합 + AOT 페이지 흡수: [dev-notes/2026-05-29-pr-15-tray-menu-or-logic.md](dev-notes/2026-05-29-pr-15-tray-menu-or-logic.md) + [improvement-plan/PR-15-admin-elevation.md §7.4](improvement-plan/PR-15-admin-elevation.md).
 
 ### Second-instance activation signal
 

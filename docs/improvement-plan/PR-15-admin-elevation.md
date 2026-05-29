@@ -312,7 +312,7 @@ if (isDowngrade)
 
 - 4 case 모두 단일 메시지 + `MB_OK` 단일 버튼 + 자동 종료 (`PostMessageW(WM_CLOSE)`)
 - 자동 spawn 안 함 — admin→일반 down-grade 한계 자연 회피 + 일반→admin / 일반→일반 / admin→admin 도 통일 흐름
-- 메시지: ko "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. 관리자 권한 옵션은 다음 실행부터 적용됩니다." / en "The admin elevation option has been changed. KoEnVue will now exit; the change will apply from the next launch."
+- 메시지: ko "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. KoEnVue를 다시 실행해 주세요." / en "The admin elevation option has been changed. KoEnVue will now exit. Please launch KoEnVue again." (fix #4 단순화 반영 — fix #3 시점 원본은 "관리자 권한 옵션은 다음 실행부터 적용됩니다." / "the change will apply from the next launch." 였음, 사용자 종료 → 수동 재실행 흐름에서 "다음 실행" 시점 자명, redundant 제거)
 
 **채택 근거**:
 
@@ -376,6 +376,63 @@ SHA256: `d2efa84ae876af701ab890310d728a3e86dc4e3e8167c0e0eed3ee0cc836695c`.
 사이즈 감소 (-512 bytes) 는 메서드 2개 제거 + 분기 단순화 (~40 LOC → ~14 LOC) 의 IL 감소.
 
 자세한 시계열 + 사용자 직접 제안 채택 근거 + 트레이드오프 정직 + 분담 명료화 + 자연 제거된 메서드: [docs/dev-notes/2026-05-29-pr-15-tray-toggle-unified.md](../dev-notes/2026-05-29-pr-15-tray-toggle-unified.md).
+
+### 7.4 트레이 메뉴 체크 OR 로직 + 안내 메시지 단순화 (PR-15 후속 fix #4, 2026-05-29)
+
+위 §7.3 의 4 case 통일 흐름 박은 **직후** 사용자 보고/제안 2종 동시 처리:
+
+1. **메시지 단순화 요청** — fix #3 의 `AdminElevationChangeNotice` ko "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. 관리자 권한 옵션은 다음 실행부터 적용됩니다." 의 두 번째 문장이 첫 번째 문장과 **redundant**. 사용자 OK → 자동 종료 → 수동 재실행 흐름에서 "다음 실행" 시점이 자명하므로 "관리자 권한 옵션은 다음 실행부터 적용됩니다" 표현이 정보 가치 0. 새 메시지: ko "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. KoEnVue를 다시 실행해 주세요." / en "The admin elevation option has been changed. KoEnVue will now exit. Please launch KoEnVue again." — 간결 + 행동 지시 명확.
+
+2. **사용자 ultrathink 질문 (채택)** — "관리자 권한으로 실행된 Total Commander 등에서 KoEnVue 를 실행할 경우, 관리자 권한 옵션과 상관없이 '관리자 권한으로 실행' 항목에 체크가 되어 있어야 하지 않을까?" fix #3 까지의 메뉴 체크 분기 (`config.AdminElevation ? MF_CHECKED : MF_UNCHECKED`) 의 **case 2 시각 충돌** 정확 식별. admin 환경 외부 spawn (admin Total Commander 가 KoEnVue.exe 실행 → admin 토큰 상속) 케이스에서 메뉴 체크는 OFF (config 기반) 인데 실 권한은 admin.
+
+**4-case 매트릭스 (메뉴 체크)**:
+
+| # | `config.AdminElevation` | `IsCurrentProcessElevated()` | fix #3 체크 | fix #4 체크 (OR) | 의미 |
+|---|---|---|---|---|------|
+| 1 | `false` | `false` | OFF | OFF | 일반 권한 + 옵션 OFF |
+| 2 | **`false`** | **`true`** | **OFF (충돌)** | **ON ✓** | **admin 환경 외부 spawn — case 2 해결** |
+| 3 | `true` | `false` | ON | ON | 일반 권한 + 옵션 ON (다음 실행 self-elevate) |
+| 4 | `true` | `true` | ON | ON | admin 권한 + 옵션 ON |
+
+case 2 만 fix #4 의 OR 로 동작 변경 — 다른 3 case 는 fix #3 와 동일.
+
+**채택 근거**:
+
+1. **정직한 시각 노출** — "현재 권한 OR 다음 실행 시 권한" 으로 사용자가 메뉴를 봤을 때 즉시 실 권한 인지. case 2 의 silent 충돌 (config=OFF + 실 admin) 차단.
+2. **다른 메뉴 항목과의 일관성** — Snap / Animation / Cursor indicator 등은 모두 `config.*` 직접 반영 (외부 환경 영향 받는 항목 0). admin 항목만 **부모 셸 토큰 상속** 이라는 외부 환경 영향을 받는 유일한 케이스라 OR 정당. fix #4 는 메뉴 빌더 한 곳만 OR — 다른 메뉴 빌더에 OR 패턴 확산하지 않음.
+3. **토글 의미 보존** — `IDM_ADMIN_ELEVATION` 분기 (fix #3 의 4 단계 단일 흐름) 는 한 줄도 변경 안 됨. 토글 클릭 = config 만 변경 + schtasks 재등록 + 안내 + `WM_CLOSE`. Windows token 모델 한계로 실 권한은 다음 부팅까지 영향 없음 — 클릭이 "지금 실 권한" 을 바꾸지 못함을 `MessageBoxW` 안내가 사용자 가이드.
+
+**구현** (변경 2 파일):
+
+```csharp
+// App/UI/Tray.Menu.cs — IDM_ADMIN_ELEVATION 메뉴 체크 분기 (1 라인 → 2 라인 + doc comment ~7 줄)
+// 체크 표시 = config.AdminElevation OR IsCurrentProcessElevated() (PR-15 후속 fix #4, 2026-05-29).
+// OR 의 이유 — admin 환경 외부 spawn (예: admin Total Commander 가 KoEnVue.exe 실행 시 admin
+// 토큰 상속) 경우, config 가 false 여도 실 권한이 admin 이면 사용자에게 명시적으로 시각 노출.
+// 다른 메뉴 항목 (Snap/Animation 등) 은 config 직접 반영 — admin 항목만 외부 환경 영향 받는
+// 유일한 케이스라 OR 정당. 토글 클릭은 여전히 config 만 변경 (Windows token 모델 한계 — 실
+// 권한은 다음 부팅까지 영향 없음, MessageBoxW 안내가 사용자 가이드).
+bool isAdminEffective = config.AdminElevation || AdminElevation.IsCurrentProcessElevated();
+uint adminElevationFlags = isAdminEffective ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
+```
+
+- [`App/Localization/I18n.cs`](../../App/Localization/I18n.cs) — `AdminElevationChangeNotice` 메시지 단순화 (1 spot `_table`): ko "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. KoEnVue를 다시 실행해 주세요." / en "The admin elevation option has been changed. KoEnVue will now exit. Please launch KoEnVue again."
+
+**호출처 변화** — `AdminElevation.IsCurrentProcessElevated()` 는 본 fix 이전까지 [`Program.cs`](../../Program.cs) (부팅 시점 분기) 단일 호출처. fix #4 부터 [`App/UI/Tray.Menu.cs`](../../App/UI/Tray.Menu.cs) (메뉴 빌더) 추가 — 2 호출처. fix #3 가 `Tray.cs` 에서 제거했던 `using KoEnVue.App.Bootstrap;` import 가 fix #4 에서 같은 partial class 의 다른 파일 `Tray.Menu.cs` 에 재추가.
+
+**검증**:
+
+```
+dotnet build           → 0 warn / 0 error
+dotnet publish -r win-x64 -c Release   → 0 warn / 0 error, 4,864,512 bytes (fix #3 4,864,512 → ±0 — AOT 페이지 경계 흡수)
+dotnet test            → 65/65 PASS
+```
+
+SHA256: `e7dfc79d93836d052d1e8f72aece1397998fd3771d55509b90275418f79a3dc1`.
+
+**AOT 페이지 흡수** — 신규 호출 (`AdminElevation.IsCurrentProcessElevated` 메서드 호출 site 1) + doc comment ~7 줄 + 메시지 ko/en 단순화 (각 ~10 글자 감소) 의 IL 분량이 AOT 의 4 KB 페이지 경계 안에 흡수 — net 변화 0. fix #3 의 -512 bytes 감소 후 fix #4 도 ±0 으로 누적 -512 유지.
+
+자세한 시계열 (메시지 단순화 요청 + 메뉴 체크 OR 질문 → ultrathink 분석 → 4-case 매트릭스 → 채택 근거) + 토글 의미 보존 검증 + Windows token 모델 한계 정합 + AOT 페이지 흡수: [docs/dev-notes/2026-05-29-pr-15-tray-menu-or-logic.md](../dev-notes/2026-05-29-pr-15-tray-menu-or-logic.md).
 
 ### 8. P 규칙 영향
 

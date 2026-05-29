@@ -54,6 +54,8 @@ if (isDowngrade)
 
 > 4 case 모두 단일 메시지 + `MB_OK` 단일 버튼 + 자동 종료 (`PostMessageW(WM_CLOSE)`) 로 통합. 메시지는 "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. 관리자 권한 옵션은 다음 실행부터 적용됩니다."
 
+(fix #3 시점 원본 메시지 — fix #4 에서 "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. KoEnVue를 다시 실행해 주세요." 로 단순화. "다음 실행부터 적용됩니다" 부분이 종료 → 수동 재실행 흐름에서 redundant — [2026-05-29-pr-15-tray-menu-or-logic.md](2026-05-29-pr-15-tray-menu-or-logic.md) 참고.)
+
 핵심 아이디어:
 
 1. **`MB_YESNO` → `MB_OK`** — Yes/No 컨벤션 충돌 자체 회피. "확인" 단일 버튼 = "안내 읽음 + 종료 동의" 정확 일치.
@@ -224,6 +226,8 @@ AdminElevationChangeNotice,
 // public surface
 public static string AdminElevationChangeNotice => Get(I18nKey.AdminElevationChangeNotice);
 ```
+
+(fix #3 시점 원본 — fix #4 에서 단순화: ko "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. KoEnVue를 다시 실행해 주세요." / en "The admin elevation option has been changed. KoEnVue will now exit. Please launch KoEnVue again." [2026-05-29-pr-15-tray-menu-or-logic.md](2026-05-29-pr-15-tray-menu-or-logic.md) 참고.)
 
 XML doc comment 에 fix #3 의 4 case 통일 흐름 + admin→일반 down-grade 한계의 사용자 수동 재실행 자연 회피 명시.
 
