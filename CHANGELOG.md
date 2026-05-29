@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.9.5.2] — 2026-05-29 — PR-15 후속 fix #1~#5 + cleanup 트레일 + cursor indicator 디폴트 조정
+
 ### Changed
 
 - **cursor indicator 4 const 디폴트 조정 (2026-05-29, 직전 [fd4373c](https://github.com/joujin-git/KoEnVue/commit/fd4373c) "빌드 디폴트값을 현재 사용 환경값과 일치시킴" 패턴 후속)** — [`App/Config/DefaultConfig.cs:241-244`](App/Config/DefaultConfig.cs) 의 cursor indicator 4 const 값 조정으로 사용자 본인 시각 선호를 빌드 디폴트에 박제. `CursorMiddleRadius` `30 → 35` (+5, 중간 동심원 약간 확장), `CursorInnerRadius` `15 → 30` (+15, 안쪽 점 두 배 — inner/middle 간격 15 → 5 로 좁아짐), `CursorCoreThickness` `2 → 1` (-1, 절반 — 얇은 라인), `CursorHaloThickness` `3 → 2` (-1, 외곽 헤일로 약간 축소). `CursorOuterRadius = 45` 그대로 (우연히 사전 일치). 도형 invariant (inner < middle < outer 오름차순) 유지: 30/35/45. 시각 효과: 동심원이 외곽에 몰리고 안쪽이 채워지며 코어/헤일로 라인이 얇아져 더 정돈된 인디. **P4 4-축 단일 진실원 정합 100%** — DefaultConfig const 단일 변경으로 [`AppConfig`](App/Models/AppConfig.cs) init 디폴트 + [`Settings.Validate`](App/Config/Settings.cs) clamp + [`SettingsDialog.Fields`](App/UI/Dialogs/SettingsDialog.Fields.cs) Min/Max 4 축이 모두 const 참조 형태라 자동 정합 — 추가 코드 변경 0 (5 LOC 단일 디프). [docs/config-reference.md §커서 추종 인디케이터](docs/config-reference.md#커서-추종-인디케이터-cursor-indicator) 표의 디폴트값은 이미 신규 값과 일치 (단일 진실원 참조 표기). **기존 사용자 영향 0** — 본인 `config.json` 명시값 우선 유지, 디폴트값은 키 누락 시에만 폴백. 신규 사용자 (config.json 자동 생성) + publish 첫 부팅 시점만 새 디폴트 적용. v0.9.5.2 release 박제 예정 (UpdateChecker 알림으로 신규 사용자에게 노출).
