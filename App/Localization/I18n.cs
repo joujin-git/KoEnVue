@@ -96,6 +96,7 @@ internal static class I18n
         MenuAdminElevation, MenuAdminElevationTooltip,
         AdminElevationDeniedTitle, AdminElevationDeniedMessage,
         AdminElevationChangeNotice,
+        MenuAdminElevationExternal,
     }
 
     private static readonly Dictionary<I18nKey, (string Ko, string En)> _table = new()
@@ -184,6 +185,13 @@ internal static class I18n
         [I18nKey.AdminElevationChangeNotice] = (
             "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. KoEnVue를 다시 실행해 주세요.",
             "The admin elevation option has been changed. KoEnVue will now exit. Please launch KoEnVue again."),
+        // case 2 전용 라벨 (PR-15 후속 fix #5, 2026-05-29) — config.AdminElevation=false 인데
+        // IsCurrentProcessElevated()=true (admin 환경 외부 spawn — admin Total Commander 등)
+        // 케이스에서만 메뉴 라벨에 "(Config = User)" suffix 노출. fix #4 의 메뉴 체크 OR 로직과
+        // 함께 — 체크 ON (실 권한) + 라벨 hint (config 값) → 사용자가 두 신호 모두 인지.
+        [I18nKey.MenuAdminElevationExternal] = (
+            "관리자 권한으로 실행, Config = User",
+            "Run as administrator, Config = User"),
     };
 
     /// <summary>
@@ -312,4 +320,14 @@ internal static class I18n
     /// 인지하도록 명시.
     /// </summary>
     public static string AdminElevationChangeNotice => Get(I18nKey.AdminElevationChangeNotice);
+
+    /// <summary>
+    /// 트레이 메뉴 라벨 — case 2 (config.AdminElevation=false + IsCurrentProcessElevated()=true,
+    /// admin 환경 외부 spawn) 전용 (PR-15 후속 fix #5, 2026-05-29). fix #4 의 메뉴 체크 OR 로직과
+    /// 함께 작동 — 체크 ON (실 권한 admin) + 라벨 hint "(Config = User)" (config 값 = false) → 두
+    /// 신호 모두 사용자에게 visible. case 1/3/4 는 기본 <see cref="MenuAdminElevation"/> 사용.
+    /// "Config" / "User" 영문 mix 의도 — IT 통용어 (Windows 표준 어휘) + KoEnVue 의 주 사용자
+    /// (admin 콘솔 사용자) 친화 + 직설성 + 길이 trade-off 균형.
+    /// </summary>
+    public static string MenuAdminElevationExternal => Get(I18nKey.MenuAdminElevationExternal);
 }

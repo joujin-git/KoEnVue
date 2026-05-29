@@ -160,9 +160,19 @@ internal static partial class Tray
         // 다른 메뉴 항목 (Snap/Animation 등) 은 config 직접 반영 — admin 항목만 외부 환경 영향 받는
         // 유일한 케이스라 OR 정당. 토글 클릭은 여전히 config 만 변경 (Windows token 모델 한계 — 실
         // 권한은 다음 부팅까지 영향 없음, MessageBoxW 안내가 사용자 가이드).
-        bool isAdminEffective = config.AdminElevation || AdminElevation.IsCurrentProcessElevated();
+        //
+        // 라벨 hint (PR-15 후속 fix #5, 2026-05-29) — case 2 (config=false + IsElevated=true,
+        // admin 환경 외부 spawn) 전용 "(Config = User)" suffix 노출. fix #4 OR 의 visible 정합 +
+        // case 2 의 config 값 명시 = 사용자가 두 신호 (실 권한 + config 값) 모두 인지. case 1/3/4
+        // 는 기본 라벨 — case 1 일관 OFF / case 3 사용자 명시 토글 결과 / case 4 일관 ON.
+        bool isCurrentlyElevated = AdminElevation.IsCurrentProcessElevated();
+        bool isAdminEffective = config.AdminElevation || isCurrentlyElevated;
+        bool isExternalElevation = !config.AdminElevation && isCurrentlyElevated;  // case 2
+        string adminElevationLabel = isExternalElevation
+            ? I18n.MenuAdminElevationExternal
+            : I18n.MenuAdminElevation;
         uint adminElevationFlags = isAdminEffective ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
-        User32.AppendMenuW(hMenu, adminElevationFlags, (nuint)IDM_ADMIN_ELEVATION, I18n.MenuAdminElevation);
+        User32.AppendMenuW(hMenu, adminElevationFlags, (nuint)IDM_ADMIN_ELEVATION, adminElevationLabel);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
             (nuint)(nint)hDefaultPosMenu, I18n.MenuDefaultPosition);
