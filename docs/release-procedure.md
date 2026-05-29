@@ -34,7 +34,7 @@ dotnet publish -r win-x64 -c Release
 산출물 — `bin/Release/net10.0-windows/win-x64/publish/`:
 
 - `KoEnVue.exe` — NativeAOT 단일 exe (~4.8 MB).
-- `KoEnVue.exe.sha256.txt` — SHA256 hash 한 줄 (PR-11 G4, [Directory.Build.targets](../Directory.Build.targets) 의 `EmitSha256` Target 가 publish 후 자동 emit).
+- `KoEnVue.exe.sha256.txt` — SHA256 hash 두 줄 (`Algorithm` + `Hash`, PR-11 G4, [Directory.Build.targets](../Directory.Build.targets) 의 `EmitSha256` Target 가 publish 후 PowerShell `Get-FileHash | Format-List Algorithm, Hash` 로 자동 emit).
 
 확인:
 
