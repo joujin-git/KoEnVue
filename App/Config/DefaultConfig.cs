@@ -238,10 +238,10 @@ internal static partial class DefaultConfig
     public const bool   CursorIndicatorEnabled     = true;
     public const bool   CursorAlwaysShow           = true;
     public const int    CursorOuterRadius          = 45;
-    public const int    CursorMiddleRadius         = 30;
-    public const int    CursorInnerRadius          = 15;
-    public const int    CursorCoreThickness        = 2;
-    public const int    CursorHaloThickness        = 3;
+    public const int    CursorMiddleRadius         = 35;
+    public const int    CursorInnerRadius          = 30;
+    public const int    CursorCoreThickness        = 1;
+    public const int    CursorHaloThickness        = 2;
     public const double CursorHaloOpacity          = 0.5;
     public const int    CursorIdleDelayMs          = 100;
     public const int    CursorMotionThresholdPx    = 5;
