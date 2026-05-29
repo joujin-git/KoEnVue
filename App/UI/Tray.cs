@@ -1,4 +1,3 @@
-using KoEnVue.App.Bootstrap;
 using KoEnVue.App.Config;
 using KoEnVue.App.Localization;
 using KoEnVue.App.Models;
@@ -299,7 +298,12 @@ internal static partial class Tray
                 StartupTaskManager.ToggleStartupRegistration(config);
                 break;
 
-            // --- 관리자 권한 토글 (PR-15) ---
+            // --- 관리자 권한 토글 (PR-15 후속 fix #3, 2026-05-29: 4 case 통일) ---
+            // 흐름: config 토글 + schtasks 재등록 + 통일 안내 + WM_CLOSE 자동 종료.
+            // 자동 spawn 안 함 — Windows token 모델의 admin→일반 down-grade 한계 자연 회피.
+            // 사용자가 수동 재실행 시 새 옵션 적용 (일반 권한 재실행 + config=true → TryRelaunchAsAdmin
+            // self-elevation UAC 1회 / config=false → 일반 권한 유지). admin 환경 재실행은 토큰 상속
+            // (KoEnVue 통제 외) — PR-15 §7.2 의 down-grade 한계 그대로 보존.
             case IDM_ADMIN_ELEVATION:
                 {
                     AppConfig newAdminConfig = config with { AdminElevation = !config.AdminElevation };
@@ -307,38 +311,12 @@ internal static partial class Tray
                     // schtasks 의 RunLevel 즉시 갱신 — 등록 안 됐으면 noop.
                     StartupTaskManager.ReregisterIfAdminChanged(newAdminConfig);
 
-                    // 분기 — admin → 일반 권한 down-grade 는 Windows token 모델 한계로 자동 spawn
-                    // 불가 (ShellExecuteW("open") 가 부모 admin 토큰 상속 → 자식도 admin). 사용자에게
-                    // 수동 종료/재실행 안내만 노출 + MB_OK. 다른 3 케이스 (일반→admin, 일반→일반,
-                    // admin→admin) 는 기존 자동 spawn 흐름 — UAC 1회 또는 권한 유지.
-                    bool isDowngrade = !newAdminConfig.AdminElevation
-                        && AdminElevation.IsCurrentProcessElevated();
-                    if (isDowngrade)
-                    {
-                        User32.MessageBoxW(hwndMain,
-                            I18n.AdminElevationDowngradeNotice, "KoEnVue",
-                            Win32Constants.MB_OK);
-                        break;
-                    }
+                    User32.MessageBoxW(hwndMain,
+                        I18n.AdminElevationChangeNotice, "KoEnVue",
+                        Win32Constants.MB_OK);
 
-                    // 결정 #4 (트레이): 즉시 재시작 안내. Yes = 일반 권한 재실행 → 자식의
-                    // self-check 가 새 config 기준으로 (true 면) UAC 1회 띄우거나 (false 면) 즉시 진행.
-                    int answer = User32.MessageBoxW(hwndMain,
-                        I18n.AdminElevationRestartPrompt, "KoEnVue",
-                        Win32Constants.MB_YESNO);
-                    if (answer == Win32Constants.IDYES)
-                    {
-                        string? exePath = Environment.ProcessPath;
-                        if (!string.IsNullOrEmpty(exePath))
-                        {
-                            AdminElevation.ClearReentryGuard();
-                            // 자식이 본 인스턴스 종료를 명시 대기하도록 PID 환경변수 set —
-                            // OnProcessExit 의 mutex Dispose + NIM_DELETE + WTS unregister 까지 race 차단.
-                            AdminElevation.SetRelaunchParentPidForTrayRestart();
-                            UriLauncher.Open(exePath);
-                            User32.PostMessageW(hwndMain, Win32Constants.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
-                        }
-                    }
+                    // "확인" 후 자동 종료 — 메인 인디 잔존 회귀 차단 + 사용자 mental model 정합.
+                    User32.PostMessageW(hwndMain, Win32Constants.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
                 }
                 break;
 

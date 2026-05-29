@@ -95,8 +95,7 @@ internal static class I18n
         // 관리자 권한 (admin_elevation 옵션 — UIPI / admin 콘솔 IME)
         MenuAdminElevation, MenuAdminElevationTooltip,
         AdminElevationDeniedTitle, AdminElevationDeniedMessage,
-        AdminElevationRestartPrompt,
-        AdminElevationDowngradeNotice,
+        AdminElevationChangeNotice,
     }
 
     private static readonly Dictionary<I18nKey, (string Ko, string En)> _table = new()
@@ -178,14 +177,13 @@ internal static class I18n
         [I18nKey.AdminElevationDeniedMessage] = (
             "관리자 권한 부여가 취소됐습니다. 일반 권한으로 계속 실행되며, 관리자 권한 콘솔 (관리자 cmd 등) 의 한/영 상태는 표시되지 않습니다. 다음에 적용하려면 트레이 메뉴에서 '관리자 권한으로 실행' 을 다시 켜고 재시작하세요.",
             "Elevation was cancelled. KoEnVue continues with normal privileges; the IME state in elevated consoles (admin cmd, etc.) will not be visible. To apply later, re-enable 'Run as administrator' in the tray menu and restart."),
-        [I18nKey.AdminElevationRestartPrompt] = (
-            "다음 실행부터 적용됩니다. 지금 재시작하시겠습니까?",
-            "Will apply from next launch. Restart now?"),
-        // admin → 일반 권한 down-grade 케이스 — Windows token 모델 한계로 자동 spawn 불가
-        // (ShellExecuteW 가 부모 admin 토큰 상속). 사용자에게 수동 종료/재실행 안내.
-        [I18nKey.AdminElevationDowngradeNotice] = (
-            "관리자 권한 옵션이 비활성화됐습니다. 다음 실행부터 일반 권한으로 시작됩니다. 지금 적용하려면 트레이 메뉴의 '종료' 후 KoEnVue 를 다시 실행하세요.",
-            "Admin elevation has been disabled. KoEnVue will start with normal privileges from the next launch. To apply now, choose 'Exit' from the tray menu and re-run KoEnVue."),
+        // 트레이 admin_elevation 토글 통일 안내 (PR-15 후속 fix #3, 2026-05-29) — 4 case 단일화.
+        // 자동 spawn 안 함 (Windows token 모델 한계 자연 회피). 사용자가 수동 재실행 시 새 옵션 적용:
+        // (1) 일반 권한 재실행 + config=true → TryRelaunchAsAdmin self-elevation (UAC 1회), (2) 일반
+        // 권한 재실행 + config=false → 일반 권한 그대로, (3) admin 환경 재실행 → 토큰 상속 (KoEnVue 통제 외).
+        [I18nKey.AdminElevationChangeNotice] = (
+            "관리자 권한 옵션이 변경되어 KoEnVue를 종료합니다. 관리자 권한 옵션은 다음 실행부터 적용됩니다.",
+            "The admin elevation option has been changed. KoEnVue will now exit; the change will apply from the next launch."),
     };
 
     /// <summary>
@@ -305,13 +303,13 @@ internal static class I18n
     public static string MenuAdminElevationTooltip   => Get(I18nKey.MenuAdminElevationTooltip);
     public static string AdminElevationDeniedTitle   => Get(I18nKey.AdminElevationDeniedTitle);
     public static string AdminElevationDeniedMessage => Get(I18nKey.AdminElevationDeniedMessage);
-    public static string AdminElevationRestartPrompt => Get(I18nKey.AdminElevationRestartPrompt);
-
     /// <summary>
-    /// admin → 일반 down-grade 케이스 안내 (PR-15 후속 fix #2). Windows token 모델 한계로
-    /// admin 인스턴스가 일반 권한 자식을 자동 spawn 못 함 (ShellExecuteW 가 부모 토큰 상속).
-    /// 사용자에게 트레이 '종료' + 수동 재실행 안내. <see cref="MenuExit"/> 라벨과 메시지 안의
-    /// '종료' / 'Exit' 표기가 일치해야 사용자가 다음 단계를 명확히 인지.
+    /// 트레이 admin_elevation 토글 통일 안내 (PR-15 후속 fix #3, 2026-05-29). 4 case 분기 (일반↔admin
+    /// 4 시나리오) 를 단일 메시지/단일 동작 ("변경 + 종료") 으로 통합. 사용자가 수동 재실행 시 새 옵션
+    /// 적용 — 일반 권한 재실행 + config=true 시 <see cref="TryRelaunchAsAdmin"/> 가 UAC 1회로 admin
+    /// 권한 자동 진입. Windows token 모델의 admin→일반 down-grade 한계를 사용자 수동 재실행 흐름으로
+    /// 자연 회피. 메시지 안의 'KoEnVue' / 'KoEnVue를 종료' 표현은 사용자가 트레이 lifecycle 을
+    /// 인지하도록 명시.
     /// </summary>
-    public static string AdminElevationDowngradeNotice => Get(I18nKey.AdminElevationDowngradeNotice);
+    public static string AdminElevationChangeNotice => Get(I18nKey.AdminElevationChangeNotice);
 }

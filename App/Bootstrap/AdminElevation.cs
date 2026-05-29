@@ -209,34 +209,6 @@ internal static class AdminElevation
     }
 
     /// <summary>
-    /// Tray 의 "재시작" 안내 (admin_elevation 토글 후) 다음에 호출 — 자식이 새 config
-    /// 기준으로 self-check 를 다시 거치도록 환경 변수 가드 해제. 호출 후 즉시 ShellExecuteW
-    /// ("open") + 원본 WM_CLOSE 시퀀스 권장.
-    /// </summary>
-    internal static void ClearReentryGuard()
-    {
-        Environment.SetEnvironmentVariable(ElevatedEnvVarName, null);
-    }
-
-    /// <summary>
-    /// Tray 메뉴 토글 재시작 경로 (<c>Tray.HandleMenuCommand</c> IDM_ADMIN_ELEVATION 의 YES 분기)
-    /// 에서 호출 — 자식 spawn (<c>UriLauncher.Open</c>) 직전에 본 인스턴스의 PID 를 환경변수에 set.
-    /// 자식은 <see cref="WaitForRelaunchParentIfAny"/> 에서 이 값을 읽어 부모 종료까지 명시 대기.
-    /// <para>
-    /// race 차단 대상: (1) mutex — 자식 createdNew=false 즉시 종료, (2) trayicon GUID NIM_ADD/DELETE
-    /// 순서, (3) WTS notification / IME hook / log file lock 등 리소스 ownership. PR-15 §7
-    /// 의 "원본이 mutex 안 잡은 상태" 가정은 부팅 시점 self-elevation 한정 — Tray 토글 재시작
-    /// 경로에서는 원본이 mutex + 모든 리소스 보유 중이라 별도 동기화 필요.
-    /// </para>
-    /// </summary>
-    internal static void SetRelaunchParentPidForTrayRestart()
-    {
-        Environment.SetEnvironmentVariable(
-            RelaunchParentPidEnvVarName,
-            Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
-    }
-
-    /// <summary>
     /// <c>Program.MainImpl</c> 의 Settings.Load 직후, <see cref="TryRelaunchAsAdmin"/> + mutex
     /// 시도 전에 호출 — 환경변수에 부모 PID 가 있으면 그 프로세스 종료까지 wait (timeout
     /// <see cref="RelaunchParentWaitMs"/>). 정상 부팅 (환경변수 없음) 에는 noop.
