@@ -547,7 +547,11 @@ P5 (`app.manifest asInvoker`, PR-03, v0.9.3.0) intentionally drops the `requireA
 
 `MergeWithDefaults()` serializes a freshly constructed default `AppConfig` to JSON, overlays the user's loaded keys, then deserializes the result. Required because STJ source generation drops `init` defaults for properties absent from JSON under NativeAOT — if the user's `config.json` omits `Opacity`, the deserialized object has `Opacity == 0.0` instead of `0.85`.
 
-`EnsureSubObjects()` remains as null safety net for nested records (`EventTriggers`, `Advanced`) whose default construction can also be lost.
+**재귀 머지 (P0 fix, 2026-06-01).** 초기 구현은 *최상위 키만* 순회해 사용자 JSON 에 있는 키는 객체째 통째 교체했다. 이 때문에 사용자가 중첩 객체를 **부분만** 지정하면 — 예: `"event_triggers":{"on_ime_change":false}` — 누락된 형제 필드 (`on_focus_change` true→false), `"advanced"` 부분지정 시 `force_topmost_interval_ms` 5000→0 — 가 STJ source-gen 의 init-default 드롭으로 `default(T)` 가 되어 사용자가 건드리지 않은 설정이 조용히 리셋됐다. 신규 `MergeObjects(writer, defaultObj, userObj)` 재귀 헬퍼가 **양쪽 모두 객체인 키만** 내려가 머지하므로 누락 형제는 기본 객체의 값을 유지한다. 배열·Dictionary 는 의도적으로 통째 교체한다 — 인덱스/키 단위 머지는 사용자가 리스트 (`system_hide_processes` 등) 나 dict (`app_profiles`/`indicator_positions`) 의 항목을 **줄이려는** 의도를 막기 때문. `default_indicator_position` (기본 `null`) 만은 머지 기준 객체가 없어 부분지정 보존이 불가능 — 본질적 한계이며 재귀화로 악화되지는 않는다.
+
+**관용 파싱 (`UserJsonDocOptions`).** 사용자 JSON 파싱은 `JsonDocument.Parse(userJson, new JsonDocumentOptions{ CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true })` 로 한다. 소스 생성 컨텍스트 (`AppConfigJsonContext`) 가 `ReadCommentHandling.Skip` + `AllowTrailingCommas` 를 켰음에도, 기본 `JsonDocumentOptions` 는 둘 다 **거부**하므로 주석/트레일링 콤마가 든 **정상** config 가 머지 전처리 단계에서 `JsonException` 으로 던져져 catch 블록의 "손상" 경로로 빠졌다 — 사용자 설정 전체가 디폴트로 묵음 무시되고 mtime 캐시까지 갱신돼 재시도 0. 기본 `AppConfig` 직렬화 산물 (`defaultJson`) 은 주석/콤마가 없으므로 기본 옵션으로 파싱한다.
+
+`EnsureSubObjects()` remains as null safety net for nested records (`EventTriggers`, `Advanced`) whose default construction can also be lost — 완전 `null` 인 경우만 잡으므로 부분지정 형제 보존을 책임지는 `MergeObjects` 와 보완 관계다 (`MergeWithDefaults` 가시성 `internal` = [tests/KoEnVue.Tests/Unit/JsonSettingsMergeTests.cs](../tests/KoEnVue.Tests/Unit/JsonSettingsMergeTests.cs) 머지 매트릭스 노출).
 
 ### 프로필 머지 파이프라인
 

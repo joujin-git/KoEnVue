@@ -216,39 +216,89 @@ internal class JsonSettingsManager<T>
     // ================================================================
 
     /// <summary>
-    /// 기본 T JSON 과 사용자 JSON 을 병합한다. 기본값을 기저로 깔고,
-    /// 사용자 JSON 의 키가 기본값을 덮어쓴다.
-    /// .NET 10 STJ 소스 생성기가 record <c>init</c> 기본값을 보존하지 않는 문제의 우회책.
+    /// 사용자 JSON 파싱 옵션. 소스 생성 컨텍스트의 <c>ReadCommentHandling.Skip</c> +
+    /// <c>AllowTrailingCommas</c> 와 일치시킨다. 기본 <see cref="JsonDocumentOptions"/> 는
+    /// 둘 다 거부하므로, 주석/트레일링 콤마가 포함된 <b>정상</b> config 가 병합 전처리
+    /// 단계에서 <see cref="JsonException"/> 으로 "손상"으로 오판되어 사용자 설정 전체가
+    /// 디폴트로 묵음 무시되던 회귀를 차단한다.
     /// </summary>
-    private static string MergeWithDefaults(string userJson, JsonTypeInfo<T> typeInfo)
+    private static readonly JsonDocumentOptions UserJsonDocOptions = new()
     {
-        // 기본 T → JSON (모든 init 기본값이 포함됨)
+        CommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
+    /// <summary>
+    /// 기본 T JSON 과 사용자 JSON 을 재귀적으로 병합한다. 기본값을 기저로 깔고,
+    /// 사용자 JSON 의 키가 기본값을 덮어쓴다. 양쪽 모두 객체인 키는 <b>재귀 병합</b>하여,
+    /// 사용자가 중첩 객체(예: <c>event_triggers</c>, <c>advanced</c>)를 부분만 지정해도
+    /// 누락된 형제 필드가 기본값을 유지하게 한다 — STJ 소스 생성기가 <c>init</c> 기본값을
+    /// 보존하지 않아(reflection off) 부분 지정 시 형제 필드가 <c>default(T)</c> 로 리셋되던
+    /// 회귀를 차단. (<c>internal</c> 노출은 KoEnVue.Tests 머지 매트릭스 검증용.)
+    /// </summary>
+    internal static string MergeWithDefaults(string userJson, JsonTypeInfo<T> typeInfo)
+    {
+        // 기본 T → JSON (모든 init 기본값이 포함됨). Serialize 산물이라 주석/콤마 없음 → 기본 파싱 옵션.
         T defaults = new();
         string defaultJson = JsonSerializer.Serialize(defaults, typeInfo);
 
         using var defaultDoc = JsonDocument.Parse(defaultJson);
-        using var userDoc = JsonDocument.Parse(userJson);
+        using var userDoc = JsonDocument.Parse(userJson, UserJsonDocOptions);
 
-        // 사용자 JSON 키 수집
-        var userKeys = new HashSet<string>();
-        foreach (var prop in userDoc.RootElement.EnumerateObject())
-            userKeys.Add(prop.Name);
-
-        // 병합: 기본값(사용자 JSON에 없는 키만) + 사용자 JSON(전체)
         using var ms = new MemoryStream();
         using (var writer = new Utf8JsonWriter(ms))
         {
-            writer.WriteStartObject();
-            foreach (var prop in defaultDoc.RootElement.EnumerateObject())
-            {
-                if (!userKeys.Contains(prop.Name))
-                    prop.WriteTo(writer);
-            }
-            foreach (var prop in userDoc.RootElement.EnumerateObject())
-                prop.WriteTo(writer);
-            writer.WriteEndObject();
+            MergeObjects(writer, defaultDoc.RootElement, userDoc.RootElement);
         }
 
         return Encoding.UTF8.GetString(ms.ToArray());
+    }
+
+    /// <summary>
+    /// 두 JSON 객체를 병합해 <paramref name="writer"/> 에 기록한다. 키별 규칙:
+    /// <list type="bullet">
+    ///   <item>양쪽 모두 객체 → 재귀 병합 (중첩 부분 지정 시 형제 기본값 보존)</item>
+    ///   <item>그 외(스칼라·배열·타입 불일치·null) → 사용자 값으로 교체</item>
+    ///   <item>기본값에 없는 사용자 전용 키 → 그대로 보존 (동적 dict 키·미래 호환)</item>
+    /// </list>
+    /// 배열은 의도적으로 통째 교체한다 — 인덱스 단위 병합은 사용자가 리스트 항목을
+    /// 줄이려는 의도(예: 필터 리스트 축소)를 막기 때문.
+    /// </summary>
+    private static void MergeObjects(Utf8JsonWriter writer, JsonElement defaultObj, JsonElement userObj)
+    {
+        writer.WriteStartObject();
+        var writtenKeys = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (JsonProperty defProp in defaultObj.EnumerateObject())
+        {
+            writtenKeys.Add(defProp.Name);
+
+            if (userObj.TryGetProperty(defProp.Name, out JsonElement userVal))
+            {
+                writer.WritePropertyName(defProp.Name);
+                if (defProp.Value.ValueKind == JsonValueKind.Object
+                    && userVal.ValueKind == JsonValueKind.Object)
+                {
+                    MergeObjects(writer, defProp.Value, userVal);
+                }
+                else
+                {
+                    userVal.WriteTo(writer);
+                }
+            }
+            else
+            {
+                defProp.WriteTo(writer);
+            }
+        }
+
+        // 기본값에 없는 사용자 전용 키(동적 dict 키 등) 보존.
+        foreach (JsonProperty userProp in userObj.EnumerateObject())
+        {
+            if (!writtenKeys.Contains(userProp.Name))
+                userProp.WriteTo(writer);
+        }
+
+        writer.WriteEndObject();
     }
 }
