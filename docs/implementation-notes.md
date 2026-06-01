@@ -111,16 +111,18 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 두 모드 전환은 `HandleConfigChanged` 의 "값 변경" 분기가 `KillTimer` + `SetTimer` 로 polling 주기를 즉시 교체해 흡수한다.
 
-### cursor 윈도우 z-order 정책 — `WS_EX_TOPMOST` 생성 시 제거 + 첫 표시 시 명시 set
+### cursor 윈도우 z-order 정책 — `WS_EX_TOPMOST` 생성 시 제거 + 첫 표시 시 명시 set + 주기 재적용
 
 cursor 인디 enable 부팅 + 탐색기 실행 시 메인 인디가 ~2.5초 후 사라지던 회귀의 **진짜 원인** — cursor 윈도우의 첫 `UpdateLayeredWindow(alpha=255)` 가 DWM 합성 단계에서 `WS_EX_TOPMOST` z-band 의 다른 윈도우 (`Shell_TrayWnd` 도 topmost) 재정렬 trigger → ~1초 후 `Shell_TrayWnd` 가 잠시 foreground 변경 → detection thread `SystemFilter` 매칭 → `WM_HIDE_INDICATOR` → 메인 인디 hide. **explorer.exe** 가 shell process 라 `Shell_TrayWnd` 와 메시지 큐 공유 → race 빈도 높음. **Total Commander** 등 일반 third-party launcher 에서는 race 없음 (사용자 진단 확정).
 
 fix:
 - [`Program.Bootstrap.CreateCursorOverlayWindow`](../Program.Bootstrap.cs) 에서 `WS_EX_TOPMOST` **제거** — cursor 윈도우 생성 시 일반 z-order 로 시작. 부팅 sequence 동안 다른 topmost 윈도우 영향 0.
-- [`CursorOverlay.RenderAtCursor`](../App/UI/CursorOverlay.cs) 첫 가시화 시 `SetWindowPos(HWND_TOPMOST, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING)` 명시 호출 — topmost 진입 + `SWP_NOSENDCHANGING` 으로 `WM_WINDOWPOSCHANGING` 알림 차단 (다른 윈도우 z-order 재정렬 trigger 없음).
+- [`CursorOverlay.RenderAtCursor`](../App/UI/CursorOverlay.cs) 첫 가시화 시 `ApplyTopmost()` → `SetWindowPos(HWND_TOPMOST, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING)` 명시 호출 — topmost 진입 + `SWP_NOSENDCHANGING` 으로 `WM_WINDOWPOSCHANGING` 알림 차단 (다른 윈도우 z-order 재정렬 trigger 없음).
 - `Win32Constants.SWP_NOSENDCHANGING = 0x0400` 신규 const.
 
 이전 안전망 `BootGracePeriodMs (500→1500ms)` 는 z-order fix 가 진짜 원인 차단 후 불요 — 제거. cursor 첫 표시는 `idle_delay_ms` (100ms) 후 정상 등장.
+
+**topmost 주기 재적용 (2026-06-01 후속 fix)** — 위 첫 표시 `SetWindowPos` 는 **1회**라, 다른 topmost 창 (풀스크린 게임 / 알림 토스트 / UAC) 이 위로 올라오면 cursor 인디가 그 아래 깔린 채 복구되지 않던 누락 (사용자 보고 "잘 동작하다가 갑자기 안 보임"). `ApplyTopmost()` (첫 표시 + 주기 재적용 단일 경로) 와 `MaybeReassertTopmost()` (`Environment.TickCount64` 게이트로 `DefaultConfig.CursorForceTopmostIntervalMs` = 기본 5초 경과 시에만 `ApplyTopmost` — 매 tick 호출되나 실제 `SetWindowPos` 는 5초당 1회) 헬퍼 신규. `HandleCursorMotionTimer` 의 **항상 표시 모드 + 정지 검출 모드 (가시 상태)** 양쪽 분기에서 `MaybeReassertTopmost()` 호출 — 두 모드 모두 보강 (정지 검출 모드도 가시 상태로 정지 중 다른 창에 가려질 수 있음). `CursorForceTopmostIntervalMs` 는 내부 const (AppConfig 키 아님 — config.json 오버라이드 불가, 메인 인디 `ForceTopmostIntervalMs` 와 같은 기본값이나 의미 분리, 0 이면 비활성). 가설 CC 회귀는 첫 표시와 동일한 `SWP_NOSENDCHANGING` 플래그 세트 + 5초 빈도 제어로 차단 (생성 시 `WS_EX_TOPMOST` 재도입 안 함). cursor 전용 게이트 1줄 재사용으로 메인 `TopmostWatchdog` 미재사용 (P4 예외) — 옵션 A/B 비교 + 가설 CC 차단 메커니즘: [dev-notes/2026-05-27-cursor-indicator.md "topmost 유실 후속 fix (주기 재적용)"](dev-notes/2026-05-27-cursor-indicator.md).
 
 ### 시스템 창 호버 시 cursor 인디 정책 — 일관 표시
 

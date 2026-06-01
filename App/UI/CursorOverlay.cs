@@ -1,3 +1,4 @@
+using KoEnVue.App.Config;
 using KoEnVue.App.Models;
 using KoEnVue.Core.Color;
 using KoEnVue.Core.Logging;
@@ -45,6 +46,9 @@ internal static class CursorOverlay
     private static int _lastCursorY;
     // 정지 진입 tick (Environment.TickCount64 ms). 0 = 아직 정지 진입 안 함 / 이동 중.
     private static long _idleStartTick;
+    // topmost 직전 재적용 tick (Environment.TickCount64 ms). 0 = 아직 재적용 안 함.
+    // 항상 표시 + 정지 검출(가시) 모드 양쪽의 주기 재적용 게이트 기준점.
+    private static long _lastTopmostTick;
 
     // ================================================================
     // Public API
@@ -64,6 +68,7 @@ internal static class CursorOverlay
         _engine.PrepareResources(_currentStyle);
         _isVisible = false;
         _idleStartTick = 0;
+        _lastTopmostTick = 0;
         _initialized = true;
         Logger.Info("CursorOverlay initialized");
     }
@@ -112,6 +117,8 @@ internal static class CursorOverlay
         {
             // 항상 표시 모드 — 가시화 보장 + 매 tick 위치 추종. idle 검출/숨김 skip.
             RenderAtCursor(cursor);
+            // 다른 topmost 창(풀스크린/토스트/UAC)이 위로 올라와도 복구 — 주기 재적용.
+            MaybeReassertTopmost();
             return;
         }
 
@@ -127,7 +134,12 @@ internal static class CursorOverlay
         }
 
         // 정지 상태
-        if (_isVisible) return; // 이미 가시 — 정지 시점에 잡혀 있음
+        if (_isVisible)
+        {
+            // 가시 상태로 정지 중 — 다른 topmost 창에 가려져도 복구하도록 주기 재적용.
+            MaybeReassertTopmost();
+            return; // 이미 가시 — 정지 시점에 잡혀 있음
+        }
 
         long now = Environment.TickCount64;
         if (_idleStartTick == 0)
@@ -174,6 +186,7 @@ internal static class CursorOverlay
         _initialized = false;
         _isVisible = false;
         _idleStartTick = 0;
+        _lastTopmostTick = 0;
     }
 
     // ================================================================
@@ -185,11 +198,9 @@ internal static class CursorOverlay
     /// Render 가 같은 DPI 로 DIB 생성 → race 없음. 윈도우는 WS_VISIBLE 영구 박혀있어 ShowWindow 호출
     /// 불요 — Render 의 UpdateLayeredWindow 가 alpha=255 (디폴트) 로 표시.
     /// <para>
-    /// <b>첫 표시 시 명시 HWND_TOPMOST set</b> — cursor 윈도우는 생성 시 WS_EX_TOPMOST 없이 일반 z-order
-    /// 로 시작 (사용자 보고: cursor enable 부팅 시 cursor 첫 UpdateLayeredWindow 가 DWM 합성에서 다른
-    /// topmost 윈도우 (Shell_TrayWnd) 재정렬 → foreground 잠시 변경 → 메인 인디 SystemFilter hide 회귀).
-    /// 첫 가시화 시 SWP_NOSENDCHANGING + SWP_NOACTIVATE 로 명시 topmost set — 다른 윈도우 z-order
-    /// 변경 알림 차단.
+    /// 첫 가시화 (<c>!_isVisible</c>) 시 <see cref="ApplyTopmost"/> 로 명시 topmost 진입 +
+    /// <c>_lastTopmostTick</c> 주기 카운터 첫 기준점 set. 이후 주기 재적용은
+    /// <see cref="MaybeReassertTopmost"/> (HandleCursorMotionTimer 양 모드 분기).
     /// </para>
     /// </summary>
     private static void RenderAtCursor(POINT cursor)
@@ -201,13 +212,47 @@ internal static class CursorOverlay
 
         if (!_isVisible)
         {
-            User32.SetWindowPos(_engine.Hwnd, Win32Constants.HWND_TOPMOST,
-                0, 0, 0, 0,
-                Win32Constants.SWP_NOMOVE | Win32Constants.SWP_NOSIZE
-                | Win32Constants.SWP_NOACTIVATE | Win32Constants.SWP_NOSENDCHANGING);
+            ApplyTopmost();
+            _lastTopmostTick = Environment.TickCount64;  // 주기 재적용 카운터 첫 기준점
         }
 
         _isVisible = true;
+    }
+
+    /// <summary>
+    /// 커서 윈도우를 <see cref="Win32Constants.HWND_TOPMOST"/> 로 (재)설정. 첫 표시
+    /// (<see cref="RenderAtCursor"/>) + 주기 재적용 (<see cref="MaybeReassertTopmost"/>) 단일 코드 경로.
+    /// <para>
+    /// cursor 윈도우는 생성 시 <c>WS_EX_TOPMOST</c> 없이 일반 z-order 로 시작 (Program.Bootstrap —
+    /// cursor 첫 UpdateLayeredWindow 가 DWM 합성에서 다른 topmost (Shell_TrayWnd) 재정렬 → foreground
+    /// 잠시 변경 → 메인 인디 SystemFilter hide 회귀 방지). <c>SWP_NOSENDCHANGING</c> 으로 다른 윈도우에
+    /// <c>WM_WINDOWPOSCHANGING</c> 알림 차단 — Shell_TrayWnd 등 z-order 재정렬 trigger 없음.
+    /// </para>
+    /// </summary>
+    private static void ApplyTopmost()
+    {
+        if (_engine is null) return;
+        User32.SetWindowPos(_engine.Hwnd, Win32Constants.HWND_TOPMOST,
+            0, 0, 0, 0,
+            Win32Constants.SWP_NOMOVE | Win32Constants.SWP_NOSIZE
+            | Win32Constants.SWP_NOACTIVATE | Win32Constants.SWP_NOSENDCHANGING);
+    }
+
+    /// <summary>
+    /// topmost 주기 재적용 게이트 — 직전 재적용 후 <see cref="DefaultConfig.CursorForceTopmostIntervalMs"/>
+    /// 경과 시에만 <see cref="ApplyTopmost"/> 재호출. 항상 표시 모드 + 정지 검출 모드(가시 상태) 양쪽에서
+    /// 호출 — 다른 topmost 창(풀스크린/토스트/UAC)이 위로 올라와도 복구. interval ≤ 0 이면 비활성
+    /// (첫 표시 set 만 유지 = fix 전 동작). 매 tick 아님 — 기본 5초 경과 시에만
+    /// (dev-notes "매 프레임 topmost 호출 지양" 준수 + SWP_NOSENDCHANGING 으로 가설 CC 회귀 차단).
+    /// </summary>
+    private static void MaybeReassertTopmost()
+    {
+        int interval = DefaultConfig.CursorForceTopmostIntervalMs;
+        if (interval <= 0) return;
+        long now = Environment.TickCount64;
+        if (now - _lastTopmostTick < interval) return;
+        ApplyTopmost();
+        _lastTopmostTick = now;
     }
 
     /// <summary>

@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **커서 추종 인디 topmost 유실 — 항상 표시 / 정지 검출(가시) 모드 양쪽 주기 재적용 fix (2026-06-01)** — 사용자 보고 "잘 동작하다가 갑자기 커서 인디가 안 보임". 항상 표시 모드 (`cursor_always_show: true`) 에서 커서 인디 윈도우 (`_hwndCursorOverlay`) 의 `HWND_TOPMOST` z-order 가 첫 표시 시 1회만 set 되고 영구히 재적용 안 되던 누락 — 다른 topmost 창 (풀스크린 게임 / 알림 토스트 / UAC) 이 위로 올라오면 커서 인디가 그 아래 깔린 채 복구 불가. fix (옵션 A — 기존 모션 타이머 재사용 + `Environment.TickCount64` 게이트): [`App/Config/DefaultConfig.cs`](App/Config/DefaultConfig.cs) 에 내부 const `CursorForceTopmostIntervalMs = 5000` 추가 (AppConfig 키 아님 — config.json 오버라이드 불가, 메인 인디 `ForceTopmostIntervalMs` 와 같은 기본값이나 의미 분리). [`App/UI/CursorOverlay.cs`](App/UI/CursorOverlay.cs) 에 `ApplyTopmost()` 헬퍼 (`SetWindowPos(HWND_TOPMOST, SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOSENDCHANGING)` — 첫 표시 + 주기 재적용 단일 경로) + `MaybeReassertTopmost()` 헬퍼 (TickCount64 게이트로 5초 경과 시에만 ApplyTopmost — 매 tick 호출되나 실제 SetWindowPos 는 5초당 1회). `HandleCursorMotionTimer` 의 **항상 표시 모드 + 정지 검출 모드 (가시 상태)** 양쪽 분기에서 호출. 가설 CC (커서 topmost 진입이 `Shell_TrayWnd` 재정렬 → 메인 인디 hide) 회귀는 동일 `SWP_NOSENDCHANGING` 플래그 세트 + 5초 빈도 제어로 차단 — 생성 시 `WS_EX_TOPMOST` 재도입 안 함 (`Program.Bootstrap` 무변경). 옵션 B (커서 전용 `TopmostWatchdog` 인스턴스) 거부 사유 + P4 예외 정당화: [docs/dev-notes/2026-05-27-cursor-indicator.md "topmost 유실 후속 fix (주기 재적용)"](docs/dev-notes/2026-05-27-cursor-indicator.md).
+
 ## [0.9.5.2] — 2026-05-29 — PR-15 후속 fix #1~#5 + cleanup 트레일 + cursor indicator 디폴트 조정
 
 ### Changed

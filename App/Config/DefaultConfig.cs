@@ -269,6 +269,14 @@ internal static partial class DefaultConfig
     /// <summary>cursor 인디 마우스 모션 폴링 주기 (항상 표시 모드 — 16ms ≈ 60fps 추종).</summary>
     public const uint   CursorAlwaysPollMs         = 16;
 
+    /// <summary>
+    /// cursor 인디 HWND_TOPMOST 재적용 주기 (ms). 항상 표시 모드 + 정지 검출 모드(가시 상태)
+    /// 양쪽에서 다른 topmost 창(풀스크린/토스트/UAC)이 위로 올라와도 복구하도록 주기 재적용.
+    /// 메인 인디의 <see cref="ForceTopmostIntervalMs"/>(5000) 와 같은 기본값이나 의미 분리 —
+    /// 커서/메인 주기를 독립 조정 가능. 0 이면 주기 재적용 비활성 (첫 표시 set 만 유지).
+    /// </summary>
+    public const int    CursorForceTopmostIntervalMs = 5000;
+
     /// <summary>cursor 인디 페이드 인 지속 시간 (정지 진입 시).</summary>
     public const int    CursorFadeInMs             = 150;
 
