@@ -51,6 +51,12 @@ internal static class CursorOverlay
     // 항상 표시 + 정지 검출(가시) 모드 양쪽의 주기 재적용 게이트 기준점.
     private static long _lastTopmostTick;
 
+    // IME 전환 스케일 팝 (메인 인디 ChangeHighlight 와 동형). 별도 엔진(P4 예외)이라 OverlayAnimator 미재사용 —
+    // 경량 상태(_popActive + tick)로 구현. _hwndTimer 에 TIMER_ID_CURSOR_POP(16ms) 등록.
+    private static IntPtr _hwndTimer;     // 팝 WM_TIMER 등록 대상 (= 메인 윈도우). Initialize 에서 주입.
+    private static bool _popActive;       // 팝 진행 중 여부.
+    private static long _popStartTick;    // 팝 시작 tick (Environment.TickCount64 ms).
+
     // 셸 UI 호버 판정 캐시 — 직전 폴링 tick 의 루트 hwnd 와 그 판정 결과. 같은 창 위에 머무는 동안
     // GetProcessName(OpenProcess) 반복 호출을 피한다 (마우스가 창 경계를 넘을 때만 재평가).
     private static IntPtr _lastShellHwnd;
@@ -62,11 +68,13 @@ internal static class CursorOverlay
 
     /// <summary>
     /// 엔진 초기화. <c>hwnd</c> 는 <c>Program.Bootstrap.CreateCursorOverlayWindow</c> 가 생성한 별도 HWND.
+    /// <c>hwndTimer</c> 는 메인 윈도우 — IME 전환 스케일 팝 타이머(<c>TIMER_ID_CURSOR_POP</c>)를 건다.
     /// 첫 호출 시 DIB 사전 생성 (PrepareResources) — 다음 Show 호출에서 가시화.
     /// </summary>
-    public static void Initialize(IntPtr hwnd, AppConfig config, ImeState initialState, bool initialCapsLockOn)
+    public static void Initialize(IntPtr hwnd, IntPtr hwndTimer, AppConfig config, ImeState initialState, bool initialCapsLockOn)
     {
         _config = config;
+        _hwndTimer = hwndTimer;
         _lastImeState = initialState;
         _capsLockOn = initialCapsLockOn;
         _engine = new LayeredCursorBase(hwnd, CursorRenderer.Render);
@@ -75,6 +83,8 @@ internal static class CursorOverlay
         _isVisible = false;
         _idleStartTick = 0;
         _lastTopmostTick = 0;
+        _popActive = false;
+        _popStartTick = 0;
         _lastShellHwnd = IntPtr.Zero;
         _lastShellResult = false;
         _initialized = true;
@@ -90,6 +100,7 @@ internal static class CursorOverlay
         _config = config;
         if (_engine is null) return;
 
+        StopPop();  // config 변경 시 진행 중 팝 중단 — 스타일 재합성 전 정리.
         _engine.HandleDpiChanged();
         _currentStyle = BuildStyle(config, _lastImeState, _capsLockOn);
         _engine.PrepareResources(_currentStyle);
@@ -127,6 +138,7 @@ internal static class CursorOverlay
             {
                 _engine.Hide();
                 _isVisible = false;
+                StopPop();
                 Logger.Debug("Cursor indicator hidden (over shell UI)");
             }
             _idleStartTick = 0;
@@ -149,6 +161,7 @@ internal static class CursorOverlay
             {
                 _engine.Hide();
                 _isVisible = false;
+                StopPop();
                 Logger.Debug("Cursor indicator hidden (cursor moving)");
             }
             return;
@@ -186,7 +199,14 @@ internal static class CursorOverlay
         _currentStyle = BuildStyle(_config, state, _capsLockOn);
         Logger.Debug($"Cursor indicator IME state: {state} (visible={_isVisible})");
         if (_isVisible && _engine is not null)
-            _engine.Render(_currentStyle);
+        {
+            // 가시 상태에서 IME 가 실제로 바뀜 — CursorChangeHighlight 면 스케일 팝(첫 프레임이 새 색 + 시작
+            // 배율로 렌더하므로 별도 색 갱신 Render 불요), 아니면 색만 즉시 갱신. 메인 인디 ChangeHighlight 와 동형.
+            if (_config.CursorChangeHighlight)
+                TriggerPop();
+            else
+                _engine.Render(_currentStyle);
+        }
     }
 
     /// <summary>
@@ -205,12 +225,14 @@ internal static class CursorOverlay
     public static void Dispose()
     {
         bool wasInitialized = _initialized;
+        StopPop();
         _engine?.Dispose();
         _engine = null;
         _initialized = false;
         _isVisible = false;
         _idleStartTick = 0;
         _lastTopmostTick = 0;
+        _popStartTick = 0;
         if (wasInitialized)
             Logger.Info("CursorOverlay disposed");
     }
@@ -281,6 +303,52 @@ internal static class CursorOverlay
         ApplyTopmost();
         _lastTopmostTick = now;
         Logger.Debug($"Cursor indicator topmost reasserted (interval={interval}ms)");
+    }
+
+    /// <summary>
+    /// IME 전환 스케일 팝 시작 — 메인 인디 <c>OverlayAnimator</c> Highlight 와 동형. 별도 엔진(P4 예외)
+    /// 이라 OverlayAnimator 를 재사용하지 않고 경량 상태(<see cref="_popActive"/> + tick)로 구현한다.
+    /// 첫 프레임을 즉시 렌더해 16ms 지연 없이 시작 배율(<see cref="AppConfig.CursorHighlightScale"/>)로 팝.
+    /// </summary>
+    private static void TriggerPop()
+    {
+        if (_engine is null || _hwndTimer == IntPtr.Zero) return;
+        _popActive = true;
+        _popStartTick = Environment.TickCount64;
+        User32.SetTimer(_hwndTimer, AppMessages.TIMER_ID_CURSOR_POP, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
+        Logger.Debug($"Cursor indicator pop started (scale={_config.CursorHighlightScale}, durationMs={_config.CursorHighlightDurationMs})");
+        HandleCursorPopTimer();  // 즉시 첫 프레임(시작 배율) 렌더 — 16ms 대기 없이 팝 개시.
+    }
+
+    /// <summary>
+    /// 팝 프레임 (16ms WM_TIMER). 시작 배율 → 1.0 선형 보간(메인 Highlight 와 동일 식)을
+    /// <see cref="CursorStyle.HighlightScale"/> 에 반영해 재렌더. bbox 는 <see cref="CursorStyle.MaxHighlightScale"/>
+    /// 기준 고정이라 DIB 재생성 없이 셰이더만 재계산. ratio 1.0 도달 시 타이머 정리 + 1.0 복원.
+    /// </summary>
+    public static void HandleCursorPopTimer()
+    {
+        if (!_popActive || _engine is null) return;
+        long elapsed = Environment.TickCount64 - _popStartTick;
+        int durationMs = _config.CursorHighlightDurationMs;
+        double ratio = durationMs > 0 ? Math.Clamp((double)elapsed / durationMs, 0.0, 1.0) : 1.0;
+        double scale = _config.CursorHighlightScale + (1.0 - _config.CursorHighlightScale) * ratio;
+        _currentStyle = _currentStyle with { HighlightScale = scale };
+        _engine.Render(_currentStyle);
+        if (ratio >= 1.0)
+            StopPop();
+    }
+
+    /// <summary>
+    /// 진행 중 팝 중단 — 타이머 정리 + <see cref="CursorStyle.HighlightScale"/> 1.0 복원. 팝 자연 완료
+    /// (ratio 1.0) + 숨김/이동/config 변경/Dispose 에서 호출. <see cref="_popActive"/> 가드로 멱등.
+    /// </summary>
+    private static void StopPop()
+    {
+        if (!_popActive) return;
+        _popActive = false;
+        if (_hwndTimer != IntPtr.Zero)
+            User32.KillTimer(_hwndTimer, AppMessages.TIMER_ID_CURSOR_POP);
+        _currentStyle = _currentStyle with { HighlightScale = 1.0 };
     }
 
     /// <summary>

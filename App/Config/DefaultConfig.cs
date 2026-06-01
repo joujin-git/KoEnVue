@@ -1,5 +1,6 @@
 using System;
 using KoEnVue.App.Models;
+using KoEnVue.Core.Windowing;
 
 namespace KoEnVue.App.Config;
 
@@ -246,6 +247,11 @@ internal static partial class DefaultConfig
     public const int    CursorIdleDelayMs          = 100;
     public const int    CursorMotionThresholdPx    = 5;
 
+    // 전환 효과 (IME 한↔영 변경 시 스케일 팝) — 메인 인디 ChangeHighlight/HighlightScale/HighlightDurationMs 와 평행.
+    public const bool   CursorChangeHighlight      = true;
+    public const double CursorHighlightScale       = 1.3;
+    public const int    CursorHighlightDurationMs  = 300;
+
     public const int    MinCursorOuterRadius       = 8;
     public const int    MaxCursorOuterRadius       = 96;
     public const int    MinCursorMiddleRadius      = 6;
@@ -262,6 +268,11 @@ internal static partial class DefaultConfig
     public const int    MaxCursorIdleDelayMs       = 2000;
     public const int    MinCursorMotionThresholdPx = 1;
     public const int    MaxCursorMotionThresholdPx = 32;
+
+    public const double MinCursorHighlightScale       = 1.0;
+    public const double MaxCursorHighlightScale        = CursorStyle.MaxHighlightScale;  // 팝 상한 = bbox 기준 (Core 단일 진실원)
+    public const int    MinCursorHighlightDurationMs   = 0;
+    public const int    MaxCursorHighlightDurationMs   = 2000;
 
     /// <summary>cursor 인디 마우스 모션 폴링 주기 (정지 검출 모드 — 50ms).</summary>
     public const uint   CursorMotionPollMs         = 50;

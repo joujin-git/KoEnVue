@@ -392,6 +392,8 @@ internal static partial class Program
                     Tray.HandleAddRetryTimer();
                 else if ((nuint)(nint)wParam == AppMessages.TIMER_ID_CURSOR_MOTION)
                     CursorOverlay.HandleCursorMotionTimer();
+                else if ((nuint)(nint)wParam == AppMessages.TIMER_ID_CURSOR_POP)
+                    CursorOverlay.HandleCursorPopTimer();
                 else
                     HandleTimer(wParam);
                 return IntPtr.Zero;
@@ -854,7 +856,7 @@ internal static partial class Program
             Logger.Warning("Cursor overlay window creation failed; cursor indicator disabled");
             return;
         }
-        CursorOverlay.Initialize(_hwndCursorOverlay, _config, _lastImeState, _lastCapsLockState);
+        CursorOverlay.Initialize(_hwndCursorOverlay, _hwndMain, _config, _lastImeState, _lastCapsLockState);
         User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION,
             _config.CursorAlwaysShow ? DefaultConfig.CursorAlwaysPollMs : DefaultConfig.CursorMotionPollMs,
             IntPtr.Zero);

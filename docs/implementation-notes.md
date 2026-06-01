@@ -102,6 +102,19 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 `CursorStyle` 의 3 색상 (`InnerColorArgb` / `MiddleColorArgb` / `OuterColorArgb`) 합성은 App 측 파사드 [`CursorOverlay.BuildStyle`](../App/UI/CursorOverlay.cs) 의 책임. Inner/Middle 은 현재 IME 색상 (`config.HangulBg` / `EnglishBg` / `NonKoreanBg` 중 하나). Outer (CAPS LOCK ON 시 표시) 는 "한글/비한글을 같은 카테고리로 묶고 영문만 반대편 카테고리" 정책 — 영문 IME → 한글 색상, 한글/비한글 IME → 영문 색상 (사용자 인터뷰 결정). Core 는 IME 상태를 모르므로 primitive `uint` (ARGB) 만 받는다. ARGB 조립 자체는 [`ColorHelper.HexToArgb`](../Core/Color/ColorHelper.cs) (`0xFFRRGGBB` — 기존 `HexToColorRef` BGR 의 형제, P4 색상 변환 단일 진실원) 에 위임하며 파사드는 IME→색상 라우팅만 담당한다.
 
+### IME 전환 스케일 팝 (PR-21)
+
+IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 강조 효과 — 메인 인디 `OverlayAnimator` 의 Highlight 서브페이즈와 **동형이되 별도 구현**. config 키 3종 (`cursor_change_highlight` on/off 기본 ON / `cursor_highlight_scale` 시작 배율 1.3 / `cursor_highlight_duration_ms` 복귀 시간 300) 은 메인의 `change_highlight` / `highlight_scale` / `highlight_duration_ms` 와 평행.
+
+**bbox 고정 → 팝 중 DIB 재생성 0**: `CursorStyle` 에 `HighlightScale` (매 프레임 배율, 기본 1.0) 필드 + `public const double MaxHighlightScale = 2.0` (팝 상한) 추가. `BoundingBoxLogicalPx` 가 매 프레임 변동하는 `HighlightScale` 이 아닌 **고정 상수 `MaxHighlightScale` 기준** 으로 DIB 한 변을 `Math.Ceiling((maxRadius + outsideMargin) * MaxHighlightScale)` 로 확대 계산한다. 그래서 `HighlightScale` 이 1.0↔`CursorHighlightScale` 사이에서 매 16ms 프레임마다 바뀌어도 DIB 크기는 불변 — CAPS 토글 시 DIB 재생성 0 과 동일 원리 (외측 반지름 기준 고정 bbox 안에서 픽셀만 재계산). App 측 `DefaultConfig.MaxCursorHighlightScale = CursorStyle.MaxHighlightScale` 로 clamp 상한이 Core bbox 상한을 참조 (App→Core 단일 진실원, P6 정방향) — 사용자가 `cursor_highlight_scale` 를 2.0 까지 올려도 정점이 항상 bbox 안. `App/UI/CursorRenderer.Render` 는 반지름 3종 + 두께 2종에 `style.HighlightScale` 을 곱해 동심원을 통째로 확대 (평상시 1.0 → 셰이더 무변화).
+
+**경량 상태머신 (메인 `OverlayAnimator` 비재사용)**: 커서 인디는 별도 엔진 (P4 예외 영역) 이라 메인 `OverlayAnimator` (4-state + 5 트랙) 를 재사용하지 않고 `CursorOverlay` 내부 경량 상태 (`_popActive` + `_popStartTick` + `_hwndTimer`) 로 구현. 3 헬퍼:
+- **`TriggerPop()`** — `SetImeState` 가 가시 상태 + `CursorChangeHighlight` 일 때 호출. `_popActive=true` + `_popStartTick=TickCount64` + `SetTimer(_hwndTimer, TIMER_ID_CURSOR_POP, AnimationFrameMs=16ms)` + **즉시 `HandleCursorPopTimer()` 1회 호출** (16ms 대기 없이 시작 배율로 첫 프레임 렌더). 가시 상태에서 IME 가 실제로 바뀌면 첫 프레임이 새 색 + 시작 배율로 렌더되므로 별도 색 갱신 `Render` 불요 — `CursorChangeHighlight` OFF 일 때만 색만 즉시 `Render`.
+- **`HandleCursorPopTimer()`** (public — `Program.cs` WM_TIMER 분기에서 디스패치) — 16ms 프레임. `ratio = clamp(elapsed / durationMs, 0, 1)` (durationMs=0 이면 ratio=1 즉시 종료), `scale = CursorHighlightScale + (1.0 - CursorHighlightScale) * ratio` (메인 Highlight 와 동일 선형식 — 시작 배율에서 1.0 으로 수렴) → `_currentStyle with { HighlightScale = scale }` 재렌더. `ratio >= 1.0` 도달 시 `StopPop()`.
+- **`StopPop()`** — `KillTimer` + `HighlightScale` 1.0 복원. 팝 자연 완료 (ratio 1.0) + 숨김 (셸 UI / 이동) + `HandleConfigChanged` (스타일 재합성 전 정리) + `Dispose` 에서 호출. `_popActive` 가드로 멱등 (이미 정지면 no-op).
+
+`TIMER_ID_CURSOR_POP = 9` 는 `TIMER_ID_CURSOR_MOTION = 8` (모션 폴링) 과 별개 타이머 — 둘 다 메인 윈도우 (`_hwndTimer` = `_hwndMain`, `Program.EnableCursorOverlay` 가 `CursorOverlay.Initialize` 두 번째 인자로 주입) 에 걸린다. 트레이 메뉴 "커서 변경 시 강조" (`IDM_CURSOR_HIGHLIGHT = 4013`) 토글이 `CursorChangeHighlight` on/off 를 제어 — 메인 인디 `IDM_CHANGE_HIGHLIGHT` 와 동형 (`MF_CHECKED` = ON). 설계 단일 진실원: [improvement-plan/PR-21-cursor-pop-animation.md](improvement-plan/PR-21-cursor-pop-animation.md).
+
 ### 정지 검출 FSM + 항상 표시 모드
 
 `CursorOverlay.HandleCursorMotionTimer` 는 두 모드로 동작:
@@ -154,9 +167,11 @@ OFF 토글 시 `DisableCursorOverlay()` 가 역순으로 `KillTimer` → `Cursor
 
 `_lastAlpha` 디폴트 0 으로 두면 첫 `Render → UpdateLayeredWindow` 가 `SourceConstantAlpha=0` (완전 투명) 으로 그려져 사용자가 못 본다. cursor 인디는 페이드 없이 항상 100% 표시이므로 [`LayeredCursorBase`](../Core/Windowing/LayeredCursorBase.cs) 에서 `_lastAlpha = 255` 디폴트로 초기화. 메인 인디의 OverlayAnimator 알파 보간과 무관.
 
-### Settings 다이얼로그 노출 (PR-C)
+### Settings 다이얼로그 노출 (PR-C / PR-21)
 
-PR-C 에서 cursor 10 config 키를 트레이 메뉴 "상세 설정" 다이얼로그의 12번째 섹션 "커서 인디케이터" 로 GUI 노출 (기존 12번 "고급" 은 13번으로 이동). 새 컨트롤/팩토리/I18n 테이블 변경 0 — 기존 Bool/Int/Dbl 팩토리 + 인라인 `("한국어", "English")` 튜플 패턴 재사용. Min/Max 는 `DefaultConfig.MinCursor*` / `MaxCursor*` const 를 직접 참조해 **단일 진실원** 유지 (config-reference.md 표의 범위와 자동 일치). PR-C 당시는 디폴트 OFF 였으나 본 PR 에서 디폴트가 ON + 항상 표시 모드로 전환 — 다이얼로그 노출은 끄거나 세부 조정하려는 사용자의 발견 가능성을 보장.
+PR-C 에서 cursor 10 config 키를 트레이 메뉴 "상세 설정" 다이얼로그의 12번째 섹션 "커서 인디케이터" 로 GUI 노출. 새 컨트롤/팩토리/I18n 테이블 변경 0 — 기존 Bool/Int/Dbl 팩토리 + 인라인 `("한국어", "English")` 튜플 패턴 재사용. Min/Max 는 `DefaultConfig.MinCursor*` / `MaxCursor*` const 를 직접 참조해 **단일 진실원** 유지 (config-reference.md 표의 범위와 자동 일치). PR-C 당시는 디폴트 OFF 였으나 디폴트가 ON + 항상 표시 모드로 전환 — 다이얼로그 노출은 끄거나 세부 조정하려는 사용자의 발견 가능성을 보장.
+
+**PR-21 — 13→14 섹션 + 3 대분류 재배치**: 기존 13 섹션이 메인·커서·전역 설정이 뒤섞인 순서였던 것을 **일반 (앱 전역) → 메인 인디 → 커서 인디** 3 대분류로 재정렬. `BuildRowDefs` 변경: (1) "일반" + "일반 — 트레이" 를 맨 앞으로 이동 (기존 "시스템" 섹션의 언어/로그/업데이트/관리자 권한 → "일반", 기존 "트레이" 섹션 → "일반 — 트레이"). (2) 메인 인디 8 섹션 모두 `"메인 인디 — XXX"` (`Main — XXX`) 접두. (3) 커서 인디 = `"커서 인디 — 동심원"` (`Cursor — Rings`, 기존 10 필드) + 신규 `"커서 인디 — 전환 효과"` (`Cursor — Transition`) 섹션 (`cursor_highlight_scale` / `cursor_highlight_duration_ms` 2 필드). (4) "고급" 은 14번째 말미. `cursor_change_highlight` on/off 는 메인 `change_highlight` 와 동일하게 트레이 메뉴 토글 전용이라 다이얼로그 제외 (애니메이션 on/off 는 메뉴, 세부 수치는 다이얼로그). 각 `FieldDef` 의 get/Commit 람다가 독립적이라 섹션 순서 변경에도 동작 정합 — `_fields` 인덱스와 컨트롤 짝은 `Add` 순서만 보장하면 됨 (70→72 필드). 컨트롤/팩토리/I18n 키 변경 0 (섹션 제목 문자열만 이동·개명).
 
 ---
 
@@ -673,7 +688,7 @@ Parsing uses `double.TryParse` + `CultureInfo.InvariantCulture`, so `"2.3"` work
 
 ### SettingsDialog
 
-13 sections of settings (정확한 필드 수는 [SettingsDialog.Fields.cs](../App/UI/Dialogs/SettingsDialog.Fields.cs) 의 `BuildRowDefs` 참조). Split across 3 partial class files:
+14 sections of settings (PR-21 — 일반 / 메인 인디 / 커서 인디 3 대분류 재배치, 정확한 필드 수는 [SettingsDialog.Fields.cs](../App/UI/Dialogs/SettingsDialog.Fields.cs) 의 `BuildRowDefs` 참조). Split across 3 partial class files:
 
 - **`SettingsDialog.cs`** (modal state, `Show`, `TryCommit`, dialog WndProc)
 - **`SettingsDialog.Fields.cs`** (`FieldType` enum, `FieldDef`/`RowDef` records, `BuildRowDefs` 13-section spec, 6 factory methods: `Bool`/`Int`/`Dbl`/`Str`/`ColorField`/`Combo`)

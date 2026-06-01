@@ -38,11 +38,14 @@ internal static class CursorRenderer
         int h = metrics.ScaledHeight;
         if (w <= 0 || h <= 0) return (w, h);
 
-        double outerR = DpiHelper.Scale(style.OuterRadiusLogicalPx, metrics.DpiScale);
-        double middleR = DpiHelper.Scale(style.MiddleRadiusLogicalPx, metrics.DpiScale);
-        double innerR = DpiHelper.Scale(style.InnerRadiusLogicalPx, metrics.DpiScale);
-        double coreHalf = DpiHelper.Scale(style.CoreThicknessLogicalPx, metrics.DpiScale) * 0.5;
-        double haloHalf = DpiHelper.Scale(style.HaloThicknessLogicalPx, metrics.DpiScale) * 0.5;
+        // IME 전환 스케일 팝 — 동심원 전체(반지름 + 두께)에 현재 배율을 곱해 통째로 확대.
+        // 평상시 HighlightScale=1.0 → 무변화. 팝 중 1.0~CursorHighlightScale 사이 보간값이 들어온다.
+        double scale = style.HighlightScale;
+        double outerR = DpiHelper.Scale(style.OuterRadiusLogicalPx, metrics.DpiScale) * scale;
+        double middleR = DpiHelper.Scale(style.MiddleRadiusLogicalPx, metrics.DpiScale) * scale;
+        double innerR = DpiHelper.Scale(style.InnerRadiusLogicalPx, metrics.DpiScale) * scale;
+        double coreHalf = DpiHelper.Scale(style.CoreThicknessLogicalPx, metrics.DpiScale) * 0.5 * scale;
+        double haloHalf = DpiHelper.Scale(style.HaloThicknessLogicalPx, metrics.DpiScale) * 0.5 * scale;
         double haloOpacity = Math.Clamp(style.HaloOpacity, 0.0, 1.0);
 
         double cx = w * 0.5;

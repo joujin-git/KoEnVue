@@ -60,6 +60,8 @@ internal static partial class Tray
     private const int IDM_CHANGE_HIGHLIGHT   = 4007;
     private const int IDM_USER_HIDDEN        = 4009;
     private const int IDM_CURSOR_TOGGLE      = 4011;
+    /// <summary>PR-21: 커서 인디 IME 전환 스케일 팝 on/off 토글 (메인 ChangeHighlight 와 동형).</summary>
+    private const int IDM_CURSOR_HIGHLIGHT   = 4013;
     /// <summary>PR-15: admin_elevation 토글 (UIPI 우회용 관리자 권한 실행 옵션).</summary>
     private const int IDM_ADMIN_ELEVATION    = 4012;
     // IDM_HOMEPAGE: 메뉴 최상단 헤더 라인의 단일 진입점. `_pendingUpdate` 상태에 따라
@@ -418,6 +420,12 @@ internal static partial class Tray
             case IDM_CURSOR_TOGGLE:
                 updateConfig(config with { CursorIndicatorEnabled = !config.CursorIndicatorEnabled });
                 Logger.Info($"CursorIndicatorEnabled toggled via menu: {!config.CursorIndicatorEnabled}");
+                break;
+
+            // --- 커서 변경 시 강조(스케일 팝) 토글 (체크 = ON, 메인 ChangeHighlight 와 동형) ---
+            case IDM_CURSOR_HIGHLIGHT:
+                updateConfig(config with { CursorChangeHighlight = !config.CursorChangeHighlight });
+                Logger.Info($"CursorChangeHighlight toggled via menu: {!config.CursorChangeHighlight}");
                 break;
 
             // --- 상세 설정 ---

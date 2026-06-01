@@ -147,6 +147,8 @@ internal static class Settings
             CursorHaloOpacity = Math.Clamp(config.CursorHaloOpacity, DefaultConfig.MinCursorHaloOpacity, DefaultConfig.MaxCursorHaloOpacity),
             CursorIdleDelayMs = Math.Clamp(config.CursorIdleDelayMs, DefaultConfig.MinCursorIdleDelayMs, DefaultConfig.MaxCursorIdleDelayMs),
             CursorMotionThresholdPx = Math.Clamp(config.CursorMotionThresholdPx, DefaultConfig.MinCursorMotionThresholdPx, DefaultConfig.MaxCursorMotionThresholdPx),
+            CursorHighlightScale = Math.Clamp(config.CursorHighlightScale, DefaultConfig.MinCursorHighlightScale, DefaultConfig.MaxCursorHighlightScale),
+            CursorHighlightDurationMs = Math.Clamp(config.CursorHighlightDurationMs, DefaultConfig.MinCursorHighlightDurationMs, DefaultConfig.MaxCursorHighlightDurationMs),
 
             // 시스템
             LogMaxSizeMb = Math.Clamp(config.LogMaxSizeMb, DefaultConfig.MinLogMaxSizeMb, DefaultConfig.MaxLogMaxSizeMb),

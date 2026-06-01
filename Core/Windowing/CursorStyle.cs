@@ -23,9 +23,17 @@ internal readonly record struct CursorStyle(
     uint InnerColorArgb,
     uint MiddleColorArgb,
     uint OuterColorArgb,
-    bool CapsLockOn
+    bool CapsLockOn,
+    double HighlightScale = 1.0
 )
 {
+    /// <summary>
+    /// IME 전환 스케일 팝의 최대 배율 = config clamp 상한(App 측 <c>DefaultConfig.MaxCursorHighlightScale</c>)
+    /// = bbox 고정 기준. <see cref="BoundingBoxLogicalPx"/> 가 이 배율로 DIB 크기를 고정해, 팝 진행 중
+    /// <see cref="HighlightScale"/> 이 1.0→사용자 설정 배율 사이에서 변해도 DIB 재생성이 0 이다.
+    /// App const 가 본 Core const 를 참조한다 (단일 진실원, P6 정방향).
+    /// </summary>
+    public const double MaxHighlightScale = 2.0;
     /// <summary>
     /// DIB 정사각형 한 변 길이 (logical px, DPI 미적용). 외측 반지름 기준 + 헤일로 외측 확장
     /// (헤일로가 코어보다 양옆 (halo - core) / 2 만큼 확장) + AA 여유 1px. CAPS 토글에 무관하게
@@ -40,7 +48,10 @@ internal readonly record struct CursorStyle(
             int haloOuterExtension = (HaloThicknessLogicalPx - CoreThicknessLogicalPx + 1) / 2;
             if (haloOuterExtension < 0) haloOuterExtension = 0;
             int outsideMargin = CoreThicknessLogicalPx / 2 + haloOuterExtension + 1;
-            return (maxRadius + outsideMargin) * 2;
+            // 팝 최대 배율(MaxHighlightScale)까지 동심원이 확대돼도 DIB 안에 들어오도록 bbox 를 고정 확대.
+            // HighlightScale(매 프레임 변동값) 이 아닌 MaxHighlightScale(상수) 기준이라 팝 중 DIB 재생성 0.
+            int halfExtent = (int)Math.Ceiling((maxRadius + outsideMargin) * MaxHighlightScale);
+            return halfExtent * 2;
         }
     }
 }

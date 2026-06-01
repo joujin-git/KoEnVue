@@ -188,6 +188,9 @@ internal static partial class Tray
         // 라벨이 "숨김" 이므로 체크 = "현재 숨김 중" = CursorIndicatorEnabled false. 클릭 시 enabled 반전.
         uint cursorToggleFlags = !config.CursorIndicatorEnabled ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
         User32.AppendMenuW(hMenu, cursorToggleFlags, (nuint)IDM_CURSOR_TOGGLE, I18n.MenuCursorIndicator);
+        // 커서 IME 전환 스케일 팝 on/off (체크 = ON — 메인 ChangeHighlight 와 동일 의미).
+        uint cursorHighlightFlags = config.CursorChangeHighlight ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
+        User32.AppendMenuW(hMenu, cursorHighlightFlags, (nuint)IDM_CURSOR_HIGHLIGHT, I18n.MenuCursorHighlight);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
         User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_SETTINGS, I18n.MenuSettings);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
