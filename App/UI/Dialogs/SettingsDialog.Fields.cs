@@ -130,7 +130,26 @@ internal static partial class SettingsDialog
             (c, v) => c with { TrayQuickOpacityPresets = SetPresetAt(c.TrayQuickOpacityPresets, 2, v) }));
 
         // ================================================================
-        // 3. 메인 인디케이터 — 표시 모드
+        // 3. 인디케이터 — 상태 색상 (메인/커서 공통)
+        // ================================================================
+        // 배경색은 CursorOverlay.BuildStyle 이 커서 동심원 색으로도 그대로 사용한다 (메인·커서 공용).
+        // 테마는 이 배경색(+글자색)을 일괄 지정/복원하는 프리셋이라 같은 섹션에 둔다. 메인·커서 공용이라
+        // 인디케이터 섹션들 맨 앞에 배치.
+        Sec("인디케이터 — 상태 색상 (메인/커서 공통)", "Indicator — State Colors (Main/Cursor)");
+        Add(Combo("테마", "Theme",
+            ko ? ["사용자 지정", "미니멀", "비비드", "파스텔", "다크", "시스템"]
+               : ["Custom", "Minimal", "Vivid", "Pastel", "Dark", "System"],
+            c => (int)c.Theme,
+            (c, i) => c with { Theme = (Theme)Math.Clamp(i, 0, 5) }));
+        Add(ColorField("한글 배경색", "Hangul background",
+            c => c.HangulBg, (c, v) => c with { HangulBg = v }));
+        Add(ColorField("영문 배경색", "English background",
+            c => c.EnglishBg, (c, v) => c with { EnglishBg = v }));
+        Add(ColorField("비한국어 배경색", "Non-Korean background",
+            c => c.NonKoreanBg, (c, v) => c with { NonKoreanBg = v }));
+
+        // ================================================================
+        // 4. 메인 인디케이터 — 표시 모드
         // ================================================================
         Sec("메인 인디케이터 — 표시 모드", "Main — Display Mode");
         Add(Combo("표시 방식", "Display mode",
@@ -153,7 +172,7 @@ internal static partial class SettingsDialog
             (c, v) => c with { EventTriggers = c.EventTriggers with { OnImeChange = v } }));
 
         // ================================================================
-        // 4. 메인 인디케이터 — 크기·테두리
+        // 5. 메인 인디케이터 — 크기·테두리
         // ================================================================
         Sec("메인 인디케이터 — 크기·테두리", "Main — Size & Border");
         Add(Int("라벨 너비 (px)", "Label width (px)",
@@ -170,24 +189,6 @@ internal static partial class SettingsDialog
             c => c.BorderWidth, (c, v) => c with { BorderWidth = v }));
         Add(ColorField("테두리 색상", "Border color",
             c => c.BorderColor, (c, v) => c with { BorderColor = v }));
-
-        // ================================================================
-        // 5. 인디케이터 — 상태 색상 (메인 배경 + 커서 원 공용)
-        // ================================================================
-        // 배경색은 CursorOverlay.BuildStyle 이 커서 동심원 색으로도 그대로 사용한다 (메인·커서 공용).
-        // 테마는 이 배경색(+글자색)을 일괄 지정/복원하는 프리셋이라 같은 섹션에 둔다.
-        Sec("인디케이터 — 상태 색상", "Indicator — State Colors");
-        Add(Combo("테마", "Theme",
-            ko ? ["사용자 지정", "미니멀", "비비드", "파스텔", "다크", "시스템"]
-               : ["Custom", "Minimal", "Vivid", "Pastel", "Dark", "System"],
-            c => (int)c.Theme,
-            (c, i) => c with { Theme = (Theme)Math.Clamp(i, 0, 5) }));
-        Add(ColorField("한글 배경색", "Hangul background",
-            c => c.HangulBg, (c, v) => c with { HangulBg = v }));
-        Add(ColorField("영문 배경색", "English background",
-            c => c.EnglishBg, (c, v) => c with { EnglishBg = v }));
-        Add(ColorField("비한국어 배경색", "Non-Korean background",
-            c => c.NonKoreanBg, (c, v) => c with { NonKoreanBg = v }));
 
         // ================================================================
         // 6. 메인 인디케이터 — 글자색·투명도

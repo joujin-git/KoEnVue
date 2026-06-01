@@ -146,6 +146,7 @@ internal static partial class Tray
         User32.AppendMenuW(hMenu, snapFlags, (nuint)IDM_SNAP_TO_WINDOWS, I18n.MenuSnapToWindows);
         uint animationFlags = config.AnimationEnabled ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
         User32.AppendMenuW(hMenu, animationFlags, (nuint)IDM_ANIMATION_ENABLED, I18n.MenuAnimation);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
         uint highlightFlags = config.ChangeHighlight ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
         User32.AppendMenuW(hMenu, highlightFlags, (nuint)IDM_CHANGE_HIGHLIGHT, I18n.MenuChangeHighlight);
         // 커서 IME 전환 스케일 팝 on/off — 메인 변경 강조 바로 아래 (강조 항목끼리 인접 배치).
