@@ -437,6 +437,10 @@ internal static class Win32Constants
     // race 차단.
     public const uint SWP_NOSENDCHANGING = 0x0400;
 
+    // --- GetAncestor gaFlags ---
+    // GA_ROOT — 자식 윈도우에서 최상위 루트로 상승 (작업 표시줄 자식 버튼 → Shell_TrayWnd).
+    public const uint GA_ROOT = 2;
+
     // --- 입력 ---
     public const int VK_SHIFT            = 0x10;
     public const int VK_CONTROL          = 0x11;

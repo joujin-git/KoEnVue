@@ -1,4 +1,5 @@
 using KoEnVue.App.Config;
+using KoEnVue.App.Detector;
 using KoEnVue.App.Models;
 using KoEnVue.Core.Color;
 using KoEnVue.Core.Logging;
@@ -50,6 +51,11 @@ internal static class CursorOverlay
     // 항상 표시 + 정지 검출(가시) 모드 양쪽의 주기 재적용 게이트 기준점.
     private static long _lastTopmostTick;
 
+    // 셸 UI 호버 판정 캐시 — 직전 폴링 tick 의 루트 hwnd 와 그 판정 결과. 같은 창 위에 머무는 동안
+    // GetProcessName(OpenProcess) 반복 호출을 피한다 (마우스가 창 경계를 넘을 때만 재평가).
+    private static IntPtr _lastShellHwnd;
+    private static bool _lastShellResult;
+
     // ================================================================
     // Public API
     // ================================================================
@@ -69,6 +75,8 @@ internal static class CursorOverlay
         _isVisible = false;
         _idleStartTick = 0;
         _lastTopmostTick = 0;
+        _lastShellHwnd = IntPtr.Zero;
+        _lastShellResult = false;
         _initialized = true;
         Logger.Info("CursorOverlay initialized");
     }
@@ -90,6 +98,7 @@ internal static class CursorOverlay
             _engine.Render(_currentStyle);
             _engine.UpdateAlpha(255);
         }
+        Logger.Debug($"Cursor indicator config applied (alwaysShow={config.CursorAlwaysShow}, visible={_isVisible})");
     }
 
     /// <summary>
@@ -102,16 +111,27 @@ internal static class CursorOverlay
         if (!_initialized || _engine is null) return;
         if (!User32.GetCursorPos(out POINT cursor)) return;
 
-        // 시스템 창 (작업 표시줄 / 시작 버튼 / 검색 박스 / 트레이 아이콘 등) 위에서도 cursor 인디
-        // 일관 표시. 사용자 결정: "작업 표시줄에 가려지겠지만 일관적이면 괜찮음". 이전 SystemHideClasses
-        // 체크 분기 제거.
-
         int dx = Math.Abs(cursor.X - _lastCursorX);
         int dy = Math.Abs(cursor.Y - _lastCursorY);
         bool moving = (dx + dy) > _config.CursorMotionThresholdPx;
 
         _lastCursorX = cursor.X;
         _lastCursorY = cursor.Y;
+
+        // 셸 UI (작업 표시줄 / 시작 메뉴 / 검색 패널) 위에서는 커서 인디를 숨긴다. 이들은 시스템
+        // z-band (시작/검색은 immersive 밴드) 라 일반 topmost 인 커서 인디가 위로 못 올라가 가려지므로,
+        // 가려진 채 어색하게 두지 않고 해당 영역에서는 일관되게 숨긴다 (사용자 결정 2026-06-01).
+        if (IsOverShellUi(cursor))
+        {
+            if (_isVisible)
+            {
+                _engine.Hide();
+                _isVisible = false;
+                Logger.Debug("Cursor indicator hidden (over shell UI)");
+            }
+            _idleStartTick = 0;
+            return;
+        }
 
         if (_config.CursorAlwaysShow)
         {
@@ -129,6 +149,7 @@ internal static class CursorOverlay
             {
                 _engine.Hide();
                 _isVisible = false;
+                Logger.Debug("Cursor indicator hidden (cursor moving)");
             }
             return;
         }
@@ -163,6 +184,7 @@ internal static class CursorOverlay
         if (_lastImeState == state) return;
         _lastImeState = state;
         _currentStyle = BuildStyle(_config, state, _capsLockOn);
+        Logger.Debug($"Cursor indicator IME state: {state} (visible={_isVisible})");
         if (_isVisible && _engine is not null)
             _engine.Render(_currentStyle);
     }
@@ -175,18 +197,22 @@ internal static class CursorOverlay
         if (_capsLockOn == on) return;
         _capsLockOn = on;
         _currentStyle = BuildStyle(_config, _lastImeState, on);
+        Logger.Debug($"Cursor indicator CapsLock: {(on ? "ON" : "OFF")} (visible={_isVisible})");
         if (_isVisible && _engine is not null)
             _engine.Render(_currentStyle);
     }
 
     public static void Dispose()
     {
+        bool wasInitialized = _initialized;
         _engine?.Dispose();
         _engine = null;
         _initialized = false;
         _isVisible = false;
         _idleStartTick = 0;
         _lastTopmostTick = 0;
+        if (wasInitialized)
+            Logger.Info("CursorOverlay disposed");
     }
 
     // ================================================================
@@ -214,6 +240,7 @@ internal static class CursorOverlay
         {
             ApplyTopmost();
             _lastTopmostTick = Environment.TickCount64;  // 주기 재적용 카운터 첫 기준점
+            Logger.Debug($"Cursor indicator shown at ({cursor.X},{cursor.Y}); topmost set");
         }
 
         _isVisible = true;
@@ -253,6 +280,7 @@ internal static class CursorOverlay
         if (now - _lastTopmostTick < interval) return;
         ApplyTopmost();
         _lastTopmostTick = now;
+        Logger.Debug($"Cursor indicator topmost reasserted (interval={interval}ms)");
     }
 
     /// <summary>
@@ -269,8 +297,8 @@ internal static class CursorOverlay
         };
         string capsBg = state == ImeState.English ? config.HangulBg : config.EnglishBg;
 
-        uint innerArgb = HexToArgb(currentBg);
-        uint outerArgb = HexToArgb(capsBg);
+        uint innerArgb = ColorHelper.HexToArgb(currentBg);
+        uint outerArgb = ColorHelper.HexToArgb(capsBg);
 
         return new CursorStyle(
             OuterRadiusLogicalPx: config.CursorOuterRadius,
@@ -287,12 +315,47 @@ internal static class CursorOverlay
     }
 
     /// <summary>
-    /// "#RRGGBB" → 0xFFRRGGBB (A=255 불투명 100%). 잘못된 형식은 검정 (0xFF000000).
+    /// 커서 바로 아래 창이 셸 UI(작업 표시줄 / 시작 메뉴 / 검색 패널)인지. <see cref="User32.WindowFromPoint"/>
+    /// 는 WS_EX_TRANSPARENT 인 커서 인디 윈도우를 통과해 아래 창을 반환하므로 자기 감지 없음.
+    /// <see cref="Win32Constants.GA_ROOT"/> 로 최상위 루트까지 올라가 (작업 표시줄 자식 버튼 → Shell_TrayWnd)
+    /// 클래스/프로세스를 판정한다. 같은 루트 hwnd 면 직전 판정을 재사용해 매 폴링 tick GetProcessName
+    /// (OpenProcess) 호출을 피한다.
     /// </summary>
-    private static uint HexToArgb(string hex)
+    private static bool IsOverShellUi(POINT cursor)
     {
-        var (r, g, b) = ColorHelper.HexToRgb(hex);
-        return ((uint)0xFF << 24) | ((uint)r << 16) | ((uint)g << 8) | b;
+        IntPtr hwnd = User32.WindowFromPoint(cursor);
+        if (hwnd == IntPtr.Zero) return false;
+
+        IntPtr root = User32.GetAncestor(hwnd, Win32Constants.GA_ROOT);
+        if (root == IntPtr.Zero) root = hwnd;
+
+        if (root == _lastShellHwnd) return _lastShellResult;
+
+        bool result = IsShellUiWindow(root);
+        _lastShellHwnd = root;
+        _lastShellResult = result;
+        return result;
     }
 
+    /// <summary>
+    /// 루트 창이 작업 표시줄/바탕화면/Win11 시스템 UI(클래스) 또는 시작 메뉴/검색(프로세스)인지.
+    /// 클래스 매칭은 메인 인디 <see cref="SystemFilter"/> 와 같은 <c>SystemHideClasses</c> 2-리스트를
+    /// <see cref="SystemFilter.MatchesAny"/> 로 재사용 — P4 단일 구현. 시작 메뉴/검색은 클래스가 아닌
+    /// 프로세스명이라 <see cref="DefaultConfig.IsSystemInputProcess"/> + <c>SystemHideProcesses</c> 로 보강.
+    /// 클래스 매칭이 먼저라 작업 표시줄 등은 가벼운 GetClassName 으로 단락 — GetProcessName 은 시작/검색
+    /// 후보일 때만 호출된다.
+    /// </summary>
+    private static bool IsShellUiWindow(IntPtr root)
+    {
+        string className = WindowProcessInfo.GetClassName(root);
+        if (!string.IsNullOrEmpty(className)
+            && SystemFilter.MatchesAny(className, _config.SystemHideClasses, _config.SystemHideClassesUser))
+            return true;
+
+        string processName = WindowProcessInfo.GetProcessName(root);
+        if (string.IsNullOrEmpty(processName)) return false;
+
+        return DefaultConfig.IsSystemInputProcess(processName)
+            || SystemFilter.MatchesAny(processName, _config.SystemHideProcesses, _config.SystemHideProcessesUser);
+    }
 }

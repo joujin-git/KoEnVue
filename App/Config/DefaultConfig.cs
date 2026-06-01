@@ -274,14 +274,10 @@ internal static partial class DefaultConfig
     /// 양쪽에서 다른 topmost 창(풀스크린/토스트/UAC)이 위로 올라와도 복구하도록 주기 재적용.
     /// 메인 인디의 <see cref="ForceTopmostIntervalMs"/>(5000) 와 같은 기본값이나 의미 분리 —
     /// 커서/메인 주기를 독립 조정 가능. 0 이면 주기 재적용 비활성 (첫 표시 set 만 유지).
+    /// <para>셸 UI(작업 표시줄/시작/검색) 위에서는 커서 인디를 아예 숨기므로(<c>CursorOverlay.IsOverShellUi</c>),
+    /// 그 영역 가려짐 대응으로 짧게 둘 필요가 없다 — 풀스크린/토스트/UAC 복구 목적의 5초가 적합.</para>
     /// </summary>
     public const int    CursorForceTopmostIntervalMs = 5000;
-
-    /// <summary>cursor 인디 페이드 인 지속 시간 (정지 진입 시).</summary>
-    public const int    CursorFadeInMs             = 150;
-
-    /// <summary>cursor 인디 페이드 아웃 지속 시간 (이동 진입 시).</summary>
-    public const int    CursorFadeOutMs            = 100;
 
     // === 설정 파일 ===
 
