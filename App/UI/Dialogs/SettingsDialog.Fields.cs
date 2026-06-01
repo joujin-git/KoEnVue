@@ -118,15 +118,15 @@ internal static partial class SettingsDialog
             (c, i) => c with { TrayClickAction = (TrayClickAction)Math.Clamp(i, 0, 2) }));
         Add(Dbl("빠른 투명도 1 (진하게)", "Quick opacity 1 (High)",
             DefaultConfig.MinOpacity, DefaultConfig.MaxOpacity,
-            c => GetPresetAt(c.TrayQuickOpacityPresets, 0, 0.95),
+            c => GetPresetAt(c.TrayQuickOpacityPresets, 0, DefaultConfig.TrayQuickOpacity1),
             (c, v) => c with { TrayQuickOpacityPresets = SetPresetAt(c.TrayQuickOpacityPresets, 0, v) }));
         Add(Dbl("빠른 투명도 2 (보통)", "Quick opacity 2 (Normal)",
             DefaultConfig.MinOpacity, DefaultConfig.MaxOpacity,
-            c => GetPresetAt(c.TrayQuickOpacityPresets, 1, 0.85),
+            c => GetPresetAt(c.TrayQuickOpacityPresets, 1, DefaultConfig.TrayQuickOpacity2),
             (c, v) => c with { TrayQuickOpacityPresets = SetPresetAt(c.TrayQuickOpacityPresets, 1, v) }));
         Add(Dbl("빠른 투명도 3 (연하게)", "Quick opacity 3 (Low)",
             DefaultConfig.MinOpacity, DefaultConfig.MaxOpacity,
-            c => GetPresetAt(c.TrayQuickOpacityPresets, 2, 0.6),
+            c => GetPresetAt(c.TrayQuickOpacityPresets, 2, DefaultConfig.TrayQuickOpacity3),
             (c, v) => c with { TrayQuickOpacityPresets = SetPresetAt(c.TrayQuickOpacityPresets, 2, v) }));
 
         // ================================================================
@@ -518,13 +518,13 @@ internal static partial class SettingsDialog
     /// </summary>
     private static double[] SetPresetAt(double[] original, int i, double newValue)
     {
-        double[] source = original ?? [0.95, 0.85, 0.6];
+        double[] source = original ?? DefaultConfig.TrayQuickOpacityPresets;
         int len = Math.Max(source.Length, 3);
         var copy = new double[len];
         Array.Copy(source, copy, source.Length);
         if (source.Length < len)
         {
-            double[] defaults = [0.95, 0.85, 0.6];
+            double[] defaults = DefaultConfig.TrayQuickOpacityPresets;
             for (int k = source.Length; k < len && k < defaults.Length; k++)
                 copy[k] = defaults[k];
         }

@@ -583,7 +583,7 @@ internal static partial class Tray
             {
                 Opacity = preset,
                 ActiveOpacity = preset,
-                IdleOpacity = Math.Clamp(preset * idleRatio, 0.1, 1.0)
+                IdleOpacity = Math.Clamp(preset * idleRatio, DefaultConfig.MinOpacity, DefaultConfig.MaxOpacity)
             };
         }
         return config with { Opacity = preset };

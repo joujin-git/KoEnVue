@@ -100,16 +100,27 @@ internal static class WindowProcessInfo
     [UnmanagedCallersOnly]
     private static int EnumChildCallback(IntPtr hwnd, IntPtr lParam)
     {
-        User32.GetWindowThreadProcessId(hwnd, out uint childPid);
-        if (childPid != 0 && childPid != t_frameHostPid)
+        try
         {
-            string childName = GetProcessName(childPid);
-            if (childName.Length > 0)
+            User32.GetWindowThreadProcessId(hwnd, out uint childPid);
+            if (childPid != 0 && childPid != t_frameHostPid)
             {
-                t_resolvedUwpName = childName;
-                return 0; // 열거 중단
+                string childName = GetProcessName(childPid);
+                if (childName.Length > 0)
+                {
+                    t_resolvedUwpName = childName;
+                    return 0; // 열거 중단
+                }
             }
+            return 1; // 계속
         }
-        return 1; // 계속
+        catch (Exception ex)
+        {
+            // [UnmanagedCallersOnly] 콜백에서 관리 예외가 EnumChildWindows unmanaged 경계를 넘으면
+            // NativeAOT 런타임이 프로세스를 종료시킨다. GetProcessName 이 대부분 자체 흡수하나
+            // 좁힌 catch 밖 예외를 방어 — 이 자식을 건너뛰고 열거 계속 (UWP 이름 해석은 best-effort).
+            LogProvider.Sink?.Debug($"UWP child enumeration skipped a window: {ex.Message}");
+            return 1;
+        }
     }
 }

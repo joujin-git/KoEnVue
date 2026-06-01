@@ -640,7 +640,7 @@ internal sealed partial class AppSettingsManager : JsonSettingsManager<AppConfig
             IndicatorPositions = config.IndicatorPositions ?? new(),
             IndicatorPositionsRelative = config.IndicatorPositionsRelative ?? new(),
             AppFilterList = config.AppFilterList ?? [],
-            TrayQuickOpacityPresets = config.TrayQuickOpacityPresets ?? [0.95, 0.85, 0.6],
+            TrayQuickOpacityPresets = config.TrayQuickOpacityPresets ?? DefaultConfig.TrayQuickOpacityPresets,
             BorderColor = config.BorderColor ?? "#000000",
             HangulBg = config.HangulBg ?? "#16A34A",
             HangulFg = config.HangulFg ?? "#FFFFFF",

@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using KoEnVue.Core.Dpi;
 using KoEnVue.Core.Logging;
 using KoEnVue.Core.Native;
 
@@ -102,9 +103,9 @@ internal static class Win32DialogHelper
     public static (int cx, int cy) CalculateDialogPosition(
         IntPtr hMonitor, int dlgWidth, int dlgHeight, POINT? anchor = null)
     {
-        MONITORINFOEXW mi = default;
-        mi.cbSize = (uint)Marshal.SizeOf<MONITORINFOEXW>();
-        User32.GetMonitorInfoW(hMonitor, ref mi);
+        // GetWorkArea 는 GetMonitorInfoW 실패 시 primary 모니터로 1회 폴백한다 — hMonitor 무효/조회
+        // 실패 시 rcWork 가 (0,0,0,0) 으로 떨어져 다이얼로그가 화면 좌상단(0,0)에 박히는 것을 방지.
+        RECT rcWork = DpiHelper.GetWorkArea(hMonitor);
 
         int cx, cy;
         if (anchor is POINT pt)
@@ -114,14 +115,14 @@ internal static class Win32DialogHelper
         }
         else
         {
-            cx = (mi.rcWork.Left + mi.rcWork.Right - dlgWidth) / 2;
-            cy = (mi.rcWork.Top + mi.rcWork.Bottom - dlgHeight) / 2;
+            cx = (rcWork.Left + rcWork.Right - dlgWidth) / 2;
+            cy = (rcWork.Top + rcWork.Bottom - dlgHeight) / 2;
         }
 
-        if (cx + dlgWidth > mi.rcWork.Right) cx = mi.rcWork.Right - dlgWidth;
-        if (cy + dlgHeight > mi.rcWork.Bottom) cy = mi.rcWork.Bottom - dlgHeight;
-        if (cx < mi.rcWork.Left) cx = mi.rcWork.Left;
-        if (cy < mi.rcWork.Top) cy = mi.rcWork.Top;
+        if (cx + dlgWidth > rcWork.Right) cx = rcWork.Right - dlgWidth;
+        if (cy + dlgHeight > rcWork.Bottom) cy = rcWork.Bottom - dlgHeight;
+        if (cx < rcWork.Left) cx = rcWork.Left;
+        if (cy < rcWork.Top) cy = rcWork.Top;
 
         return (cx, cy);
     }

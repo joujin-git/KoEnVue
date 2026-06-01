@@ -93,7 +93,7 @@ internal sealed record AppConfig
     public bool TrayEnabled { get; init; } = true;
     public bool TrayTooltip { get; init; } = true;
     public TrayClickAction TrayClickAction { get; init; } = TrayClickAction.Toggle;
-    public double[] TrayQuickOpacityPresets { get; init; } = [0.95, 0.85, 0.6];
+    public double[] TrayQuickOpacityPresets { get; init; } = DefaultConfig.TrayQuickOpacityPresets;
 
     // 트레이 좌클릭 토글로 사용자가 명시 숨김한 상태. 재기동·포그라운드 전환 시에도 유지.
     // 트레이 아이콘에는 취소선으로 시각 표시된다 (TrayIcon.DrawStrikeThrough).

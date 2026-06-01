@@ -197,6 +197,14 @@ internal static partial class DefaultConfig
     // 고급 -- AdvancedConfig
     public const int    ForceTopmostIntervalMs = 5000;
 
+    // 시스템 트레이 -- 빠른 투명도 프리셋 (트레이 메뉴 3단). AppConfig.TrayQuickOpacityPresets init +
+    // Settings.EnsureSubObjects 폴백 + SettingsDialog getter fallback + SetPresetAt 확장 기본값의 단일 진실원.
+    // property(=>) 라 호출마다 새 배열을 반환 — static readonly 배열 공유로 인한 의도치 않은 변형 위험 없음.
+    public const  double TrayQuickOpacity1 = 0.95;
+    public const  double TrayQuickOpacity2 = 0.85;
+    public const  double TrayQuickOpacity3 = 0.6;
+    public static double[] TrayQuickOpacityPresets => [TrayQuickOpacity1, TrayQuickOpacity2, TrayQuickOpacity3];
+
     // === Validate clamp / SettingsDialog field range — Min/Max 단일 진실원 (D7) ===
     // Settings.Validate 의 Math.Clamp 인자와 SettingsDialog.Fields.cs 의 min/max 인자를 모두 본 const
     // 참조로 통일한다. 두 곳에 같은 리터럴을 두면 한 쪽만 변경됐을 때 다이얼로그 입력 → Validate 클램프

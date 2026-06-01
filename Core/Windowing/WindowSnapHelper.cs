@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using KoEnVue.Core.Dpi;
+using KoEnVue.Core.Logging;
 using KoEnVue.Core.Native;
 
 namespace KoEnVue.Core.Windowing;
@@ -149,19 +150,30 @@ internal static class WindowSnapHelper
     [UnmanagedCallersOnly]
     private static int EnumWindowsCallback(IntPtr hwnd, IntPtr lParam)
     {
-        if (hwnd == s_ownerHwnd) return 1;
-        if (!User32.IsWindowVisible(hwnd)) return 1;
-        if (User32.IsIconic(hwnd)) return 1;
-        if (Dwmapi.IsCloaked(hwnd)) return 1;
-        if (!Dwmapi.TryGetVisibleFrame(hwnd, out RECT frame)) return 1;
+        try
+        {
+            if (hwnd == s_ownerHwnd) return 1;
+            if (!User32.IsWindowVisible(hwnd)) return 1;
+            if (User32.IsIconic(hwnd)) return 1;
+            if (Dwmapi.IsCloaked(hwnd)) return 1;
+            if (!Dwmapi.TryGetVisibleFrame(hwnd, out RECT frame)) return 1;
 
-        int w = frame.Right - frame.Left;
-        int h = frame.Bottom - frame.Top;
-        // 최소 크기 필터 — [UnmanagedCallersOnly] 정적 콜백이라 인스턴스 필드 접근 불가.
-        if (w < MinWindowSizePx || h < MinWindowSizePx)
+            int w = frame.Right - frame.Left;
+            int h = frame.Bottom - frame.Top;
+            // 최소 크기 필터 — [UnmanagedCallersOnly] 정적 콜백이라 인스턴스 필드 접근 불가.
+            if (w < MinWindowSizePx || h < MinWindowSizePx)
+                return 1;
+
+            s_targets.Add(frame);
             return 1;
-
-        s_targets.Add(frame);
-        return 1;
+        }
+        catch (Exception ex)
+        {
+            // [UnmanagedCallersOnly] 콜백에서 관리 예외가 unmanaged 경계(EnumWindows)를 넘으면
+            // NativeAOT 런타임이 프로세스를 종료시킨다. 이 창을 스냅 후보에서 누락하고 열거를
+            // 계속하는 것이 안전한 복구 — 드래그 스냅은 best-effort 기능.
+            LogProvider.Sink?.Debug($"Snap target enumeration skipped a window: {ex.Message}");
+            return 1;
+        }
     }
 }
