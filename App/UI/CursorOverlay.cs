@@ -98,6 +98,10 @@ internal static class CursorOverlay
     public static void HandleConfigChanged(AppConfig config)
     {
         _config = config;
+        // 셸 UI 판정 캐시 무효화 — SystemHideClasses/Processes 가 바뀌면 같은 루트 창 위에 머물러도
+        // 새 규칙으로 재평가되도록 (리셋 없으면 마우스가 창 경계를 넘을 때까지 stale 판정 유지).
+        // _lastShellHwnd=Zero 만으로 충분 — 다음 IsOverShellUi 의 root(유효 hwnd) != Zero 라 재평가됨.
+        _lastShellHwnd = IntPtr.Zero;
         if (_engine is null) return;
 
         StopPop();  // config 변경 시 진행 중 팝 중단 — 스타일 재합성 전 정리.

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Text;
 
@@ -181,7 +182,10 @@ internal static class Logger
     /// <summary>큐의 모든 메시지를 파일에 쓰고 회전 체크.</summary>
     private static void FlushQueue()
     {
-        if (_fileWriter is null) return;
+        // 회전/초기화 실패로 writer 가 없으면 재생성을 1회 시도 — .old 잠금이나 AV 핸들 점유 같은
+        // 일시적 실패가 풀리면 로깅이 복구된다(세션 잔여 로그 영구 무음 + 드롭 요약 미기록 방지).
+        // 여전히 실패면 이번 사이클은 조용히 포기하고 다음 사이클에 재시도.
+        if (_fileWriter is null && !TryReopenWriter()) return;
 
         try
         {
@@ -220,9 +224,31 @@ internal static class Logger
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // NF-25: file write/rotate failure — silent (드레인 자체라 Logger 재귀 금지).
-            // 로직 버그(NullRef, IndexOutOfRange 등)는 전파되어 드레인 스레드 크래시로 드러남.
-            _ = ex;
+            // NF-25: file write/rotate failure — Logger 재귀 금지(드레인 자체)라 Trace 로만 흔적 1회.
+            // 회전 중이었다면 _fileWriter 는 이미 null(교체)이라 다음 FlushQueue 가 TryReopenWriter 로
+            // 복구를 재시도한다. 로직 버그(NullRef 등)는 전파되어 드레인 스레드 크래시로 드러남.
+            Trace.WriteLine($"Logger flush/rotate failed (will retry next cycle): {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 회전/초기화 실패로 null 이 된 <see cref="_fileWriter"/> 를 append 모드로 재생성 시도.
+    /// 성공 시 true, 실패 시 <see cref="_fileWriter"/> 를 null 로 유지하고 false (다음 사이클 재시도).
+    /// <see cref="_filePath"/> 가 비어 있으면(미초기화) 시도하지 않는다.
+    /// </summary>
+    [MemberNotNullWhen(true, nameof(_fileWriter))]
+    private static bool TryReopenWriter()
+    {
+        if (string.IsNullOrEmpty(_filePath)) return false;
+        try
+        {
+            _fileWriter = new StreamWriter(_filePath, append: true, Encoding.UTF8) { AutoFlush = true };
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _fileWriter = null;
+            return false;
         }
     }
 

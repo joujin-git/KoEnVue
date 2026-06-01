@@ -126,7 +126,7 @@ Both have single-line try bodies so wide catch poses no masking risk.
 
 ### 5. Logger self-catches stay silent + narrowed
 
-`Logger.FlushQueue` and `Logger.Initialize` cannot recursively use `Logger.*` for their own file I/O failures, so they stay silent, but narrow to `IOException or UnauthorizedAccessException` so logic bugs in the drain loop / init path crash the drain thread and surface. `Initialize` also writes a single `Trace.WriteLine` fallback so the debugger has a hint.
+`Logger.FlushQueue` and `Logger.Initialize` cannot recursively use `Logger.*` for their own file I/O failures, so they avoid `Logger.*`, but narrow to `IOException or UnauthorizedAccessException` so logic bugs in the drain loop / init path crash the drain thread and surface. Both write a single `Trace.WriteLine` breadcrumb (the only safe sink mid-drain) so the debugger has a hint — `Initialize` on init failure, `FlushQueue` on write/rotate failure (감사 Medium ⑥, 2026-06-01). `FlushQueue` no longer stays permanently silent after a failed rotation: it calls `TryReopenWriter()` each cycle to recover (see Logging conventions above).
 
 `StopDrainThread` uses `_fileWriter?.WriteLine(...)` + `Console.Error.WriteLine` when `Join` times out, bypassing the already-closed queue.
 
@@ -295,6 +295,7 @@ The `SafeFontHandle` `using` pattern is critical — early release would crash `
 - Log messages in English (P2). Config keys in English (P2)
 - UI text in Korean default + English fallback via [I18n.cs](../App/Localization/I18n.cs) — bool flag + ternary pattern (NativeAOT-friendly, zero allocation)
 - Logger is async — `ConcurrentQueue` + `ManualResetEventSlim` + dedicated drain thread. Single `.log → .log.old` rotation at `LogMaxSizeMb`. Queue is capped at `MaxQueueSize = 10_000` to defend against rotation failures that could otherwise grow the backing queue indefinitely; oldest messages are dropped and a single summary warning is written once writing resumes
+- **Rotation-failure recovery (감사 Medium ⑥, 2026-06-01)**: a rotation (`File.Move` → new `StreamWriter`) that throws `IOException` (e.g. `.old` locked by AV / open handle) used to leave `_fileWriter` permanently null, after which `FlushQueue`'s `if (_fileWriter is null) return;` silently dropped every later log line *plus* the drop summary for the rest of the session, retrying 0 times. The guard is now `if (_fileWriter is null && !TryReopenWriter()) return;` — `TryReopenWriter` (`[MemberNotNullWhen(true, …)]`, append mode, `_filePath`-empty guard, narrowed to `IOException or UnauthorizedAccessException`) re-attempts writer creation **every flush cycle**, so logging self-heals once the transient lock clears. The rotate-failure catch also emits a single `Trace.WriteLine` breadcrumb (drain itself, so `Logger.*` recursion is forbidden — see Silent catch policy Rule 5)
 - Initialize with primitives: `Logger.Initialize(enabled, path, maxSizeMb)` (since Stage 3-A). `LogLevel` set separately via `SetLevel`
 - Default log path: `Path.Combine(AppContext.BaseDirectory, "koenvue.log")` — next to the exe, matching the portable config policy
 
