@@ -11,7 +11,7 @@ namespace KoEnVue.App.UI.Dialogs;
 /// <summary>
 /// SettingsDialog 의 필드 정의/팩토리/빌더 분할.
 /// FieldDef/RowDef 메타데이터, 6개 팩토리(Bool/Int/Dbl/Str/ColorField/Combo),
-/// BuildRowDefs(14 섹션 — 일반/메인 인디/커서 인디 대분류), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
+/// BuildRowDefs(14 섹션 — 일반/공용 색상/메인·커서 인디케이터 대분류), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
 /// </summary>
 internal static partial class SettingsDialog
 {
@@ -58,7 +58,7 @@ internal static partial class SettingsDialog
     // ================================================================
 
     /// <summary>
-    /// 14개 섹션(일반/메인 인디/커서 인디 대분류)의 RowDef 리스트를 빌드하며 _fields를 채운다.
+    /// 14개 섹션(일반/공용 색상/메인·커서 인디케이터 대분류)의 RowDef 리스트를 빌드하며 _fields를 채운다.
     /// 각 섹션 제목, 라벨, 검증 범위는 언어(I18n.IsKorean)에 따라 결정된다.
     /// </summary>
     private static List<RowDef> BuildRowDefs()
@@ -76,7 +76,7 @@ internal static partial class SettingsDialog
             rows.Add(new RowDef { IsSection = false, Field = f });
         }
 
-        // 섹션은 일반 / 메인 인디 / 커서 인디 3 대분류로 묶고 고급은 말미에 둔다. 각 FieldDef 의
+        // 섹션은 일반 / 공용 색상 / 메인 인디케이터 / 커서 인디케이터 로 묶고 고급은 말미에 둔다. 각 FieldDef 의
         // get/Commit 람다는 독립적이라 순서가 바뀌어도 정상 — _fields 인덱스와 컨트롤 짝만 Add 가 보장.
 
         // ================================================================
@@ -130,9 +130,9 @@ internal static partial class SettingsDialog
             (c, v) => c with { TrayQuickOpacityPresets = SetPresetAt(c.TrayQuickOpacityPresets, 2, v) }));
 
         // ================================================================
-        // 3. 메인 인디 — 표시 모드
+        // 3. 메인 인디케이터 — 표시 모드
         // ================================================================
-        Sec("메인 인디 — 표시 모드", "Main — Display Mode");
+        Sec("메인 인디케이터 — 표시 모드", "Main — Display Mode");
         Add(Combo("표시 방식", "Display mode",
             ko ? ["이벤트 시", "항상"] : ["On Event", "Always"],
             c => (int)c.DisplayMode,
@@ -153,9 +153,9 @@ internal static partial class SettingsDialog
             (c, v) => c with { EventTriggers = c.EventTriggers with { OnImeChange = v } }));
 
         // ================================================================
-        // 4. 메인 인디 — 크기·테두리
+        // 4. 메인 인디케이터 — 크기·테두리
         // ================================================================
-        Sec("메인 인디 — 크기·테두리", "Main — Size & Border");
+        Sec("메인 인디케이터 — 크기·테두리", "Main — Size & Border");
         Add(Int("라벨 너비 (px)", "Label width (px)",
             DefaultConfig.MinLabelWidth, DefaultConfig.MaxLabelWidth,
             c => c.LabelWidth, (c, v) => c with { LabelWidth = v }));
@@ -172,19 +172,33 @@ internal static partial class SettingsDialog
             c => c.BorderColor, (c, v) => c with { BorderColor = v }));
 
         // ================================================================
-        // 5. 메인 인디 — 색상·투명도
+        // 5. 인디케이터 — 상태 색상 (메인 배경 + 커서 원 공용)
         // ================================================================
-        Sec("메인 인디 — 색상·투명도", "Main — Colors & Opacity");
+        // 배경색은 CursorOverlay.BuildStyle 이 커서 동심원 색으로도 그대로 사용한다 (메인·커서 공용).
+        // 테마는 이 배경색(+글자색)을 일괄 지정/복원하는 프리셋이라 같은 섹션에 둔다.
+        Sec("인디케이터 — 상태 색상", "Indicator — State Colors");
+        Add(Combo("테마", "Theme",
+            ko ? ["사용자 지정", "미니멀", "비비드", "파스텔", "다크", "시스템"]
+               : ["Custom", "Minimal", "Vivid", "Pastel", "Dark", "System"],
+            c => (int)c.Theme,
+            (c, i) => c with { Theme = (Theme)Math.Clamp(i, 0, 5) }));
         Add(ColorField("한글 배경색", "Hangul background",
             c => c.HangulBg, (c, v) => c with { HangulBg = v }));
-        Add(ColorField("한글 글자색", "Hangul foreground",
-            c => c.HangulFg, (c, v) => c with { HangulFg = v }));
         Add(ColorField("영문 배경색", "English background",
             c => c.EnglishBg, (c, v) => c with { EnglishBg = v }));
-        Add(ColorField("영문 글자색", "English foreground",
-            c => c.EnglishFg, (c, v) => c with { EnglishFg = v }));
         Add(ColorField("비한국어 배경색", "Non-Korean background",
             c => c.NonKoreanBg, (c, v) => c with { NonKoreanBg = v }));
+
+        // ================================================================
+        // 6. 메인 인디케이터 — 글자색·투명도
+        // ================================================================
+        // 글자색은 메인 라벨 텍스트 전용 (커서는 글자가 없어 헤일로 흰색 고정). 투명도도 메인 전용
+        // (커서 본체는 항상 불투명, 헤일로 투명도는 동심원 섹션의 CursorHaloOpacity 별도).
+        Sec("메인 인디케이터 — 글자색·투명도", "Main — Foreground & Opacity");
+        Add(ColorField("한글 글자색", "Hangul foreground",
+            c => c.HangulFg, (c, v) => c with { HangulFg = v }));
+        Add(ColorField("영문 글자색", "English foreground",
+            c => c.EnglishFg, (c, v) => c with { EnglishFg = v }));
         Add(ColorField("비한국어 글자색", "Non-Korean foreground",
             c => c.NonKoreanFg, (c, v) => c with { NonKoreanFg = v }));
         Add(Dbl("유휴 투명도", "Idle opacity",
@@ -195,9 +209,9 @@ internal static partial class SettingsDialog
             c => c.ActiveOpacity, (c, v) => c with { ActiveOpacity = v }));
 
         // ================================================================
-        // 6. 메인 인디 — 텍스트
+        // 7. 메인 인디케이터 — 텍스트
         // ================================================================
-        Sec("메인 인디 — 텍스트", "Main — Text");
+        Sec("메인 인디케이터 — 텍스트", "Main — Text");
         Add(Str("글꼴", "Font family",
             c => c.FontFamily, (c, v) => c with { FontFamily = v }, allowEmpty: false));
         Add(Int("글꼴 크기", "Font size",
@@ -215,20 +229,10 @@ internal static partial class SettingsDialog
             c => c.NonKoreanLabel, (c, v) => c with { NonKoreanLabel = v }, allowEmpty: false));
 
         // ================================================================
-        // 7. 메인 인디 — 테마
-        // ================================================================
-        Sec("메인 인디 — 테마", "Main — Theme");
-        Add(Combo("테마", "Theme",
-            ko ? ["사용자 지정", "미니멀", "비비드", "파스텔", "다크", "시스템"]
-               : ["Custom", "Minimal", "Vivid", "Pastel", "Dark", "System"],
-            c => (int)c.Theme,
-            (c, i) => c with { Theme = (Theme)Math.Clamp(i, 0, 5) }));
-
-        // ================================================================
-        // 8. 메인 인디 — 애니메이션
+        // 8. 메인 인디케이터 — 애니메이션
         // ================================================================
         // AnimationEnabled / ChangeHighlight는 트레이 메뉴에서 토글 가능하므로 여기서 제외.
-        Sec("메인 인디 — 애니메이션", "Main — Animation");
+        Sec("메인 인디케이터 — 애니메이션", "Main — Animation");
         Add(Int("페이드 인 (ms)", "Fade in (ms)",
             DefaultConfig.MinFadeMs, DefaultConfig.MaxFadeMs,
             c => c.FadeInMs, (c, v) => c with { FadeInMs = v }));
@@ -248,9 +252,9 @@ internal static partial class SettingsDialog
             c => c.SlideSpeedMs, (c, v) => c with { SlideSpeedMs = v }));
 
         // ================================================================
-        // 9. 메인 인디 — 감지·숨김
+        // 9. 메인 인디케이터 — 감지·숨김
         // ================================================================
-        Sec("메인 인디 — 감지·숨김", "Main — Detection & Hiding");
+        Sec("메인 인디케이터 — 감지·숨김", "Main — Detection & Hiding");
         Add(Int("감지 주기 (ms)", "Poll interval (ms)",
             DefaultConfig.MinPollMs, DefaultConfig.MaxPollMs,
             c => c.PollIntervalMs, (c, v) => c with { PollIntervalMs = v }));
@@ -271,9 +275,9 @@ internal static partial class SettingsDialog
             c => c.HideOnLockScreen, (c, v) => c with { HideOnLockScreen = v }));
 
         // ================================================================
-        // 10. 메인 인디 — 앱별 프로필
+        // 10. 메인 인디케이터 — 앱별 프로필
         // ================================================================
-        Sec("메인 인디 — 앱별 프로필", "Main — App Profiles");
+        Sec("메인 인디케이터 — 앱별 프로필", "Main — App Profiles");
         Add(Combo("매칭 기준", "Match by",
             ko ? ["프로세스", "윈도우 클래스", "윈도우 타이틀"]
                : ["Process", "Window class", "Window title"],
@@ -286,9 +290,9 @@ internal static partial class SettingsDialog
             (c, i) => c with { AppFilterMode = (AppFilterMode)Math.Clamp(i, 0, 1) }));
 
         // ================================================================
-        // 11. 메인 인디 — 조작
+        // 11. 메인 인디케이터 — 조작
         // ================================================================
-        Sec("메인 인디 — 조작", "Main — Interaction");
+        Sec("메인 인디케이터 — 조작", "Main — Interaction");
         Add(Int("창 스냅 간격 (px)", "Snap gap (px)",
             DefaultConfig.MinSnapGapPx, DefaultConfig.MaxSnapGapPx,
             c => c.SnapGapPx, (c, v) => c with { SnapGapPx = v }));
@@ -299,9 +303,9 @@ internal static partial class SettingsDialog
             (c, i) => c with { DragModifier = (DragModifier)Math.Clamp(i, 0, 3) }));
 
         // ================================================================
-        // 12. 커서 인디 — 동심원
+        // 12. 커서 인디케이터 — 동심원
         // ================================================================
-        Sec("커서 인디 — 동심원", "Cursor — Rings");
+        Sec("커서 인디케이터 — 동심원", "Cursor — Rings");
         Add(Bool("커서 인디케이터 사용", "Enable cursor indicator",
             c => c.CursorIndicatorEnabled, (c, v) => c with { CursorIndicatorEnabled = v }));
         Add(Bool("항상 표시 (마우스 추종)", "Always show (follow cursor)",
@@ -332,10 +336,10 @@ internal static partial class SettingsDialog
             c => c.CursorMotionThresholdPx, (c, v) => c with { CursorMotionThresholdPx = v }));
 
         // ================================================================
-        // 13. 커서 인디 — 전환 효과
+        // 13. 커서 인디케이터 — 전환 효과
         // ================================================================
         // CursorChangeHighlight on/off 는 트레이 메뉴 토글이라 여기서 제외 (메인 ChangeHighlight 패턴 동일).
-        Sec("커서 인디 — 전환 효과", "Cursor — Transition");
+        Sec("커서 인디케이터 — 전환 효과", "Cursor — Transition");
         Add(Dbl("전환 강조 배율", "Highlight scale",
             DefaultConfig.MinCursorHighlightScale, DefaultConfig.MaxCursorHighlightScale,
             c => c.CursorHighlightScale, (c, v) => c with { CursorHighlightScale = v }));
