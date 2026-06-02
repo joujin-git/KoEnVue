@@ -1,0 +1,176 @@
+# Codebase Audit — 2026-06-02 전체 리뷰
+
+**범위**: `App/` + `Core/` + `Program*.cs` 전체 (테스트·obj 제외).
+**방법**: 4개 영역으로 분할해 explorer 서브에이전트 병렬 심층 리뷰 → 메인 세션에서 핵심 주장 교차검증(grep) → 종합·우선순위화.
+**세 축**: ① 구조/안전성 개선 · ② 중복 → 공통 모듈화 · ③ 하드코딩 → const/enum/config.
+
+> 이 문서는 **백로그**다. 단일 PR이 아니라 독립 항목들의 모음이며, 각 항목에 확신도·비용·정확한 `file:line`을 붙였다. 실행 시 아래 "권장 묶음" 단위로 PR(또는 의미 커밋)을 끊는 것을 권장.
+
+---
+
+## 0. 핵심 결론
+
+이 코드베이스는 PR-00~22를 거치며 P1–P6이 이미 매우 엄격하게 강제되어 있다. **하드 규칙 위반은 0건**:
+
+| 점검 | 결과 |
+|------|------|
+| `[DllImport]` (P1/AOT) | **0** — 전부 `[LibraryImport]` |
+| bare `catch {}` (conventions §1) | **0** — 전부 narrowing 또는 정당화된 wide catch |
+| Core → App enum 누출 (P6/Risk4) | **0** — `ImeState`/`NonKoreanImeMode`/`맑은 고딕` 등 |
+| Core 내 `Logger.X` 직접 호출 (PR-09) | **0** — `LoggerSink` 정의부 외 전부 `LogProvider.Sink?.X` |
+| `requireAdministrator` (P5) | **0** — 코드/매니페스트 |
+| record struct 생성자 필드순서 취약성 | **0** — 전부 named argument |
+
+따라서 가치 있는 발견은 전부 **invariant grep의 사각지대**에 있다: 식 인자(`* 72`, `!= 200`)·getter fallback·다이얼로그 레이아웃 좌표·셰이더 계수에 박힌 매직넘버, 그리고 grep으로는 안 보이는 의미론적 중복.
+
+**총 발견**: 약 50건 (핵심 High 12 / Med 다수 / Low 다수). 그중 **삭제·dead 판정 등 비가역 주장 4건은 메인에서 grep으로 직접 교차검증 완료**(아래 ✓).
+
+**가장 임팩트 큰 3건**:
+1. **DUP-1** — `AppConfig` ↔ `Settings.EnsureSubObjects`의 **string/array 디폴트 이중 관리** (PR-17이 numeric만 단일화하고 남긴 축). 수기 "양쪽 유지" 주석에 의존 중.
+2. **HC 일괄** — `200`/`32`/`72`/`256*1024`/`4`/`255`/`0x8000`/`0xFFFF` 등 **P3 직접 위반 매직넘버** — 대부분 비용 S, 이미 같은 의미의 const가 다른 파일에 존재하는 경우 다수.
+3. **DUP-2/DUP-3** — 스크롤바 셋업·DIB 픽셀 렌더 블록의 **글자 그대로 중복** → 이미 존재하는 helper 클래스에 메서드 추가만으로 해소.
+
+---
+
+## ⚠ 동작 이슈 (사용자 보고 — 코드 진단 완료)
+
+코드 품질 리뷰와 별개로 사용자가 보고한 **커서 인디 강조**(IME 전환 스케일 팝, PR-21) 동작 2건. 코드를 직접 추적해 근본 원인을 확정했다.
+
+### BEH-1 — 커서 강조가 `animation_enabled` 마스터를 무시 (공백, High)
+
+**현상**: 트레이 "애니메이션 사용"(`animation_enabled`) OFF여도 커서 인디의 IME 전환 강조(팝)가 계속 작동.
+
+**근본 원인**: PR-22가 **메인 인디**는 `Animation.BuildAnimationConfig`에서 `ChangeHighlight/SlideAnimation = AnimationEnabled && ...`로 마스터 게이팅했으나(`App/UI/Animation.cs:154,157`), **커서 인디는 별도 파사드**라 그 합성을 안 거친다. `App/UI/CursorOverlay.cs:209` `if (_config.CursorChangeHighlight) TriggerPop();`이 `AnimationEnabled`를 **전혀 보지 않음** → PR-22의 "전체 마스터" 의도(라벨·PRD·config-reference)에서 커서 팝이 누락된 사각지대.
+
+**수정 방안** (메인 인디와 평행, 비용 S, 회귀 낮음):
+```csharp
+// CursorOverlay.SetImeState (현재 line 209)
+if (_config.AnimationEnabled && _config.CursorChangeHighlight)
+    TriggerPop();
+else
+    _engine.Render(_currentStyle);   // 마스터/개별 OFF면 색만 즉시 갱신 (강조 효과만 게이팅)
+```
+`HandleConfigChanged`의 `StopPop()`(CursorOverlay.cs:107)이 이미 있어 토글 OFF 순간 진행 중 팝도 정리됨. **PR-22 후속**으로 분류. (단위 테스트는 커서가 GDI 의존이라 어려움 — 수동 smoke 영역.)
+
+### BEH-2 — 앱 포커싱 시 커서 강조 누락 (동일 IME 앱 전환 시) — 설계 결정 필요
+
+**현상**: 앱 전환 시 커서 강조가 뜨는 경우와 안 뜨는 경우가 갈림. 명시적 한/영 전환은 정상.
+
+**근본 원인**: `CursorOverlay.SetImeState`는 **IME 상태가 실제 바뀔 때만** 호출되고(`Program.cs:504-505`, `HandleImeStateChanged` 내부), 자체적으로 `CursorOverlay.cs:201` `if (_lastImeState == state) return;` early return을 둔다. 앱 포커스 변경 핸들러(`Program.cs:520 HandleFocusChanged`)는 **커서 인디를 전혀 건드리지 않는다**. 따라서:
+- 한글앱 → 영문앱 (IME 바뀜): `HandleImeStateChanged` → `SetImeState` → 팝 ✅
+- 한글앱 → 한글앱 (IME 동일): IME 미변경 → early return → 팝 없음 ❌
+- 추가 게이트: 전환 순간 마우스 이동 중이면 `_isVisible=false`(`CursorOverlay.cs:205`)라 팝 없음
+
+즉 사용자가 말한 "앱 포커싱 시 강조"는 실제로 **"앱 전환에 수반된 IME 변경 시 강조"**이고, 동일 IME 앱 사이 전환은 강조가 없다.
+
+**이것은 현재 설계 의도와 일치**: PR-21 범위는 "커서 인디 **IME 전환** 스케일 팝"이고, 메인 인디도 동일하게 IME 변경 시에만 highlight(`Core/Animation/OverlayAnimator.cs:177` `willHighlight = highlightTrigger && ChangeHighlight`; focus change는 `Program.cs:530`에서 `imeChanged:false`). 즉 메인/커서 둘 다 "포커스 변경만으로는 강조 안 함"이 일관된 현 동작 — 버그라기보다 **기대치 차이**.
+
+**두 방향 — 사용자 결정 필요**:
+- **방향 A (현행 유지 + 문서화)**: IME 전환 시에만 강조 = 메인 인디와 일관된 의도. "동일 IME 앱 전환은 강조 없음"을 정상 동작으로 User_Guide/config-reference에 명문화. **코드 변경 0**.
+- **방향 B (포커스 전환에도 강조 추가)**: `HandleFocusChanged`에서도 커서 팝 트리거(가시 상태 한정). 트레이드오프 — (a) 메인 인디는 focus 시 강조 안 하므로 메인↔커서 **비대칭** 발생(또는 메인까지 맞추면 변경 확대), (b) `EventTriggers.OnFocusChange` 연동 설계 필요, (c) 새 config 키(예: `cursor_highlight_on_focus`) 여부 결정. 비용 M+.
+
+> BEH-1은 명확한 공백이라 수정 권장. BEH-2는 "현행이 의도된 동작"이라 방향 A(문서화)와 방향 B(기능 추가) 중 사용자 선호에 달림.
+
+---
+
+## 1. ② 중복 → 공통 모듈화
+
+| ID | 확신 | 위치 | 무엇이 중복 | 모듈화 방안 | 비용 |
+|----|------|------|-------------|-------------|------|
+| **DUP-1** ★ | High | `App/Models/AppConfig.cs:34-49,83,85,194` ↔ `App/Config/Settings.cs:208,635-654` | 색상 6쌍(`#16A34A` 등)·`SystemHideClasses` 7배열·`SystemHideProcesses`·`OverlayClassName`·`FontFamily`/라벨(`맑은 고딕`/`한`/`En`/`EN`)이 init 디폴트와 null-폴백에 **각각 리터럴**. `AppConfig.cs:81-82,634` 주석이 "양쪽 동일 유지"를 수기 강제 중 | string/array 디폴트도 `DefaultConfig` const + `static readonly string[]`로 추출 → 양쪽 단일 참조 (PR-17 numeric 단일화의 비-numeric 완성) | M |
+| **DUP-2** | High | `App/UI/Dialogs/SettingsDialog.Scroll.cs:30-42` ↔ `App/UI/Dialogs/CleanupDialog.cs:226-237` | `SCROLLINFO` 셋업(cbSize/fMask/nMin=0/nMax=total-1/nPage/nPos + SetScrollInfo)이 두 다이얼로그에 복제. `ScrollTo`/`ResolveVScrollPosition` 등은 이미 `ScrollableDialogHelper` 공유인데 셋업만 빠짐 | `ScrollableDialogHelper.SetupVScrollbar(hwnd, totalContentH, viewportClientH)` 추가 | S |
+| **DUP-3** | High | `Core/Windowing/LayeredOverlayBase.cs:228-259` ↔ `:467-490` | `PaintDib`와 `HandleDragDpiChange`가 "DIB clear → SelectObject(oldFont) → try{BuildMetrics+renderToDib}finally{복원} → ApplyPremultipliedAlpha → `_lastRenderedStyle=style`" ~25 LOC를 글자 그대로 중복 | `private void RenderDibPixels(OverlayStyle, int w, int h)` 추출 → 콜백 예외·폰트 복원 단일화 | S |
+| **DUP-4** | Med | `Program.cs:785,1012,1047,1077,1098` (5곳) | "인디 가시 시 현재 위치로 재표시" 블록(`if(_indicatorVisible && _lastForegroundHwnd!=0){ (x,y)=GetAppPosition(); Animation.TriggerShow(...imeChanged:false) }`) 5중 반복 | `RefreshVisibleIndicator(bool respectUserHidden=false)` 추출 (785만 `!UserHidden` 추가 차이) | S |
+| **DUP-5** | Med | `App/UI/Dialogs/ScaleInputDialog.cs:175-180,185-190` ↔ `SettingsDialog.cs:336-344` | 검증 실패 시 `RunExternal(MessageBoxW)+SetFocus+SendMessage(EM_SETSEL,-1)` 블록 3곳 복제 | `ShowFieldError(hwnd, message)` 공통 헬퍼 | S |
+| **DUP-6** | Med | `App/UI/Tray.cs:316-318,550-551,606-607` | `MessageBoxW(_hwndMain, I18n.X, "KoEnVue", MB_OK)` 3곳 (2곳은 `RunExternal` 래핑까지 동형) | `ShowMessage(I18nKey)` 헬퍼 — 타이틀 상수(HC-11) + RunExternal 가드 일관 | S |
+| **DUP-7** | Med | `Program.cs:767-793` ↔ `:1026-1062` | 설정 적용 후처리 시퀀스(I18n.Load 분기→UpdateDetectionMethod→Overlay.HandleConfigChanged→ApplyCursorConfigChange→가시 시 TriggerShow→Tray.UpdateState)가 거의 동형 2회 | "apply-config-side-effects" 헬퍼 추출, mtime self-bump 차이만 파라미터화. **회귀 민감 — 비용 M** | M |
+| **DUP-8** | Med | `App/UI/CursorOverlay.cs:143-147,165-169` | `_engine.Hide()+_isVisible=false+StopPop()+Logger.Debug` 묶음 반복 | `HideCursor(string reason)` 헬퍼 | S |
+| **DUP-9** | Med | `App/UI/Tray.cs:340-355,358-385` | DragModifier 4 case + PositionMode 2 case가 `if(config.X!=Y){updateConfig(...); Logger.Info(...)}` 동형 반복 | `SetIfChanged<T>(current, target, setter, logMsg)` 제네릭 헬퍼 또는 enum 매핑 | M |
+| **DUP-10** | Med | `Core/Logging/Logger.cs:107,132,197,273,280` | self-catch breadcrumb의 `[WARN] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff}` 접두 + 포맷 문자열 5회 반복 | `const string TimestampFormat` + `FormatBreadcrumb(level,msg)` 순수 헬퍼 (drain 재귀 금지 유지) | S |
+| **DUP-11** | Med | `App/UI/Dialogs/SettingsDialog.Scroll.cs:79-100` ↔ `CleanupDialog.cs:320-339` | `ViewportProc`(WM_VSCROLL/WM_MOUSEWHEEL/default)가 동형 — 둘 다 helper에 위임만 | 공유 viewport WndProc. **단 `[UnmanagedCallersOnly]` 정적 상태 분리 필요 — 트레이드오프** | M |
+| **DUP-12** | Low | `App/UI/TrayIcon.cs:151-179` ↔ `:185-209` | `DrawCaretDot`/`DrawStrikeThrough`가 `CreateSolidBrush→SelectObject→try/finally 복원+DeleteObject` GDI 보일러 동일 | GDI 스코프 헬퍼 (NativeAOT 구조체 제약 고려) | M |
+| **DUP-13** | Low | `Core/Windowing/LayeredOverlayBase.cs:451-458,507-514` | DPI 변화 시 캐시 리셋(`_currentWidth=0;...;_lastRenderedStyle=null`)이 2곳 동일 (cursor는 필드집합 달라 비범위) | overlay 내 `InvalidateDpiCaches()` 하나로 | S |
+
+---
+
+## 2. ③ 하드코딩 → const/enum/config
+
+> P3 직접 대상. ✓ = 메인에서 grep 교차검증 완료. **여러 건이 "같은 의미의 const가 이미 다른 파일에 존재"**하는 케이스.
+
+| ID | 확신 | 위치 | 값·의미 | 방안 | 비용 |
+|----|------|------|---------|------|------|
+| **HC-1** | High | `Core/Http/HttpClientLite.cs:118` | `!= 200` HTTP OK | `const uint HttpStatusOk = 200;` | S |
+| **HC-2** | High | `Core/Shell/UriLauncher.cs:42` | `(long)result <= 32` ShellExecute 성공 임계값 (`Shell32.cs:14,16`이 의미 2회 문서화) | `Win32Constants.ShellExecuteSuccessThreshold = 32` | S |
+| **HC-3** ✓ | High | `Core/Windowing/LayeredOverlayBase.cs:550,685` | `MulDiv(fontSize, dpiY, 72)` points-per-inch. **`Win32DialogHelper.cs:27`에 이미 `PointsPerInch=72.0` 존재** | LayeredOverlayBase에 `const int PointsPerInch=72` 또는 공용화 | S |
+| **HC-4** | High | `App/UI/CursorRenderer.cs:103,110,138,58,90,106,113,179-181` | 2×2 supersample 오프셋 `0.25`/`0.75`, 평균 `*0.25`, AA 여유 `+1.0`, 헤일로 흰색 `255` (셰이더 — grep 사각) | `SubSampleLow/High`, `InvSubSampleCount`, `EdgeMarginPx`, `HaloColorComponent` const | S |
+| **HC-5** | Med | `Core/Http/HttpClientLite.cs:156` | `> 256 * 1024` 응답 상한 | `const long MaxResponseBytes = 256*1024;` | S |
+| **HC-6** ✓ | Med | `Core/Windowing/LayeredOverlayBase.cs:231,470` · `LayeredCursorBase.cs:197` | `w*h*4`·`i*4` 32bpp BGRA. **`CursorRenderer.cs:29`에 이미 `BytesPerPixel=4` 존재 — Core만 누락** | Core(또는 DibSectionFactory)에 `BytesPerPixel=4` | S |
+| **HC-7** | Med | `LayeredOverlayBase.cs:730-732,723,724` · `LayeredCursorBase.cs:279-281,277` · `OverlayAnimator.cs:536` | premultiply/불투명 가드의 alpha 최대값 `255` | `const byte AlphaOpaque=255` (곱셈·가드 우선; `/255` 수식은 보존) | S |
+| **HC-8** ✓ | Med | `SettingsDialog.Scroll.cs:86` · `SettingsDialog.cs:364` · `ScaleInputDialog.cs:204` · `CleanupDialog.cs:283,327` (5곳) | 인라인 `& 0xFFFF` WM_COMMAND LOWORD. **`Win32Constants.LOWORD_MASK=0xFFFF`(Win32Types.cs:519) 이미 존재 — `Program.cs:953`만 사용** | 5곳을 const 참조로 통일 | S |
+| **HC-9** | Med | `App/UI/Dialogs/SettingsDialog.cs:229,232` | 라벨 배치 `y+3`/`rowH-4` 수직 인셋·높이 보정 | `LabelVPadPx`/`LabelHeightTrimPx` const | S |
+| **HC-10** | Med | `App/UI/Dialogs/SettingsDialog.Scroll.cs:67` | `ScrollTo(...+ _lineHeight*2)` "두 줄 여유" 마진 | `ScrollIntoViewMarginLines=2` (ScrollableDialogHelper로 이동 가능) | S |
+| **HC-11** | Med | `App/UI/Tray.cs:317,551,607` | MessageBox 타이틀 `"KoEnVue"` 리터럴 3곳 (앱 표시명 단일 진실원 부재; `UpdateRepoName`은 의미 다름) | `DefaultConfig.AppName` 신설 (DUP-6과 함께) | S |
+| **HC-12** | Med | `Program.cs:571` ↔ `Core/Windowing/LayeredOverlayBase.cs:406` | GetAsyncKeyState 눌림 `0x8000`이 App(const)·Core(인라인) 각기 | `Win32Constants.KEY_PRESSED=0x8000` 단일 const (Core 배치 = P4 부합) | S |
+| **HC-13** ✓ | Med | `App/Config/DefaultConfig.cs:75` | `HoldDurationMs=1500` **정의만, 사용처 0** (실 hold는 `EventDisplayDurationMs`) | dead const 제거 (단일 진실원 신뢰도) | S |
+| **HC-14** | Low | `ScaleInputDialog.cs:168` · `SettingsDialog.Fields.cs:504` | EDIT 읽기 버퍼 `new char[32]`/`[len+2]` (영역3·4 중복 발견) | `EditReadBufferSize` const | S |
+| **HC-15** | Low | `SettingsDialog.Fields.cs:417,427` · `ScaleInputDialog.cs:125` | Double 표시/에러 포맷 `"0.###"`/`"0.##"`/`"0.#"` | `DoubleDisplayFormat` const 통일 | S |
+| **HC-16** | Low | `App/UI/Dialogs/CleanupDialog.cs:191-192` | 구분선 `-1`·두께 `2` 인라인 (`SettingsDialog.cs:218`은 `SectionSepH=2` const) | 공통 `SeparatorThicknessPx` | S |
+| **HC-17** | Low | `Core/Native/WinHttp.cs:15,16,20,28` | 미사용 const 4개 (선언만, 사용처 0) | 제거 또는 "참고용 미사용" 주석 (의도적 가능 — 확신 낮음) | S |
+| **HC-18** | Low | `SettingsDialog.Fields.cs:89,93,118,143,158` | `Math.Clamp(i,0,2/3/5/1)` enum 값 개수 매직넘버 (Combo 팩토리는 이미 `labels.Length` 클램프 → 일부 중복) | `(Enum)Math.Clamp(i,0,labels.Length-1)` | M |
+| **HC-19** | Low | `Core/Animation/OverlayAnimator.cs:558` | `*1000.0/Stopwatch.Frequency` 초→ms | `const double MsPerSecond=1000.0` | S |
+
+---
+
+## 3. ① 구조/안전성 개선
+
+| ID | 확신 | 위치 | 현상 | 방안 | 비용 |
+|----|------|------|------|------|------|
+| **IMP-1** ✓ | High | `Core/Native/OleAut32.cs:1-26` (전체) | `SysFreeString`+SafeArray 5종 = **6 P/Invoke 전부 사용처 0** (주석의 UIA 코드 부재). grep 교차검증 완료 | 파일 통째 삭제 (미래 UIA 시 재도입). AOT marshalling stub 6개 제거 | S |
+| **IMP-2** | High | `App/UI/Dialogs/SettingsDialog.cs:133-316` | `BuildChildren` ~180줄 단일 메서드 (스케일 21변수 + 행 루프 3-way switch + 스크롤바 + 버튼, 깊은 중첩) | `CreateSectionRow`/`CreateFieldRow`(switch)/`CreateButtonRow` 추출로 평탄화 | M |
+| **IMP-3** | Med | `App/UI/Tray.cs:257-449` | `HandleMenuCommand` ~190줄 (DUP-9 패턴 포함) | DUP-9 헬퍼 적용 + 분기 그룹 추출 | M |
+| **IMP-4** | Low | `Core/Animation/OverlayAnimator.cs:171-246` | `TriggerShow` 4분기가 slide+highlight 호출집합 부분 반복 (분기마다 미묘하게 다름) | 공통 꼬리만 헬퍼화. **flip-flop 회귀 민감(주석 L264-269) — 주의** | M |
+| **IMP-5** | Low | `App/Detector/ImeStatus.cs:42-54` | `Detect(hwndFocus, threadId)` 2-arg 오버로드 외부 호출 0 (내부 default 분기만) | `private` 강등 또는 인라인 | S |
+| **IMP-6** | Low | `Program.cs:1105-1110` | `HandleDpiChanged`가 wParam/lParam 받지만 둘 다 무시 | 미래 per-monitor 계획 없으면 시그니처 단순화 | S |
+| **IMP-7** | Low | `App/Config/Settings.cs:216-228` | `IsValidWindowClassName`이 ASCII 화이트리스트를 4중 범위 비교 | `char.IsAsciiLetterOrDigit(c) || c=='_'` (.NET 7+) 축약 | S |
+
+---
+
+## 4. 검토했으나 제외 (의도적 결정 — 근거 확인됨)
+
+- **LayeredCursorBase ↔ LayeredOverlayBase의 `ApplyPremultipliedAlpha` 분기** — `a==0` 처리가 의미 정반대(overlay=AA 엣지 보존 / cursor=외곽 잡티 제거). dev-notes 2026-05-28-pr-18 §결정1 + PR-18.md §3 + 인라인 코멘트 3중 박제. 공유화 시 회귀.
+- **채널 비트연산** `<<16`/`<<8`/`&0xFF` (`ColorHelper`/`Dwmapi`/`User32`) — RGB↔COLORREF/ARGB 표준 레이아웃의 직접 표현. 위치 자체가 의미라 const화가 가독성 해침.
+- **`CalculateNonClientHeight`의 `2*` 계수** — 상/하·좌/우 2변의 기하학적 상수. 주석 자명.
+- **`Dwmapi.DwmGetWindowAttribute` 2 오버로드 / `User32.SystemParametersInfoHighContrast`** — PVOID를 `[LibraryImport]`가 generic marshalling 못해 타입별 시그니처 분기가 정석.
+- **`Win32Constants`의 동일 비트값 별도 상수**(`WS_EX_LAYERED`=`WS_SYSMENU`=0x80000 등) — exStyle/style은 별개 비트 네임스페이스. 통합하면 의미 오염.
+- **AppConfig nested record nullable / enum cast 디폴트** — PR-17 단일화 의도적 제외 대상.
+- **DetectionLoop 지수 백오프 / flip-flop 히스테리시스 / AdminElevation 4-case** — dev-notes 정착, 회귀 민감. 재설계 금지.
+- **I18n enum+_table+property 3축, `MenuAdminElevationExternal` 영문 mix** — 명시적 의도.
+- **AppMessages WM_APP+N / Timer ID / 메뉴 ID 블록** — 전부 const + 의미 주석. 순차 정수 ID는 도메인 관용.
+
+---
+
+## 5. 실행 권장 묶음
+
+> 의존·회귀 위험·비용으로 묶음. 각 묶음 = 1 PR(또는 의미 커밋). 매 묶음 후 verifier(build+AOT+test) + reviewer(P1–P6) 게이트.
+
+| 묶음 | 포함 | 성격 | 비용 | 위험 |
+|------|------|------|------|------|
+| **묶음 0 — 동작(커서 마스터)** | BEH-1 (PR-22 후속 — 커서 팝 `AnimationEnabled &&` 게이팅) | 사용자 보고 공백 | S | 낮음 |
+| **묶음 0b — 동작(포커스 강조)** | BEH-2 (방향 A 문서화 / B 기능추가 — 결정 후) | 사용자 결정 대기 | 0~M+ | — |
+| **묶음 1 — dead/명백 const** | IMP-1, HC-13, HC-17 (삭제) + HC-1·2·3·5·6·7·8·12 (P3 일괄, 이미 const 존재분 우선) | 즉시·거의 무위험 | S | 낮음 |
+| **묶음 2 — 설정 단일화** ★ | DUP-1 | PR-17의 비-numeric 완성. 회귀 grep 동반 (양쪽 값 일치 박제) | M | 중 (디폴트 변경 표면) |
+| **묶음 3 — 다이얼로그 모듈화** | DUP-2, DUP-5, DUP-6 + HC-9·10·11·14·15·16 | helper 추가 + 레이아웃 const | S–M | 낮음 |
+| **묶음 4 — Core 렌더 모듈화** | DUP-3, DUP-13 + HC-4(셰이더 const) | 픽셀 렌더 단일화 | S | 낮음 (단위테스트 영역 밖 — 수동 smoke) |
+| **묶음 5 — Program/Tray 정리** | DUP-4, DUP-8, DUP-9, IMP-3 | 반복 추출 + 헬퍼 | S–M | 낮음 |
+| **묶음 6 — 큰 분해 (선택)** | IMP-2, DUP-7, DUP-11, IMP-4 | 180/190줄 분해·동형 시퀀스 통합 | M | 중 (회귀 민감 — 신중) |
+| **잔여 Low** | DUP-10·12, HC-18·19, IMP-5·6·7 | 기회 될 때 | S | 낮음 |
+
+**권장 순서**: 묶음 1(빠른 승리) → 묶음 2(최대 임팩트) → 3·4·5(병렬 가능) → 6은 별도 세션. 전부 P3/P4 정신 강화이며 **동작 변경 0**(묶음 2의 디폴트 단일화 포함 — 값 자체는 불변)이 목표.
+
+---
+
+## 6. 메모
+
+- 모든 `file:line`은 리뷰 시점(HEAD `d11241a` 이후) 기준. 착수 전 해당 줄 재확인 필수(세션 노트 라인번호 불신 원칙).
+- 묶음 2 착수 시 **회귀 차단 invariant** 신설 권장: `AppConfig` 디폴트와 `Settings.EnsureSubObjects` 폴백이 같은 `DefaultConfig` 심볼을 참조하는지 grep (현재는 리터럴 일치를 수기 확인).
+- 묶음 4는 `OverlayAnimatorTests` 류 콜백 spy 단위테스트로 일부 박제 가능하나, DIB 픽셀 경로는 수동 smoke 영역.
