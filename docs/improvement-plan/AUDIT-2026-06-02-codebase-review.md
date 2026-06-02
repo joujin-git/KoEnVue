@@ -25,12 +25,12 @@
 
 **총 발견**: 약 50건 (핵심 High 12 / Med 다수 / Low 다수). 그중 **삭제·dead 판정 등 비가역 주장 4건은 메인에서 grep으로 직접 교차검증 완료**(아래 ✓).
 
-> **마커 범례**: `✓` = grep 교차검증 완료(착수 전 확인) · `✅` = 실행 완료 · `🔒 보존` = 검토 후 제거 안 하기로 결정. **묶음 1 (dead code 삭제 + 매직넘버 const화) 은 2026-06-02 실행 완료** — IMP-1·HC-1·2·3·5·6·7·8·12·13 에 ✅, HC-17 은 🔒 보존 (CHANGELOG `[Unreleased]` 참조). **묶음 2 (설정 색상/문자열/배열 디폴트 단일화, DUP-1) 도 2026-06-02 실행 완료** — PR-17 numeric 축의 비-numeric 완성, 회귀 차단 invariant grep 동반 (§6 메모).
+> **마커 범례**: `✓` = grep 교차검증 완료(착수 전 확인) · `✅` = 실행 완료 · `◐` = 부분 완료(범위 일부 보류/제외 — 셀에 사유 명기) · `🔒 보존` = 검토 후 제거 안 하기로 결정. **묶음 1 (dead code 삭제 + 매직넘버 const화) 은 2026-06-02 실행 완료** — IMP-1·HC-1·2·3·5·6·7·8·12·13 에 ✅, HC-17 은 🔒 보존 (CHANGELOG `[Unreleased]` 참조). **묶음 2 (설정 색상/문자열/배열 디폴트 단일화, DUP-1) 도 2026-06-02 실행 완료** — PR-17 numeric 축의 비-numeric 완성, 회귀 차단 invariant grep 동반 (§6 메모). **묶음 3 (다이얼로그 모듈화) 도 2026-06-02 실행 완료** — DUP-2 ✅ / DUP-5·DUP-6 ◐(각각 SettingsDialog commit 에러·`IDM_ADMIN_ELEVATION` 보류) + HC-9·10·11·14·15·16 ✅, `DefaultConfig.AppName` 신설, 동작 보존(값·문자열 불변).
 
 **가장 임팩트 큰 3건**:
 1. **DUP-1** — `AppConfig` ↔ `Settings.EnsureSubObjects`의 **string/array 디폴트 이중 관리** (PR-17이 numeric만 단일화하고 남긴 축). 수기 "양쪽 유지" 주석에 의존 중.
 2. **HC 일괄** — `200`/`32`/`72`/`256*1024`/`4`/`255`/`0x8000`/`0xFFFF` 등 **P3 직접 위반 매직넘버** — 대부분 비용 S, 이미 같은 의미의 const가 다른 파일에 존재하는 경우 다수.
-3. **DUP-2/DUP-3** — 스크롤바 셋업·DIB 픽셀 렌더 블록의 **글자 그대로 중복** → 이미 존재하는 helper 클래스에 메서드 추가만으로 해소.
+3. **DUP-2/DUP-3** — 스크롤바 셋업·DIB 픽셀 렌더 블록의 **글자 그대로 중복** → 이미 존재하는 helper 클래스에 메서드 추가만으로 해소. (DUP-2 는 묶음 3 에서 `SetupVScrollbar` 로 ✅ 완료; DUP-3 은 묶음 4 대기)
 
 ---
 
@@ -80,11 +80,11 @@ else
 | ID | 확신 | 위치 | 무엇이 중복 | 모듈화 방안 | 비용 |
 |----|------|------|-------------|-------------|------|
 | **DUP-1** ★ ✅ | High | `App/Models/AppConfig.cs:34-49,83,85,194` ↔ `App/Config/Settings.cs:208,635-654` | 색상 6쌍(`#16A34A` 등)·`SystemHideClasses` 7배열·`SystemHideProcesses`·`OverlayClassName`·`FontFamily`/라벨(`맑은 고딕`/`한`/`En`/`EN`)이 init 디폴트와 null-폴백에 **각각 리터럴**. `AppConfig.cs:81-82,634` 주석이 "양쪽 동일 유지"를 수기 강제 중 | ✅ **완료 (묶음 2, 2026-06-02)**: 색상 7개(`DefaultHangulBg` 등 Bg/Fg 6 + `DefaultBorderColor`)·폰트/라벨 4개(`DefaultIndicatorFontFamily`=맑은 고딕 + 라벨 3)·`DefaultOverlayClassName` const + `DefaultSystemHideClasses`/`DefaultSystemHideProcesses` 배열 property 를 `DefaultConfig` 에 추출. 배열은 property(`=>`) 라 호출마다 새 배열(공유 변형 위험 0 — `TrayQuickOpacityPresets` 패턴). `AppConfig` 14 init + `Settings.EnsureSubObjects`/`ValidateAdvanced` 폴백 단일 참조, 수기 유지 주석 제거. 값 불변. 회귀 grep 신설(아래 메모) | M |
-| **DUP-2** | High | `App/UI/Dialogs/SettingsDialog.Scroll.cs:30-42` ↔ `App/UI/Dialogs/CleanupDialog.cs:226-237` | `SCROLLINFO` 셋업(cbSize/fMask/nMin=0/nMax=total-1/nPage/nPos + SetScrollInfo)이 두 다이얼로그에 복제. `ScrollTo`/`ResolveVScrollPosition` 등은 이미 `ScrollableDialogHelper` 공유인데 셋업만 빠짐 | `ScrollableDialogHelper.SetupVScrollbar(hwnd, totalContentH, viewportClientH)` 추가 | S |
+| **DUP-2** ✅ | High | `App/UI/Dialogs/SettingsDialog.Scroll.cs:30-42` ↔ `App/UI/Dialogs/CleanupDialog.cs:226-237` | `SCROLLINFO` 셋업(cbSize/fMask/nMin=0/nMax=total-1/nPage/nPos + SetScrollInfo)이 두 다이얼로그에 복제. `ScrollTo`/`ResolveVScrollPosition` 등은 이미 `ScrollableDialogHelper` 공유인데 셋업만 빠짐 | ✅ **완료 (묶음 3, 2026-06-02)**: `ScrollableDialogHelper.SetupVScrollbar(hwndViewport, totalContentHeight, viewportClientHeight)` 추가, 두 다이얼로그가 헬퍼 위임(nMax `Max(0,…)`/nPage `Max(1,…)` 방어 클램프 흡수). 동작 불변 | S |
 | **DUP-3** | High | `Core/Windowing/LayeredOverlayBase.cs:228-259` ↔ `:467-490` | `PaintDib`와 `HandleDragDpiChange`가 "DIB clear → SelectObject(oldFont) → try{BuildMetrics+renderToDib}finally{복원} → ApplyPremultipliedAlpha → `_lastRenderedStyle=style`" ~25 LOC를 글자 그대로 중복 | `private void RenderDibPixels(OverlayStyle, int w, int h)` 추출 → 콜백 예외·폰트 복원 단일화 | S |
 | **DUP-4** | Med | `Program.cs:785,1012,1047,1077,1098` (5곳) | "인디 가시 시 현재 위치로 재표시" 블록(`if(_indicatorVisible && _lastForegroundHwnd!=0){ (x,y)=GetAppPosition(); Animation.TriggerShow(...imeChanged:false) }`) 5중 반복 | `RefreshVisibleIndicator(bool respectUserHidden=false)` 추출 (785만 `!UserHidden` 추가 차이) | S |
-| **DUP-5** | Med | `App/UI/Dialogs/ScaleInputDialog.cs:175-180,185-190` ↔ `SettingsDialog.cs:336-344` | 검증 실패 시 `RunExternal(MessageBoxW)+SetFocus+SendMessage(EM_SETSEL,-1)` 블록 3곳 복제 | `ShowFieldError(hwnd, message)` 공통 헬퍼 | S |
-| **DUP-6** | Med | `App/UI/Tray.cs:316-318,550-551,606-607` | `MessageBoxW(_hwndMain, I18n.X, "KoEnVue", MB_OK)` 3곳 (2곳은 `RunExternal` 래핑까지 동형) | `ShowMessage(I18nKey)` 헬퍼 — 타이틀 상수(HC-11) + RunExternal 가드 일관 | S |
+| **DUP-5** ◐ | Med | `App/UI/Dialogs/ScaleInputDialog.cs:175-180,185-190` ↔ `SettingsDialog.cs:336-344` | 검증 실패 시 `RunExternal(MessageBoxW)+SetFocus+SendMessage(EM_SETSEL,-1)` 블록 3곳 복제 | ◐ **부분 완료 (묶음 3, 2026-06-02)**: `Win32DialogHelper.ShowFieldError(hwndOwner, hwndField, message, title)` 신설 — **`ScaleInputDialog` 2곳(invalid input + out of range)만 적용**. `SettingsDialog` commit 에러 경로는 ScrollIntoView 등 컨트롤별 선행 동작이 얽혀 **보류**(향후 합류 시 헬퍼 그대로 재사용) | S |
+| **DUP-6** ◐ | Med | `App/UI/Tray.cs:316-318,550-551,606-607` | `MessageBoxW(_hwndMain, I18n.X, "KoEnVue", MB_OK)` 3곳 (2곳은 `RunExternal` 래핑까지 동형) | ◐ **부분 완료 (묶음 3, 2026-06-02)**: `Tray.ShowMessage(body)` 헬퍼(RunExternal 가드 + 타이틀 `DefaultConfig.AppName` 일관) 신설 — `ShowPositionError` / `CleanupPositions` empty / 위치 기록 empty 3 경로 위임. **`IDM_ADMIN_ELEVATION` 안내는 "확인 후 자동 종료" 흐름이라 헬퍼 미적용**(타이틀만 `"KoEnVue"`→`DefaultConfig.AppName` 으로 교체). HC-11(`DefaultConfig.AppName`) 동반 완료 | S |
 | **DUP-7** | Med | `Program.cs:767-793` ↔ `:1026-1062` | 설정 적용 후처리 시퀀스(I18n.Load 분기→UpdateDetectionMethod→Overlay.HandleConfigChanged→ApplyCursorConfigChange→가시 시 TriggerShow→Tray.UpdateState)가 거의 동형 2회 | "apply-config-side-effects" 헬퍼 추출, mtime self-bump 차이만 파라미터화. **회귀 민감 — 비용 M** | M |
 | **DUP-8** | Med | `App/UI/CursorOverlay.cs:143-147,165-169` | `_engine.Hide()+_isVisible=false+StopPop()+Logger.Debug` 묶음 반복 | `HideCursor(string reason)` 헬퍼 | S |
 | **DUP-9** | Med | `App/UI/Tray.cs:340-355,358-385` | DragModifier 4 case + PositionMode 2 case가 `if(config.X!=Y){updateConfig(...); Logger.Info(...)}` 동형 반복 | `SetIfChanged<T>(current, target, setter, logMsg)` 제네릭 헬퍼 또는 enum 매핑 | M |
@@ -109,14 +109,14 @@ else
 | **HC-6** ✓ ✅ | Med | `Core/Windowing/LayeredOverlayBase.cs:231,470` · `LayeredCursorBase.cs:197` | `w*h*4`·`i*4` 32bpp BGRA. **`CursorRenderer.cs:29`에 이미 `BytesPerPixel=4` 존재 — Core만 누락** | `DibSectionFactory.BytesPerPixel=4` (DIB 생성처 = stride 진실원, 두 엔진 참조) | S |
 | **HC-7** ✅ | Med | `LayeredOverlayBase.cs:730-732,723,724` · `LayeredCursorBase.cs:279-281,277` · `OverlayAnimator.cs:536` | premultiply/불투명 가드의 alpha 최대값 `255` | 곱셈·`a==255` 가드 → `byte.MaxValue` (BCL 상수 채택; `b*a/255` 나눗셈 수식은 의미 보존 위해 리터럴 유지) | S |
 | **HC-8** ✓ ✅ | Med | `SettingsDialog.Scroll.cs:86` · `SettingsDialog.cs:364` · `ScaleInputDialog.cs:204` · `CleanupDialog.cs:283,327` (5곳) | 인라인 `& 0xFFFF` WM_COMMAND LOWORD. **`Win32Constants.LOWORD_MASK=0xFFFF`(Win32Types.cs:519) 이미 존재 — `Program.cs:953`만 사용** | 5곳을 const 참조로 통일 | S |
-| **HC-9** | Med | `App/UI/Dialogs/SettingsDialog.cs:229,232` | 라벨 배치 `y+3`/`rowH-4` 수직 인셋·높이 보정 | `LabelVPadPx`/`LabelHeightTrimPx` const | S |
-| **HC-10** | Med | `App/UI/Dialogs/SettingsDialog.Scroll.cs:67` | `ScrollTo(...+ _lineHeight*2)` "두 줄 여유" 마진 | `ScrollIntoViewMarginLines=2` (ScrollableDialogHelper로 이동 가능) | S |
-| **HC-11** | Med | `App/UI/Tray.cs:317,551,607` | MessageBox 타이틀 `"KoEnVue"` 리터럴 3곳 (앱 표시명 단일 진실원 부재; `UpdateRepoName`은 의미 다름) | `DefaultConfig.AppName` 신설 (DUP-6과 함께) | S |
+| **HC-9** ✅ | Med | `App/UI/Dialogs/SettingsDialog.cs:229,232` | 라벨 배치 `y+3`/`rowH-4` 수직 인셋·높이 보정 | ✅ **완료 (묶음 3)**: `LabelVInsetPx=3` / `LabelHeightTrimPx=4` const (`SettingsDialog.cs`). 값 불변 | S |
+| **HC-10** ✅ | Med | `App/UI/Dialogs/SettingsDialog.Scroll.cs:67` | `ScrollTo(...+ _lineHeight*2)` "두 줄 여유" 마진 | ✅ **완료 (묶음 3)**: `ScrollIntoViewMarginLines=2` const (`SettingsDialog.Scroll.cs` 로컬 — Core 이동 안 함, ScrollIntoView 가 SettingsDialog 전용 동작이라). 값 불변 | S |
+| **HC-11** ✅ | Med | `App/UI/Tray.cs:317,551,607` | MessageBox 타이틀 `"KoEnVue"` 리터럴 3곳 (앱 표시명 단일 진실원 부재; `UpdateRepoName`은 의미 다름) | ✅ **완료 (묶음 3, DUP-6과 함께)**: `DefaultConfig.AppName="KoEnVue"` const 신설 — `UpdateRepoName`(레포명)과 의미 분리. Tray 4 호출처(`ShowMessage` 경유 3 + `IDM_ADMIN_ELEVATION`)가 참조 | S |
 | **HC-12** ✅ | Med | `Program.cs:571` ↔ `Core/Windowing/LayeredOverlayBase.cs:406` | GetAsyncKeyState 눌림 `0x8000`이 App(const)·Core(인라인) 각기 | `Win32Constants.KEY_PRESSED=0x8000` 단일 const (Core 배치 = P4 부합) | S |
 | **HC-13** ✓ ✅ | Med | `App/Config/DefaultConfig.cs:75` | `HoldDurationMs=1500` **정의만, 사용처 0** (실 hold는 `EventDisplayDurationMs`) | dead const 제거 (단일 진실원 신뢰도) | S |
-| **HC-14** | Low | `ScaleInputDialog.cs:168` · `SettingsDialog.Fields.cs:504` | EDIT 읽기 버퍼 `new char[32]`/`[len+2]` (영역3·4 중복 발견) | `EditReadBufferSize` const | S |
-| **HC-15** | Low | `SettingsDialog.Fields.cs:417,427` · `ScaleInputDialog.cs:125` | Double 표시/에러 포맷 `"0.###"`/`"0.##"`/`"0.#"` | `DoubleDisplayFormat` const 통일 | S |
-| **HC-16** | Low | `App/UI/Dialogs/CleanupDialog.cs:191-192` | 구분선 `-1`·두께 `2` 인라인 (`SettingsDialog.cs:218`은 `SectionSepH=2` const) | 공통 `SeparatorThicknessPx` | S |
+| **HC-14** ✅ | Low | `ScaleInputDialog.cs:168` · `SettingsDialog.Fields.cs:504` | EDIT 읽기 버퍼 `new char[32]`/`[len+2]` (영역3·4 중복 발견) | ✅ **완료 (묶음 3)**: `ScaleEditBufferChars=32`(`ScaleInputDialog.cs`) + `EditReadBufferSlackChars=2`(`SettingsDialog.Fields.cs`). 두 버퍼가 의미(고정 vs 길이+슬랙)가 달라 통합 대신 각 const 명명. 값 불변 | S |
+| **HC-15** ✅ | Low | `SettingsDialog.Fields.cs:417,427` · `ScaleInputDialog.cs:125` | Double 표시/에러 포맷 `"0.###"`/`"0.##"`/`"0.#"` | ✅ **완료 (묶음 3)**: `ScaleDisplayFormat="0.#"`(`ScaleInputDialog`) · `DoubleFieldDisplayFormat="0.###"` · `DoubleRangeBoundFormat="0.##"`(`SettingsDialog.Fields`). 표시 의도가 자리수별로 달라 **단일 통일 안 함** — 3 const 분리 명명(원안 "통일"에서 조정). 값 불변 | S |
+| **HC-16** ✅ | Low | `App/UI/Dialogs/CleanupDialog.cs:191-192` | 구분선 `-1`·두께 `2` 인라인 (`SettingsDialog.cs:218`은 `SectionSepH=2` const) | ✅ **완료 (묶음 3)**: `DlgSepThickness=2` const(`CleanupDialog.cs` 로컬). `SettingsDialog.SectionSepH` 와 값·의미는 같으나 각 다이얼로그 레이아웃 블록 소유 private const 라 **App→Core 공통화 안 함**(`-1` 인라인은 sepGap 계산 일부라 보존). 값 불변 | S |
 | **HC-17** 🔒 보존 | Low | `Core/Native/WinHttp.cs:15,16,20,28` | 미사용 const 4개 (선언만, 사용처 0) | ~~제거~~ → **제거 안 함 (묶음 1 결정)**: 사용 중 상수의 짝/대안이라 참고용으로 의도적 보존 (dead 아님) | S |
 | **HC-18** | Low | `SettingsDialog.Fields.cs:89,93,118,143,158` | `Math.Clamp(i,0,2/3/5/1)` enum 값 개수 매직넘버 (Combo 팩토리는 이미 `labels.Length` 클램프 → 일부 중복) | `(Enum)Math.Clamp(i,0,labels.Length-1)` | M |
 | **HC-19** | Low | `Core/Animation/OverlayAnimator.cs:558` | `*1000.0/Stopwatch.Frequency` 초→ms | `const double MsPerSecond=1000.0` | S |
@@ -161,7 +161,7 @@ else
 | **묶음 0b — 동작(포커스 강조)** | BEH-2 (방향 A 문서화 / B 기능추가 — 결정 후) | 사용자 결정 대기 | 0~M+ | — |
 | **묶음 1 — dead/명백 const** ✅ **완료 (2026-06-02)** | IMP-1, HC-13 (삭제) + HC-1·2·3·5·6·7·8·12 (P3 일괄, 이미 const 존재분 우선). **HC-17 은 보존 결정 (🔒, 제거 안 함)** — WinHttp 미사용 const 4개는 사용 중 상수의 짝/대안 | 즉시·거의 무위험 | S | 낮음 |
 | **묶음 2 — 설정 단일화** ★ ✅ **완료 (2026-06-02)** | DUP-1 | PR-17의 비-numeric 완성. 회귀 grep 동반 (양쪽 값 일치 박제) | M | 중 (디폴트 변경 표면) |
-| **묶음 3 — 다이얼로그 모듈화** | DUP-2, DUP-5, DUP-6 + HC-9·10·11·14·15·16 | helper 추가 + 레이아웃 const | S–M | 낮음 |
+| **묶음 3 — 다이얼로그 모듈화** ✅ **완료 (2026-06-02)** | DUP-2(✅) + DUP-5(◐ ScaleInputDialog만, SettingsDialog 보류) + DUP-6(◐ IDM_ADMIN_ELEVATION 제외) + HC-9·10·11·14·15·16(✅) | helper 추가(`SetupVScrollbar`/`ShowFieldError`) + `DefaultConfig.AppName` + 레이아웃 const. **동작 보존(값·문자열 불변)** | S–M | 낮음 |
 | **묶음 4 — Core 렌더 모듈화** | DUP-3, DUP-13 + HC-4(셰이더 const) | 픽셀 렌더 단일화 | S | 낮음 (단위테스트 영역 밖 — 수동 smoke) |
 | **묶음 5 — Program/Tray 정리** | DUP-4, DUP-8, DUP-9, IMP-3 | 반복 추출 + 헬퍼 | S–M | 낮음 |
 | **묶음 6 — 큰 분해 (선택)** | IMP-2, DUP-7, DUP-11, IMP-4 | 180/190줄 분해·동형 시퀀스 통합 | M | 중 (회귀 민감 — 신중) |

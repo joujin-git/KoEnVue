@@ -16,6 +16,19 @@ namespace KoEnVue.App.UI.Dialogs;
 internal static partial class SettingsDialog
 {
     // ================================================================
+    // 필드 읽기/표시 상수
+    // ================================================================
+
+    /// <summary>EDIT 텍스트 읽기 버퍼의 길이 슬랙 (char). 현재 텍스트 길이에 더해 여유분 확보.</summary>
+    private const int EditReadBufferSlackChars = 2;
+
+    /// <summary>Double 필드 값 표시 포맷 — EDIT 박스 초기값용 (소수 셋째 자리까지).</summary>
+    private const string DoubleFieldDisplayFormat = "0.###";
+
+    /// <summary>Double 범위 초과 안내의 min/max 표시 포맷 — 경계값용 (소수 둘째 자리까지, 표시 의도 분리).</summary>
+    private const string DoubleRangeBoundFormat = "0.##";
+
+    // ================================================================
     // 필드 메타데이터
     // ================================================================
 
@@ -414,7 +427,7 @@ internal static partial class SettingsDialog
             Type = FieldType.Double,
             LabelKo = ko,
             LabelEn = en,
-            GetString = cfg => get(cfg).ToString("0.###", CultureInfo.InvariantCulture),
+            GetString = cfg => get(cfg).ToString(DoubleFieldDisplayFormat, CultureInfo.InvariantCulture),
             Commit = (cfg, hwnd, label) =>
             {
                 string text = ReadEdit(hwnd);
@@ -424,8 +437,8 @@ internal static partial class SettingsDialog
                 if (v < min || v > max)
                     return (null, string.Format(CultureInfo.InvariantCulture,
                         I18n.SettingsOutOfRangeFmt, label,
-                        min.ToString("0.##", CultureInfo.InvariantCulture),
-                        max.ToString("0.##", CultureInfo.InvariantCulture)));
+                        min.ToString(DoubleRangeBoundFormat, CultureInfo.InvariantCulture),
+                        max.ToString(DoubleRangeBoundFormat, CultureInfo.InvariantCulture)));
                 return (set(cfg, v), null);
             },
         };
@@ -501,7 +514,7 @@ internal static partial class SettingsDialog
     {
         int len = User32.GetWindowTextLengthW(hwnd);
         if (len <= 0) return "";
-        char[] buf = new char[len + 2];
+        char[] buf = new char[len + EditReadBufferSlackChars];
         int read = User32.GetWindowTextW(hwnd, buf, buf.Length);
         return read > 0 ? new string(buf, 0, read).Trim() : "";
     }

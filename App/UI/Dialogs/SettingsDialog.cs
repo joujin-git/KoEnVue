@@ -41,6 +41,11 @@ internal static partial class SettingsDialog
     private const int RowH             = 24;
     private const int RowGap           = 6;
 
+    // 라벨 수직 인셋: 같은 행의 입력 컨트롤(top=y, height=rowH)과 시각 정렬을 위해 라벨을
+    // y+LabelVInsetPx 에 두고 높이를 rowH-LabelHeightTrimPx 로 줄인다 (텍스트 baseline 보정).
+    private const int LabelVInsetPx    = 3;
+    private const int LabelHeightTrimPx = 4;
+
     private const int SectionHeadH     = 20;
     private const int SectionSepH      = 2;
     private const int SectionHeadGap   = 6;
@@ -226,10 +231,10 @@ internal static partial class SettingsDialog
             // 라벨 — 입력 컨트롤 바로 앞 위치 (UIA LabeledBy 자동 연결)
             IntPtr hwndLabel = User32.CreateWindowExW(0, "STATIC", field.Label,
                 Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE,
-                labelX, y + 3, labelColW, rowH - 4,
+                labelX, y + LabelVInsetPx, labelColW, rowH - LabelHeightTrimPx,
                 _hwndViewport, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
             Win32DialogHelper.ApplyFont(hwndLabel, ctx.HFont);
-            _scrollChildren.Add((hwndLabel, labelX, y + 3));
+            _scrollChildren.Add((hwndLabel, labelX, y + LabelVInsetPx));
 
             // 첫 컨트롤은 WS_GROUP — 섹션 단위로 화살표 키 그룹 경계
             uint groupStyle = firstControlInSection ? Win32Constants.WS_GROUP : 0u;

@@ -17,6 +17,27 @@ internal static class ScrollableDialogHelper
     public const int WheelLineStep = 3;
 
     /// <summary>
+    /// 세로 스크롤바의 초기 SCROLLINFO(범위/페이지/위치)를 구성하고 SetScrollInfo 로 적용한다.
+    /// SettingsDialog / CleanupDialog 가 동일하게 하던 셋업:
+    ///   nMin=0 / nMax=총콘텐츠높이-1 / nPage=뷰포트클라이언트높이 / nPos=0,
+    ///   fMask=SIF_RANGE|SIF_PAGE|SIF_POS, redraw=true.
+    /// nMax/nPage 는 음수·0 방어를 위해 각각 <c>Max(0, …)</c> / <c>Max(1, …)</c> 로 클램프한다.
+    /// </summary>
+    public static void SetupVScrollbar(IntPtr hwndViewport, int totalContentHeight, int viewportClientHeight)
+    {
+        var si = new SCROLLINFO
+        {
+            cbSize = (uint)Marshal.SizeOf<SCROLLINFO>(),
+            fMask = Win32Constants.SIF_RANGE | Win32Constants.SIF_PAGE | Win32Constants.SIF_POS,
+            nMin = 0,
+            nMax = Math.Max(0, totalContentHeight - 1),
+            nPage = (uint)Math.Max(1, viewportClientHeight),
+            nPos = 0,
+        };
+        User32.SetScrollInfo(hwndViewport, Win32Constants.SB_VERT, ref si, true);
+    }
+
+    /// <summary>
     /// 스크롤 위치를 <paramref name="newPos"/> 로 갱신하고 SIF_POS 반영 + 자식 이동을 수행.
     /// <paramref name="scrollPos"/> 는 ref 로 받아 호출자 상태와 동기화.
     /// 이미 같은 위치면 no-op 으로 <c>false</c>, 실제 이동했으면 <c>true</c>.

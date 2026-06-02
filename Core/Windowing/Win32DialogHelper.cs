@@ -88,6 +88,25 @@ internal static class Win32DialogHelper
     }
 
     /// <summary>
+    /// 필드 입력 검증 실패 시 공통 에러 표시: 안내 MessageBox(자체 루프라 RunExternal 가드) +
+    /// 해당 입력 컨트롤로 포커스 이동 + 전체 텍스트 선택(EM_SETSEL 0..-1).
+    /// <para>
+    /// MessageBoxW 는 자체 메시지 루프를 돌려 ModalDialogLoop.Run 으로 감쌀 수 없으므로
+    /// RunExternal 로 IsActive 가드만 씌워 박스가 열린 동안 감지 스레드 사이드-이펙트를 억제한다.
+    /// EM_SETSEL 은 EDIT 컨트롤 전용이므로, 호출자는 <paramref name="hwndField"/> 가 EDIT 일 때만
+    /// 이 헬퍼를 사용한다 (체크박스/콤보 등은 별도 처리). 스크롤 다이얼로그의 ScrollIntoView 같은
+    /// 컨트롤별 선행 동작은 호출자가 본 호출 전후에 직접 수행한다.
+    /// </para>
+    /// </summary>
+    public static void ShowFieldError(IntPtr hwndOwner, IntPtr hwndField, string message, string title)
+    {
+        ModalDialogLoop.RunExternal(hwndOwner, () =>
+            User32.MessageBoxW(hwndOwner, message, title, uType: Win32Constants.MB_OK));
+        User32.SetFocus(hwndField);
+        User32.SendMessageW(hwndField, Win32Constants.EM_SETSEL, IntPtr.Zero, (IntPtr)(-1));
+    }
+
+    /// <summary>
     /// 다이얼로그 좌측-상단 스크린 좌표를 계산한다. 세 다이얼로그가 공통으로 하던
     /// `GetMonitorInfoW(rcWork) → center 또는 cursor 기준 + 모니터 경계 클램프` 계산을 흡수한다.
     ///

@@ -118,6 +118,13 @@ internal static partial class DefaultConfig
     // === 앱 식별 ===
 
     /// <summary>
+    /// 앱 표시명. 트레이 MessageBox 타이틀 등 사용자 노출 UI 의 단일 진실원.
+    /// <see cref="UpdateRepoName"/> 와 값은 우연히 같으나 의미가 다르다 — 이건 앱 표시명,
+    /// 그건 GitHub 레포명. 한쪽이 바뀌어도 다른 쪽이 따라가면 안 되므로 const 를 분리한다.
+    /// </summary>
+    public const string AppName = "KoEnVue";
+
+    /// <summary>
     /// 고정 GUID. 트레이 아이콘 식별 + Mutex 이름에 사용.
     /// 크래시 복구(NIM_DELETE)에서 이전 찌꺼기를 정리하는 데 필수.
     /// </summary>

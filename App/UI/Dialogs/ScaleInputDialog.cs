@@ -23,6 +23,12 @@ internal static class ScaleInputDialog
     public const double ScaleMaxValue = DefaultConfig.MaxIndicatorScale;
     public const double ScaleTolerance = 0.001;
 
+    /// <summary>배율 EDIT 텍스트 읽기용 고정 버퍼 크기 (char). 배율 문자열은 "5.0" 류로 짧아 32 로 충분.</summary>
+    private const int ScaleEditBufferChars = 32;
+
+    /// <summary>배율 입력 표시 포맷 — 소수 첫째 자리까지 (예: "2.5", "3").</summary>
+    private const string ScaleDisplayFormat = "0.#";
+
     // 레이아웃 상수 (96 DPI 기준)
     private const int ScaleDlgWidth = 320;
     private const int ScaleDlgLabelH = 20;
@@ -122,7 +128,7 @@ internal static class ScaleInputDialog
         y += labelH + gap;
 
         // EDIT 박스
-        string initialText = initialValue.ToString("0.#");
+        string initialText = initialValue.ToString(ScaleDisplayFormat);
         _hwndScaleEdit = User32.CreateWindowExW(0, "EDIT", initialText,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_BORDER
                 | Win32Constants.WS_TABSTOP | Win32Constants.ES_LEFT | Win32Constants.ES_AUTOHSCROLL,
@@ -165,28 +171,22 @@ internal static class ScaleInputDialog
     {
         if (_hwndScaleEdit == IntPtr.Zero) return false;
 
-        char[] buf = new char[32];
+        char[] buf = new char[ScaleEditBufferChars];
         int len = User32.GetWindowTextW(_hwndScaleEdit, buf, buf.Length);
         string text = len > 0 ? new string(buf, 0, len).Trim() : "";
 
         if (!double.TryParse(text, System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out double value))
         {
-            ModalDialogLoop.RunExternal(_hwndScaleDlg, () =>
-                User32.MessageBoxW(_hwndScaleDlg, I18n.ScaleDialogInvalidInput,
-                    I18n.ScaleDialogTitle, uType: Win32Constants.MB_OK));
-            User32.SetFocus(_hwndScaleEdit);
-            User32.SendMessageW(_hwndScaleEdit, Win32Constants.EM_SETSEL, IntPtr.Zero, (IntPtr)(-1));
+            Win32DialogHelper.ShowFieldError(_hwndScaleDlg, _hwndScaleEdit,
+                I18n.ScaleDialogInvalidInput, I18n.ScaleDialogTitle);
             return false;
         }
 
         if (value < ScaleMinValue - ScaleTolerance || value > ScaleMaxValue + ScaleTolerance)
         {
-            ModalDialogLoop.RunExternal(_hwndScaleDlg, () =>
-                User32.MessageBoxW(_hwndScaleDlg, I18n.ScaleDialogOutOfRange,
-                    I18n.ScaleDialogTitle, uType: Win32Constants.MB_OK));
-            User32.SetFocus(_hwndScaleEdit);
-            User32.SendMessageW(_hwndScaleEdit, Win32Constants.EM_SETSEL, IntPtr.Zero, (IntPtr)(-1));
+            Win32DialogHelper.ShowFieldError(_hwndScaleDlg, _hwndScaleEdit,
+                I18n.ScaleDialogOutOfRange, I18n.ScaleDialogTitle);
             return false;
         }
 

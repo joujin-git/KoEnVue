@@ -20,6 +20,10 @@ internal static partial class SettingsDialog
     private static int _viewportClientH;
     private static int _lineHeight;
 
+    // 필드를 화면 아래쪽에서 보이게 스크롤할 때 확보할 하단 여유 — 라인 수 단위.
+    // 대상 필드 바로 아래로 이 줄 수만큼 더 내려 필드가 뷰포트 가장자리에 붙지 않게 한다.
+    private const int ScrollIntoViewMarginLines = 2;
+
     // 스크롤 자식 컨트롤 추적: (Hwnd, X, LogicalY)
     private static readonly List<(IntPtr Hwnd, int X, int LogicalY)> _scrollChildren = new();
 
@@ -28,18 +32,7 @@ internal static partial class SettingsDialog
     // ================================================================
 
     private static void SetupScrollbar(int totalContentH)
-    {
-        var si = new SCROLLINFO
-        {
-            cbSize = (uint)Marshal.SizeOf<SCROLLINFO>(),
-            fMask = Win32Constants.SIF_RANGE | Win32Constants.SIF_PAGE | Win32Constants.SIF_POS,
-            nMin = 0,
-            nMax = Math.Max(0, totalContentH - 1),
-            nPage = (uint)Math.Max(1, _viewportClientH),
-            nPos = 0,
-        };
-        User32.SetScrollInfo(_hwndViewport, Win32Constants.SB_VERT, ref si, true);
-    }
+        => ScrollableDialogHelper.SetupVScrollbar(_hwndViewport, totalContentH, _viewportClientH);
 
     /// <summary>
     /// 스크롤 위치를 newPos로 이동하고 모든 자식 컨트롤을 재배치.
@@ -64,7 +57,7 @@ internal static partial class SettingsDialog
         if (logicalY < visibleTop)
             ScrollTo(logicalY);
         else if (logicalY + _lineHeight > visibleBottom)
-            ScrollTo(logicalY - _viewportClientH + _lineHeight * 2);
+            ScrollTo(logicalY - _viewportClientH + _lineHeight * ScrollIntoViewMarginLines);
     }
 
     /// <summary>SB_* 스크롤 코드를 목표 스크롤 위치로 해석.</summary>

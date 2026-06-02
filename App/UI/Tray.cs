@@ -314,7 +314,7 @@ internal static partial class Tray
                     StartupTaskManager.ReregisterIfAdminChanged(newAdminConfig);
 
                     User32.MessageBoxW(hwndMain,
-                        I18n.AdminElevationChangeNotice, "KoEnVue",
+                        I18n.AdminElevationChangeNotice, DefaultConfig.AppName,
                         Win32Constants.MB_OK);
 
                     // "확인" 후 자동 종료 — 메인 인디 잔존 회귀 차단 + 사용자 mental model 정합.
@@ -543,13 +543,18 @@ internal static partial class Tray
         }
     }
 
+    /// <summary>
+    /// 트레이 안내 MessageBox (제목 = 앱명, 확인 버튼). MessageBoxW 는 자체 메시지 루프를
+    /// 돌려 ModalDialogLoop.Run 으로 감쌀 수 없으므로 RunExternal 로 IsActive 가드만 씌워
+    /// 박스가 열린 동안 감지 스레드의 인디 튐을 억제한다. RunExternal 가드를 단일 경로로
+    /// 모아 호출처마다 누락되지 않도록 한다.
+    /// </summary>
+    private static void ShowMessage(string body)
+        => ModalDialogLoop.RunExternal(_hwndMain, () =>
+            User32.MessageBoxW(_hwndMain, body, DefaultConfig.AppName, uType: Win32Constants.MB_OK));
+
     private static void ShowPositionError()
-    {
-        // MessageBoxW 는 자체 메시지 루프를 돌려 ModalDialogLoop.Run 으로 감쌀 수 없다.
-        // RunExternal 로 IsActive 가드만 씌워 박스가 열린 동안 인디 튐을 억제.
-        ModalDialogLoop.RunExternal(_hwndMain, () =>
-            User32.MessageBoxW(_hwndMain, I18n.TrayPositionUnavailable, "KoEnVue", uType: Win32Constants.MB_OK));
-    }
+        => ShowMessage(I18n.TrayPositionUnavailable);
 
     // ================================================================
     // Private — 툴팁
@@ -602,9 +607,7 @@ internal static partial class Tray
         var (displayItems, originalNames) = PositionCleanupService.Compute(config);
         if (displayItems.Count == 0)
         {
-            // ShowPositionError 와 동일 이유로 RunExternal 사용 (MessageBoxW 자체 메시지 루프).
-            ModalDialogLoop.RunExternal(_hwndMain, () =>
-                User32.MessageBoxW(_hwndMain, I18n.TrayPositionHistoryEmpty, "KoEnVue", uType: Win32Constants.MB_OK));
+            ShowMessage(I18n.TrayPositionHistoryEmpty);
             return;
         }
 

@@ -25,6 +25,9 @@ internal static class CleanupDialog
     private const int DlgDescHeight = 20;
     private const int DlgSepGap = 12;
     private const int DlgItemIndent = 20;
+    // etched 구분선 두께 (px). SettingsDialog.SectionSepH 와 값·의미가 같으나 각 다이얼로그
+    // 레이아웃 블록이 소유하는 private const 라 별도 명명 (App→Core 경계로 끌어올리지 않음).
+    private const int DlgSepThickness = 2;
 
     // 컨트롤 ID
     private const int IDC_CHECK_BASE = 5000;
@@ -188,7 +191,7 @@ internal static class CleanupDialog
         // 구분선 (etched horizontal)
         User32.CreateWindowExW(0, "STATIC", "",
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.SS_ETCHEDHORZ,
-            pad, y + sepGap / 2 - 1, contentW, 2,
+            pad, y + sepGap / 2 - 1, contentW, DlgSepThickness,
             ctx.HwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
         y += sepGap;
 
@@ -224,16 +227,7 @@ internal static class CleanupDialog
         {
             int totalContentH = items.Count * _itemHeight;
             _scrollMax = Math.Max(0, totalContentH - _viewportClientH);
-            var si = new SCROLLINFO
-            {
-                cbSize = (uint)Marshal.SizeOf<SCROLLINFO>(),
-                fMask = Win32Constants.SIF_RANGE | Win32Constants.SIF_PAGE | Win32Constants.SIF_POS,
-                nMin = 0,
-                nMax = Math.Max(0, totalContentH - 1),
-                nPage = (uint)Math.Max(1, _viewportClientH),
-                nPos = 0,
-            };
-            User32.SetScrollInfo(_hwndViewport, Win32Constants.SB_VERT, ref si, true);
+            ScrollableDialogHelper.SetupVScrollbar(_hwndViewport, totalContentH, _viewportClientH);
         }
 
         y += viewportH + pad;
