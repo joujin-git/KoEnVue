@@ -360,6 +360,8 @@ Timer IDs (injected via `AnimationTimerIds` record so Core stays ID-agnostic):
 
 Ease-out cubic interpolation: `1 - (1 - t)^3` via `TIMER_ID_SLIDE`. All animation timers use `DefaultConfig.AnimationFrameMs = 16 ms` (~60 fps).
 
+**Slide ⊥ Highlight 경합 회피 (종합 감사 ⑩)**: slide 트랙(위치만)과 highlight 트랙(위치 + stretch 크기)이 같은 레이어드 윈도우의 `UpdateLayeredWindow` 를 16ms 간격 last-writer-wins 로 번갈아 set 하면 base↔확대 크기 진동 + 위치 점프가 보였다. `TriggerShow` 진입부에서 흩어진 4곳의 `highlightTrigger && _config.ChangeHighlight` 조건을 지역변수 `bool willHighlight` 로 단일화하고, `TryStartSlide(prevX, prevY, newX, newY, willHighlight)` 진입부에 가드 `if (_highlightActive || willHighlight) return;` 를 둬 **강조가 진행 중(`_highlightActive`)이거나 이번 호출에서 시작될 예정(`willHighlight`)이면 슬라이드를 보류**한다. highlight 는 매 틱 `_lastX`(=목적지) 기준으로 그리고, 위치는 파사드 `Overlay.Show` 가 같은 메시지 핸들러에서 (DWM VSync 내 Show→UpdatePosition 연속 호출) 이미 목적지에 그려둬 슬라이드를 생략해도 위치가 일관 — 주의 환기(강조)를 미관(슬라이드)보다 우선시한 결정. 회귀 가드: [tests/KoEnVue.Tests/Unit/OverlayAnimatorTests.cs](../tests/KoEnVue.Tests/Unit/OverlayAnimatorTests.cs) 3 테스트 (slide 보류 / slide 정상 / highlight 생존).
+
 ### Always mode default
 
 `DisplayMode.Always` — indicator always visible (bright on events, dim at idle). `DisplayMode.OnEvent` available via config for fade-out-after-hold behavior.

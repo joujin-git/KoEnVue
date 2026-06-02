@@ -168,6 +168,9 @@ public sealed class OverlayAnimator : IDisposable
     {
         bool wasHidden = _phase == AnimPhase.Hidden;
 
+        // 이번 호출에서 강조(스케일 팝)가 시작될지 — slide 보류 판정에도 함께 쓴다(⑩ 경합 회피).
+        bool willHighlight = highlightTrigger && _config.ChangeHighlight;
+
         // hold 타이머 duration 선택
         _holdDurationMs = _config.AlwaysMode
             ? _config.AlwaysIdleTimeoutMs
@@ -186,9 +189,9 @@ public sealed class OverlayAnimator : IDisposable
             User32.SetTimer(_hwndTimer, _timerIds.Hold,
                 (uint)_holdDurationMs, IntPtr.Zero);
 
-            TryStartSlide(prevX, prevY, newX, newY);
+            TryStartSlide(prevX, prevY, newX, newY, willHighlight);
 
-            if (highlightTrigger && _config.ChangeHighlight)
+            if (willHighlight)
                 StartHighlight();
 
             SnapToTargetAlpha();
@@ -197,9 +200,9 @@ public sealed class OverlayAnimator : IDisposable
         {
             BeginFadeIn(_currentAlpha);
 
-            TryStartSlide(prevX, prevY, newX, newY);
+            TryStartSlide(prevX, prevY, newX, newY, willHighlight);
 
-            if (highlightTrigger && _config.ChangeHighlight)
+            if (willHighlight)
                 StartHighlight();
 
             SnapToTargetAlpha();
@@ -210,9 +213,9 @@ public sealed class OverlayAnimator : IDisposable
             _forceHidden = false; // TriggerHide(forceHidden)가 남긴 플래그 초기화
             BeginFadeIn(_currentAlpha);
 
-            TryStartSlide(prevX, prevY, newX, newY);
+            TryStartSlide(prevX, prevY, newX, newY, willHighlight);
 
-            if (highlightTrigger && _config.ChangeHighlight)
+            if (willHighlight)
                 StartHighlight();
         }
         else // Hidden
@@ -230,7 +233,7 @@ public sealed class OverlayAnimator : IDisposable
                     (uint)_holdDurationMs, IntPtr.Zero);
             }
 
-            if (highlightTrigger && _config.ChangeHighlight)
+            if (willHighlight)
                 StartHighlight();
         }
 
@@ -535,9 +538,22 @@ public sealed class OverlayAnimator : IDisposable
     /// prev → new 위치 차이가 있고 슬라이드가 켜져 있으면 prev로 즉시 복원 후 슬라이드 시작.
     /// DWM VSync 내 같은 메시지 핸들러에서 Show→UpdatePosition 연속 호출이므로
     /// 중간 위치는 화면에 표시되지 않는다.
+    ///
+    /// <para>
+    /// ⑩ slide+highlight 경합 회피: 강조(스케일 팝)가 진행 중(<see cref="_highlightActive"/>)이거나
+    /// 이번 호출에서 시작될 예정(<paramref name="willHighlight"/>)이면 슬라이드를 보류한다.
+    /// 두 트랙이 같은 레이어드 윈도우의 위치(slide)와 위치·크기(highlight stretch)를 16ms 간격으로
+    /// 번갈아 set 하면 base↔확대 크기 진동 + 위치 점프가 생긴다(last-writer-wins). 강조는 매 틱
+    /// <see cref="_lastX"/>(=목적지) 기준으로 그리므로, 슬라이드를 생략하면 파사드가 Show로 이미
+    /// 목적지에 그려둔 위치와 강조가 일관된다. 주의 환기(강조)가 미관(슬라이드)보다 우선이다.
+    /// </para>
     /// </summary>
-    private void TryStartSlide(int prevX, int prevY, int newX, int newY)
+    private void TryStartSlide(int prevX, int prevY, int newX, int newY, bool willHighlight)
     {
+        // 강조와 동시 진행 시 위치/크기 경합 → 슬라이드 보류 (위치는 목적지 유지).
+        if (_highlightActive || willHighlight)
+            return;
+
         if (_config.SlideAnimation && _config.SlideSpeedMs > 0
             && (prevX != newX || prevY != newY))
         {
