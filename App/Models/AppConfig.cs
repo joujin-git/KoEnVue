@@ -60,6 +60,8 @@ internal sealed record AppConfig
     public string? CustomBackupNonKoreanFg { get; init; }
 
     // [애니메이션]
+    // AnimationEnabled (animation_enabled) — fade·highlight·slide 전체 마스터 (PR-22). false 면 셋 다 비활성(즉시).
+    // 게이팅 합성의 단일 진실원은 App/UI/Animation.cs 의 BuildAnimationConfig (AnimationEnabled && ...).
     public bool AnimationEnabled { get; init; } = true;
     public int FadeInMs { get; init; } = DefaultConfig.FadeInMs;
     public int FadeOutMs { get; init; } = DefaultConfig.FadeOutMs;

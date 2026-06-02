@@ -135,7 +135,7 @@ internal static partial class SettingsDialog
         // 배경색은 CursorOverlay.BuildStyle 이 커서 동심원 색으로도 그대로 사용한다 (메인·커서 공용).
         // 테마는 이 배경색(+글자색)을 일괄 지정/복원하는 프리셋이라 같은 섹션에 둔다. 메인·커서 공용이라
         // 인디케이터 섹션들 맨 앞에 배치.
-        Sec("인디케이터 — 색상 (메인/커서 인디케이터 공통)", "Indicator — Colors (Main/Cursor Indicator)");
+        Sec("인디케이터 — 색상 (메인/커서 인디케이터 공통)", "Indicator — Colors (Shared by Main/Cursor Indicators)");
         Add(Combo("테마", "Theme",
             ko ? ["사용자 지정", "미니멀", "비비드", "파스텔", "다크", "시스템"]
                : ["Custom", "Minimal", "Vivid", "Pastel", "Dark", "System"],

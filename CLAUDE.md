@@ -18,6 +18,7 @@ Windows IME state indicator (한 / En / EN). C# 14 / .NET 10 + NativeAOT single 
 ## Workflow
 
 - **빌드 = 항상 둘 다**: `dotnet build` (debug) + `dotnet publish -r win-x64 -c Release` (AOT). 한쪽만 하면 release exe outdated.
+- **테스트 = csproj 명시**: `dotnet test tests\KoEnVue.Tests\KoEnVue.Tests.csproj`. repo 루트에서 인자 없이 `dotnet test` 하면 메인 csproj 를 잡아 0개 실행·exit 0 착시.
 - **커밋 = 항상 푸시까지**: `git commit` 후 즉시 `git push`. PostToolUse hook 이 자동 처리 — wip 커밋도 동일.
 
 ## Documentation map
