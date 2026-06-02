@@ -171,7 +171,6 @@ internal sealed class LayeredOverlayBase : IDisposable
     {
         if (_hwndOverlay != IntPtr.Zero)
             User32.ShowWindow(_hwndOverlay, Win32Constants.SW_HIDE);
-        LogProvider.Sink?.Debug("[diag] Hide() -> SW_HIDE");
         _isVisible = false;
     }
 
@@ -272,6 +271,17 @@ internal sealed class LayeredOverlayBase : IDisposable
         _lastX = x;
         _lastY = y;
         UpdateOverlay(x, y, _currentWidth, _currentHeight, _lastAlpha);
+    }
+
+    /// <summary>
+    /// 슬라이드+강조 합성 중 위치 추적 (blit 없이). 강조가 매 프레임 그리는 동안 slide 진행 위치를
+    /// <c>_lastX/Y</c> 에만 반영해, 페이드/Hold/복원이 옛 출발 위치가 아닌 현재 위치 기준으로
+    /// 동작하게 한다. 강조 없이 slide 단독이면 <see cref="UpdatePosition"/> 으로 직접 blit.
+    /// </summary>
+    public void TrackPosition(int x, int y)
+    {
+        _lastX = x;
+        _lastY = y;
     }
 
     /// <summary>강조 프레임: 중심 기준 확대.</summary>
@@ -733,7 +743,6 @@ internal sealed class LayeredOverlayBase : IDisposable
         if (_hwndOverlay == IntPtr.Zero || _memDC == IntPtr.Zero) return;
         if (_isDragging) return;  // 드래그 중 위치 충돌 방지
 
-        LogProvider.Sink?.Debug($"[diag] blit: ({x},{y}) {displayW}x{displayH} a={alpha}");
         LayeredWindowBlit.Blit(_hwndOverlay, _memDC, x, y, displayW, displayH, alpha);
     }
 }

@@ -513,7 +513,6 @@ internal static partial class Program
         {
             _indicatorVisible = true;
             var (x, y) = GetAppPosition();
-            Logger.Debug($"Main indicator show via IME change: state={newState}, mode={resolved.DisplayMode}, pos=({x},{y})");
             Animation.TriggerShow(x, y, newState, resolved, imeChanged: true);
         }
     }
@@ -555,7 +554,7 @@ internal static partial class Program
         {
             _indicatorVisible = true;
             var (x, y) = GetAppPosition();
-            Logger.Debug($"PositionUpdated: process={_currentProcessName}, pos=({x},{y}), wasHidden={wasHidden}, fgChanged={foregroundChanged}, saved={_config.IndicatorPositions.Count}");
+            Logger.Debug($"PositionUpdated: process={_currentProcessName}, pos=({x},{y}), saved={_config.IndicatorPositions.Count}");
             // PR-13: per-app resolved (theme/색/투명도/폰트/라벨 등 시각 override 반영)
             Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
         }

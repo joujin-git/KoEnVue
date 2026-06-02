@@ -192,7 +192,7 @@ internal static partial class DefaultConfig
     public const double ActiveOpacity      = 0.95;
 
     // 애니메이션
-    public const int    SlideSpeedMs       = 100;
+    public const int    SlideSpeedMs       = 500;
 
     // 표시 모드
     public const int    EventDisplayDurationMs = 2000;

@@ -48,6 +48,7 @@ internal static class Animation
             initialConfig: BuildAnimationConfig(config),
             onAlphaChange: Overlay.UpdateAlpha,
             onPositionOffset: Overlay.UpdatePosition,
+            onTrackPosition: Overlay.TrackPosition,
             onScaledSize: Overlay.UpdateScaledSize,
             onHide: Overlay.Hide,
             onForceTopmost: Overlay.ForceTopmost,

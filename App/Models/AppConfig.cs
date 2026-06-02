@@ -66,7 +66,7 @@ internal sealed record AppConfig
     public bool ChangeHighlight { get; init; } = true;
     public double HighlightScale { get; init; } = DefaultConfig.HighlightScale;
     public int HighlightDurationMs { get; init; } = DefaultConfig.HighlightDurationMs;
-    public bool SlideAnimation { get; init; } = false;
+    public bool SlideAnimation { get; init; } = true;
     public int SlideSpeedMs { get; init; } = DefaultConfig.SlideSpeedMs;
 
     // [동작 -- 감지]

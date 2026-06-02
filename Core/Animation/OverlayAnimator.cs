@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using KoEnVue.Core.Logging;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Windowing;
 
@@ -56,6 +55,7 @@ public sealed class OverlayAnimator : IDisposable
     private long _slideStartTick;
     private int _slideFromX, _slideFromY, _slideToX, _slideToY;
     private int _slideDurationMs;
+    private int _slideCurX, _slideCurY;   // slide 현재 보간 위치 — highlight 합성 기준(경합 방지)
 
     // forceHidden 플래그 (FadingOut 완료 시 Hidden 강제)
     private bool _forceHidden;
@@ -73,6 +73,7 @@ public sealed class OverlayAnimator : IDisposable
 
     private readonly Action<byte> _onAlphaChange;
     private readonly Action<int, int> _onPositionOffset;
+    private readonly Action<int, int> _onTrackPosition;   // 합성 중 위치만 추적(blit 없이)
     private readonly Action<int, int, int, int, byte> _onScaledSize;
     private readonly Action _onHide;
     private readonly TopmostWatchdog _topmostWatchdog;
@@ -92,6 +93,7 @@ public sealed class OverlayAnimator : IDisposable
         AnimationConfig initialConfig,
         Action<byte> onAlphaChange,
         Action<int, int> onPositionOffset,
+        Action<int, int> onTrackPosition,
         Action<int, int, int, int, byte> onScaledSize,
         Action onHide,
         Action onForceTopmost,
@@ -102,6 +104,7 @@ public sealed class OverlayAnimator : IDisposable
         _config = initialConfig;
         _onAlphaChange = onAlphaChange;
         _onPositionOffset = onPositionOffset;
+        _onTrackPosition = onTrackPosition;
         _onScaledSize = onScaledSize;
         _onHide = onHide;
         _getBaseSize = getBaseSize;
@@ -168,7 +171,6 @@ public sealed class OverlayAnimator : IDisposable
     public bool TriggerShow(int prevX, int prevY, int newX, int newY, bool highlightTrigger)
     {
         bool wasHidden = _phase == AnimPhase.Hidden;
-        LogProvider.Sink?.Debug($"[diag] TriggerShow: phase={_phase}, slideActive={_slideActive}, prev=({prevX},{prevY}), new=({newX},{newY})");
 
         // 이번 호출에서 강조(스케일 팝)가 시작될지 — slide 보류 판정에도 함께 쓴다(⑩ 경합 회피).
         bool willHighlight = highlightTrigger && _config.ChangeHighlight;
@@ -430,8 +432,12 @@ public sealed class OverlayAnimator : IDisposable
 
         int newW = (int)Math.Round(baseW * scale);
         int newH = (int)Math.Round(baseH * scale);
-        int newX = _lastX - (newW - baseW) / 2;
-        int newY = _lastY - (newH - baseH) / 2;
+        // 합성: slide 진행 중이면 slide 현재 보간 위치를 중심으로, 아니면 목적지(_lastX)를 중심으로
+        // 확대한다. slide 가 따로 blit 하지 않고 highlight 가 위치+크기를 한 번에 그려 경합을 없앤다.
+        int centerX = _slideActive ? _slideCurX : _lastX;
+        int centerY = _slideActive ? _slideCurY : _lastY;
+        int newX = centerX - (newW - baseW) / 2;
+        int newY = centerY - (newH - baseH) / 2;
 
         _onScaledSize(newX, newY, newW, newH, _currentAlpha);
 
@@ -440,8 +446,10 @@ public sealed class OverlayAnimator : IDisposable
             User32.KillTimer(_hwndTimer, _timerIds.Highlight);
             _highlightActive = false;
 
-            // 원래 크기 복원
-            _onScaledSize(_lastX, _lastY, baseW, baseH, _currentAlpha);
+            // 원래 크기 복원 — slide 가 아직 진행 중이면 그 현재 위치, 아니면 목적지 기준.
+            int restoreX = _slideActive ? _slideCurX : _lastX;
+            int restoreY = _slideActive ? _slideCurY : _lastY;
+            _onScaledSize(restoreX, restoreY, baseW, baseH, _currentAlpha);
         }
     }
 
@@ -458,15 +466,27 @@ public sealed class OverlayAnimator : IDisposable
         int x = _slideFromX + (int)Math.Round((_slideToX - _slideFromX) * eased);
         int y = _slideFromY + (int)Math.Round((_slideToY - _slideFromY) * eased);
 
-        _onPositionOffset(x, y);
+        _slideCurX = x;
+        _slideCurY = y;
+        // 합성: highlight 진행 중이면 위치만 추적(_lastX/Y 동기화, blit 은 highlight 가 합성 수행)하고,
+        // highlight 가 없으면 slide 가 직접 위치 blit. 추적 덕에 페이드/Hold 가 옛 출발 위치가 아닌
+        // 현재 slide 위치를 기준으로 동작한다(모니터 간 이동 시 출발점에서 사라지던 버그 방지).
+        if (_highlightActive)
+            _onTrackPosition(x, y);
+        else
+            _onPositionOffset(x, y);
 
         if (t >= 1.0)
         {
             User32.KillTimer(_hwndTimer, _timerIds.Slide);
             _slideActive = false;
-            LogProvider.Sink?.Debug($"[diag] slide end: settled ({_slideToX},{_slideToY})");
-            // 최종 위치 보정
-            _onPositionOffset(_slideToX, _slideToY);
+            _slideCurX = _slideToX;
+            _slideCurY = _slideToY;
+            // 최종 위치 — highlight 진행 중이면 위치만 추적(highlight 가 마지막 프레임을 그림).
+            if (_highlightActive)
+                _onTrackPosition(_slideToX, _slideToY);
+            else
+                _onPositionOffset(_slideToX, _slideToY);
         }
     }
 
@@ -553,11 +573,16 @@ public sealed class OverlayAnimator : IDisposable
     /// </summary>
     private void TryStartSlide(int prevX, int prevY, int newX, int newY, bool willHighlight)
     {
-        // [진단 임시] ⑩ 가드 비활성 — 회귀 검증용 (⑩ 이전 slide 동작 재현). 검증 후 복원/교정.
+        // ⑩ slide+highlight 합성: 두 효과가 같은 레이어드 윈도우를 16ms 간격으로 서로 다른 좌표·크기로
+        // 경합 blit 해 인디가 찢기며 사라지던 결함(blit 로그로 확정)을, slide 진행 중엔 slide 가 위치만
+        // 추적(_slideCurX)하고 highlight 가 그 위치 기준으로 확대 blit(한 번만) 하도록 합성해 해소했다
+        // (HandleSlideTimer/HandleHighlightTimer 의 _slideActive 분기). 따라서 여기선 slide 를 정상
+        // 시작하면 되고 보류·종료가 필요 없다. willHighlight 는 더 이상 slide 판정에 쓰지 않는다.
         _ = willHighlight;
 
         if (_config.SlideAnimation && _config.SlideSpeedMs > 0
-            && (prevX != newX || prevY != newY))
+            && (prevX != newX || prevY != newY)
+            && IsSameMonitor(prevX, prevY, newX, newY))
         {
             // 이전 위치로 즉시 복원 (같은 프레임 — DWM이 수집 전)
             _onPositionOffset(prevX, prevY);
@@ -565,10 +590,23 @@ public sealed class OverlayAnimator : IDisposable
         }
     }
 
+    /// <summary>
+    /// prev/new 두 좌표가 같은 모니터에 속하는지. 모니터 간 slide 는 DPI/확대비율 전환(인디 크기
+    /// 변동)이 복잡하고 경계를 넘는 애니가 어색해, 다른 모니터면 slide 를 생략하고 즉시 이동한다
+    /// (파사드 Show 가 이미 목적지에 그려두고, 도착 모니터 DPI 로 크기도 정확하다).
+    /// </summary>
+    private static bool IsSameMonitor(int x1, int y1, int x2, int y2)
+    {
+        IntPtr m1 = User32.MonitorFromPoint(new POINT(x1, y1), Win32Constants.MONITOR_DEFAULTTONEAREST);
+        IntPtr m2 = User32.MonitorFromPoint(new POINT(x2, y2), Win32Constants.MONITOR_DEFAULTTONEAREST);
+        return m1 == m2;
+    }
+
     private void StartSlide(int fromX, int fromY, int toX, int toY, int durationMs)
     {
-        LogProvider.Sink?.Debug($"[diag] slide start: ({fromX},{fromY}) -> ({toX},{toY}), {durationMs}ms");
         _slideActive = true;
+        _slideCurX = fromX;
+        _slideCurY = fromY;
         _slideFromX = fromX;
         _slideFromY = fromY;
         _slideToX = toX;
