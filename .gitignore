@@ -6,6 +6,7 @@ obj/
 *.cache
 *.log
 publish/
+TestResults/
 
 # Secrets — auto wip commit + bypassPermissions = never accidentally commit these
 *.env
