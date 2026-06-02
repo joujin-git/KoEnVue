@@ -128,7 +128,7 @@ else
 | ID | 확신 | 위치 | 현상 | 방안 | 비용 |
 |----|------|------|------|------|------|
 | **IMP-1** ✓ ✅ | High | `Core/Native/OleAut32.cs:1-26` (전체) | `SysFreeString`+SafeArray 5종 = **6 P/Invoke 전부 사용처 0** (주석의 UIA 코드 부재). grep 교차검증 완료 | 파일 통째 삭제 (미래 UIA 시 재도입). AOT marshalling stub 6개 제거 | S |
-| **IMP-2** 🔒 보류 | High | `App/UI/Dialogs/SettingsDialog.cs:133-316` | `BuildChildren` ~184줄 단일 메서드 (스케일 21변수 + 행 루프 3-way switch + 스크롤바 + 버튼, 깊은 중첩) | 🔒 **보류 (2026-06-02 검토)**: 순수 가독성 리팩터인데 `y` 좌표 누적이 행 루프를 관통해 버튼/스크롤바로 흐르는 **단일 결합점** → 픽셀 회귀 위험. 다이얼로그 레이아웃은 verifier 자동검증 불가(수동 smoke 만)라 회귀를 자동으로 못 잡음. **별도 세션 + 레이아웃 메트릭 구조체화 설계 + 사용자 육안검증 동반 시 진행 권장** | M |
+| **IMP-2** ✅ | High | `App/UI/Dialogs/SettingsDialog.cs:133-316` | `BuildChildren` ~184줄 단일 메서드 (스케일 21변수 + 행 루프 3-way switch + 스크롤바 + 버튼, 깊은 중첩) | ✅ **완료 (2026-06-02, 별도 세션)**: 보류 시 권장한 "레이아웃 메트릭 구조체화 + 육안검증" 경로로 실행. 신규 `SettingsDialog.Layout.cs` 의 `SettingsLayout` record struct(27필드) + `BuildLayout` 순수 팩토리로 메트릭을 분리하고, `BuildChildren` 은 ~17줄 오케스트레이터 + 윈도우 생성 헬퍼 5종으로 분해. `y` 누적 단일 결합점은 `LayoutRows` 가 콘텐츠 총높이를 **반환값**으로 노출해 박제(static 부작용 대입은 BuildChildren 집중). 순수 extract-method — 픽셀 동등 보존, 신규 매직넘버 0. `SettingsLayoutTests` 8 Fact 로 파생식(clamp/Max/뷰포트/DPI) 자동차단 + 나머지 수동 smoke. 설계 [dev-notes/2026-06-02-settings-buildchildren-decomposition.md](../dev-notes/2026-06-02-settings-buildchildren-decomposition.md) | M |
 | **IMP-3** 보류 | Med | `App/UI/Tray.cs:257-449` | `HandleMenuCommand` ~190줄 (DUP-9 패턴 포함) | DUP-9 헬퍼 적용(✅ 묶음 5) + 분기 그룹 추출. **분해는 보류 (묶음 5, 2026-06-02)** — `UpdateIfChanged` 적용으로 6 case 는 축약했으나, switch 전체 분해는 case 흐름 명료성 유지 위해 미실행 | M |
 | **IMP-4** 🔒 보류 | Low | `Core/Animation/OverlayAnimator.cs:171-246` | `TriggerShow` 4분기가 slide+highlight 호출집합 부분 반복 (분기마다 미묘하게 다름) | 🔒 **보류 (2026-06-02 검토)**: 4분기가 실제로 다 다름(분기1 SnapToTargetAlpha O / 분기3 SnapToTargetAlpha X + Fade Kill + `_forceHidden` 리셋 / 분기4 TryStartSlide X + AnimationEnabled 내부분기). 공통 꼬리는 `if(willHighlight) StartHighlight();` 1줄뿐 → 추출 이득 미미. **flip-flop 회귀 진앙**(주석 L264-269 에 race 박제: FadingIn 재진입 시 Fade 타이머 Kill 필요) + 애니 타이밍 자동검증 불가 | M |
 | **IMP-5** ✅ | Low | `App/Detector/ImeStatus.cs:42-54` | `Detect(hwndFocus, threadId)` 2-arg 오버로드 외부 호출 0 (내부 default 분기만) | ✅ **완료 (2026-06-02)**: `public`→`private` 강등 (3-arg `Detect` 의 Auto 분기 전용, 외부 직접 호출 0). 공개 표면 축소, 동작 불변 | S |
@@ -164,10 +164,10 @@ else
 | **묶음 3 — 다이얼로그 모듈화** ✅ **완료 (2026-06-02)** | DUP-2(✅) + DUP-5(◐ ScaleInputDialog만, SettingsDialog 보류) + DUP-6(◐ IDM_ADMIN_ELEVATION 제외) + HC-9·10·11·14·15·16(✅) | helper 추가(`SetupVScrollbar`/`ShowFieldError`) + `DefaultConfig.AppName` + 레이아웃 const. **동작 보존(값·문자열 불변)** | S–M | 낮음 |
 | **묶음 4 — Core 렌더 모듈화** ✅ **완료 (2026-06-02)** | DUP-3, DUP-13 + HC-4(셰이더 const) | 픽셀 렌더 단일화 | S | 낮음 (단위테스트 영역 밖 — 수동 smoke) |
 | **묶음 5 — Program/Tray 정리** ◐ **완료 (2026-06-02)** | DUP-4(◐ 3곳 적용·2곳 제외) + DUP-8(✅) + DUP-9(✅) + IMP-3(보류 — DUP-9 헬퍼만 적용, switch 분해 미실행) | 반복 추출 + 클래스 내부 private 헬퍼(`RefreshVisibleIndicator`/`HideCursor`/`UpdateIfChanged`). **동작 보존(로직·로그 불변), 신규 모듈/config 키 0** | S–M | 낮음 |
-| **묶음 6 — 큰 분해 (선택)** 🔒 **보류 (근거 §1·§3 검토)** | IMP-2, DUP-7, DUP-11, IMP-4 | 180/190줄 분해·동형 시퀀스 통합 | M | 중 (회귀 민감 — 신중) — 4건 모두 픽셀/애니 타이밍/dispatch 정적상태가 얽혀 자동검증 불가 + 이득 미미로 **2026-06-02 검토 후 전건 보류** (각 셀 근거 참조) |
+| **묶음 6 — 큰 분해 (선택)** ◐ **부분 (2026-06-02)** | IMP-2(✅), DUP-7, DUP-11, IMP-4(🔒) | 180/190줄 분해·동형 시퀀스 통합 | M | 중 (회귀 민감 — 신중) — **IMP-2 ✅ 완료** (별도 세션 + 레이아웃 메트릭 struct 화 `SettingsLayout`/`BuildLayout` + `SettingsLayoutTests` 8 Fact 로 파생식 박제 + 수동 육안검증). 나머지 DUP-7·DUP-11·IMP-4 는 픽셀/애니 타이밍/dispatch 정적상태가 얽혀 자동검증 불가 + 이득 미미로 **🔒 보류 유지** (각 셀 근거 참조) |
 | **잔여 Low** ◐ **부분 (2026-06-02)** | DUP-10·12, HC-18·19, IMP-5·6·7 | 기회 될 때 | S | 낮음 — **DUP-10·HC-19·IMP-5·IMP-7 ✅ 완료** / **DUP-12·HC-18·IMP-6 🔒 보류**(자동검증 불가·방어코드 보존·미래 hook — 각 셀 근거) |
 
-**권장 순서**: 묶음 1(빠른 승리) → 묶음 2(최대 임팩트) → 3·4·5(병렬 가능) → 6은 별도 세션. 전부 P3/P4 정신 강화이며 **동작 변경 0**(묶음 2의 디폴트 단일화 포함 — 값 자체는 불변)이 목표.
+**권장 순서**: 묶음 1(빠른 승리) → 묶음 2(최대 임팩트) → 3·4·5(병렬 가능) → 6은 별도 세션(IMP-2 ✅ 별도 세션 완료, 나머지 DUP-7·DUP-11·IMP-4 보류 유지). 전부 P3/P4 정신 강화이며 **동작 변경 0**(묶음 2의 디폴트 단일화 포함 — 값 자체는 불변)이 목표.
 
 ---
 

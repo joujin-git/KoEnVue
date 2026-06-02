@@ -727,13 +727,16 @@ Parsing uses `double.TryParse` + `CultureInfo.InvariantCulture`, so `"2.3"` work
 
 ### SettingsDialog
 
-14 sections of settings (PR-21 — 일반 / 메인 인디 / 커서 인디 3 대분류 재배치, 정확한 필드 수는 [SettingsDialog.Fields.cs](../App/UI/Dialogs/SettingsDialog.Fields.cs) 의 `BuildRowDefs` 참조). Split across 3 partial class files:
+14 sections of settings (PR-21 — 일반 / 메인 인디 / 커서 인디 3 대분류 재배치, 정확한 필드 수는 [SettingsDialog.Fields.cs](../App/UI/Dialogs/SettingsDialog.Fields.cs) 의 `BuildRowDefs` 참조). Split across 4 partial class files:
 
-- **`SettingsDialog.cs`** (modal state, `Show`, `TryCommit`, dialog WndProc)
+- **`SettingsDialog.cs`** (modal state, `Show`, `BuildChildren`(+윈도우 생성 헬퍼 5종), `TryCommit`, dialog WndProc)
+- **`SettingsDialog.Layout.cs`** (`SettingsLayout` 메트릭 record struct + `BuildLayout` 팩토리 — DPI 스케일·파생 좌표 순수 산술)
 - **`SettingsDialog.Fields.cs`** (`FieldType` enum, `FieldDef`/`RowDef` records, `BuildRowDefs` 13-section spec, 6 factory methods: `Bool`/`Int`/`Dbl`/`Str`/`ColorField`/`Combo`)
 - **`SettingsDialog.Scroll.cs`** (scroll state, `SetupScrollbar`, `ScrollTo`, `ScrollFieldIntoView`, `ResolveVScrollPosition`, viewport WndProc)
 
 `partial class` shares all static state at compile time. No call-site changes — `SettingsDialog.Show(hwndMain, config, updateConfig)` is the same public entry point.
+
+**BuildChildren 분해 (IMP-2, 2026-06-02)**: 종전 `BuildChildren` 은 ~184줄 단일 메서드(메트릭 스케일 21변수 + 행 루프 3-way switch + 스크롤바 + 버튼)였다. 이를 (1) 레이아웃 계산 `BuildLayout(ctx)` → `internal readonly record struct SettingsLayout`(27필드 = 18 DPI-스케일 메트릭 + ClientW/H + 뷰포트 지오메트리 VpX/Y/W/H + 파생 LabelX/ControlX/SectionContentW) 와 (2) 그 메트릭으로 윈도우를 만드는 ~17줄 오케스트레이터 + 5종 헬퍼(`RegisterViewportClass`/`CreateDescriptionLabel`/`CreateViewport`/`LayoutRows`/`CreateButtons`)로 분리했다. **설계 결정**: ① `y` 좌표 누적이 행 루프를 관통해 스크롤바·버튼으로 흐르던 단일 결합점을 `LayoutRows` 가 콘텐츠 총높이(`y + ContentPadInner`)를 **반환값**으로 노출해 박제 — 호출자(BuildChildren)가 `_scrollMax`/`SetupScrollbar` 를 1지점에서 계산. ② cross-file static 부작용(`_lineHeight`/`_viewportClientH`/`_scrollMax`, 선언은 [SettingsDialog.Scroll.cs](../App/UI/Dialogs/SettingsDialog.Scroll.cs))의 대입을 BuildChildren 에 모아 한눈에 보이게 함 — 5 헬퍼는 값만 반환·대입 안 함 (단 `LayoutRows` 의 `_scrollChildren`/`_fieldInputs` 리스트 적재 부작용은 직접). ③ `LayoutRows` 내부(행 루프)는 분할하지 않음 — 누적 y 의 `ref` 전파가 늘어 회귀 위험이 오히려 커지므로 단일 메서드 유지. **동작·픽셀 100% 보존** (순수 extract-method + 변수→struct 필드 리네임, 좌표식 글자 그대로 — 새 매직넘버 0, `Math.Max(1,…)`·`pad*2`·`/2` 전부 원본에서 이동). 픽셀 회귀는 `SettingsLayoutTests` 가 파생식(LabelX/ControlX/ControlColW clamp 3케이스/SectionContentW/뷰포트 지오메트리/150% DPI 스케일)을 헤드리스로 부분 자동차단하고, 행 y 누적·실제 GDI 렌더는 수동 smoke 영역으로 남는다. 설계 기록: [dev-notes/2026-06-02-settings-buildchildren-decomposition.md](dev-notes/2026-06-02-settings-buildchildren-decomposition.md).
 
 **Scroll implementation**: `ScrollTo` 는 스크롤 델타 `dy = _scrollPos - newPos` 를 계산한 뒤 `SetScrollInfo` 로 썸 위치를 갱신하고, `ScrollWindowEx(viewport, 0, dy, ..., SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE)` 한 번으로 모든 자식을 OS 가 BitBlt 로 이동시킨다. 노출된 띠 영역만 무효화 + 배경 지움 처리되므로, 기존 "N 개 자식에 대한 `SetWindowPos` 루프 + 전체 `InvalidateRect(viewport, null, true)`" 방식 대비 휠 틱당 작업량이 O(N) → O(1) 로 줄어 휠 스크롤 반응성이 크게 향상된다. 뷰포트는 `WS_CLIPCHILDREN` + `WS_EX_COMPOSITED` 조합으로 DWM off-screen 합성을 사용해 스크롤 중 플리커도 없다. 자식 윈도우 크기는 `ScrollWindowEx` 가 보존하므로 COMBOBOX 의 `rowH + ComboDropExtra = 220` 드롭다운 높이는 영향 없음.
 

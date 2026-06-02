@@ -13,9 +13,10 @@ namespace KoEnVue.App.UI.Dialogs;
 /// DialogShell 이 라이프사이클을 담당하고 본 파일은 자식 컨트롤 생성 + 커밋 + WndProc 만 보유한다.
 ///
 /// <para>
-/// 가독성을 위해 partial class 3분할:
+/// 가독성을 위해 partial class 4분할:
 /// <list type="bullet">
-///   <item><c>SettingsDialog.cs</c> — Show, BuildChildren, TryCommit, WndProc, 레이아웃 상수, 모달 상태</item>
+///   <item><c>SettingsDialog.cs</c> — Show, BuildChildren(+윈도우 생성 헬퍼 5종), TryCommit, WndProc, 레이아웃 상수, 모달 상태</item>
+///   <item><c>SettingsDialog.Layout.cs</c> — SettingsLayout 메트릭 struct + BuildLayout 팩토리(DPI 스케일·파생 좌표 순수 산술)</item>
 ///   <item><c>SettingsDialog.Fields.cs</c> — FieldDef/RowDef + BuildRowDefs + 팩토리 + 헬퍼</item>
 ///   <item><c>SettingsDialog.Scroll.cs</c> — 스크롤 상태 + 스크롤 메서드 + ViewportProc</item>
 /// </list>
@@ -135,69 +136,81 @@ internal static partial class SettingsDialog
     // 자식 컨트롤 생성 (DialogShell.buildChildren 콜백)
     // ================================================================
 
+    /// <summary>
+    /// 다이얼로그 자식 컨트롤을 생성한다(셸이 창 생성 직후·표시 직전 1회 동기 호출).
+    /// 레이아웃 계산은 <see cref="BuildLayout"/> 으로 분리하고, 본 메서드는 그 결과로
+    /// 윈도우를 만드는 5단계 헬퍼를 오케스트레이션한다(IMP-2 분해). cross-file static
+    /// 부작용(_lineHeight/_viewportClientH/_scrollMax = SettingsDialog.Scroll.cs)을
+    /// 본 메서드에 모아 한눈에 보이게 한다 — 헬퍼는 값을 반환하고 대입은 여기서.
+    /// </summary>
     private static unsafe void BuildChildren(DialogShellContext ctx, List<RowDef> rows)
     {
         _hwndDialog = ctx.HwndDialog;
 
-        int pad = ctx.Pad;
-        int descH = ctx.Scale(DescH);
-        int descGap = ctx.Scale(DescGap);
-        int contentPadInner = ctx.Scale(ContentPadInner);
-        int labelColW = ctx.Scale(LabelColW);
-        int colGap = ctx.Scale(ColGap);
-        int controlColW = ctx.Scale(ControlColW);
-        int rowH = ctx.Scale(RowH);
-        int rowGap = ctx.Scale(RowGap);
-        int sectionHeadH = ctx.Scale(SectionHeadH);
-        int sectionHeadGap = ctx.Scale(SectionHeadGap);
-        int sectionTopGap = ctx.Scale(SectionTopGap);
-        int sectionSepPostGap = ctx.Scale(SectionSepPostGap);
-        int btnW = ctx.Scale(BtnW);
-        int btnH = ctx.Scale(BtnH);
-        int btnAreaH = ctx.Scale(BtnAreaH);
-        int comboDropExtra = ctx.Scale(ComboDropExtra);
-        int viewportScrollReserve = ctx.Scale(ViewportScrollReserve);
+        var m = BuildLayout(ctx);
+        _lineHeight = m.RowH + m.RowGap;
+        _viewportClientH = m.VpH;
 
-        _lineHeight = rowH + rowGap;
-        int clientW = ctx.ClientW;
-        int clientH = ctx.ClientH;
+        RegisterViewportClass();
+        CreateDescriptionLabel(ctx, m);
+        _hwndViewport = CreateViewport(ctx, m);
 
-        // 뷰포트 클래스 등록 (다이얼로그 클래스는 셸이 이미 등록)
-        Win32DialogHelper.RegisterStandardClass(
+        int totalContentH = LayoutRows(ctx, m, rows);
+        _scrollMax = Math.Max(0, totalContentH - _viewportClientH);
+        SetupScrollbar(totalContentH);
+
+        CreateButtons(ctx, m);
+    }
+
+    /// <summary>뷰포트 윈도우 클래스 등록 (다이얼로그 클래스는 셸이 이미 등록).</summary>
+    private static unsafe void RegisterViewportClass()
+        => Win32DialogHelper.RegisterStandardClass(
             ViewportClassName,
             (delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&ViewportProc,
             (IntPtr)(Win32Constants.COLOR_BTNFACE + 1));
 
-        // 설명 레이블
+    /// <summary>상단 설명 레이블 생성.</summary>
+    private static void CreateDescriptionLabel(DialogShellContext ctx, in SettingsLayout m)
+    {
         IntPtr hwndDesc = User32.CreateWindowExW(0, "STATIC", I18n.SettingsDialogDescription,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE,
-            pad, pad, clientW - pad * 2, descH,
+            m.Pad, m.Pad, m.ClientW - m.Pad * 2, m.DescH,
             ctx.HwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
         Win32DialogHelper.ApplyFont(hwndDesc, ctx.HFont);
+    }
 
-        // 뷰포트
-        int vpX = pad;
-        int vpY = pad + descH + descGap;
-        int vpW = clientW - pad * 2;
-        int vpH = clientH - vpY - btnAreaH - pad;
-        _viewportClientH = vpH;
-
-        // WS_CLIPCHILDREN + WS_EX_COMPOSITED: 스크롤 중 플리커 제거 (기존 결정 유지)
-        _hwndViewport = User32.CreateWindowExW(
+    /// <summary>
+    /// 스크롤 뷰포트 생성. WS_CLIPCHILDREN + WS_EX_COMPOSITED 로 스크롤 중 플리커 제거(기존 결정 유지).
+    /// </summary>
+    private static IntPtr CreateViewport(DialogShellContext ctx, in SettingsLayout m)
+        => User32.CreateWindowExW(
             Win32Constants.WS_EX_COMPOSITED, ViewportClassName, "",
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_CLIPCHILDREN
                 | Win32Constants.WS_VSCROLL | Win32Constants.WS_BORDER,
-            vpX, vpY, vpW, vpH,
+            m.VpX, m.VpY, m.VpW, m.VpH,
             ctx.HwndDialog, (IntPtr)IDC_VIEWPORT, IntPtr.Zero, IntPtr.Zero);
 
-        // 뷰포트 내부 행 배치
-        int labelX = contentPadInner;
-        int controlX = contentPadInner + labelColW + colGap;
-        int innerContentW = vpW - contentPadInner * 2 - viewportScrollReserve;
-        controlColW = Math.Max(1, Math.Min(controlColW, innerContentW - labelColW - colGap));
-        int sectionContentW = Math.Max(innerContentW, labelColW + colGap + controlColW);
+    /// <summary>
+    /// 뷰포트 내부에 섹션 헤더/구분선 + 행(라벨 + 입력 컨트롤)을 위에서 아래로 배치한다.
+    /// <c>_scrollChildren</c>(스크롤 추적)과 <c>_fieldInputs</c>(커밋 순회)를 채우는 부작용을 가진다.
+    /// 누적 y 를 콘텐츠 총높이(<c>y + ContentPadInner</c>)로 반환 — 스크롤 메트릭 계산의 단일 결합점.
+    /// </summary>
+    private static unsafe int LayoutRows(DialogShellContext ctx, in SettingsLayout m, List<RowDef> rows)
+    {
+        int labelX = m.LabelX;
+        int controlX = m.ControlX;
+        int labelColW = m.LabelColW;
+        int controlColW = m.ControlColW;
+        int sectionContentW = m.SectionContentW;
+        int rowH = m.RowH;
+        int rowGap = m.RowGap;
+        int comboDropExtra = m.ComboDropExtra;
+        int sectionHeadH = m.SectionHeadH;
+        int sectionHeadGap = m.SectionHeadGap;
+        int sectionTopGap = m.SectionTopGap;
+        int sectionSepPostGap = m.SectionSepPostGap;
 
-        int y = contentPadInner;
+        int y = m.ContentPadInner;
         bool firstSection = true;
         bool firstControlInSection = false;
 
@@ -296,26 +309,27 @@ internal static partial class SettingsDialog
             y += rowH + rowGap;
         }
 
-        int totalContentH = y + contentPadInner;
-        _scrollMax = Math.Max(0, totalContentH - _viewportClientH);
-        SetupScrollbar(totalContentH);
+        return y + m.ContentPadInner;
+    }
 
-        // OK/Cancel
-        int btnY = clientH - pad - btnH;
-        int btnAreaWidth = btnW * 2 + pad;
-        int btnX = (clientW - btnAreaWidth) / 2;
+    /// <summary>OK/Cancel 버튼을 다이얼로그 하단 중앙에 배치.</summary>
+    private static void CreateButtons(DialogShellContext ctx, in SettingsLayout m)
+    {
+        int btnY = m.ClientH - m.Pad - m.BtnH;
+        int btnAreaWidth = m.BtnW * 2 + m.Pad;
+        int btnX = (m.ClientW - btnAreaWidth) / 2;
 
         IntPtr hwndOk = User32.CreateWindowExW(0, "BUTTON", I18n.ScaleDialogOk,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE
                 | Win32Constants.WS_TABSTOP | Win32Constants.WS_GROUP
                 | Win32Constants.BS_DEFPUSHBUTTON,
-            btnX, btnY, btnW, btnH,
+            btnX, btnY, m.BtnW, m.BtnH,
             ctx.HwndDialog, (IntPtr)IDC_BTN_OK, IntPtr.Zero, IntPtr.Zero);
         Win32DialogHelper.ApplyFont(hwndOk, ctx.HFont);
 
         IntPtr hwndCancel = User32.CreateWindowExW(0, "BUTTON", I18n.ScaleDialogCancel,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_TABSTOP,
-            btnX + btnW + pad, btnY, btnW, btnH,
+            btnX + m.BtnW + m.Pad, btnY, m.BtnW, m.BtnH,
             ctx.HwndDialog, (IntPtr)IDC_BTN_CANCEL, IntPtr.Zero, IntPtr.Zero);
         Win32DialogHelper.ApplyFont(hwndCancel, ctx.HFont);
     }
