@@ -371,6 +371,15 @@ Ease-out cubic interpolation: `1 - (1 - t)^3` via `TIMER_ID_SLIDE`. All animatio
 
 회귀 가드: [tests/KoEnVue.Tests/Unit/OverlayAnimatorTests.cs](../tests/KoEnVue.Tests/Unit/OverlayAnimatorTests.cs) 3 테스트 (`Slide_DuringHighlight_TracksPositionWithoutBlit` / `Slide_WithoutHighlight_BlitsPosition` / `Highlight_RunsRegardlessOfSlide`).
 
+### `animation_enabled` 마스터 게이팅 (PR-22)
+
+트레이 "애니메이션 사용"(`animation_enabled` / [`AppConfig.AnimationEnabled`](../App/Models/AppConfig.cs)) 은 fade·highlight·slide **전체**를 끄는 마스터 스위치다. 게이팅 지점이 두 층으로 나뉜다:
+
+- **fade** — [`OverlayAnimator`](../Core/Animation/OverlayAnimator.cs) 가 fade-in / fade-out / dim-idle 3곳에서 `AnimationEnabled` 를 **직접** 본다 (`false` 면 `SnapToTargetAlpha` 로 즉시 표시/숨김). Core 자체 게이팅이라 PR-22 에서 불변.
+- **highlight / slide** — 엔진은 `AnimationConfig.ChangeHighlight` / `SlideAnimation` 만 보고 `AnimationEnabled` 와 무관하게 동작한다. 마스터 의미는 App 파사드 [`Animation.BuildAnimationConfig`](../App/UI/Animation.cs) **1지점**이 합성한다 — `ChangeHighlight: config.AnimationEnabled && config.ChangeHighlight`, `SlideAnimation: config.AnimationEnabled && config.SlideAnimation` (AND). 마스터 OFF 면 두 값이 `false` 로 합성돼 엔진의 slide/highlight 분기가 진입조차 안 하고, 마스터 ON 이면 개별 토글(`change_highlight` / `slide_animation`) 값이 그대로 보존된다.
+
+이 분담의 이유: 엔진 내부 가드 3곳(이미 `AnimationEnabled` 를 보는 fade) 외에 highlight/slide 분기마다 `AnimationEnabled &&` 를 산개하는 대신, "최종 플래그"를 App 이 한 곳에서 만들어 엔진에 넘기면 **Core 상태머신 분기가 무변경**으로 남는다 (`e253f2f` slide+highlight 합성 로직과의 상호작용 회귀 표면 0). P4(마스터 단일 진실원) + P6(App 이 합성, Core 는 `AnimationConfig` 만 소비) 정합. 회귀 가드: [tests/KoEnVue.Tests/Unit/AnimationFacadeTests.cs](../tests/KoEnVue.Tests/Unit/AnimationFacadeTests.cs) 4 Fact (마스터 OFF→highlight·slide 게이팅 / 마스터 ON→개별 토글 보존 / 마스터 ON+개별 OFF→AND 로 OFF 유지 / `AnimationEnabled` 플래그 통과).
+
 ### Always mode default
 
 `DisplayMode.Always` — indicator always visible (bright on events, dim at idle). `DisplayMode.OnEvent` available via config for fade-out-after-hold behavior.

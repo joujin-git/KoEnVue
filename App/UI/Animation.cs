@@ -133,7 +133,15 @@ internal static class Animation
     // AppConfig → AnimationConfig 변환
     // ================================================================
 
-    private static AnimationConfig BuildAnimationConfig(AppConfig config) => new(
+    /// <summary>
+    /// AppConfig → 엔진 <see cref="AnimationConfig"/> 스냅샷. 트레이 "애니메이션 사용"
+    /// (<c>AnimationEnabled</c>) 이 fade(엔진이 직접 게이팅) 뿐 아니라 highlight·slide 까지 끄는
+    /// <b>마스터 스위치</b>가 되도록, 여기서 <c>ChangeHighlight</c>/<c>SlideAnimation</c> 을
+    /// <c>AnimationEnabled &amp;&amp;</c> 로 합성한다 (PR-22 — 라벨·PRD·config-reference 의 "전체 on/off"
+    /// 의도와 코드 일치, 마스터 의미의 단일 진실원). <c>internal</c>: 합성 동작을 단위 테스트
+    /// (<c>AnimationFacadeTests</c>) 로 박제하기 위함 — InternalsVisibleTo.
+    /// </summary>
+    internal static AnimationConfig BuildAnimationConfig(AppConfig config) => new(
         AnimationEnabled: config.AnimationEnabled,
         AlwaysMode: config.DisplayMode == DisplayMode.Always,
         FadeInMs: config.FadeInMs,
@@ -143,10 +151,10 @@ internal static class Animation
         Opacity: config.Opacity,
         IdleOpacity: config.IdleOpacity,
         ActiveOpacity: config.ActiveOpacity,
-        ChangeHighlight: config.ChangeHighlight,
+        ChangeHighlight: config.AnimationEnabled && config.ChangeHighlight,   // 마스터 게이팅 (PR-22)
         HighlightScale: config.HighlightScale,
         HighlightDurationMs: config.HighlightDurationMs,
-        SlideAnimation: config.SlideAnimation,
+        SlideAnimation: config.AnimationEnabled && config.SlideAnimation,    // 마스터 게이팅 (PR-22)
         SlideSpeedMs: config.SlideSpeedMs,
         ForceTopmostIntervalMs: config.Advanced.ForceTopmostIntervalMs,
         AnimationFrameMs: DefaultConfig.AnimationFrameMs,
