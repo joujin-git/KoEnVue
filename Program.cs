@@ -250,6 +250,17 @@ internal static partial class Program
             Logger.Warning($"ChangeWindowMessageFilterEx(TaskbarCreated) failed: error={Marshal.GetLastPInvokeError()}");
         }
 
+        // 8a-2. WM_APP_ACTIVATE 도 동일 UIPI 화이트리스트에 등록. admin(High IL) 으로 실행 중인데
+        //       2nd 인스턴스가 Medium IL 로 남는 경로 (admin_elevation 재실행 UAC 취소, admin 환경
+        //       외부 spawn, 설정 변경 과도기) 에서 NotifyExistingInstance 의 PostMessageW(WM_APP_ACTIVATE)
+        //       가 UIPI 로 차단돼 "이미 실행 중" 인디 즉시 표시 피드백이 소실된다. 화이트리스트로 복구.
+        //       동일 IL(일반 사용자) 이면 무해한 no-op. 정적 상수라 RegisterWindowMessage 불요.
+        if (!User32.ChangeWindowMessageFilterEx(_hwndMain, AppMessages.WM_APP_ACTIVATE,
+                Win32Constants.MSGFLT_ALLOW, IntPtr.Zero))
+        {
+            Logger.Warning($"ChangeWindowMessageFilterEx(WM_APP_ACTIVATE) failed: error={Marshal.GetLastPInvokeError()}");
+        }
+
         // 8b. 세션 잠금/해제 알림 등록 — HideOnLockScreen 이 동작하려면 필수.
         //     실패해도 앱 부팅은 계속 (잠금 화면 숨김만 비활성). Wtsapi32.dll 은 Windows 기본 탑재.
         if (!Wtsapi32.WTSRegisterSessionNotification(_hwndMain, Win32Constants.NOTIFY_FOR_THIS_SESSION))

@@ -1011,11 +1011,13 @@ dev-note 신규 불요 (5 LOC cleanup), [PR-15 design doc §7](improvement-plan/
 
 메시지 전용 윈도우(HWND_MESSAGE parent) 가 아니라 일반 최상위 윈도우(데스크톱 parent + 화면 미표시)로 생성되므로 `FindWindowW` 가 정상 매칭한다. 탐색 실패(기존 창이 막 파괴 중이거나 클래스명이 달라진 경우)는 조용히 무시된다.
 
+기존(1st) 인스턴스가 admin(High IL) 으로 떠 있고 2nd 인스턴스가 Medium IL 로 남는 경로(① `admin_elevation` self-relaunch 의 UAC 취소 → 일반 권한 계속 ② admin 환경 외부 spawn 인데 `config.AdminElevation=false` ③ 설정 변경 과도기)에서는, 2nd 의 `PostMessageW(WM_APP_ACTIVATE)` 가 UIPI(Medium → High) 로 차단돼 "이미 실행 중" 인디 즉시 표시 피드백이 소실된다. 이를 막기 위해 `Program.MainImpl` 은 메인 윈도우 생성 직후(8a-2) `User32.ChangeWindowMessageFilterEx(_hwndMain, AppMessages.WM_APP_ACTIVATE, MSGFLT_ALLOW, ...)` 로 이 메시지를 UIPI 화이트리스트에 등록한다(바로 아래 TaskbarCreated 와 동일 메커니즘). `WM_APP_ACTIVATE` 는 정적 상수라 `RegisterWindowMessageW` 불요. 동일 IL(일반 사용자) 끼리는 애초에 UIPI 차단이 없어 무해한 no-op (감사 ⑫, 2026-06-02).
+
 ### TaskbarCreated — shell restart recovery
 
 셸(`explorer.exe`) 재시작 시 이전에 등록된 모든 트레이 아이콘 정보는 소실된다. Windows 는 이를 보완하기 위해 `"TaskbarCreated"` 라는 이름의 **등록된 윈도우 메시지**를 모든 최상위 창에 브로드캐스트한다. 셸 업데이트, 크래시, 수동 재시작(`taskkill /im explorer.exe` 등) 시나리오에서 모두 발생.
 
-`Program.MainImpl` 은 메인 윈도우 생성 직후 `User32.RegisterWindowMessageW("TaskbarCreated")` 로 메시지 ID 를 받아 `_taskbarCreatedMsgId` 필드에 저장한다. 동적 ID 이므로 WndProc 의 `switch` 에 넣을 수 없어 switch 앞단의 if 분기로 비교한다:
+`Program.MainImpl` 은 메인 윈도우 생성 직후(8a) `User32.RegisterWindowMessageW("TaskbarCreated")` 로 메시지 ID 를 받아 `_taskbarCreatedMsgId` 필드에 저장하고, 곧바로 `User32.ChangeWindowMessageFilterEx(_hwndMain, _taskbarCreatedMsgId, MSGFLT_ALLOW, ...)` 로 이 메시지를 UIPI 화이트리스트에 등록한다 — `requireAdministrator`/self-elevation 으로 High IL 인 경우 Medium IL 인 explorer 의 `TaskbarCreated` 브로드캐스트가 UIPI 로 차단되므로, 필터 없이는 셸 재시작 복구 자체가 무력화된다(위 `WM_APP_ACTIVATE` 화이트리스트와 동일 메커니즘). 동적 ID 이므로 WndProc 의 `switch` 에 넣을 수 없어 switch 앞단의 if 분기로 비교한다:
 
 ```csharp
 if (msg != 0 && msg == _taskbarCreatedMsgId && hwnd == _hwndMain)
