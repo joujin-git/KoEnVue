@@ -188,7 +188,7 @@ IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 스케일
 
 | 키 | 타입 | 기본값 | 범위 | 설명 |
 |---|---|---|---|---|
-| `cursor_change_highlight` | bool | `true` | — | IME 전환 시 스케일 팝 on/off. 트레이 메뉴 "커서 변경 시 강조" 체크박스와 동일 (체크 = ON). SettingsDialog 미노출 — 메뉴 또는 본 키 직접 편집 |
+| `cursor_change_highlight` | bool | `true` | — | IME 전환 시 스케일 팝 on/off. 트레이 메뉴 "커서 인디케이터 변경 강조" 체크박스와 동일 (체크 = ON). SettingsDialog 미노출 — 메뉴 또는 본 키 직접 편집. **트레이 "애니메이션 사용"(`animation_enabled`) 마스터에 종속** — 마스터 OFF 면 본 키가 ON 이어도 커서 팝 정지(색만 즉시 갱신), 메인 인디 `change_highlight` 와 동형 AND 게이팅 (PR-22 후속). 강조는 **IME 상태가 실제 바뀔 때만** 발생 — 앱 포커스 변경만으로는 트리거 안 됨 (동일 IME 앱 사이 전환은 강조 없음, 다른 IME 앱 전환은 강조 있음 — 메인 인디와 일관) |
 | `cursor_highlight_scale` | double | `1.3` | 1.0 ~ 2.0 | 팝 시작 배율 (확대 정점). `2.0` 상한은 DIB bbox 고정 기준 (`CursorStyle.MaxHighlightScale`) 과 일치 |
 | `cursor_highlight_duration_ms` | int | `300` | 0 ~ 2000 | 확대 정점 → 원래 크기 복귀 시간 (ms). 0 = 즉시 복귀 (팝 없음) |
 

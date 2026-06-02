@@ -204,9 +204,10 @@ internal static class CursorOverlay
         Logger.Debug($"Cursor indicator IME state: {state} (visible={_isVisible})");
         if (_isVisible && _engine is not null)
         {
-            // 가시 상태에서 IME 가 실제로 바뀜 — CursorChangeHighlight 면 스케일 팝(첫 프레임이 새 색 + 시작
-            // 배율로 렌더하므로 별도 색 갱신 Render 불요), 아니면 색만 즉시 갱신. 메인 인디 ChangeHighlight 와 동형.
-            if (_config.CursorChangeHighlight)
+            // 가시 상태에서 IME 가 실제로 바뀜 — 마스터(AnimationEnabled) + CursorChangeHighlight 면 스케일 팝
+            // (첫 프레임이 새 색 + 시작 배율로 렌더하므로 별도 색 갱신 Render 불요), 아니면 색만 즉시 갱신.
+            // 메인 인디 Animation.BuildAnimationConfig 의 `AnimationEnabled && ChangeHighlight` 마스터 게이팅과 동형 (PR-22 후속).
+            if (_config.AnimationEnabled && _config.CursorChangeHighlight)
                 TriggerPop();
             else
                 _engine.Render(_currentStyle);
