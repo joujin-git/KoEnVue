@@ -515,6 +515,9 @@ internal static class Win32Constants
     // HKL (Keyboard Layout) 파싱 상수 — LANGID_KOREAN / HKL_LANGID_MASK /
     // HKL_IME_DEVICE_* 는 P6 게이트를 지키기 위해 App/Detector/ImeConstants.cs 로 이전됨.
 
+    // --- GetAsyncKeyState ---
+    public const int KEY_PRESSED        = 0x8000;  // 반환값 최상위 비트 = 키가 눌린 상태
+
     // --- LOWORD/HIWORD 마스크 ---
     public const uint LOWORD_MASK       = 0xFFFF;
 

@@ -361,7 +361,7 @@ internal static partial class SettingsDialog
         {
             case Win32Constants.WM_COMMAND:
             {
-                int id = (int)(wParam.ToInt64() & 0xFFFF);
+                int id = (int)(wParam.ToInt64() & Win32Constants.LOWORD_MASK);
                 if (DialogShell.HandleStandardCommands(id, IDC_BTN_OK, IDC_BTN_CANCEL,
                     ref _dlgResult, ref _dlgClosed, TryCommit))
                     return IntPtr.Zero;

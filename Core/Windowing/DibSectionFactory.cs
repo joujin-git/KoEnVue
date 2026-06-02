@@ -15,6 +15,10 @@ namespace KoEnVue.Core.Windowing;
 /// </summary>
 internal static class DibSectionFactory
 {
+    /// <summary>32bpp BI_RGB DIB section 의 픽셀당 바이트 수 (= <c>biBitCount</c> 32 / 8). 두 렌더
+    /// 엔진의 픽셀 버퍼 클리어 / premultiply 루프가 공유하는 stride 단위.</summary>
+    public const int BytesPerPixel = 4;
+
     /// <summary>
     /// <paramref name="width"/> × <paramref name="height"/> 크기의 top-down 32bpp BI_RGB
     /// DIB section 을 생성한 뒤 <paramref name="memDC"/> 에 select 한다. 이전 비트맵의

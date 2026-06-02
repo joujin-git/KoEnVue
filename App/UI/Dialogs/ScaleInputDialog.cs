@@ -201,7 +201,7 @@ internal static class ScaleInputDialog
         {
             case Win32Constants.WM_COMMAND:
             {
-                int id = (int)(wParam.ToInt64() & 0xFFFF);
+                int id = (int)(wParam.ToInt64() & Win32Constants.LOWORD_MASK);
                 if (DialogShell.HandleStandardCommands(id, IDC_SCALE_OK, IDC_SCALE_CANCEL,
                     ref _scaleDlgResult, ref _scaleDlgClosed, TryCommitScaleInput))
                     return IntPtr.Zero;

@@ -568,11 +568,10 @@ internal static partial class Program
     /// </summary>
     private static bool IsDragModifierPressed(DragModifier mode)
     {
-        const short KeyPressedMask = unchecked((short)0x8000);
         if (mode == DragModifier.None) return true;
 
-        bool ctrl = (User32.GetAsyncKeyState(Win32Constants.VK_CONTROL) & KeyPressedMask) != 0;
-        bool alt  = (User32.GetAsyncKeyState(Win32Constants.VK_MENU) & KeyPressedMask) != 0;
+        bool ctrl = (User32.GetAsyncKeyState(Win32Constants.VK_CONTROL) & Win32Constants.KEY_PRESSED) != 0;
+        bool alt  = (User32.GetAsyncKeyState(Win32Constants.VK_MENU) & Win32Constants.KEY_PRESSED) != 0;
         return mode switch
         {
             DragModifier.Ctrl    => ctrl && !alt,

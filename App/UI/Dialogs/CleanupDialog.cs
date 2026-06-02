@@ -280,7 +280,7 @@ internal static class CleanupDialog
         {
             case Win32Constants.WM_COMMAND:
             {
-                int id = (int)(wParam.ToInt64() & 0xFFFF);
+                int id = (int)(wParam.ToInt64() & Win32Constants.LOWORD_MASK);
                 // CommitSelections 콜백: IDOK 처리 시점(모달 안, HWND 유효) 에 체크박스
                 // 상태를 _selectedItems 에 박아둔다. 모달 루프 종료 후 DialogShell 의
                 // finally 가 DestroyWindow 를 호출하면 HWND 가 무효가 되므로 늦으면 안 됨.
@@ -324,7 +324,7 @@ internal static class CleanupDialog
         {
             case Win32Constants.WM_VSCROLL:
             {
-                int scrollCode = (int)(wParam.ToInt64() & 0xFFFF);
+                int scrollCode = (int)(wParam.ToInt64() & Win32Constants.LOWORD_MASK);
                 ScrollTo(ResolveVScrollPosition(hwnd, scrollCode));
                 return IntPtr.Zero;
             }

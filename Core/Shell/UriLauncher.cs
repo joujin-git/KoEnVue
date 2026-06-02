@@ -14,6 +14,9 @@ namespace KoEnVue.Core.Shell;
 /// </summary>
 internal static class UriLauncher
 {
+    // ShellExecuteW 의 HINSTANCE 반환값: > 32 = 성공, <= 32 = 오류 코드(SE_ERR_*).
+    private const long ShellExecuteSuccessThreshold = 32;
+
     /// <summary>
     /// URI 또는 파일 경로를 OS 기본 핸들러로 연다. 실패(<c>rc &lt;= 32</c>) 시 Warning 로깅 후 false.
     /// 사용자 팝업은 띄우지 않는다 (브라우저 실행 실패는 사용자가 대응할 수 없음).
@@ -39,7 +42,7 @@ internal static class UriLauncher
             Win32Constants.SW_SHOWNORMAL);
 
         // ShellExecuteW 의 반환값은 HINSTANCE 이지만 의미상 정수: <= 32 이면 실패.
-        if ((long)result <= 32)
+        if ((long)result <= ShellExecuteSuccessThreshold)
         {
             // rc 자체가 SE_ERR_* 코드를 담는 게 일반적이지만, 일부 헬퍼/쉘 확장은 SetLastError 도
             // 함께 세팅한다 — 진단 정보가 한 곳에 더 있는 게 디버깅에 도움.

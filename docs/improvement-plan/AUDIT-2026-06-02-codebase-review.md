@@ -25,6 +25,8 @@
 
 **총 발견**: 약 50건 (핵심 High 12 / Med 다수 / Low 다수). 그중 **삭제·dead 판정 등 비가역 주장 4건은 메인에서 grep으로 직접 교차검증 완료**(아래 ✓).
 
+> **마커 범례**: `✓` = grep 교차검증 완료(착수 전 확인) · `✅` = 실행 완료 · `🔒 보존` = 검토 후 제거 안 하기로 결정. **묶음 1 (dead code 삭제 + 매직넘버 const화) 은 2026-06-02 실행 완료** — IMP-1·HC-1·2·3·5·6·7·8·12·13 에 ✅, HC-17 은 🔒 보존 (CHANGELOG `[Unreleased]` 참조).
+
 **가장 임팩트 큰 3건**:
 1. **DUP-1** — `AppConfig` ↔ `Settings.EnsureSubObjects`의 **string/array 디폴트 이중 관리** (PR-17이 numeric만 단일화하고 남긴 축). 수기 "양쪽 유지" 주석에 의존 중.
 2. **HC 일괄** — `200`/`32`/`72`/`256*1024`/`4`/`255`/`0x8000`/`0xFFFF` 등 **P3 직접 위반 매직넘버** — 대부분 비용 S, 이미 같은 의미의 const가 다른 파일에 존재하는 경우 다수.
@@ -99,23 +101,23 @@ else
 
 | ID | 확신 | 위치 | 값·의미 | 방안 | 비용 |
 |----|------|------|---------|------|------|
-| **HC-1** | High | `Core/Http/HttpClientLite.cs:118` | `!= 200` HTTP OK | `const uint HttpStatusOk = 200;` | S |
-| **HC-2** | High | `Core/Shell/UriLauncher.cs:42` | `(long)result <= 32` ShellExecute 성공 임계값 (`Shell32.cs:14,16`이 의미 2회 문서화) | `Win32Constants.ShellExecuteSuccessThreshold = 32` | S |
-| **HC-3** ✓ | High | `Core/Windowing/LayeredOverlayBase.cs:550,685` | `MulDiv(fontSize, dpiY, 72)` points-per-inch. **`Win32DialogHelper.cs:27`에 이미 `PointsPerInch=72.0` 존재** | LayeredOverlayBase에 `const int PointsPerInch=72` 또는 공용화 | S |
+| **HC-1** ✅ | High | `Core/Http/HttpClientLite.cs:118` | `!= 200` HTTP OK | `const uint HttpStatusOk = 200;` | S |
+| **HC-2** ✅ | High | `Core/Shell/UriLauncher.cs:42` | `(long)result <= 32` ShellExecute 성공 임계값 (`Shell32.cs:14,16`이 의미 2회 문서화) | ~~`Win32Constants.ShellExecuteSuccessThreshold = 32`~~ → 실제로는 `UriLauncher` 로컬 `private const long ShellExecuteSuccessThreshold = 32` (단일 사용처라 모듈 로컬) | S |
+| **HC-3** ✓ ✅ | High | `Core/Windowing/LayeredOverlayBase.cs:550,685` | `MulDiv(fontSize, dpiY, 72)` points-per-inch. **`Win32DialogHelper.cs:27`에 이미 `PointsPerInch=72.0` 존재** | LayeredOverlayBase에 `const int PointsPerInch=72` (공용화 대신 엔진 로컬) | S |
 | **HC-4** | High | `App/UI/CursorRenderer.cs:103,110,138,58,90,106,113,179-181` | 2×2 supersample 오프셋 `0.25`/`0.75`, 평균 `*0.25`, AA 여유 `+1.0`, 헤일로 흰색 `255` (셰이더 — grep 사각) | `SubSampleLow/High`, `InvSubSampleCount`, `EdgeMarginPx`, `HaloColorComponent` const | S |
-| **HC-5** | Med | `Core/Http/HttpClientLite.cs:156` | `> 256 * 1024` 응답 상한 | `const long MaxResponseBytes = 256*1024;` | S |
-| **HC-6** ✓ | Med | `Core/Windowing/LayeredOverlayBase.cs:231,470` · `LayeredCursorBase.cs:197` | `w*h*4`·`i*4` 32bpp BGRA. **`CursorRenderer.cs:29`에 이미 `BytesPerPixel=4` 존재 — Core만 누락** | Core(또는 DibSectionFactory)에 `BytesPerPixel=4` | S |
-| **HC-7** | Med | `LayeredOverlayBase.cs:730-732,723,724` · `LayeredCursorBase.cs:279-281,277` · `OverlayAnimator.cs:536` | premultiply/불투명 가드의 alpha 최대값 `255` | `const byte AlphaOpaque=255` (곱셈·가드 우선; `/255` 수식은 보존) | S |
-| **HC-8** ✓ | Med | `SettingsDialog.Scroll.cs:86` · `SettingsDialog.cs:364` · `ScaleInputDialog.cs:204` · `CleanupDialog.cs:283,327` (5곳) | 인라인 `& 0xFFFF` WM_COMMAND LOWORD. **`Win32Constants.LOWORD_MASK=0xFFFF`(Win32Types.cs:519) 이미 존재 — `Program.cs:953`만 사용** | 5곳을 const 참조로 통일 | S |
+| **HC-5** ✅ | Med | `Core/Http/HttpClientLite.cs:156` | `> 256 * 1024` 응답 상한 | `const long MaxResponseBytes = 256*1024;` | S |
+| **HC-6** ✓ ✅ | Med | `Core/Windowing/LayeredOverlayBase.cs:231,470` · `LayeredCursorBase.cs:197` | `w*h*4`·`i*4` 32bpp BGRA. **`CursorRenderer.cs:29`에 이미 `BytesPerPixel=4` 존재 — Core만 누락** | `DibSectionFactory.BytesPerPixel=4` (DIB 생성처 = stride 진실원, 두 엔진 참조) | S |
+| **HC-7** ✅ | Med | `LayeredOverlayBase.cs:730-732,723,724` · `LayeredCursorBase.cs:279-281,277` · `OverlayAnimator.cs:536` | premultiply/불투명 가드의 alpha 최대값 `255` | 곱셈·`a==255` 가드 → `byte.MaxValue` (BCL 상수 채택; `b*a/255` 나눗셈 수식은 의미 보존 위해 리터럴 유지) | S |
+| **HC-8** ✓ ✅ | Med | `SettingsDialog.Scroll.cs:86` · `SettingsDialog.cs:364` · `ScaleInputDialog.cs:204` · `CleanupDialog.cs:283,327` (5곳) | 인라인 `& 0xFFFF` WM_COMMAND LOWORD. **`Win32Constants.LOWORD_MASK=0xFFFF`(Win32Types.cs:519) 이미 존재 — `Program.cs:953`만 사용** | 5곳을 const 참조로 통일 | S |
 | **HC-9** | Med | `App/UI/Dialogs/SettingsDialog.cs:229,232` | 라벨 배치 `y+3`/`rowH-4` 수직 인셋·높이 보정 | `LabelVPadPx`/`LabelHeightTrimPx` const | S |
 | **HC-10** | Med | `App/UI/Dialogs/SettingsDialog.Scroll.cs:67` | `ScrollTo(...+ _lineHeight*2)` "두 줄 여유" 마진 | `ScrollIntoViewMarginLines=2` (ScrollableDialogHelper로 이동 가능) | S |
 | **HC-11** | Med | `App/UI/Tray.cs:317,551,607` | MessageBox 타이틀 `"KoEnVue"` 리터럴 3곳 (앱 표시명 단일 진실원 부재; `UpdateRepoName`은 의미 다름) | `DefaultConfig.AppName` 신설 (DUP-6과 함께) | S |
-| **HC-12** | Med | `Program.cs:571` ↔ `Core/Windowing/LayeredOverlayBase.cs:406` | GetAsyncKeyState 눌림 `0x8000`이 App(const)·Core(인라인) 각기 | `Win32Constants.KEY_PRESSED=0x8000` 단일 const (Core 배치 = P4 부합) | S |
-| **HC-13** ✓ | Med | `App/Config/DefaultConfig.cs:75` | `HoldDurationMs=1500` **정의만, 사용처 0** (실 hold는 `EventDisplayDurationMs`) | dead const 제거 (단일 진실원 신뢰도) | S |
+| **HC-12** ✅ | Med | `Program.cs:571` ↔ `Core/Windowing/LayeredOverlayBase.cs:406` | GetAsyncKeyState 눌림 `0x8000`이 App(const)·Core(인라인) 각기 | `Win32Constants.KEY_PRESSED=0x8000` 단일 const (Core 배치 = P4 부합) | S |
+| **HC-13** ✓ ✅ | Med | `App/Config/DefaultConfig.cs:75` | `HoldDurationMs=1500` **정의만, 사용처 0** (실 hold는 `EventDisplayDurationMs`) | dead const 제거 (단일 진실원 신뢰도) | S |
 | **HC-14** | Low | `ScaleInputDialog.cs:168` · `SettingsDialog.Fields.cs:504` | EDIT 읽기 버퍼 `new char[32]`/`[len+2]` (영역3·4 중복 발견) | `EditReadBufferSize` const | S |
 | **HC-15** | Low | `SettingsDialog.Fields.cs:417,427` · `ScaleInputDialog.cs:125` | Double 표시/에러 포맷 `"0.###"`/`"0.##"`/`"0.#"` | `DoubleDisplayFormat` const 통일 | S |
 | **HC-16** | Low | `App/UI/Dialogs/CleanupDialog.cs:191-192` | 구분선 `-1`·두께 `2` 인라인 (`SettingsDialog.cs:218`은 `SectionSepH=2` const) | 공통 `SeparatorThicknessPx` | S |
-| **HC-17** | Low | `Core/Native/WinHttp.cs:15,16,20,28` | 미사용 const 4개 (선언만, 사용처 0) | 제거 또는 "참고용 미사용" 주석 (의도적 가능 — 확신 낮음) | S |
+| **HC-17** 🔒 보존 | Low | `Core/Native/WinHttp.cs:15,16,20,28` | 미사용 const 4개 (선언만, 사용처 0) | ~~제거~~ → **제거 안 함 (묶음 1 결정)**: 사용 중 상수의 짝/대안이라 참고용으로 의도적 보존 (dead 아님) | S |
 | **HC-18** | Low | `SettingsDialog.Fields.cs:89,93,118,143,158` | `Math.Clamp(i,0,2/3/5/1)` enum 값 개수 매직넘버 (Combo 팩토리는 이미 `labels.Length` 클램프 → 일부 중복) | `(Enum)Math.Clamp(i,0,labels.Length-1)` | M |
 | **HC-19** | Low | `Core/Animation/OverlayAnimator.cs:558` | `*1000.0/Stopwatch.Frequency` 초→ms | `const double MsPerSecond=1000.0` | S |
 
@@ -125,7 +127,7 @@ else
 
 | ID | 확신 | 위치 | 현상 | 방안 | 비용 |
 |----|------|------|------|------|------|
-| **IMP-1** ✓ | High | `Core/Native/OleAut32.cs:1-26` (전체) | `SysFreeString`+SafeArray 5종 = **6 P/Invoke 전부 사용처 0** (주석의 UIA 코드 부재). grep 교차검증 완료 | 파일 통째 삭제 (미래 UIA 시 재도입). AOT marshalling stub 6개 제거 | S |
+| **IMP-1** ✓ ✅ | High | `Core/Native/OleAut32.cs:1-26` (전체) | `SysFreeString`+SafeArray 5종 = **6 P/Invoke 전부 사용처 0** (주석의 UIA 코드 부재). grep 교차검증 완료 | 파일 통째 삭제 (미래 UIA 시 재도입). AOT marshalling stub 6개 제거 | S |
 | **IMP-2** | High | `App/UI/Dialogs/SettingsDialog.cs:133-316` | `BuildChildren` ~180줄 단일 메서드 (스케일 21변수 + 행 루프 3-way switch + 스크롤바 + 버튼, 깊은 중첩) | `CreateSectionRow`/`CreateFieldRow`(switch)/`CreateButtonRow` 추출로 평탄화 | M |
 | **IMP-3** | Med | `App/UI/Tray.cs:257-449` | `HandleMenuCommand` ~190줄 (DUP-9 패턴 포함) | DUP-9 헬퍼 적용 + 분기 그룹 추출 | M |
 | **IMP-4** | Low | `Core/Animation/OverlayAnimator.cs:171-246` | `TriggerShow` 4분기가 slide+highlight 호출집합 부분 반복 (분기마다 미묘하게 다름) | 공통 꼬리만 헬퍼화. **flip-flop 회귀 민감(주석 L264-269) — 주의** | M |
@@ -157,7 +159,7 @@ else
 |------|------|------|------|------|
 | **묶음 0 — 동작(커서 마스터)** | BEH-1 (PR-22 후속 — 커서 팝 `AnimationEnabled &&` 게이팅) | 사용자 보고 공백 | S | 낮음 |
 | **묶음 0b — 동작(포커스 강조)** | BEH-2 (방향 A 문서화 / B 기능추가 — 결정 후) | 사용자 결정 대기 | 0~M+ | — |
-| **묶음 1 — dead/명백 const** | IMP-1, HC-13, HC-17 (삭제) + HC-1·2·3·5·6·7·8·12 (P3 일괄, 이미 const 존재분 우선) | 즉시·거의 무위험 | S | 낮음 |
+| **묶음 1 — dead/명백 const** ✅ **완료 (2026-06-02)** | IMP-1, HC-13 (삭제) + HC-1·2·3·5·6·7·8·12 (P3 일괄, 이미 const 존재분 우선). **HC-17 은 보존 결정 (🔒, 제거 안 함)** — WinHttp 미사용 const 4개는 사용 중 상수의 짝/대안 | 즉시·거의 무위험 | S | 낮음 |
 | **묶음 2 — 설정 단일화** ★ | DUP-1 | PR-17의 비-numeric 완성. 회귀 grep 동반 (양쪽 값 일치 박제) | M | 중 (디폴트 변경 표면) |
 | **묶음 3 — 다이얼로그 모듈화** | DUP-2, DUP-5, DUP-6 + HC-9·10·11·14·15·16 | helper 추가 + 레이아웃 const | S–M | 낮음 |
 | **묶음 4 — Core 렌더 모듈화** | DUP-3, DUP-13 + HC-4(셰이더 const) | 픽셀 렌더 단일화 | S | 낮음 (단위테스트 영역 밖 — 수동 smoke) |

@@ -30,6 +30,9 @@ internal sealed class LayeredOverlayBase : IDisposable
     // |a-b| < tolerance 로 "사실상 같은 스케일" 을 판정한다.
     private const double DpiScaleTolerance = 0.001;
 
+    // 폰트 포인트 크기 → 픽셀 변환 시 인치당 포인트 (MulDiv 분모). 1pt = 1/72 인치.
+    private const int PointsPerInch = 72;
+
     // ================================================================
     // GDI 리소스 상태
     // ================================================================
@@ -228,7 +231,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         // 픽셀 버퍼 0 클리어
         unsafe
         {
-            new Span<byte>((void*)_ppvBits, w * h * 4).Clear();
+            new Span<byte>((void*)_ppvBits, w * h * DibSectionFactory.BytesPerPixel).Clear();
         }
 
         // 폰트 선택 → 콜백 → 폰트 복원.
@@ -403,7 +406,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         bool xLocked = false;
         bool yLocked = false;
 
-        if ((User32.GetAsyncKeyState(Win32Constants.VK_SHIFT) & 0x8000) != 0)
+        if ((User32.GetAsyncKeyState(Win32Constants.VK_SHIFT) & Win32Constants.KEY_PRESSED) != 0)
         {
             int dx = movingRect.Left - _dragStartX;
             int dy = movingRect.Top - _dragStartY;
@@ -467,7 +470,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         // DIB 그리기 재수행
         unsafe
         {
-            new Span<byte>((void*)_ppvBits, w * h * 4).Clear();
+            new Span<byte>((void*)_ppvBits, w * h * DibSectionFactory.BytesPerPixel).Clear();
         }
 
         // PaintDib 과 동일 이유로 SelectObject 복원을 finally 로 보장 (콜백 예외 전파 경로 대비).
@@ -547,7 +550,7 @@ internal sealed class LayeredOverlayBase : IDisposable
             return;
 
         // MulDiv로 정수 정밀도를 유지하며 DPI 곱셈 — 단순 round 대체 금지 (라벨 폭 1px 회귀 위험).
-        int fontHeight = -Kernel32.MulDiv(scaledFontSize, (int)_currentDpiY, 72);
+        int fontHeight = -Kernel32.MulDiv(scaledFontSize, (int)_currentDpiY, PointsPerInch);
         IntPtr hFont = Gdi32.CreateFontW(
             fontHeight, 0, 0, 0,
             style.IsBold ? Win32Constants.FW_BOLD : Win32Constants.FW_NORMAL,
@@ -682,7 +685,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         int scaledPadding = DpiHelper.Scale(style.PaddingXLogicalPx, _currentDpiScale);
         int scaledBorderW = DpiHelper.Scale(style.BorderWidthLogicalPx, _currentDpiScale);
         int scaledBorderR = DpiHelper.Scale(style.BorderRadiusLogicalPx, _currentDpiScale);
-        int fontHeightPx = -Kernel32.MulDiv(style.FontSizeLogicalPx, (int)_currentDpiY, 72);
+        int fontHeightPx = -Kernel32.MulDiv(style.FontSizeLogicalPx, (int)_currentDpiY, PointsPerInch);
 
         return new OverlayMetrics(
             DpiScale: _currentDpiScale,
@@ -712,7 +715,7 @@ internal sealed class LayeredOverlayBase : IDisposable
 
         for (int i = 0; i < pixelCount; i++)
         {
-            int offset = i * 4;
+            int offset = i * DibSectionFactory.BytesPerPixel;
             byte b = ptr[offset];
             byte g = ptr[offset + 1];
             byte r = ptr[offset + 2];
@@ -721,11 +724,11 @@ internal sealed class LayeredOverlayBase : IDisposable
             if (a == 0)
             {
                 if ((r | g | b) != 0)
-                    ptr[offset + 3] = 255;
+                    ptr[offset + 3] = byte.MaxValue;
                 continue;
             }
 
-            if (a == 255) continue;
+            if (a == byte.MaxValue) continue;
 
             ptr[offset] = (byte)(b * a / 255);
             ptr[offset + 1] = (byte)(g * a / 255);

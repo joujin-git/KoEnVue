@@ -21,6 +21,12 @@ namespace KoEnVue.Core.Http;
 /// </summary>
 internal static class HttpClientLite
 {
+    // HTTP 성공 상태 코드 (200 OK). 그 외 상태 / 네트워크 실패는 모두 null 반환.
+    private const uint HttpStatusOk = 200;
+
+    // 응답 본문 상한 (256KB). releases/latest 페이로드는 통상 10KB 미만 — 악의적 거대 응답의 메모리 폭주 방지 가드.
+    private const long MaxResponseBytes = 256 * 1024;
+
     /// <summary>HTTPS GET 요청을 1회 수행하고 본문 문자열을 반환. 실패 시 null.</summary>
     /// <param name="userAgent">User-Agent 헤더 값. GitHub API 는 UA 누락 시 403 응답.</param>
     /// <param name="host">호스트명. 예: <c>api.github.com</c>.</param>
@@ -115,7 +121,7 @@ internal static class HttpClientLite
                 return null;
             }
 
-            if (statusCode != 200) return null;
+            if (statusCode != HttpStatusOk) return null;
 
             return ReadResponseBody(hReq);
         }
@@ -153,7 +159,7 @@ internal static class HttpClientLite
 
             // 응답 크기 상한 256KB — GitHub releases/latest 페이로드는 통상 10KB 미만이므로
             // 넉넉한 한도이자, 악의적으로 거대한 응답이 올 경우의 메모리 폭주 방지 가드.
-            if (ms.Length > 256 * 1024) return null;
+            if (ms.Length > MaxResponseBytes) return null;
         }
 
         // 0바이트 바디는 200 OK 라도 호출자 관점에서 실패와 동일하게 처리 — GetString 계약상 null.

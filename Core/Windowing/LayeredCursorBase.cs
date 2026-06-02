@@ -194,7 +194,7 @@ internal sealed class LayeredCursorBase : IDisposable
 
         unsafe
         {
-            new Span<byte>((void*)_ppvBits, w * h * 4).Clear();
+            new Span<byte>((void*)_ppvBits, w * h * DibSectionFactory.BytesPerPixel).Clear();
         }
 
         var metrics = new CursorMetrics(_currentDpiScale, w, h);
@@ -253,7 +253,7 @@ internal sealed class LayeredCursorBase : IDisposable
 
         for (int i = 0; i < pixelCount; i++)
         {
-            int offset = i * 4;
+            int offset = i * DibSectionFactory.BytesPerPixel;
             byte b = ptr[offset];
             byte g = ptr[offset + 1];
             byte r = ptr[offset + 2];
@@ -274,7 +274,7 @@ internal sealed class LayeredCursorBase : IDisposable
                 continue;
             }
 
-            if (a == 255) continue;
+            if (a == byte.MaxValue) continue;
 
             ptr[offset] = (byte)(b * a / 255);
             ptr[offset + 1] = (byte)(g * a / 255);

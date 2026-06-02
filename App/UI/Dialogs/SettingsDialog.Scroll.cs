@@ -83,7 +83,7 @@ internal static partial class SettingsDialog
         {
             case Win32Constants.WM_VSCROLL:
             {
-                int scrollCode = (int)(wParam.ToInt64() & 0xFFFF);
+                int scrollCode = (int)(wParam.ToInt64() & Win32Constants.LOWORD_MASK);
                 ScrollTo(ResolveVScrollPosition(hwnd, scrollCode));
                 return IntPtr.Zero;
             }

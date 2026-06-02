@@ -71,9 +71,6 @@ internal static partial class DefaultConfig
     /// <summary>페이드인 지속 시간 — <see cref="AppConfig.FadeInMs"/> 의 디폴트.</summary>
     public const int FadeInMs = 150;
 
-    /// <summary>유지 시간</summary>
-    public const int HoldDurationMs = 1500;
-
     /// <summary>페이드아웃 지속 시간 — <see cref="AppConfig.FadeOutMs"/> 의 디폴트.</summary>
     public const int FadeOutMs = 400;
 
