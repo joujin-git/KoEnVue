@@ -30,7 +30,7 @@
 **가장 임팩트 큰 3건**:
 1. **DUP-1** — `AppConfig` ↔ `Settings.EnsureSubObjects`의 **string/array 디폴트 이중 관리** (PR-17이 numeric만 단일화하고 남긴 축). 수기 "양쪽 유지" 주석에 의존 중.
 2. **HC 일괄** — `200`/`32`/`72`/`256*1024`/`4`/`255`/`0x8000`/`0xFFFF` 등 **P3 직접 위반 매직넘버** — 대부분 비용 S, 이미 같은 의미의 const가 다른 파일에 존재하는 경우 다수.
-3. **DUP-2/DUP-3** — 스크롤바 셋업·DIB 픽셀 렌더 블록의 **글자 그대로 중복** → 이미 존재하는 helper 클래스에 메서드 추가만으로 해소. (DUP-2 는 묶음 3 에서 `SetupVScrollbar` 로 ✅ 완료; DUP-3 은 묶음 4 대기)
+3. **DUP-2/DUP-3** — 스크롤바 셋업·DIB 픽셀 렌더 블록의 **글자 그대로 중복** → 이미 존재하는 helper 클래스에 메서드 추가만으로 해소. (DUP-2 는 묶음 3 `SetupVScrollbar`·DUP-3 은 묶음 4 `RenderDibPixels` 로 ✅ 완료)
 
 ---
 
@@ -81,7 +81,7 @@ else
 |----|------|------|-------------|-------------|------|
 | **DUP-1** ★ ✅ | High | `App/Models/AppConfig.cs:34-49,83,85,194` ↔ `App/Config/Settings.cs:208,635-654` | 색상 6쌍(`#16A34A` 등)·`SystemHideClasses` 7배열·`SystemHideProcesses`·`OverlayClassName`·`FontFamily`/라벨(`맑은 고딕`/`한`/`En`/`EN`)이 init 디폴트와 null-폴백에 **각각 리터럴**. `AppConfig.cs:81-82,634` 주석이 "양쪽 동일 유지"를 수기 강제 중 | ✅ **완료 (묶음 2, 2026-06-02)**: 색상 7개(`DefaultHangulBg` 등 Bg/Fg 6 + `DefaultBorderColor`)·폰트/라벨 4개(`DefaultIndicatorFontFamily`=맑은 고딕 + 라벨 3)·`DefaultOverlayClassName` const + `DefaultSystemHideClasses`/`DefaultSystemHideProcesses` 배열 property 를 `DefaultConfig` 에 추출. 배열은 property(`=>`) 라 호출마다 새 배열(공유 변형 위험 0 — `TrayQuickOpacityPresets` 패턴). `AppConfig` 14 init + `Settings.EnsureSubObjects`/`ValidateAdvanced` 폴백 단일 참조, 수기 유지 주석 제거. 값 불변. 회귀 grep 신설(아래 메모) | M |
 | **DUP-2** ✅ | High | `App/UI/Dialogs/SettingsDialog.Scroll.cs:30-42` ↔ `App/UI/Dialogs/CleanupDialog.cs:226-237` | `SCROLLINFO` 셋업(cbSize/fMask/nMin=0/nMax=total-1/nPage/nPos + SetScrollInfo)이 두 다이얼로그에 복제. `ScrollTo`/`ResolveVScrollPosition` 등은 이미 `ScrollableDialogHelper` 공유인데 셋업만 빠짐 | ✅ **완료 (묶음 3, 2026-06-02)**: `ScrollableDialogHelper.SetupVScrollbar(hwndViewport, totalContentHeight, viewportClientHeight)` 추가, 두 다이얼로그가 헬퍼 위임(nMax `Max(0,…)`/nPage `Max(1,…)` 방어 클램프 흡수). 동작 불변 | S |
-| **DUP-3** | High | `Core/Windowing/LayeredOverlayBase.cs:228-259` ↔ `:467-490` | `PaintDib`와 `HandleDragDpiChange`가 "DIB clear → SelectObject(oldFont) → try{BuildMetrics+renderToDib}finally{복원} → ApplyPremultipliedAlpha → `_lastRenderedStyle=style`" ~25 LOC를 글자 그대로 중복 | `private void RenderDibPixels(OverlayStyle, int w, int h)` 추출 → 콜백 예외·폰트 복원 단일화 | S |
+| **DUP-3** ✅ | High | `Core/Windowing/LayeredOverlayBase.cs:228-259` ↔ `:467-490` | `PaintDib`와 `HandleDragDpiChange`가 "DIB clear → SelectObject(oldFont) → try{BuildMetrics+renderToDib}finally{복원} → ApplyPremultipliedAlpha → `_lastRenderedStyle=style`" ~25 LOC를 글자 그대로 중복 | ✅ **완료 (묶음 4, 2026-06-02)**: `private unsafe RenderDibPixels(style,w,h)` 추출, PaintDib·HandleDragDpiChange 위임 — 콜백 예외·폰트 복원·캐시 미갱신(재시도) 시맨틱 보존. 동작 불변 | S |
 | **DUP-4** | Med | `Program.cs:785,1012,1047,1077,1098` (5곳) | "인디 가시 시 현재 위치로 재표시" 블록(`if(_indicatorVisible && _lastForegroundHwnd!=0){ (x,y)=GetAppPosition(); Animation.TriggerShow(...imeChanged:false) }`) 5중 반복 | `RefreshVisibleIndicator(bool respectUserHidden=false)` 추출 (785만 `!UserHidden` 추가 차이) | S |
 | **DUP-5** ◐ | Med | `App/UI/Dialogs/ScaleInputDialog.cs:175-180,185-190` ↔ `SettingsDialog.cs:336-344` | 검증 실패 시 `RunExternal(MessageBoxW)+SetFocus+SendMessage(EM_SETSEL,-1)` 블록 3곳 복제 | ◐ **부분 완료 (묶음 3, 2026-06-02)**: `Win32DialogHelper.ShowFieldError(hwndOwner, hwndField, message, title)` 신설 — **`ScaleInputDialog` 2곳(invalid input + out of range)만 적용**. `SettingsDialog` commit 에러 경로는 ScrollIntoView 등 컨트롤별 선행 동작이 얽혀 **보류**(향후 합류 시 헬퍼 그대로 재사용) | S |
 | **DUP-6** ◐ | Med | `App/UI/Tray.cs:316-318,550-551,606-607` | `MessageBoxW(_hwndMain, I18n.X, "KoEnVue", MB_OK)` 3곳 (2곳은 `RunExternal` 래핑까지 동형) | ◐ **부분 완료 (묶음 3, 2026-06-02)**: `Tray.ShowMessage(body)` 헬퍼(RunExternal 가드 + 타이틀 `DefaultConfig.AppName` 일관) 신설 — `ShowPositionError` / `CleanupPositions` empty / 위치 기록 empty 3 경로 위임. **`IDM_ADMIN_ELEVATION` 안내는 "확인 후 자동 종료" 흐름이라 헬퍼 미적용**(타이틀만 `"KoEnVue"`→`DefaultConfig.AppName` 으로 교체). HC-11(`DefaultConfig.AppName`) 동반 완료 | S |
@@ -91,7 +91,7 @@ else
 | **DUP-10** | Med | `Core/Logging/Logger.cs:107,132,197,273,280` | self-catch breadcrumb의 `[WARN] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff}` 접두 + 포맷 문자열 5회 반복 | `const string TimestampFormat` + `FormatBreadcrumb(level,msg)` 순수 헬퍼 (drain 재귀 금지 유지) | S |
 | **DUP-11** | Med | `App/UI/Dialogs/SettingsDialog.Scroll.cs:79-100` ↔ `CleanupDialog.cs:320-339` | `ViewportProc`(WM_VSCROLL/WM_MOUSEWHEEL/default)가 동형 — 둘 다 helper에 위임만 | 공유 viewport WndProc. **단 `[UnmanagedCallersOnly]` 정적 상태 분리 필요 — 트레이드오프** | M |
 | **DUP-12** | Low | `App/UI/TrayIcon.cs:151-179` ↔ `:185-209` | `DrawCaretDot`/`DrawStrikeThrough`가 `CreateSolidBrush→SelectObject→try/finally 복원+DeleteObject` GDI 보일러 동일 | GDI 스코프 헬퍼 (NativeAOT 구조체 제약 고려) | M |
-| **DUP-13** | Low | `Core/Windowing/LayeredOverlayBase.cs:451-458,507-514` | DPI 변화 시 캐시 리셋(`_currentWidth=0;...;_lastRenderedStyle=null`)이 2곳 동일 (cursor는 필드집합 달라 비범위) | overlay 내 `InvalidateDpiCaches()` 하나로 | S |
+| **DUP-13** ✅ | Low | `Core/Windowing/LayeredOverlayBase.cs:451-458,507-514` | DPI 변화 시 캐시 리셋(`_currentWidth=0;...;_lastRenderedStyle=null`)이 2곳 동일 (cursor는 필드집합 달라 비범위) | ✅ **완료 (묶음 4)**: `InvalidateDpiCaches()` 5필드 리셋 — HandleDragDpiChange·UpdateDpiFromPoint·HandleDpiChanged 3곳 공유(필드집합 정확). 동작 불변 | S |
 
 ---
 
@@ -104,7 +104,7 @@ else
 | **HC-1** ✅ | High | `Core/Http/HttpClientLite.cs:118` | `!= 200` HTTP OK | `const uint HttpStatusOk = 200;` | S |
 | **HC-2** ✅ | High | `Core/Shell/UriLauncher.cs:42` | `(long)result <= 32` ShellExecute 성공 임계값 (`Shell32.cs:14,16`이 의미 2회 문서화) | ~~`Win32Constants.ShellExecuteSuccessThreshold = 32`~~ → 실제로는 `UriLauncher` 로컬 `private const long ShellExecuteSuccessThreshold = 32` (단일 사용처라 모듈 로컬) | S |
 | **HC-3** ✓ ✅ | High | `Core/Windowing/LayeredOverlayBase.cs:550,685` | `MulDiv(fontSize, dpiY, 72)` points-per-inch. **`Win32DialogHelper.cs:27`에 이미 `PointsPerInch=72.0` 존재** | LayeredOverlayBase에 `const int PointsPerInch=72` (공용화 대신 엔진 로컬) | S |
-| **HC-4** | High | `App/UI/CursorRenderer.cs:103,110,138,58,90,106,113,179-181` | 2×2 supersample 오프셋 `0.25`/`0.75`, 평균 `*0.25`, AA 여유 `+1.0`, 헤일로 흰색 `255` (셰이더 — grep 사각) | `SubSampleLow/High`, `InvSubSampleCount`, `EdgeMarginPx`, `HaloColorComponent` const | S |
+| **HC-4** ✅ | High | `App/UI/CursorRenderer.cs:103,110,138,58,90,106,113,179-181` | 2×2 supersample 오프셋 `0.25`/`0.75`, 평균 `*0.25`, AA 여유 `+1.0`, 헤일로 흰색 `255` (셰이더 — grep 사각) | ✅ **완료 (묶음 4)**: `SubSampleLow/High`·`InvSubSampleCount`·`EdgeMarginPx`·`HaloWhiteComponent` const 5종. `avgAlpha*255.0` 정규화 스케일은 보존 | S |
 | **HC-5** ✅ | Med | `Core/Http/HttpClientLite.cs:156` | `> 256 * 1024` 응답 상한 | `const long MaxResponseBytes = 256*1024;` | S |
 | **HC-6** ✓ ✅ | Med | `Core/Windowing/LayeredOverlayBase.cs:231,470` · `LayeredCursorBase.cs:197` | `w*h*4`·`i*4` 32bpp BGRA. **`CursorRenderer.cs:29`에 이미 `BytesPerPixel=4` 존재 — Core만 누락** | `DibSectionFactory.BytesPerPixel=4` (DIB 생성처 = stride 진실원, 두 엔진 참조) | S |
 | **HC-7** ✅ | Med | `LayeredOverlayBase.cs:730-732,723,724` · `LayeredCursorBase.cs:279-281,277` · `OverlayAnimator.cs:536` | premultiply/불투명 가드의 alpha 최대값 `255` | 곱셈·`a==255` 가드 → `byte.MaxValue` (BCL 상수 채택; `b*a/255` 나눗셈 수식은 의미 보존 위해 리터럴 유지) | S |
@@ -162,7 +162,7 @@ else
 | **묶음 1 — dead/명백 const** ✅ **완료 (2026-06-02)** | IMP-1, HC-13 (삭제) + HC-1·2·3·5·6·7·8·12 (P3 일괄, 이미 const 존재분 우선). **HC-17 은 보존 결정 (🔒, 제거 안 함)** — WinHttp 미사용 const 4개는 사용 중 상수의 짝/대안 | 즉시·거의 무위험 | S | 낮음 |
 | **묶음 2 — 설정 단일화** ★ ✅ **완료 (2026-06-02)** | DUP-1 | PR-17의 비-numeric 완성. 회귀 grep 동반 (양쪽 값 일치 박제) | M | 중 (디폴트 변경 표면) |
 | **묶음 3 — 다이얼로그 모듈화** ✅ **완료 (2026-06-02)** | DUP-2(✅) + DUP-5(◐ ScaleInputDialog만, SettingsDialog 보류) + DUP-6(◐ IDM_ADMIN_ELEVATION 제외) + HC-9·10·11·14·15·16(✅) | helper 추가(`SetupVScrollbar`/`ShowFieldError`) + `DefaultConfig.AppName` + 레이아웃 const. **동작 보존(값·문자열 불변)** | S–M | 낮음 |
-| **묶음 4 — Core 렌더 모듈화** | DUP-3, DUP-13 + HC-4(셰이더 const) | 픽셀 렌더 단일화 | S | 낮음 (단위테스트 영역 밖 — 수동 smoke) |
+| **묶음 4 — Core 렌더 모듈화** ✅ **완료 (2026-06-02)** | DUP-3, DUP-13 + HC-4(셰이더 const) | 픽셀 렌더 단일화 | S | 낮음 (단위테스트 영역 밖 — 수동 smoke) |
 | **묶음 5 — Program/Tray 정리** | DUP-4, DUP-8, DUP-9, IMP-3 | 반복 추출 + 헬퍼 | S–M | 낮음 |
 | **묶음 6 — 큰 분해 (선택)** | IMP-2, DUP-7, DUP-11, IMP-4 | 180/190줄 분해·동형 시퀀스 통합 | M | 중 (회귀 민감 — 신중) |
 | **잔여 Low** | DUP-10·12, HC-18·19, IMP-5·6·7 | 기회 될 때 | S | 낮음 |

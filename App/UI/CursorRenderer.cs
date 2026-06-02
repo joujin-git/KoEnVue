@@ -32,6 +32,15 @@ internal static class CursorRenderer
     // alpha=0 인 부산 픽셀이 되어 LayeredCursorBase.ApplyPremultipliedAlpha 의 정리 분기에 의존하게 된다.
     private const double MinVisibleAlpha = 1.0 / 255.0;
 
+    // 2×2 supersample 서브픽셀 오프셋 (저 0.25 / 고 0.75) + 4-샘플 평균 계수 (1/4).
+    private const double SubSampleLow = 0.25;
+    private const double SubSampleHigh = 0.75;
+    private const double InvSubSampleCount = 0.25;
+    // early-exit 반경의 AA 안전 여유 (1px).
+    private const double EdgeMarginPx = 1.0;
+    // 헤일로 = 흰색 (R=G=B 최대값).
+    private const byte HaloWhiteComponent = 255;
+
     public static (int w, int h) Render(IntPtr ppvBits, CursorStyle style, CursorMetrics metrics)
     {
         int w = metrics.ScaledWidth;
@@ -55,7 +64,7 @@ internal static class CursorRenderer
         double maxRing = style.CapsLockOn
             ? Math.Max(outerR, Math.Max(middleR, innerR))
             : Math.Max(middleR, innerR);
-        double maxOuterR = maxRing + Math.Max(coreHalf, haloHalf) + 1.0;
+        double maxOuterR = maxRing + Math.Max(coreHalf, haloHalf) + EdgeMarginPx;
         double maxOuterRSq = maxOuterR * maxOuterR;
 
         ShadeDib(ppvBits, w, h, cx, cy,
@@ -84,8 +93,8 @@ internal static class CursorRenderer
         for (int y = 0; y < h; y++)
         {
             // row early exit — 2 sub-y (0.25, 0.75) 중 가장 가까운 거리 기준
-            double dyTop = Math.Abs(y + 0.25 - cy);
-            double dyBot = Math.Abs(y + 0.75 - cy);
+            double dyTop = Math.Abs(y + SubSampleLow - cy);
+            double dyBot = Math.Abs(y + SubSampleHigh - cy);
             double dyMin = Math.Min(dyTop, dyBot);
             if (dyMin * dyMin > maxOuterRSq)
             {
@@ -100,14 +109,14 @@ internal static class CursorRenderer
 
                 for (int sy = 0; sy < 2; sy++)
                 {
-                    double subY = y + (sy == 0 ? 0.25 : 0.75);
+                    double subY = y + (sy == 0 ? SubSampleLow : SubSampleHigh);
                     double dy = subY - cy;
                     double dy2 = dy * dy;
                     if (dy2 > maxOuterRSq) continue;
 
                     for (int sx = 0; sx < 2; sx++)
                     {
-                        double subX = x + (sx == 0 ? 0.25 : 0.75);
+                        double subX = x + (sx == 0 ? SubSampleLow : SubSampleHigh);
                         double dx = subX - cx;
                         double distSq = dx * dx + dy2;
                         if (distSq > maxOuterRSq) continue;
@@ -135,7 +144,7 @@ internal static class CursorRenderer
                     }
                 }
 
-                double avgAlpha = accumA * 0.25;
+                double avgAlpha = accumA * InvSubSampleCount;
                 if (avgAlpha >= MinVisibleAlpha)
                 {
                     // alpha-weighted 색상 평균 (sub-sample alpha 합으로 정규화)
@@ -176,9 +185,9 @@ internal static class CursorRenderer
         }
         else
         {
-            ringR = 255;
-            ringG = 255;
-            ringB = 255;
+            ringR = HaloWhiteComponent;
+            ringG = HaloWhiteComponent;
+            ringB = HaloWhiteComponent;
         }
 
         if (ringAlpha > bestAlpha)

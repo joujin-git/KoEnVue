@@ -228,17 +228,27 @@ internal sealed class LayeredOverlayBase : IDisposable
         // 방어적 잔여 가드 — 예측 못한 상태 전이에서도 Span((void*)0, N) 으로 터지지 않도록.
         if (_ppvBits == IntPtr.Zero) return false;
 
-        // 픽셀 버퍼 0 클리어
-        unsafe
-        {
-            new Span<byte>((void*)_ppvBits, w * h * DibSectionFactory.BytesPerPixel).Clear();
-        }
+        RenderDibPixels(style, w, h);
+        return true;
+    }
 
-        // 폰트 선택 → 콜백 → 폰트 복원.
-        // 콜백은 외부(파사드)에서 주입되며 예외 전파 경로가 완전히 검증되지 않으므로
-        // try/finally 로 SelectObject 복원을 보장한다. 복원을 놓치면 _memDC 에 SafeFontHandle
-        // 의 HFONT 가 영구 선택된 상태가 되어, 다음 EnsureFont 에서 _currentFont.Dispose()
-        // 가 GDI 리소스를 삭제해도 DC 안의 selected object 가 stale GDI 핸들로 남는다.
+    /// <summary>
+    /// DIB 픽셀 버퍼 클리어 → 폰트 SelectObject → 파사드 콜백(BuildMetrics + renderToDib) → 폰트 복원
+    /// → premultiplied alpha 후처리 → <c>_lastRenderedStyle</c> 갱신. <see cref="PaintDib"/> 와
+    /// <see cref="HandleDragDpiChange"/> 가 공유하는 픽셀 렌더 코어. 호출자는 진입 전 w/h &gt; 0 +
+    /// <c>_ppvBits != IntPtr.Zero</c> 를 보장한다.
+    /// <para>
+    /// 콜백은 외부(파사드)에서 주입되며 예외 전파 경로가 완전히 검증되지 않으므로 try/finally 로
+    /// SelectObject 복원을 보장한다 — 복원을 놓치면 _memDC 에 SafeFontHandle 의 HFONT 가 영구 선택된
+    /// 상태가 되어, 다음 EnsureFont 의 _currentFont.Dispose() 후 DC 안 selected object 가 stale GDI
+    /// 핸들로 남는다. 콜백 예외 시 ApplyPremultipliedAlpha / _lastRenderedStyle 갱신은 실행되지 않아
+    /// (캐시 미갱신) 다음 Render 가 flip-flop 가드를 타지 않고 재시도 가능하다.
+    /// </para>
+    /// </summary>
+    private unsafe void RenderDibPixels(OverlayStyle style, int w, int h)
+    {
+        new Span<byte>((void*)_ppvBits, w * h * DibSectionFactory.BytesPerPixel).Clear();
+
         IntPtr oldFont = IntPtr.Zero;
         if (_currentFont is not null)
             oldFont = Gdi32.SelectObject(_memDC, _currentFont.DangerousGetHandle());
@@ -254,12 +264,8 @@ internal sealed class LayeredOverlayBase : IDisposable
                 Gdi32.SelectObject(_memDC, oldFont);
         }
 
-        // 콜백 예외 시 아래는 실행되지 않아 _lastRenderedStyle 캐시가 갱신되지 않는다.
-        // → 다음 Render 호출이 flip-flop 가드를 타지 않고 재시도 가능.
         ApplyPremultipliedAlpha(w, h);
-
         _lastRenderedStyle = style;
-        return true;
     }
 
     /// <summary>페이드 프레임: SourceConstantAlpha만 변경.</summary>
@@ -310,13 +316,9 @@ internal sealed class LayeredOverlayBase : IDisposable
 
         // 폰트 패밀리/라벨 측정 캐시는 DPI 동일(설정만 변경) 경로에서도 강제 무효화한다. UpdateDpiFromPoint
         // 는 DPI 가 실제 바뀐 경우에만 DIB/폰트scale/라벨폭 캐시를 리셋하므로 여기서 항상 보강한다.
+        InvalidateDpiCaches();
         _cachedFontFamily = "";
-        _cachedFontDpiScale = 0;
-        _currentWidth = 0;
-        _currentHeight = 0;
-        _fixedLabelWidth = 0;
         _cachedLabelDpiScale = 0;
-        _lastRenderedStyle = null;
     }
 
     /// <summary>SetWindowPos HWND_TOPMOST 재적용.</summary>
@@ -452,13 +454,9 @@ internal sealed class LayeredOverlayBase : IDisposable
         if (Math.Abs(dpiScale - _currentDpiScale) < DpiScaleTolerance) return;
 
         // DPI 캐시 리셋 + 리소스 재생성
-        _fixedLabelWidth = 0;
-        _currentWidth = 0;
-        _currentHeight = 0;
-        _cachedFontDpiScale = 0;
+        InvalidateDpiCaches();
         _currentDpiScale = dpiScale;
         _currentDpiY = dpiY;
-        _lastRenderedStyle = null;
 
         EnsureResources(style);
         CalculateFixedLabelWidth(style);
@@ -467,30 +465,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         int h = _currentHeight;
         if (w == 0 || h == 0) return;
 
-        // DIB 그리기 재수행
-        unsafe
-        {
-            new Span<byte>((void*)_ppvBits, w * h * DibSectionFactory.BytesPerPixel).Clear();
-        }
-
-        // PaintDib 과 동일 이유로 SelectObject 복원을 finally 로 보장 (콜백 예외 전파 경로 대비).
-        IntPtr oldFont = IntPtr.Zero;
-        if (_currentFont is not null)
-            oldFont = Gdi32.SelectObject(_memDC, _currentFont.DangerousGetHandle());
-
-        try
-        {
-            OverlayMetrics metrics = BuildMetrics(style, w, h);
-            _renderToDib(_memDC, style, metrics);
-        }
-        finally
-        {
-            if (oldFont != IntPtr.Zero)
-                Gdi32.SelectObject(_memDC, oldFont);
-        }
-
-        ApplyPremultipliedAlpha(w, h);
-        _lastRenderedStyle = style;
+        RenderDibPixels(style, w, h);
 
         // _isDragging 가드를 우회하여 UpdateLayeredWindow 직접 호출
         LayeredWindowBlit.Blit(_hwndOverlay, _memDC, x, y, w, h, _lastAlpha);
@@ -500,6 +475,18 @@ internal sealed class LayeredOverlayBase : IDisposable
     // 리소스 관리
     // ================================================================
 
+    /// <summary>DPI 변경 시 무효화할 핵심 캐시 5필드 (DIB 크기 / 라벨 고정폭 / 폰트scale 캐시 / 렌더 스타일).
+    /// <see cref="HandleDragDpiChange"/> · <see cref="UpdateDpiFromPoint"/> · <see cref="HandleDpiChanged"/>
+    /// 가 공유 — <see cref="HandleDpiChanged"/> 는 추가로 폰트패밀리 · 라벨scale 캐시도 리셋한다.</summary>
+    private void InvalidateDpiCaches()
+    {
+        _fixedLabelWidth = 0;
+        _currentWidth = 0;
+        _currentHeight = 0;
+        _cachedFontDpiScale = 0;
+        _lastRenderedStyle = null;
+    }
+
     /// <summary>DPI 변경 시 캐시 리셋 (모니터 이동 또는 초기화 후 첫 Show).</summary>
     private void UpdateDpiFromPoint(int x, int y)
     {
@@ -508,13 +495,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         double dpiScale = dpiX / (double)DpiHelper.BASE_DPI;
 
         if (Math.Abs(dpiScale - _currentDpiScale) > DpiScaleTolerance)
-        {
-            _fixedLabelWidth = 0;
-            _currentWidth = 0;
-            _currentHeight = 0;
-            _cachedFontDpiScale = 0;
-            _lastRenderedStyle = null;
-        }
+            InvalidateDpiCaches();
 
         _currentDpiScale = dpiScale;
         _currentDpiY = dpiY;
