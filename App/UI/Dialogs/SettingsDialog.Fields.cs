@@ -99,11 +99,11 @@ internal static partial class SettingsDialog
         Add(Combo("언어", "Language",
             ko ? ["자동", "한국어", "English"] : ["Auto", "Korean", "English"],
             c => (int)c.Language,
-            (c, i) => c with { Language = (AppLanguage)Math.Clamp(i, 0, 2) }));
+            (c, i) => c with { Language = (AppLanguage)i }));
         Add(Combo("로그 레벨", "Log level",
             ko ? ["디버그", "정보", "경고", "오류"] : ["Debug", "Info", "Warning", "Error"],
             c => (int)c.LogLevel,
-            (c, i) => c with { LogLevel = (LogLevel)Math.Clamp(i, 0, 3) }));
+            (c, i) => c with { LogLevel = (LogLevel)i }));
         Add(Bool("파일에 로그 기록", "Log to file",
             c => c.LogToFile, (c, v) => c with { LogToFile = v }));
         Add(Str("로그 파일 경로", "Log file path",
@@ -128,7 +128,7 @@ internal static partial class SettingsDialog
             ko ? ["표시 토글", "설정 파일 열기", "동작 없음"]
                : ["Toggle visibility", "Open config file", "None"],
             c => (int)c.TrayClickAction,
-            (c, i) => c with { TrayClickAction = (TrayClickAction)Math.Clamp(i, 0, 2) }));
+            (c, i) => c with { TrayClickAction = (TrayClickAction)i }));
         Add(Dbl("빠른 투명도 1 (진하게)", "Quick opacity 1 (High)",
             DefaultConfig.MinOpacity, DefaultConfig.MaxOpacity,
             c => GetPresetAt(c.TrayQuickOpacityPresets, 0, DefaultConfig.TrayQuickOpacity1),
@@ -153,7 +153,7 @@ internal static partial class SettingsDialog
             ko ? ["사용자 지정", "미니멀", "비비드", "파스텔", "다크", "시스템"]
                : ["Custom", "Minimal", "Vivid", "Pastel", "Dark", "System"],
             c => (int)c.Theme,
-            (c, i) => c with { Theme = (Theme)Math.Clamp(i, 0, 5) }));
+            (c, i) => c with { Theme = (Theme)i }));
         Add(ColorField("한글 배경색", "Hangul background",
             c => c.HangulBg, (c, v) => c with { HangulBg = v }));
         Add(ColorField("영문 배경색", "English background",
@@ -168,7 +168,7 @@ internal static partial class SettingsDialog
         Add(Combo("표시 방식", "Display mode",
             ko ? ["이벤트 시", "항상"] : ["On Event", "Always"],
             c => (int)c.DisplayMode,
-            (c, i) => c with { DisplayMode = (DisplayMode)Math.Clamp(i, 0, 1) }));
+            (c, i) => c with { DisplayMode = (DisplayMode)i }));
         Add(Int("이벤트 표시 시간 (ms)", "Event display duration (ms)",
             DefaultConfig.MinEventDisplayMs, DefaultConfig.MaxEventDisplayMs,
             c => c.EventDisplayDurationMs,
@@ -234,7 +234,7 @@ internal static partial class SettingsDialog
         Add(Combo("글꼴 굵기", "Font weight",
             ko ? ["보통", "굵게"] : ["Normal", "Bold"],
             c => (int)c.FontWeight,
-            (c, i) => c with { FontWeight = (FontWeight)Math.Clamp(i, 0, 1) }));
+            (c, i) => c with { FontWeight = (FontWeight)i }));
         Add(Str("한글 라벨", "Hangul label",
             c => c.HangulLabel, (c, v) => c with { HangulLabel = v }, allowEmpty: false));
         Add(Str("영문 라벨", "English label",
@@ -276,11 +276,11 @@ internal static partial class SettingsDialog
             ko ? ["자동", "IME 기본 윈도우", "IME 컨텍스트", "키보드 레이아웃"]
                : ["Auto", "IME default", "IME context", "Keyboard layout"],
             c => (int)c.DetectionMethod,
-            (c, i) => c with { DetectionMethod = (DetectionMethod)Math.Clamp(i, 0, 3) }));
+            (c, i) => c with { DetectionMethod = (DetectionMethod)i }));
         Add(Combo("비한국어 IME 처리", "Non-Korean IME mode",
             ko ? ["숨김", "표시", "어둡게"] : ["Hide", "Show", "Dim"],
             c => (int)c.NonKoreanIme,
-            (c, i) => c with { NonKoreanIme = (NonKoreanImeMode)Math.Clamp(i, 0, 2) }));
+            (c, i) => c with { NonKoreanIme = (NonKoreanImeMode)i }));
         Add(Bool("전체화면에서 숨기기", "Hide in fullscreen",
             c => c.HideInFullscreen, (c, v) => c with { HideInFullscreen = v }));
         Add(Bool("포커스 없을 때 숨기기", "Hide when no focus",
@@ -296,12 +296,12 @@ internal static partial class SettingsDialog
             ko ? ["프로세스", "윈도우 클래스", "윈도우 타이틀"]
                : ["Process", "Window class", "Window title"],
             c => (int)c.AppProfileMatch,
-            (c, i) => c with { AppProfileMatch = (AppProfileMatch)Math.Clamp(i, 0, 2) }));
+            (c, i) => c with { AppProfileMatch = (AppProfileMatch)i }));
         Add(Combo("필터 모드", "Filter mode",
             ko ? ["블랙리스트 (목록 숨김)", "화이트리스트 (목록만 표시)"]
                : ["Blacklist (hide listed)", "Whitelist (show only listed)"],
             c => (int)c.AppFilterMode,
-            (c, i) => c with { AppFilterMode = (AppFilterMode)Math.Clamp(i, 0, 1) }));
+            (c, i) => c with { AppFilterMode = (AppFilterMode)i }));
 
         // ================================================================
         // 11. 메인 인디케이터 — 조작
@@ -314,7 +314,7 @@ internal static partial class SettingsDialog
             ko ? ["없음", "Ctrl", "Alt", "Ctrl + Alt"]
                : ["None", "Ctrl", "Alt", "Ctrl + Alt"],
             c => (int)c.DragModifier,
-            (c, i) => c with { DragModifier = (DragModifier)Math.Clamp(i, 0, 3) }));
+            (c, i) => c with { DragModifier = (DragModifier)i }));
 
         // ================================================================
         // 12. 커서 인디케이터 — 동심원
@@ -499,6 +499,9 @@ internal static partial class SettingsDialog
                 IntPtr sel = User32.SendMessageW(hwnd, Win32Constants.CB_GETCURSEL,
                     IntPtr.Zero, IntPtr.Zero);
                 int idx = (int)sel.ToInt64();
+                // 인덱스를 [0, labels.Length-1] 로 클램프한 뒤 setIdx 에 넘긴다 — 각 setIdx 람다는
+                // 이미 검증된 유효 인덱스를 받으므로 enum 캐스트 전 추가 Clamp 가 불필요 (HC-18: 방어 단일화).
+                // labels 는 enum 값 순서와 1:1 이라 [0, labels.Length-1] 인덱스의 enum 캐스트는 안전.
                 if (idx < 0) idx = 0;
                 if (idx >= labels.Length) idx = labels.Length - 1;
                 return (setIdx(cfg, idx), null);
