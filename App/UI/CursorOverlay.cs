@@ -138,13 +138,7 @@ internal static class CursorOverlay
         // 가려진 채 어색하게 두지 않고 해당 영역에서는 일관되게 숨긴다 (사용자 결정 2026-06-01).
         if (IsOverShellUi(cursor))
         {
-            if (_isVisible)
-            {
-                _engine.Hide();
-                _isVisible = false;
-                StopPop();
-                Logger.Debug("Cursor indicator hidden (over shell UI)");
-            }
+            HideCursor("Cursor indicator hidden (over shell UI)");
             _idleStartTick = 0;
             return;
         }
@@ -161,13 +155,7 @@ internal static class CursorOverlay
         if (moving)
         {
             _idleStartTick = 0;
-            if (_isVisible)
-            {
-                _engine.Hide();
-                _isVisible = false;
-                StopPop();
-                Logger.Debug("Cursor indicator hidden (cursor moving)");
-            }
+            HideCursor("Cursor indicator hidden (cursor moving)");
             return;
         }
 
@@ -245,6 +233,17 @@ internal static class CursorOverlay
     // ================================================================
     // 내부
     // ================================================================
+
+    /// <summary>가시 상태면 엔진 숨김 + 가시 플래그 해제 + 진행 중 팝 정리 + 사유 로깅. 셸 UI 진입 / 이동
+    /// 시작 양쪽이 공유한다 (멱등 — 이미 숨김이면 no-op).</summary>
+    private static void HideCursor(string reason)
+    {
+        if (!_isVisible || _engine is null) return;
+        _engine.Hide();
+        _isVisible = false;
+        StopPop();
+        Logger.Debug(reason);
+    }
 
     /// <summary>
     /// cursor 위치 = DIB 정중앙. ShowAtCenter 가 monitor DPI + bbox 직접 계산해 정확한 좌상단 좌표 set.

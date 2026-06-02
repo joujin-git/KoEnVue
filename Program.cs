@@ -781,11 +781,8 @@ internal static partial class Program
         ApplyCursorConfigChange();
 
         // 인디가 가시 상태라면 애니메이터 config 갱신 + 새 alpha/크기/색상 즉시 반영 (PR-13: per-app)
-        if (!_config.UserHidden && _indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
-        {
-            var (x, y) = GetAppPosition();
-            Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
-        }
+        if (!_config.UserHidden)
+            RefreshVisibleIndicator();
         if (_config.TrayEnabled)
             Tray.UpdateState(_lastImeState, _config);
         Logger.Info("Config reloaded");
@@ -1068,16 +1065,24 @@ internal static partial class Program
         Overlay.HandleDpiChanged();
     }
 
-    private static void HandleDisplayChange()
+    /// <summary>인디가 가시 상태(+ 포그라운드 유효)면 현재 위치로 TriggerShow 재호출 (per-app resolved,
+    /// imeChanged=false). config 리로드 / 디스플레이 변경 / 시스템 색 변경 등에서 가시 인디를 즉시 갱신한다.
+    /// HandleConfigChanged 는 추가로 !UserHidden 가드 후 호출 (숨김 상태 인디를 깨우지 않도록).</summary>
+    private static void RefreshVisibleIndicator()
     {
-        Logger.Info("Display changed");
-        Overlay.HandleDpiChanged();
-
         if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
         {
             var (x, y) = GetAppPosition();
             Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
         }
+    }
+
+    private static void HandleDisplayChange()
+    {
+        Logger.Info("Display changed");
+        Overlay.HandleDpiChanged();
+
+        RefreshVisibleIndicator();
     }
 
     private static void HandleSettingChange()
@@ -1094,11 +1099,7 @@ internal static partial class Program
 
         // PR-13: 글로벌 재적용 후 per-app resolved 로 렌더 — 프로필이 theme=system 상속 시
         //         프로필 색상 6쌍이 새 시스템 색으로 재계산된 인스턴스로 갱신된다.
-        if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
-        {
-            var (x, y) = GetAppPosition();
-            Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
-        }
+        RefreshVisibleIndicator();
     }
 
     private static void HandleDpiChanged(IntPtr wParam, IntPtr lParam)

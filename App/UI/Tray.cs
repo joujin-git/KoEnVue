@@ -338,50 +338,32 @@ internal static partial class Tray
 
             // --- 위치 모드: 고정 위치 ---
             case IDM_POSITION_FIXED:
-                if (config.PositionMode != PositionMode.Fixed)
-                {
-                    updateConfig(config with { PositionMode = PositionMode.Fixed });
-                    Logger.Info("Position mode changed to Fixed");
-                }
+                UpdateIfChanged(updateConfig, config.PositionMode != PositionMode.Fixed,
+                    config with { PositionMode = PositionMode.Fixed }, "Position mode changed to Fixed");
                 break;
 
             // --- 위치 모드: 창 기준 ---
             case IDM_POSITION_WINDOW:
-                if (config.PositionMode != PositionMode.Window)
-                {
-                    updateConfig(config with { PositionMode = PositionMode.Window });
-                    Logger.Info("Position mode changed to Window");
-                }
+                UpdateIfChanged(updateConfig, config.PositionMode != PositionMode.Window,
+                    config with { PositionMode = PositionMode.Window }, "Position mode changed to Window");
                 break;
 
             // --- 드래그 활성 키 ---
             case IDM_DRAG_MOD_NONE:
-                if (config.DragModifier != DragModifier.None)
-                {
-                    updateConfig(config with { DragModifier = DragModifier.None });
-                    Logger.Info("DragModifier changed to None");
-                }
+                UpdateIfChanged(updateConfig, config.DragModifier != DragModifier.None,
+                    config with { DragModifier = DragModifier.None }, "DragModifier changed to None");
                 break;
             case IDM_DRAG_MOD_CTRL:
-                if (config.DragModifier != DragModifier.Ctrl)
-                {
-                    updateConfig(config with { DragModifier = DragModifier.Ctrl });
-                    Logger.Info("DragModifier changed to Ctrl");
-                }
+                UpdateIfChanged(updateConfig, config.DragModifier != DragModifier.Ctrl,
+                    config with { DragModifier = DragModifier.Ctrl }, "DragModifier changed to Ctrl");
                 break;
             case IDM_DRAG_MOD_ALT:
-                if (config.DragModifier != DragModifier.Alt)
-                {
-                    updateConfig(config with { DragModifier = DragModifier.Alt });
-                    Logger.Info("DragModifier changed to Alt");
-                }
+                UpdateIfChanged(updateConfig, config.DragModifier != DragModifier.Alt,
+                    config with { DragModifier = DragModifier.Alt }, "DragModifier changed to Alt");
                 break;
             case IDM_DRAG_MOD_CTRL_ALT:
-                if (config.DragModifier != DragModifier.CtrlAlt)
-                {
-                    updateConfig(config with { DragModifier = DragModifier.CtrlAlt });
-                    Logger.Info("DragModifier changed to CtrlAlt");
-                }
+                UpdateIfChanged(updateConfig, config.DragModifier != DragModifier.CtrlAlt,
+                    config with { DragModifier = DragModifier.CtrlAlt }, "DragModifier changed to CtrlAlt");
                 break;
 
             // --- 창에 자석처럼 붙이기 토글 ---
@@ -446,6 +428,17 @@ internal static partial class Tray
                     OpenHomepage();
                 break;
         }
+    }
+
+    /// <summary>현재 값과 목표가 다르면(<paramref name="changed"/>) <paramref name="updateConfig"/> 적용 +
+    /// <c>Logger.Info(logMsg)</c>. PositionMode / DragModifier 등 "변경 시에만 저장 + 로그" 단순 enum 토글
+    /// case 들이 공유한다. <paramref name="newConfig"/> 는 호출자가 <c>config with {…}</c> 로 합성 —
+    /// changed=false 면 버려진다(record with 는 순수, 부작용 0).</summary>
+    private static void UpdateIfChanged(Action<AppConfig> updateConfig, bool changed, AppConfig newConfig, string logMsg)
+    {
+        if (!changed) return;
+        updateConfig(newConfig);
+        Logger.Info(logMsg);
     }
 
     /// <summary>
