@@ -25,7 +25,7 @@
 
 **총 발견**: 약 50건 (핵심 High 12 / Med 다수 / Low 다수). 그중 **삭제·dead 판정 등 비가역 주장 4건은 메인에서 grep으로 직접 교차검증 완료**(아래 ✓).
 
-> **마커 범례**: `✓` = grep 교차검증 완료(착수 전 확인) · `✅` = 실행 완료 · `🔒 보존` = 검토 후 제거 안 하기로 결정. **묶음 1 (dead code 삭제 + 매직넘버 const화) 은 2026-06-02 실행 완료** — IMP-1·HC-1·2·3·5·6·7·8·12·13 에 ✅, HC-17 은 🔒 보존 (CHANGELOG `[Unreleased]` 참조).
+> **마커 범례**: `✓` = grep 교차검증 완료(착수 전 확인) · `✅` = 실행 완료 · `🔒 보존` = 검토 후 제거 안 하기로 결정. **묶음 1 (dead code 삭제 + 매직넘버 const화) 은 2026-06-02 실행 완료** — IMP-1·HC-1·2·3·5·6·7·8·12·13 에 ✅, HC-17 은 🔒 보존 (CHANGELOG `[Unreleased]` 참조). **묶음 2 (설정 색상/문자열/배열 디폴트 단일화, DUP-1) 도 2026-06-02 실행 완료** — PR-17 numeric 축의 비-numeric 완성, 회귀 차단 invariant grep 동반 (§6 메모).
 
 **가장 임팩트 큰 3건**:
 1. **DUP-1** — `AppConfig` ↔ `Settings.EnsureSubObjects`의 **string/array 디폴트 이중 관리** (PR-17이 numeric만 단일화하고 남긴 축). 수기 "양쪽 유지" 주석에 의존 중.
@@ -79,7 +79,7 @@ else
 
 | ID | 확신 | 위치 | 무엇이 중복 | 모듈화 방안 | 비용 |
 |----|------|------|-------------|-------------|------|
-| **DUP-1** ★ | High | `App/Models/AppConfig.cs:34-49,83,85,194` ↔ `App/Config/Settings.cs:208,635-654` | 색상 6쌍(`#16A34A` 등)·`SystemHideClasses` 7배열·`SystemHideProcesses`·`OverlayClassName`·`FontFamily`/라벨(`맑은 고딕`/`한`/`En`/`EN`)이 init 디폴트와 null-폴백에 **각각 리터럴**. `AppConfig.cs:81-82,634` 주석이 "양쪽 동일 유지"를 수기 강제 중 | string/array 디폴트도 `DefaultConfig` const + `static readonly string[]`로 추출 → 양쪽 단일 참조 (PR-17 numeric 단일화의 비-numeric 완성) | M |
+| **DUP-1** ★ ✅ | High | `App/Models/AppConfig.cs:34-49,83,85,194` ↔ `App/Config/Settings.cs:208,635-654` | 색상 6쌍(`#16A34A` 등)·`SystemHideClasses` 7배열·`SystemHideProcesses`·`OverlayClassName`·`FontFamily`/라벨(`맑은 고딕`/`한`/`En`/`EN`)이 init 디폴트와 null-폴백에 **각각 리터럴**. `AppConfig.cs:81-82,634` 주석이 "양쪽 동일 유지"를 수기 강제 중 | ✅ **완료 (묶음 2, 2026-06-02)**: 색상 7개(`DefaultHangulBg` 등 Bg/Fg 6 + `DefaultBorderColor`)·폰트/라벨 4개(`DefaultIndicatorFontFamily`=맑은 고딕 + 라벨 3)·`DefaultOverlayClassName` const + `DefaultSystemHideClasses`/`DefaultSystemHideProcesses` 배열 property 를 `DefaultConfig` 에 추출. 배열은 property(`=>`) 라 호출마다 새 배열(공유 변형 위험 0 — `TrayQuickOpacityPresets` 패턴). `AppConfig` 14 init + `Settings.EnsureSubObjects`/`ValidateAdvanced` 폴백 단일 참조, 수기 유지 주석 제거. 값 불변. 회귀 grep 신설(아래 메모) | M |
 | **DUP-2** | High | `App/UI/Dialogs/SettingsDialog.Scroll.cs:30-42` ↔ `App/UI/Dialogs/CleanupDialog.cs:226-237` | `SCROLLINFO` 셋업(cbSize/fMask/nMin=0/nMax=total-1/nPage/nPos + SetScrollInfo)이 두 다이얼로그에 복제. `ScrollTo`/`ResolveVScrollPosition` 등은 이미 `ScrollableDialogHelper` 공유인데 셋업만 빠짐 | `ScrollableDialogHelper.SetupVScrollbar(hwnd, totalContentH, viewportClientH)` 추가 | S |
 | **DUP-3** | High | `Core/Windowing/LayeredOverlayBase.cs:228-259` ↔ `:467-490` | `PaintDib`와 `HandleDragDpiChange`가 "DIB clear → SelectObject(oldFont) → try{BuildMetrics+renderToDib}finally{복원} → ApplyPremultipliedAlpha → `_lastRenderedStyle=style`" ~25 LOC를 글자 그대로 중복 | `private void RenderDibPixels(OverlayStyle, int w, int h)` 추출 → 콜백 예외·폰트 복원 단일화 | S |
 | **DUP-4** | Med | `Program.cs:785,1012,1047,1077,1098` (5곳) | "인디 가시 시 현재 위치로 재표시" 블록(`if(_indicatorVisible && _lastForegroundHwnd!=0){ (x,y)=GetAppPosition(); Animation.TriggerShow(...imeChanged:false) }`) 5중 반복 | `RefreshVisibleIndicator(bool respectUserHidden=false)` 추출 (785만 `!UserHidden` 추가 차이) | S |
@@ -160,7 +160,7 @@ else
 | **묶음 0 — 동작(커서 마스터)** | BEH-1 (PR-22 후속 — 커서 팝 `AnimationEnabled &&` 게이팅) | 사용자 보고 공백 | S | 낮음 |
 | **묶음 0b — 동작(포커스 강조)** | BEH-2 (방향 A 문서화 / B 기능추가 — 결정 후) | 사용자 결정 대기 | 0~M+ | — |
 | **묶음 1 — dead/명백 const** ✅ **완료 (2026-06-02)** | IMP-1, HC-13 (삭제) + HC-1·2·3·5·6·7·8·12 (P3 일괄, 이미 const 존재분 우선). **HC-17 은 보존 결정 (🔒, 제거 안 함)** — WinHttp 미사용 const 4개는 사용 중 상수의 짝/대안 | 즉시·거의 무위험 | S | 낮음 |
-| **묶음 2 — 설정 단일화** ★ | DUP-1 | PR-17의 비-numeric 완성. 회귀 grep 동반 (양쪽 값 일치 박제) | M | 중 (디폴트 변경 표면) |
+| **묶음 2 — 설정 단일화** ★ ✅ **완료 (2026-06-02)** | DUP-1 | PR-17의 비-numeric 완성. 회귀 grep 동반 (양쪽 값 일치 박제) | M | 중 (디폴트 변경 표면) |
 | **묶음 3 — 다이얼로그 모듈화** | DUP-2, DUP-5, DUP-6 + HC-9·10·11·14·15·16 | helper 추가 + 레이아웃 const | S–M | 낮음 |
 | **묶음 4 — Core 렌더 모듈화** | DUP-3, DUP-13 + HC-4(셰이더 const) | 픽셀 렌더 단일화 | S | 낮음 (단위테스트 영역 밖 — 수동 smoke) |
 | **묶음 5 — Program/Tray 정리** | DUP-4, DUP-8, DUP-9, IMP-3 | 반복 추출 + 헬퍼 | S–M | 낮음 |
@@ -174,5 +174,5 @@ else
 ## 6. 메모
 
 - 모든 `file:line`은 리뷰 시점(HEAD `d11241a` 이후) 기준. 착수 전 해당 줄 재확인 필수(세션 노트 라인번호 불신 원칙).
-- 묶음 2 착수 시 **회귀 차단 invariant** 신설 권장: `AppConfig` 디폴트와 `Settings.EnsureSubObjects` 폴백이 같은 `DefaultConfig` 심볼을 참조하는지 grep (현재는 리터럴 일치를 수기 확인).
+- ✅ 묶음 2 **회귀 차단 invariant 신설 완료** (2026-06-02): `AppConfig` 디폴트와 `Settings.EnsureSubObjects`/`ValidateAdvanced` 폴백이 같은 `DefaultConfig` 심볼을 참조하는지 — 리터럴 잔존 0 으로 가드. `git grep '"#16A34A"\|"맑은 고딕"\|"KoEnVueOverlay"\|"Progman"\|"ShellExperienceHost"' App/Models/AppConfig.cs App/Config/Settings.cs` → **0 매치** (정의는 `DefaultConfig.cs` 만). PR-17 numeric init invariant(`\}\s*=\s*리터럴`)와 형제 가드 — [conventions.md § P4 sub-rule](../conventions.md) 에 등재.
 - 묶음 4는 `OverlayAnimatorTests` 류 콜백 spy 단위테스트로 일부 박제 가능하나, DIB 픽셀 경로는 수동 smoke 영역.

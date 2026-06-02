@@ -211,6 +211,35 @@ internal static partial class DefaultConfig
     public const  double TrayQuickOpacity3 = 0.6;
     public static double[] TrayQuickOpacityPresets => [TrayQuickOpacity1, TrayQuickOpacity2, TrayQuickOpacity3];
 
+    // === AppConfig 색상/문자열/배열 디폴트 단일 진실원 (AUDIT 묶음 2, DUP-1) ===
+    // AppConfig 의 init 디폴트 + Settings.EnsureSubObjects / ValidateAdvanced 의 null 폴백이 모두 본
+    // const/property 를 참조한다. 이전엔 같은 리터럴이 양쪽에 흩어져 한쪽만 바꾸면 silent 불일치가 났다
+    // (PR-17 이 numeric 만 단일화하고 남긴 비-numeric 축). 색상/문자열은 const, 배열은 property(=>) 라
+    // 호출마다 새 배열 — static readonly 배열 공유로 인한 변형 위험 0 (TrayQuickOpacityPresets 패턴).
+
+    // 상태 색상 (Hangul/English/NonKorean — 배경 Bg / 전경 Fg) + 테두리
+    public const string DefaultHangulBg            = "#16A34A";
+    public const string DefaultHangulFg            = "#FFFFFF";
+    public const string DefaultEnglishBg           = "#D97706";
+    public const string DefaultEnglishFg           = "#FFFFFF";
+    public const string DefaultNonKoreanBg         = "#6B7280";
+    public const string DefaultNonKoreanFg         = "#FFFFFF";
+    public const string DefaultBorderColor         = "#000000";
+
+    // 인디케이터 라벨 폰트/텍스트. DefaultDialogFontFamily 와 값은 같으나 의미 독립 (인디 폰트 vs 다이얼로그 폰트).
+    public const string DefaultIndicatorFontFamily = "맑은 고딕";
+    public const string DefaultHangulLabel         = "한";
+    public const string DefaultEnglishLabel        = "En";
+    public const string DefaultNonKoreanLabel      = "EN";
+
+    // 오버레이 윈도우 클래스명 (AdvancedConfig.OverlayClassName 디폴트 + ValidateAdvanced 폴백).
+    public const string DefaultOverlayClassName    = "KoEnVueOverlay";
+
+    // 시스템 숨김 클래스/프로세스 (메인 인디 SystemFilter + 커서 IsOverShellUi 공용 기본 목록).
+    public static string[] DefaultSystemHideClasses =>
+        ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow_WASDK", "TopLevelWindowForOverflowXamlIsland", "ControlCenterWindow"];
+    public static string[] DefaultSystemHideProcesses => ["ShellExperienceHost"];
+
     // === Validate clamp / SettingsDialog field range — Min/Max 단일 진실원 (D7) ===
     // Settings.Validate 의 Math.Clamp 인자와 SettingsDialog.Fields.cs 의 min/max 인자를 모두 본 const
     // 참조로 통일한다. 두 곳에 같은 리터럴을 두면 한 쪽만 변경됐을 때 다이얼로그 입력 → Validate 클램프

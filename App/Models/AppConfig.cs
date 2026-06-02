@@ -23,7 +23,7 @@ internal sealed record AppConfig
     public int LabelHeight { get; init; } = DefaultConfig.LabelHeight;
     public int LabelBorderRadius { get; init; } = DefaultConfig.LabelBorderRadius;
     public int BorderWidth { get; init; } = DefaultConfig.BorderWidth;
-    public string BorderColor { get; init; } = "#000000";
+    public string BorderColor { get; init; } = DefaultConfig.DefaultBorderColor;
 
     // [외관 -- 크기 배율] — LabelWidth/Height/FontSize/BorderRadius/BorderWidth + LABEL_PADDING_X에
     // 곱해지는 배율. 트레이 메뉴에서 1.0~5.0 범위, 소수점 1자리까지 조절.
@@ -31,22 +31,22 @@ internal sealed record AppConfig
     public double IndicatorScale { get; init; } = DefaultConfig.IndicatorScale;
 
     // [외관 -- 색상]
-    public string HangulBg { get; init; } = "#16A34A";
-    public string HangulFg { get; init; } = "#FFFFFF";
-    public string EnglishBg { get; init; } = "#D97706";
-    public string EnglishFg { get; init; } = "#FFFFFF";
-    public string NonKoreanBg { get; init; } = "#6B7280";
-    public string NonKoreanFg { get; init; } = "#FFFFFF";
+    public string HangulBg { get; init; } = DefaultConfig.DefaultHangulBg;
+    public string HangulFg { get; init; } = DefaultConfig.DefaultHangulFg;
+    public string EnglishBg { get; init; } = DefaultConfig.DefaultEnglishBg;
+    public string EnglishFg { get; init; } = DefaultConfig.DefaultEnglishFg;
+    public string NonKoreanBg { get; init; } = DefaultConfig.DefaultNonKoreanBg;
+    public string NonKoreanFg { get; init; } = DefaultConfig.DefaultNonKoreanFg;
     public double Opacity { get; init; } = DefaultConfig.Opacity;
     public double IdleOpacity { get; init; } = DefaultConfig.IdleOpacity;
     public double ActiveOpacity { get; init; } = DefaultConfig.ActiveOpacity;
     // [외관 -- 텍스트]
-    public string FontFamily { get; init; } = "맑은 고딕";
+    public string FontFamily { get; init; } = DefaultConfig.DefaultIndicatorFontFamily;
     public int FontSize { get; init; } = DefaultConfig.FontSize;
     public FontWeight FontWeight { get; init; } = FontWeight.Bold;
-    public string HangulLabel { get; init; } = "한";
-    public string EnglishLabel { get; init; } = "En";
-    public string NonKoreanLabel { get; init; } = "EN";
+    public string HangulLabel { get; init; } = DefaultConfig.DefaultHangulLabel;
+    public string EnglishLabel { get; init; } = DefaultConfig.DefaultEnglishLabel;
+    public string NonKoreanLabel { get; init; } = DefaultConfig.DefaultNonKoreanLabel;
 
     // [외관 -- 테마]
     public Theme Theme { get; init; } = Theme.Custom;
@@ -78,11 +78,11 @@ internal sealed record AppConfig
     public bool HideInFullscreen { get; init; } = true;
     public bool HideWhenNoFocus { get; init; } = true;
     public bool HideOnLockScreen { get; init; } = true;
-    // 변경 시 Settings.EnsureSubObjects 의 null 폴백 배열도 동일하게 유지 — 이 레코드 기본값은
-    // MergeWithDefaults 경로에서, 폴백 배열은 JSON 에 명시적 null 이 들어온 경우에만 작동.
-    public string[] SystemHideClasses { get; init; } = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow_WASDK", "TopLevelWindowForOverflowXamlIsland", "ControlCenterWindow"];
+    // DefaultConfig.DefaultSystemHideClasses 단일 진실원 참조 (AUDIT 묶음 2) — AppConfig init(MergeWithDefaults
+    // 경로) 과 Settings.EnsureSubObjects 폴백(JSON 명시 null 경로) 이 같은 property 를 본다.
+    public string[] SystemHideClasses { get; init; } = DefaultConfig.DefaultSystemHideClasses;
     public string[] SystemHideClassesUser { get; init; } = [];
-    public string[] SystemHideProcesses { get; init; } = ["ShellExperienceHost"];
+    public string[] SystemHideProcesses { get; init; } = DefaultConfig.DefaultSystemHideProcesses;
     public string[] SystemHideProcessesUser { get; init; } = [];
 
     // [앱별 프로필] -- config.json 직접 편집 전용 (사용 예시: docs/User_Guide.md)
@@ -191,7 +191,7 @@ internal sealed record EventTriggersConfig
 internal sealed record AdvancedConfig
 {
     public int ForceTopmostIntervalMs { get; init; } = DefaultConfig.ForceTopmostIntervalMs;
-    public string OverlayClassName { get; init; } = "KoEnVueOverlay";
+    public string OverlayClassName { get; init; } = DefaultConfig.DefaultOverlayClassName;
 }
 
 /// <summary>

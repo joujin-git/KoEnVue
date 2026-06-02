@@ -205,7 +205,7 @@ internal static class Settings
             Logger.Warning(
                 $"Invalid overlay_class_name '{adv.OverlayClassName}' (must be 1-255 chars, "
                 + "ASCII letters/digits/underscore). Falling back to default.");
-            return adv with { OverlayClassName = "KoEnVueOverlay", ForceTopmostIntervalMs = clampedMs };
+            return adv with { OverlayClassName = DefaultConfig.DefaultOverlayClassName, ForceTopmostIntervalMs = clampedMs };
         }
 
         return adv.ForceTopmostIntervalMs == clampedMs
@@ -631,27 +631,27 @@ internal sealed partial class AppSettingsManager : JsonSettingsManager<AppConfig
         {
             EventTriggers = config.EventTriggers ?? new(),
             Advanced = config.Advanced ?? new(),
-            // 변경 시 AppConfig.SystemHideClasses 레코드 기본값도 동일하게 유지 (상호 참조 주석 참고)
-            SystemHideClasses = config.SystemHideClasses ?? ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow_WASDK", "TopLevelWindowForOverflowXamlIsland", "ControlCenterWindow"],
+            // DefaultConfig 단일 진실원 참조 (AUDIT 묶음 2) — AppConfig init 디폴트와 같은 const/property.
+            SystemHideClasses = config.SystemHideClasses ?? DefaultConfig.DefaultSystemHideClasses,
             SystemHideClassesUser = config.SystemHideClassesUser ?? [],
-            SystemHideProcesses = config.SystemHideProcesses ?? ["ShellExperienceHost"],
+            SystemHideProcesses = config.SystemHideProcesses ?? DefaultConfig.DefaultSystemHideProcesses,
             SystemHideProcessesUser = config.SystemHideProcessesUser ?? [],
             AppProfiles = config.AppProfiles ?? new(),
             IndicatorPositions = config.IndicatorPositions ?? new(),
             IndicatorPositionsRelative = config.IndicatorPositionsRelative ?? new(),
             AppFilterList = config.AppFilterList ?? [],
             TrayQuickOpacityPresets = config.TrayQuickOpacityPresets ?? DefaultConfig.TrayQuickOpacityPresets,
-            BorderColor = config.BorderColor ?? "#000000",
-            HangulBg = config.HangulBg ?? "#16A34A",
-            HangulFg = config.HangulFg ?? "#FFFFFF",
-            EnglishBg = config.EnglishBg ?? "#D97706",
-            EnglishFg = config.EnglishFg ?? "#FFFFFF",
-            NonKoreanBg = config.NonKoreanBg ?? "#6B7280",
-            NonKoreanFg = config.NonKoreanFg ?? "#FFFFFF",
-            FontFamily = config.FontFamily ?? "맑은 고딕",
-            HangulLabel = config.HangulLabel ?? "한",
-            EnglishLabel = config.EnglishLabel ?? "En",
-            NonKoreanLabel = config.NonKoreanLabel ?? "EN",
+            BorderColor = config.BorderColor ?? DefaultConfig.DefaultBorderColor,
+            HangulBg = config.HangulBg ?? DefaultConfig.DefaultHangulBg,
+            HangulFg = config.HangulFg ?? DefaultConfig.DefaultHangulFg,
+            EnglishBg = config.EnglishBg ?? DefaultConfig.DefaultEnglishBg,
+            EnglishFg = config.EnglishFg ?? DefaultConfig.DefaultEnglishFg,
+            NonKoreanBg = config.NonKoreanBg ?? DefaultConfig.DefaultNonKoreanBg,
+            NonKoreanFg = config.NonKoreanFg ?? DefaultConfig.DefaultNonKoreanFg,
+            FontFamily = config.FontFamily ?? DefaultConfig.DefaultIndicatorFontFamily,
+            HangulLabel = config.HangulLabel ?? DefaultConfig.DefaultHangulLabel,
+            EnglishLabel = config.EnglishLabel ?? DefaultConfig.DefaultEnglishLabel,
+            NonKoreanLabel = config.NonKoreanLabel ?? DefaultConfig.DefaultNonKoreanLabel,
             LogFilePath = config.LogFilePath ?? "",
         };
     }
