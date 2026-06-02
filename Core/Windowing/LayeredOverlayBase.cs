@@ -171,6 +171,7 @@ internal sealed class LayeredOverlayBase : IDisposable
     {
         if (_hwndOverlay != IntPtr.Zero)
             User32.ShowWindow(_hwndOverlay, Win32Constants.SW_HIDE);
+        LogProvider.Sink?.Debug("[diag] Hide() -> SW_HIDE");
         _isVisible = false;
     }
 
@@ -732,6 +733,7 @@ internal sealed class LayeredOverlayBase : IDisposable
         if (_hwndOverlay == IntPtr.Zero || _memDC == IntPtr.Zero) return;
         if (_isDragging) return;  // 드래그 중 위치 충돌 방지
 
+        LogProvider.Sink?.Debug($"[diag] blit: ({x},{y}) {displayW}x{displayH} a={alpha}");
         LayeredWindowBlit.Blit(_hwndOverlay, _memDC, x, y, displayW, displayH, alpha);
     }
 }

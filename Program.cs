@@ -513,6 +513,7 @@ internal static partial class Program
         {
             _indicatorVisible = true;
             var (x, y) = GetAppPosition();
+            Logger.Debug($"Main indicator show via IME change: state={newState}, mode={resolved.DisplayMode}, pos=({x},{y})");
             Animation.TriggerShow(x, y, newState, resolved, imeChanged: true);
         }
     }
@@ -554,7 +555,7 @@ internal static partial class Program
         {
             _indicatorVisible = true;
             var (x, y) = GetAppPosition();
-            Logger.Debug($"PositionUpdated: process={_currentProcessName}, pos=({x},{y}), saved={_config.IndicatorPositions.Count}");
+            Logger.Debug($"PositionUpdated: process={_currentProcessName}, pos=({x},{y}), wasHidden={wasHidden}, fgChanged={foregroundChanged}, saved={_config.IndicatorPositions.Count}");
             // PR-13: per-app resolved (theme/색/투명도/폰트/라벨 등 시각 override 반영)
             Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
         }
@@ -1157,6 +1158,7 @@ internal static partial class Program
         public RECT LastWindowFrame;
         public bool WindowMoving;
         public bool LastFiltered;
+        public int FilteredStreak;   // 연속 filtered 폴링 수 — HIDE 디바운스(flip-flop 흡수)용
         public ImeState LastImeState;
         public int PollCount;
     }
@@ -1324,10 +1326,24 @@ internal static partial class Program
 
         if (currentlyFiltered)
         {
-            // 필터 진입 시에만 숨김 메시지 전송 (중복 메시지 억제)
+            state.FilteredStreak++;
+
+            // flip-flop 디바운스: 일부 창(파일 탐색기 CabinetWClass 등)은 포커스 직후 hwndFocus 가
+            // 0↔정상 으로 진동해 매 폴링 filtered↔non-filtered 가 뒤집힌다. 연속 HideHysteresisPolls
+            // 회 filtered 일 때만 HIDE 를 확정 — 단발 진동은 흡수해 메인 인디 깜박임/사라짐(애니 ON 시
+            // FadingOut race 박제)을 막는다. 잠정 구간엔 상태를 갱신하지 않아(LastFiltered/LastHwnd 불변)
+            // 현 인디 상태를 유지하고, 다음 틱이 진동의 반대 위상이면 Show 가 자연 복원한다.
+            if (state.FilteredStreak < DefaultConfig.HideHysteresisPolls)
+            {
+                Logger.Debug($"Filter HIDE deferred (streak={state.FilteredStreak}/{DefaultConfig.HideHysteresisPolls}, fgClass={WindowProcessInfo.GetClassName(hwndForeground)}, hwndFocus=0x{hwndFocus.ToInt64():X})");
+                appConfig = default!;
+                return true;
+            }
+
+            // 필터 확정(연속 N폴링) — 진입 시에만 숨김 메시지 전송 (중복 메시지 억제)
             if (!state.LastFiltered && _indicatorVisible)
             {
-                Logger.Info($"Filter triggered HIDE: hwndFg=0x{hwndForeground.ToInt64():X}, hwndFocus=0x{hwndFocus.ToInt64():X}, resolved_null={resolved is null}, fgClass={WindowProcessInfo.GetClassName(hwndForeground)}");
+                Logger.Info($"Filter triggered HIDE: hwndFg=0x{hwndForeground.ToInt64():X}, hwndFocus=0x{hwndFocus.ToInt64():X}, resolved_null={resolved is null}, fgClass={WindowProcessInfo.GetClassName(hwndForeground)}, streak={state.FilteredStreak}");
                 User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
             }
@@ -1339,6 +1355,7 @@ internal static partial class Program
             return true;
         }
 
+        state.FilteredStreak = 0;
         appConfig = resolved!;
         return false;
     }

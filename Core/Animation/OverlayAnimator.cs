@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using KoEnVue.Core.Logging;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Windowing;
 
@@ -167,6 +168,7 @@ public sealed class OverlayAnimator : IDisposable
     public bool TriggerShow(int prevX, int prevY, int newX, int newY, bool highlightTrigger)
     {
         bool wasHidden = _phase == AnimPhase.Hidden;
+        LogProvider.Sink?.Debug($"[diag] TriggerShow: phase={_phase}, slideActive={_slideActive}, prev=({prevX},{prevY}), new=({newX},{newY})");
 
         // 이번 호출에서 강조(스케일 팝)가 시작될지 — slide 보류 판정에도 함께 쓴다(⑩ 경합 회피).
         bool willHighlight = highlightTrigger && _config.ChangeHighlight;
@@ -462,6 +464,7 @@ public sealed class OverlayAnimator : IDisposable
         {
             User32.KillTimer(_hwndTimer, _timerIds.Slide);
             _slideActive = false;
+            LogProvider.Sink?.Debug($"[diag] slide end: settled ({_slideToX},{_slideToY})");
             // 최종 위치 보정
             _onPositionOffset(_slideToX, _slideToY);
         }
@@ -550,9 +553,8 @@ public sealed class OverlayAnimator : IDisposable
     /// </summary>
     private void TryStartSlide(int prevX, int prevY, int newX, int newY, bool willHighlight)
     {
-        // 강조와 동시 진행 시 위치/크기 경합 → 슬라이드 보류 (위치는 목적지 유지).
-        if (_highlightActive || willHighlight)
-            return;
+        // [진단 임시] ⑩ 가드 비활성 — 회귀 검증용 (⑩ 이전 slide 동작 재현). 검증 후 복원/교정.
+        _ = willHighlight;
 
         if (_config.SlideAnimation && _config.SlideSpeedMs > 0
             && (prevX != newX || prevY != newY))
@@ -565,6 +567,7 @@ public sealed class OverlayAnimator : IDisposable
 
     private void StartSlide(int fromX, int fromY, int toX, int toY, int durationMs)
     {
+        LogProvider.Sink?.Debug($"[diag] slide start: ({fromX},{fromY}) -> ({toX},{toY}), {durationMs}ms");
         _slideActive = true;
         _slideFromX = fromX;
         _slideFromY = fromY;
