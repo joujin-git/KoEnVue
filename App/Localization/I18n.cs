@@ -83,6 +83,10 @@ internal static class I18n
         ScaleDialogOk, ScaleDialogCancel,
         ScaleDialogInvalidInput, ScaleDialogOutOfRange,
 
+        // 위치 기록 정리 다이얼로그 ("취소" 버튼은 ScaleDialogCancel 재사용)
+        CleanupDialogTitle, CleanupDialogDescription,
+        CleanupDialogSelectAll, CleanupDialogDelete,
+
         // 트레이 메시지 박스
         TrayPositionUnavailable, TrayPositionHistoryEmpty,
         RunningSuffix,
@@ -156,6 +160,14 @@ internal static class I18n
         [I18nKey.ScaleDialogOutOfRange]     = (
             "1.0에서 5.0 사이 값만 입력할 수 있습니다.",
             "Value must be between 1.0 and 5.0."),
+
+        // 위치 기록 정리 다이얼로그 (확인 버튼 = "삭제", 취소 버튼은 ScaleDialogCancel 재사용)
+        [I18nKey.CleanupDialogTitle]        = ("위치 기록 정리", "Clean position history"),
+        [I18nKey.CleanupDialogDescription]  = (
+            "삭제할 위치 기록을 선택하세요.",
+            "Select position history to delete."),
+        [I18nKey.CleanupDialogSelectAll]    = ("전체 선택", "Select All"),
+        [I18nKey.CleanupDialogDelete]       = ("삭제", "Delete"),
 
         // 트레이 메시지 박스
         [I18nKey.TrayPositionUnavailable]   = (
@@ -277,6 +289,12 @@ internal static class I18n
     public static string ScaleDialogCancel       => Get(I18nKey.ScaleDialogCancel);
     public static string ScaleDialogInvalidInput => Get(I18nKey.ScaleDialogInvalidInput);
     public static string ScaleDialogOutOfRange   => Get(I18nKey.ScaleDialogOutOfRange);
+
+    // 위치 기록 정리 다이얼로그 (취소 버튼은 ScaleDialogCancel 재사용)
+    public static string CleanupDialogTitle       => Get(I18nKey.CleanupDialogTitle);
+    public static string CleanupDialogDescription => Get(I18nKey.CleanupDialogDescription);
+    public static string CleanupDialogSelectAll   => Get(I18nKey.CleanupDialogSelectAll);
+    public static string CleanupDialogDelete      => Get(I18nKey.CleanupDialogDelete);
 
     // 트레이 메시지 박스
     /// <summary>

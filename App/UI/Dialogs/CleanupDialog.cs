@@ -75,13 +75,12 @@ internal static class CleanupDialog
 
         int visibleCount = Math.Min(items.Count, DlgMaxVisibleItems);
         bool needsScroll = items.Count > DlgMaxVisibleItems;
-        string title = I18n.IsKorean ? "위치 기록 정리" : "Clean position history";
 
         bool ran = DialogShell.Run(
             hwndOwner: hwndMain,
             className: DlgClassName,
             wndProc: (delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&CleanupDlgProc,
-            title: title,
+            title: I18n.CleanupDialogTitle,
             dlgLogicalWidth: DlgMinWidth,
             measureDlgHeight: m =>
             {
@@ -167,10 +166,7 @@ internal static class CleanupDialog
         int y = pad;
 
         // 설명 라벨
-        string descText = I18n.IsKorean
-            ? "삭제할 위치 기록을 선택하세요."
-            : "Select position history to delete.";
-        IntPtr hwndDesc = User32.CreateWindowExW(0, "STATIC", descText,
+        IntPtr hwndDesc = User32.CreateWindowExW(0, "STATIC", I18n.CleanupDialogDescription,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE,
             pad, y, contentW, descH,
             ctx.HwndDialog, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
@@ -178,8 +174,7 @@ internal static class CleanupDialog
         y += descH + checkGap;
 
         // "전체 선택" 체크박스 — WS_TABSTOP + WS_GROUP 추가 (a11y baseline)
-        string selectAllText = I18n.IsKorean ? "전체 선택" : "Select All";
-        IntPtr hwndSelectAll = User32.CreateWindowExW(0, "BUTTON", selectAllText,
+        IntPtr hwndSelectAll = User32.CreateWindowExW(0, "BUTTON", I18n.CleanupDialogSelectAll,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE
                 | Win32Constants.BS_AUTOCHECKBOX
                 | Win32Constants.WS_TABSTOP | Win32Constants.WS_GROUP,
@@ -247,15 +242,13 @@ internal static class CleanupDialog
         int btnAreaWidth = btnW * 2 + pad;
         int btnX = (ctx.DlgWidth - btnAreaWidth) / 2;
 
-        string okText = I18n.IsKorean ? "삭제" : "Delete";
-        string cancelText = I18n.IsKorean ? "취소" : "Cancel";
-        IntPtr hwndOk = User32.CreateWindowExW(0, "BUTTON", okText,
+        IntPtr hwndOk = User32.CreateWindowExW(0, "BUTTON", I18n.CleanupDialogDelete,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE
                 | Win32Constants.WS_TABSTOP | Win32Constants.WS_GROUP,
             btnX, y, btnW, btnH,
             ctx.HwndDialog, (IntPtr)IDC_BTN_OK, IntPtr.Zero, IntPtr.Zero);
         Win32DialogHelper.ApplyFont(hwndOk, ctx.HFont);
-        IntPtr hwndCancel = User32.CreateWindowExW(0, "BUTTON", cancelText,
+        IntPtr hwndCancel = User32.CreateWindowExW(0, "BUTTON", I18n.ScaleDialogCancel,
             Win32Constants.WS_CHILD | Win32Constants.WS_VISIBLE | Win32Constants.WS_TABSTOP,
             btnX + btnW + pad, y, btnW, btnH,
             ctx.HwndDialog, (IntPtr)IDC_BTN_CANCEL, IntPtr.Zero, IntPtr.Zero);
