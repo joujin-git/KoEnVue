@@ -280,17 +280,28 @@ internal sealed class LayeredOverlayBase : IDisposable
     }
 
     /// <summary>
-    /// DPI/설정 변경 시 모든 캐시를 무효화한다. 다음 <see cref="Render"/> 호출이 리소스를
-    /// 재생성하며, 이 메서드 자체는 블리트를 수행하지 않는다.
+    /// DPI/설정 변경 시 캐시를 무효화하고 DPI 스케일을 마지막 표시 위치 기준으로 재동기화한다.
+    /// 다음 <see cref="Render"/>/<see cref="PrepareResources"/> 호출이 새 DPI로 리소스를 재생성하며,
+    /// 이 메서드 자체는 블리트를 수행하지 않는다(가시성 불변).
     /// </summary>
     public void HandleDpiChanged()
     {
+        // 마지막 표시 위치 기준으로 _currentDpiScale/_currentDpiY 를 재조회한다. 기존엔 캐시만 리셋하고
+        // 스케일은 옛 값을 유지해, 파사드가 곧바로 호출하는 PrepareResources(및 Show 없이 들어오는
+        // Render)가 옛 DPI 로 DIB 를 그렸다 — WM_DPICHANGED/DISPLAYCHANGE/POWERBROADCAST 경로는 다음
+        // Show 전까지 자가치유되지 않는다. GetMonitorFromPoint 는 MONITOR_DEFAULTTONEAREST 라 인디
+        // 미표시(_lastX/Y=0)·모니터 분리 상황에서도 가장 가까운 모니터로 안전 폴백. config 변경(같은
+        // 모니터)이면 동일 스케일이 반환돼 DPI 분기가 안 일어난다(무해).
+        UpdateDpiFromPoint(_lastX, _lastY);
+
+        // 폰트 패밀리/라벨 측정 캐시는 DPI 동일(설정만 변경) 경로에서도 강제 무효화한다. UpdateDpiFromPoint
+        // 는 DPI 가 실제 바뀐 경우에만 DIB/폰트scale/라벨폭 캐시를 리셋하므로 여기서 항상 보강한다.
         _cachedFontFamily = "";
         _cachedFontDpiScale = 0;
         _currentWidth = 0;
         _currentHeight = 0;
         _fixedLabelWidth = 0;
-        _cachedLabelDpiScale = 0; // 라벨 측정 캐시도 함께 무효화
+        _cachedLabelDpiScale = 0;
         _lastRenderedStyle = null;
     }
 
