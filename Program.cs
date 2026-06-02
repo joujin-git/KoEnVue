@@ -845,7 +845,8 @@ internal static partial class Program
 
     private static void HideOverlay(string source = "?")
     {
-        // 진단 로그 — 사용자 회귀 (cursor enable 시 메인 인디 사라짐) 추적. 호출자 식별.
+        // 숨김 경로 추적 — source 로 호출자(시스템 필터 / 트레이 토글 / 세션 잠금)를 식별해
+        // "인디케이터가 안 보인다" 류 문제의 원인 경로를 로그만으로 좁힌다.
         Logger.Info($"HideOverlay called: source={source}");
         // forceHidden: Always 모드에서도 Idle이 아닌 완전 숨김으로 전환.
         // 시스템 필터(바탕화면/작업 표시줄), 트레이 토글 OFF 모두
