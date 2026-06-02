@@ -32,6 +32,12 @@ internal static class HttpClientLite
     {
         try
         {
+            // 프록시 모드 = AUTOMATIC_PROXY (Win8.1+; KoEnVue 는 .NET 10 = Win10+ 라 항상 가용).
+            // WPAD/PAC 자동 탐지로 기업 프록시(GPO 가 브라우저 프록시만 푸시하고 netsh winhttp 는
+            // 미설정인 흔한 케이스 포함)에 자동 대응 — DEFAULT_PROXY(netsh winhttp 의존)보다 호환
+            // 범위가 넓다. WPAD 부재(가정용)면 직접 연결로 폴백하고, 탐지 지연은 아래 WinHttpSetTimeouts
+            // (각 단계 10s) 로 상한 + 백그라운드 1회 호출이라 UI 영향 0. 실패해도 GetString 은 null
+            // 반환(throw 없음)이라 어떤 프록시 환경에서도 앱 안정성 무관. (종합 감사 ⑬ 재검토 — 유지 결론)
             using var hSession = new SafeWinHttpHandle(
                 WinHttp.WinHttpOpen(
                     userAgent,
