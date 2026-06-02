@@ -360,7 +360,16 @@ Timer IDs (injected via `AnimationTimerIds` record so Core stays ID-agnostic):
 
 Ease-out cubic interpolation: `1 - (1 - t)^3` via `TIMER_ID_SLIDE`. All animation timers use `DefaultConfig.AnimationFrameMs = 16 ms` (~60 fps).
 
-**Slide ⊥ Highlight 경합 회피 (종합 감사 ⑩)**: slide 트랙(위치만)과 highlight 트랙(위치 + stretch 크기)이 같은 레이어드 윈도우의 `UpdateLayeredWindow` 를 16ms 간격 last-writer-wins 로 번갈아 set 하면 base↔확대 크기 진동 + 위치 점프가 보였다. `TriggerShow` 진입부에서 흩어진 4곳의 `highlightTrigger && _config.ChangeHighlight` 조건을 지역변수 `bool willHighlight` 로 단일화하고, `TryStartSlide(prevX, prevY, newX, newY, willHighlight)` 진입부에 가드 `if (_highlightActive || willHighlight) return;` 를 둬 **강조가 진행 중(`_highlightActive`)이거나 이번 호출에서 시작될 예정(`willHighlight`)이면 슬라이드를 보류**한다. highlight 는 매 틱 `_lastX`(=목적지) 기준으로 그리고, 위치는 파사드 `Overlay.Show` 가 같은 메시지 핸들러에서 (DWM VSync 내 Show→UpdatePosition 연속 호출) 이미 목적지에 그려둬 슬라이드를 생략해도 위치가 일관 — 주의 환기(강조)를 미관(슬라이드)보다 우선시한 결정. 회귀 가드: [tests/KoEnVue.Tests/Unit/OverlayAnimatorTests.cs](../tests/KoEnVue.Tests/Unit/OverlayAnimatorTests.cs) 3 테스트 (slide 보류 / slide 정상 / highlight 생존).
+**Slide + Highlight 합성 (종합 감사 ⑩)**: slide 트랙(위치만)과 highlight 트랙(위치 + stretch 크기)이 같은 레이어드 윈도우의 `UpdateLayeredWindow` 를 16ms 간격 last-writer-wins 로 번갈아 set 하면 base↔확대 크기 진동 + 위치 점프가 보였다. **중간 단계**에서는 `TryStartSlide(prevX, prevY, newX, newY, willHighlight)` 진입부 가드 `if (_highlightActive || willHighlight) return;` 로 강조가 진행/예정이면 슬라이드를 **보류**했으나, slide 를 생략하면 모니터 간 이동 등에서 인디가 출발 위치에 머무는 미관 문제가 있어 **합성(두 효과 동시 진행, blit 은 한 writer 가 전담)으로 재구현**했다. 핵심은 slide 진행 중(`_slideActive`)에는 slide 가 **위치만 추적**하고 highlight 가 **그리는 일을 전담**한다는 것:
+
+- slide 보간 위치를 매 틱 `_slideCurX/_slideCurY` 에 저장. `_highlightActive` 면 `_onTrackPosition(x, y)` (→ [`LayeredOverlayBase.TrackPosition`](../Core/Windowing/LayeredOverlayBase.cs) 이 `_lastX/Y` 만 갱신, **blit 없음**) 호출, 아니면 종전대로 `_onPositionOffset(x, y)` 로 직접 blit (slide 단독).
+- `HandleHighlightTimer` 의 확대 blit 은 `_slideActive ? (_slideCurX, _slideCurY) : (_lastX, _lastY)` 를 중심으로 계산 — slide 진행 중이면 slide 의 현재 위치를 따라가며 확대된 인디를 그린다. highlight 종료 시 원래 크기 복원도 같은 중심 기준.
+- 위치를 `_lastX/Y` 에 동기화(TrackPosition)하므로, slide+highlight 합성 중 페이드/Hold/복원이 옛 출발 위치가 아닌 **현재 slide 위치** 기준으로 동작한다 (모니터 간 이동 시 출발점에서 사라지던 버그 방지).
+- `willHighlight` 는 더 이상 slide 판정에 쓰지 않는다 (`_ = willHighlight;` — 시그니처는 호환 유지).
+
+**모니터 간 slide 생략 (즉시 이동)**: `TryStartSlide` 는 prev/new 좌표가 같은 모니터일 때만 slide 한다 (`IsSameMonitor` = 두 점의 `User32.MonitorFromPoint(MONITOR_DEFAULTTONEAREST)` 핸들 비교). 모니터 간 이동은 DPI/확대비율 전환으로 인디 크기가 변동해 경계를 넘는 애니가 어색하므로, 다른 모니터면 slide 없이 즉시 이동한다 (파사드 `Show` 가 이미 목적지에 도착 모니터 DPI 로 정확히 그려둠).
+
+회귀 가드: [tests/KoEnVue.Tests/Unit/OverlayAnimatorTests.cs](../tests/KoEnVue.Tests/Unit/OverlayAnimatorTests.cs) 3 테스트 (`Slide_DuringHighlight_TracksPositionWithoutBlit` / `Slide_WithoutHighlight_BlitsPosition` / `Highlight_RunsRegardlessOfSlide`).
 
 ### Always mode default
 
@@ -415,6 +424,12 @@ Detection loop sends `WM_POSITION_UPDATED` **before** `WM_IME_STATE_CHANGED` / `
 ### Per-poll filter evaluation
 
 `DetectionLoop` evaluates `ResolveForApp + SystemFilter.ShouldHide` every tick (not only on foreground change) and uses a `lastFiltered` flag to suppress duplicate `WM_HIDE_INDICATOR` messages. Fixes the "desktop click → same app return" case where nothing appeared to change but the indicator needed to reappear. Hide message is emitted only on `!lastFiltered → filtered` transitions.
+
+#### HIDE 디바운스 (flip-flop 흡수)
+
+`TryHandleFilter` 는 filtered 가 떴다고 곧바로 HIDE 를 보내지 않고, `DetectionState.FilteredStreak` 로 **연속 filtered 폴링 수**를 세어 `DefaultConfig.HideHysteresisPolls`(= 3, AppConfig 키 아닌 코드 레벨 const) 회 연속일 때만 HIDE 를 확정한다. 일부 창(파일 탐색기 `CabinetWClass` 등)은 포커스 전환 직후 `hwndFocus` 가 `0 ↔ 정상` 으로 진동(flip-flop)해 조건 6(`hwndFocus == 0 && HideWhenNoFocus`) 이 매 폴링 filtered ↔ non-filtered 로 뒤집히는데, 디바운스가 이 단발 진동을 흡수한다. 잠정(`streak < N`) 구간에서는 `Filter HIDE deferred` 로그만 남기고 **`lastFiltered`/`lastHwndForeground` 등 상태를 갱신하지 않은 채 return** — 현 인디 상태를 유지하므로, 다음 틱이 진동의 반대 위상이면 filter exit 경로의 `WM_POSITION_UPDATED` 가 자연 복원한다. 이 "잠정 구간 상태 미갱신" **비대칭** 이 핵심으로, [Deferred `lastHwndForeground`](#deferred-lasthwndforeground) 와 같은 결을 이루며 "첫 진입 Show 누락" 함정을 피하면서 진동만 걸러낸다. non-filtered 진입 시 `FilteredStreak = 0` 으로 리셋. 작업표시줄 등 실제 숨김 대상은 연속 filtered 라 약 `PollIntervalMs × (N − 1)` 만큼만 HIDE 가 지연될 뿐 정상 동작한다.
+
+이 디바운스가 없던 시절, 애니메이션 ON 에서는 교대 post 된 HIDE(`forceHidden: true` → FadingOut 400ms) 와 Show 가 경합해 메인 인디가 깜박이다 마지막 이벤트가 HIDE 면 `Hidden` 으로 박제됐다 — `OverlayAnimator` 의 FadingOut 재진입엔 `SnapToTargetAlpha` 가 없어 alpha 가 점진 0 으로 수렴하기 때문(C안 미해결 잔여). 애니메이션 OFF 는 즉시 토글이라 무증상이었다. 자세한 race 분석은 [docs/dev-notes/2026-06-02-explorer-hide-flipflop-debounce.md](dev-notes/2026-06-02-explorer-hide-flipflop-debounce.md).
 
 ### Modal dialog gate
 

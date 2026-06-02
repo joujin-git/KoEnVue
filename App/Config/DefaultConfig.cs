@@ -109,6 +109,15 @@ internal static partial class DefaultConfig
     /// </summary>
     public const int DetectionBackoffMaxMs = 2000;
 
+    /// <summary>
+    /// 시스템 필터 HIDE 디바운스 — 연속 이 폴링 수만큼 filtered 일 때만 HIDE 를 확정한다.
+    /// 일부 창(파일 탐색기 CabinetWClass 등)은 포커스 전환 직후 hwndFocus 가 0↔정상 으로
+    /// 진동(flip-flop)해 매 폴링 filtered↔non-filtered 가 뒤집히고, 애니메이션 ON 시 메인
+    /// 인디가 깜박이다 FadingOut race 로 사라진 채 박제됐다. 단발 진동은 흡수하고 연속
+    /// filtered(작업표시줄 등 실제 숨김 대상)만 HIDE → 약 PollIntervalMs×(N-1) 만큼 숨김 지연.
+    /// </summary>
+    public const int HideHysteresisPolls = 3;
+
     // === 앱 식별 ===
 
     /// <summary>
@@ -183,7 +192,7 @@ internal static partial class DefaultConfig
     public const double ActiveOpacity      = 0.95;
 
     // 애니메이션
-    public const int    SlideSpeedMs       = 100;
+    public const int    SlideSpeedMs       = 500;
 
     // 표시 모드
     public const int    EventDisplayDurationMs = 2000;

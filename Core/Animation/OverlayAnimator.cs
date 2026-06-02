@@ -55,6 +55,7 @@ public sealed class OverlayAnimator : IDisposable
     private long _slideStartTick;
     private int _slideFromX, _slideFromY, _slideToX, _slideToY;
     private int _slideDurationMs;
+    private int _slideCurX, _slideCurY;   // slide 현재 보간 위치 — highlight 합성 기준(경합 방지)
 
     // forceHidden 플래그 (FadingOut 완료 시 Hidden 강제)
     private bool _forceHidden;
@@ -72,6 +73,7 @@ public sealed class OverlayAnimator : IDisposable
 
     private readonly Action<byte> _onAlphaChange;
     private readonly Action<int, int> _onPositionOffset;
+    private readonly Action<int, int> _onTrackPosition;   // 합성 중 위치만 추적(blit 없이)
     private readonly Action<int, int, int, int, byte> _onScaledSize;
     private readonly Action _onHide;
     private readonly TopmostWatchdog _topmostWatchdog;
@@ -91,6 +93,7 @@ public sealed class OverlayAnimator : IDisposable
         AnimationConfig initialConfig,
         Action<byte> onAlphaChange,
         Action<int, int> onPositionOffset,
+        Action<int, int> onTrackPosition,
         Action<int, int, int, int, byte> onScaledSize,
         Action onHide,
         Action onForceTopmost,
@@ -101,6 +104,7 @@ public sealed class OverlayAnimator : IDisposable
         _config = initialConfig;
         _onAlphaChange = onAlphaChange;
         _onPositionOffset = onPositionOffset;
+        _onTrackPosition = onTrackPosition;
         _onScaledSize = onScaledSize;
         _onHide = onHide;
         _getBaseSize = getBaseSize;
@@ -168,7 +172,8 @@ public sealed class OverlayAnimator : IDisposable
     {
         bool wasHidden = _phase == AnimPhase.Hidden;
 
-        // 이번 호출에서 강조(스케일 팝)가 시작될지 — slide 보류 판정에도 함께 쓴다(⑩ 경합 회피).
+        // 이번 호출에서 강조(스케일 팝)가 시작될지 — 아래 각 분기의 highlight 시작 판정에 쓴다.
+        // (slide 와는 합성되므로 보류 판정엔 쓰지 않는다 — TryStartSlide 참조.)
         bool willHighlight = highlightTrigger && _config.ChangeHighlight;
 
         // hold 타이머 duration 선택
@@ -428,8 +433,12 @@ public sealed class OverlayAnimator : IDisposable
 
         int newW = (int)Math.Round(baseW * scale);
         int newH = (int)Math.Round(baseH * scale);
-        int newX = _lastX - (newW - baseW) / 2;
-        int newY = _lastY - (newH - baseH) / 2;
+        // 합성: slide 진행 중이면 slide 현재 보간 위치를 중심으로, 아니면 목적지(_lastX)를 중심으로
+        // 확대한다. slide 가 따로 blit 하지 않고 highlight 가 위치+크기를 한 번에 그려 경합을 없앤다.
+        int centerX = _slideActive ? _slideCurX : _lastX;
+        int centerY = _slideActive ? _slideCurY : _lastY;
+        int newX = centerX - (newW - baseW) / 2;
+        int newY = centerY - (newH - baseH) / 2;
 
         _onScaledSize(newX, newY, newW, newH, _currentAlpha);
 
@@ -438,8 +447,10 @@ public sealed class OverlayAnimator : IDisposable
             User32.KillTimer(_hwndTimer, _timerIds.Highlight);
             _highlightActive = false;
 
-            // 원래 크기 복원
-            _onScaledSize(_lastX, _lastY, baseW, baseH, _currentAlpha);
+            // 원래 크기 복원 — slide 가 아직 진행 중이면 그 현재 위치, 아니면 목적지 기준.
+            int restoreX = _slideActive ? _slideCurX : _lastX;
+            int restoreY = _slideActive ? _slideCurY : _lastY;
+            _onScaledSize(restoreX, restoreY, baseW, baseH, _currentAlpha);
         }
     }
 
@@ -456,14 +467,27 @@ public sealed class OverlayAnimator : IDisposable
         int x = _slideFromX + (int)Math.Round((_slideToX - _slideFromX) * eased);
         int y = _slideFromY + (int)Math.Round((_slideToY - _slideFromY) * eased);
 
-        _onPositionOffset(x, y);
+        _slideCurX = x;
+        _slideCurY = y;
+        // 합성: highlight 진행 중이면 위치만 추적(_lastX/Y 동기화, blit 은 highlight 가 합성 수행)하고,
+        // highlight 가 없으면 slide 가 직접 위치 blit. 추적 덕에 페이드/Hold 가 옛 출발 위치가 아닌
+        // 현재 slide 위치를 기준으로 동작한다(모니터 간 이동 시 출발점에서 사라지던 버그 방지).
+        if (_highlightActive)
+            _onTrackPosition(x, y);
+        else
+            _onPositionOffset(x, y);
 
         if (t >= 1.0)
         {
             User32.KillTimer(_hwndTimer, _timerIds.Slide);
             _slideActive = false;
-            // 최종 위치 보정
-            _onPositionOffset(_slideToX, _slideToY);
+            _slideCurX = _slideToX;
+            _slideCurY = _slideToY;
+            // 최종 위치 — highlight 진행 중이면 위치만 추적(highlight 가 마지막 프레임을 그림).
+            if (_highlightActive)
+                _onTrackPosition(_slideToX, _slideToY);
+            else
+                _onPositionOffset(_slideToX, _slideToY);
         }
     }
 
@@ -535,27 +559,32 @@ public sealed class OverlayAnimator : IDisposable
     }
 
     /// <summary>
-    /// prev → new 위치 차이가 있고 슬라이드가 켜져 있으면 prev로 즉시 복원 후 슬라이드 시작.
-    /// DWM VSync 내 같은 메시지 핸들러에서 Show→UpdatePosition 연속 호출이므로
+    /// prev → new 위치 차이가 있고 슬라이드가 켜져 있으며 같은 모니터면 prev로 즉시 복원 후 슬라이드
+    /// 시작. DWM VSync 내 같은 메시지 핸들러에서 Show→UpdatePosition 연속 호출이므로
     /// 중간 위치는 화면에 표시되지 않는다.
     ///
     /// <para>
-    /// ⑩ slide+highlight 경합 회피: 강조(스케일 팝)가 진행 중(<see cref="_highlightActive"/>)이거나
-    /// 이번 호출에서 시작될 예정(<paramref name="willHighlight"/>)이면 슬라이드를 보류한다.
-    /// 두 트랙이 같은 레이어드 윈도우의 위치(slide)와 위치·크기(highlight stretch)를 16ms 간격으로
-    /// 번갈아 set 하면 base↔확대 크기 진동 + 위치 점프가 생긴다(last-writer-wins). 강조는 매 틱
-    /// <see cref="_lastX"/>(=목적지) 기준으로 그리므로, 슬라이드를 생략하면 파사드가 Show로 이미
-    /// 목적지에 그려둔 위치와 강조가 일관된다. 주의 환기(강조)가 미관(슬라이드)보다 우선이다.
+    /// ⑩ slide+highlight 합성: 두 트랙이 같은 레이어드 윈도우의 위치(slide)와 위치·크기(highlight
+    /// stretch)를 16ms 간격으로 번갈아 set 하면 base↔확대 크기 진동 + 위치 점프가 생긴다
+    /// (last-writer-wins). 이를 보류 대신 합성으로 해소한다 — slide 진행 중엔 slide 가 위치만 추적
+    /// (<see cref="_slideCurX"/>, blit 없음)하고 강조가 그 위치를 중심으로 한 번만 확대 blit 한다
+    /// (<c>HandleSlideTimer</c>/<c>HandleHighlightTimer</c> 의 <see cref="_slideActive"/> 분기). 따라서
+    /// 여기선 슬라이드를 정상 시작하면 되고 보류·종료가 필요 없다 — <paramref name="willHighlight"/> 는
+    /// 더 이상 slide 판정에 쓰지 않는다.
     /// </para>
     /// </summary>
     private void TryStartSlide(int prevX, int prevY, int newX, int newY, bool willHighlight)
     {
-        // 강조와 동시 진행 시 위치/크기 경합 → 슬라이드 보류 (위치는 목적지 유지).
-        if (_highlightActive || willHighlight)
-            return;
+        // ⑩ slide+highlight 합성: 두 효과가 같은 레이어드 윈도우를 16ms 간격으로 서로 다른 좌표·크기로
+        // 경합 blit 해 인디가 찢기며 사라지던 결함(blit 로그로 확정)을, slide 진행 중엔 slide 가 위치만
+        // 추적(_slideCurX)하고 highlight 가 그 위치 기준으로 확대 blit(한 번만) 하도록 합성해 해소했다
+        // (HandleSlideTimer/HandleHighlightTimer 의 _slideActive 분기). 따라서 여기선 slide 를 정상
+        // 시작하면 되고 보류·종료가 필요 없다. willHighlight 는 더 이상 slide 판정에 쓰지 않는다.
+        _ = willHighlight;
 
         if (_config.SlideAnimation && _config.SlideSpeedMs > 0
-            && (prevX != newX || prevY != newY))
+            && (prevX != newX || prevY != newY)
+            && IsSameMonitor(prevX, prevY, newX, newY))
         {
             // 이전 위치로 즉시 복원 (같은 프레임 — DWM이 수집 전)
             _onPositionOffset(prevX, prevY);
@@ -563,9 +592,23 @@ public sealed class OverlayAnimator : IDisposable
         }
     }
 
+    /// <summary>
+    /// prev/new 두 좌표가 같은 모니터에 속하는지. 모니터 간 slide 는 DPI/확대비율 전환(인디 크기
+    /// 변동)이 복잡하고 경계를 넘는 애니가 어색해, 다른 모니터면 slide 를 생략하고 즉시 이동한다
+    /// (파사드 Show 가 이미 목적지에 그려두고, 도착 모니터 DPI 로 크기도 정확하다).
+    /// </summary>
+    private static bool IsSameMonitor(int x1, int y1, int x2, int y2)
+    {
+        IntPtr m1 = User32.MonitorFromPoint(new POINT(x1, y1), Win32Constants.MONITOR_DEFAULTTONEAREST);
+        IntPtr m2 = User32.MonitorFromPoint(new POINT(x2, y2), Win32Constants.MONITOR_DEFAULTTONEAREST);
+        return m1 == m2;
+    }
+
     private void StartSlide(int fromX, int fromY, int toX, int toY, int durationMs)
     {
         _slideActive = true;
+        _slideCurX = fromX;
+        _slideCurY = fromY;
         _slideFromX = fromX;
         _slideFromY = fromY;
         _slideToX = toX;

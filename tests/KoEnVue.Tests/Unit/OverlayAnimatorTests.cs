@@ -6,9 +6,13 @@ using Xunit;
 namespace KoEnVue.Tests.Unit;
 
 /// <summary>
-/// OverlayAnimator 의 slide + highlight 트랙 경합 회피 (종합 감사 ⑩).
-/// 강조(스케일 팝)가 진행 중이거나 시작될 예정이면 slide 를 보류해, 두 트랙이 같은
-/// 레이어드 윈도우의 위치/크기를 16ms 간격으로 다투지 않도록 한 동작을 박제한다.
+/// OverlayAnimator 의 slide + highlight 합성 (종합 감사 ⑩ 후속). 강조(스케일 팝)가 진행 중이면
+/// slide 는 현재 위치를 추적만 하고(blit 없이), 강조가 그 위치를 중심으로 한 번만 그린다. 이로써
+/// 두 트랙이 같은 레이어드 윈도우의 위치/크기를 16ms 간격으로 다투지 않는다(경합 시 인디가
+/// 찢기며 사라지던 결함의 회귀 방지).
+///
+/// 주의: TriggerShow 의 prev/new 좌표는 작은 값(≤200)이라 단일 모니터(primary) 안에 들어가므로
+/// IsSameMonitor 가 true → slide 가 시작된다(모니터 간이면 slide 생략).
 /// </summary>
 public class OverlayAnimatorTests
 {
@@ -20,26 +24,30 @@ public class OverlayAnimatorTests
     private static readonly nuint SlideId = 5;
 
     [Fact]
-    public void TriggerShow_WillHighlight_SuppressesSlide()
+    public void Slide_DuringHighlight_TracksPositionWithoutBlit()
     {
         var posSpy = new List<(int X, int Y)>();
+        var trackSpy = new List<(int X, int Y)>();
         var animator = MakeAnimator(slide: true, highlight: true,
-            onPositionOffset: (x, y) => posSpy.Add((x, y)));
+            onPositionOffset: (x, y) => posSpy.Add((x, y)),
+            onTrackPosition: (x, y) => trackSpy.Add((x, y)));
 
         // Hidden → Holding (AnimationEnabled=false 라 페이드 없이 즉시 전이)
         animator.TriggerShow(0, 0, 100, 100, highlightTrigger: false);
 
-        // Holding 에서 IME 전환(highlight) + 위치 변경 → willHighlight=true → slide 보류
+        // IME 전환(highlight) + 위치 변경 → slide+highlight 합성 동시 시작
         animator.TriggerShow(100, 100, 200, 200, highlightTrigger: true);
 
-        // slide 가 보류됐으면 Slide 타이머는 비활성 → 핸들러가 보간 좌표를 내지 않는다.
+        // 합성: slide 타이머는 강조 진행 중 위치만 추적하고 직접 blit 하지 않는다(강조가 그림).
         posSpy.Clear();
+        trackSpy.Clear();
         animator.OnWmTimer(SlideId);
-        Assert.Empty(posSpy);
+        Assert.NotEmpty(trackSpy);   // 위치는 추적됨
+        Assert.Empty(posSpy);        // 직접 blit 은 안 함 (경합 방지)
     }
 
     [Fact]
-    public void TriggerShow_NoHighlight_RunsSlide()
+    public void Slide_WithoutHighlight_BlitsPosition()
     {
         var posSpy = new List<(int X, int Y)>();
         var animator = MakeAnimator(slide: true, highlight: true,
@@ -47,17 +55,16 @@ public class OverlayAnimatorTests
 
         animator.TriggerShow(0, 0, 100, 100, highlightTrigger: false);
 
-        // 위치만 변경, IME 전환 없음 → willHighlight=false → slide 정상 시작
+        // 위치만 변경, IME 전환 없음 → 강조 없음 → slide 가 직접 위치 blit
         animator.TriggerShow(100, 100, 200, 200, highlightTrigger: false);
 
-        // slide 활성 → Slide 타이머가 보간 좌표를 emit 한다.
         posSpy.Clear();
         animator.OnWmTimer(SlideId);
-        Assert.NotEmpty(posSpy);
+        Assert.NotEmpty(posSpy);     // slide 가 직접 보간 좌표를 emit
     }
 
     [Fact]
-    public void TriggerShow_WillHighlight_StillRunsHighlight()
+    public void Highlight_RunsRegardlessOfSlide()
     {
         var scaledSpy = new List<(int W, int H)>();
         var animator = MakeAnimator(slide: true, highlight: true,
@@ -66,7 +73,7 @@ public class OverlayAnimatorTests
         animator.TriggerShow(0, 0, 100, 100, highlightTrigger: false);
         animator.TriggerShow(100, 100, 200, 200, highlightTrigger: true);
 
-        // slide 보류가 highlight 자체를 죽이면 안 된다 — Highlight 타이머는 정상 동작.
+        // 합성 중에도 강조 타이머는 정상 동작(위치+크기를 그린다).
         scaledSpy.Clear();
         animator.OnWmTimer(HighlightId);
         Assert.NotEmpty(scaledSpy);
@@ -79,6 +86,7 @@ public class OverlayAnimatorTests
     private static OverlayAnimator MakeAnimator(
         bool slide, bool highlight,
         Action<int, int>? onPositionOffset = null,
+        Action<int, int>? onTrackPosition = null,
         Action<int, int, int, int, byte>? onScaledSize = null)
     {
         var ids = new AnimationTimerIds(FadeId, HoldId, HighlightId, TopmostId, SlideId);
@@ -86,6 +94,7 @@ public class OverlayAnimatorTests
             IntPtr.Zero, ids, MakeConfig(slide, highlight),
             onAlphaChange: _ => { },
             onPositionOffset: onPositionOffset ?? ((_, _) => { }),
+            onTrackPosition: onTrackPosition ?? ((_, _) => { }),
             onScaledSize: onScaledSize ?? ((_, _, _, _, _) => { }),
             onHide: () => { },
             onForceTopmost: () => { },

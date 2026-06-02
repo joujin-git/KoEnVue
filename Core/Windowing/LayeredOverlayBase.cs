@@ -273,6 +273,17 @@ internal sealed class LayeredOverlayBase : IDisposable
         UpdateOverlay(x, y, _currentWidth, _currentHeight, _lastAlpha);
     }
 
+    /// <summary>
+    /// 슬라이드+강조 합성 중 위치 추적 (blit 없이). 강조가 매 프레임 그리는 동안 slide 진행 위치를
+    /// <c>_lastX/Y</c> 에만 반영해, 페이드/Hold/복원이 옛 출발 위치가 아닌 현재 위치 기준으로
+    /// 동작하게 한다. 강조 없이 slide 단독이면 <see cref="UpdatePosition"/> 으로 직접 blit.
+    /// </summary>
+    public void TrackPosition(int x, int y)
+    {
+        _lastX = x;
+        _lastY = y;
+    }
+
     /// <summary>강조 프레임: 중심 기준 확대.</summary>
     public void UpdateScaledSize(int x, int y, int w, int h, byte alpha)
     {

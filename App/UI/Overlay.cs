@@ -99,6 +99,12 @@ internal static class Overlay
         _engine.UpdatePosition(x, y);
     }
 
+    /// <summary>슬라이드+강조 합성 중 위치 추적 (blit 없이).</summary>
+    public static void TrackPosition(int x, int y)
+    {
+        _engine.TrackPosition(x, y);
+    }
+
     /// <summary>강조 프레임: 중심 기준 확대.</summary>
     public static void UpdateScaledSize(int x, int y, int w, int h, byte alpha)
     {
