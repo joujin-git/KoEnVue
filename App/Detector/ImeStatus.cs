@@ -38,8 +38,9 @@ internal static class ImeStatus
 
     /// <summary>
     /// 3-tier fallback으로 IME 상태를 감지한다 (auto 모드).
+    /// <see cref="Detect(IntPtr, uint, DetectionMethod)"/> 의 Auto 분기 전용 — 외부 직접 호출 없음.
     /// </summary>
-    public static ImeState Detect(IntPtr hwndFocus, uint threadId)
+    private static ImeState Detect(IntPtr hwndFocus, uint threadId)
     {
         // Tier 1: ImmGetDefaultIMEWnd + SendMessageTimeoutW
         ImeState? result = TryTier1(hwndFocus);

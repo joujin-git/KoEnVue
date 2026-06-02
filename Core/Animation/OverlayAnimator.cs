@@ -552,10 +552,13 @@ public sealed class OverlayAnimator : IDisposable
         User32.SetTimer(_hwndTimer, _timerIds.Highlight, _config.AnimationFrameMs, IntPtr.Zero);
     }
 
+    // Stopwatch 틱 → 밀리초 변환 계수.
+    private const double MsPerSecond = 1000.0;
+
     private static double GetElapsedMs(long startTick)
     {
         long now = Stopwatch.GetTimestamp();
-        return (now - startTick) * 1000.0 / Stopwatch.Frequency;
+        return (now - startTick) * MsPerSecond / Stopwatch.Frequency;
     }
 
     /// <summary>

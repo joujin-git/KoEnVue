@@ -218,10 +218,7 @@ internal static class Settings
         if (string.IsNullOrEmpty(name) || name.Length > 255) return false;
         foreach (char c in name)
         {
-            if (!((c >= 'A' && c <= 'Z')
-                  || (c >= 'a' && c <= 'z')
-                  || (c >= '0' && c <= '9')
-                  || c == '_'))
+            if (!(char.IsAsciiLetterOrDigit(c) || c == '_'))
                 return false;
         }
         return true;

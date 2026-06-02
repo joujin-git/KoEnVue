@@ -30,6 +30,9 @@ internal static class Logger
     private const int DrainLoopTimeoutMs = 1000;
     private const int ShutdownJoinTimeoutMs = 3000;
 
+    // 모든 로그 라인의 타임스탬프 포맷 — 정상 로깅(Write)과 self-catch breadcrumb 가 공유(P3).
+    private const string TimestampFormat = "yyyy.MM.dd HH:mm:ss.fff";
+
     // 큐 상한 — 회전 실패 등으로 _fileWriter=null 상태가 지속되면 FlushQueue 가 early-return
     // 하여 큐가 무제한 성장한다. 상한 초과 시 최고령 메시지부터 드롭해 최근 로그 우선 보존.
     private const int MaxQueueSize = 10_000;
@@ -104,7 +107,7 @@ internal static class Logger
         if (dropped > 0)
         {
             _logQueue.Enqueue(
-                $"[WARN] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} Logger pre-init buffer dropped {dropped} oldest messages");
+                FormatBreadcrumb($"Logger pre-init buffer dropped {dropped} oldest messages"));
         }
 
         while (_preInitBuffer.TryDequeue(out string? message))
@@ -129,10 +132,18 @@ internal static class Logger
     private static void Write(LogLevel level, string prefix, string message)
     {
         if (level < _logLevel) return;
-        string formatted = $"{prefix} {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} {message}";
+        string formatted = $"{prefix} {DateTime.Now.ToString(TimestampFormat)} {message}";
         Trace.WriteLine(formatted);
         EnqueueToFile(formatted);
     }
+
+    /// <summary>
+    /// self-catch breadcrumb 한 줄을 포맷한다. Logger 의 정상 큐 경로를 우회하는 진단 메시지
+    /// (pre-init 버퍼 드롭 / 큐 상한 드롭 / drain join 타임아웃)가 공유하는 <c>[WARN] {ts} {msg}</c>
+    /// 접두를 단일화. 순수 문자열 빌더 — <see cref="Logger"/> 재호출 없음(드레인 재귀 금지, NF-25).
+    /// </summary>
+    private static string FormatBreadcrumb(string message)
+        => $"[WARN] {DateTime.Now.ToString(TimestampFormat)} {message}";
 
     // ================================================================
     // 비동기 큐 내부
@@ -194,7 +205,7 @@ internal static class Logger
             if (dropped > 0)
             {
                 _fileWriter.WriteLine(
-                    $"[WARN] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} Logger dropped {dropped} oldest messages (queue cap {MaxQueueSize})");
+                    FormatBreadcrumb($"Logger dropped {dropped} oldest messages (queue cap {MaxQueueSize})"));
             }
 
             while (_logQueue.TryDequeue(out string? message))
@@ -270,14 +281,14 @@ internal static class Logger
                 try
                 {
                     _fileWriter?.WriteLine(
-                        $"[WARN] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} Logger drain thread join timed out after {ShutdownJoinTimeoutMs}ms");
+                        FormatBreadcrumb($"Logger drain thread join timed out after {ShutdownJoinTimeoutMs}ms"));
                 }
                 catch (Exception ex) when (ex is IOException or ObjectDisposedException)
                 {
                     _ = ex;
                 }
                 Console.Error.WriteLine(
-                    $"[WARN] {DateTime.Now:yyyy.MM.dd HH:mm:ss.fff} Logger drain thread join timed out after {ShutdownJoinTimeoutMs}ms");
+                    FormatBreadcrumb($"Logger drain thread join timed out after {ShutdownJoinTimeoutMs}ms"));
             }
         }
 
