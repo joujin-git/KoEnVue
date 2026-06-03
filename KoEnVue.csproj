@@ -28,7 +28,7 @@
     <ApplicationIcon>koenvue.ico</ApplicationIcon>
     <!-- 단일 진실원 (PR-11 D6). AssemblyVersion/FileVersion/InformationalVersion 3종 + Directory.Build.targets
          가 생성하는 Version.g.cs 의 DefaultConfig.AppVersion 모두 본 값에서 derive. -->
-    <Version>0.9.5.2</Version>
+    <Version>0.9.9.3</Version>
     <!-- PR-11 G4 보조 — AOT publish 시 PE 헤더 timestamp 를 해시 기반 의사값으로 고정해 SHA256 deterministic.
          최신 SDK 의 기본값이지만 명시. -->
     <Deterministic>true</Deterministic>
