@@ -7,7 +7,7 @@
 ## 1. 사전 조건
 
 - **메인 브랜치 클린 상태.** 모든 PR 머지 + working tree 깨끗.
-- **로컬 [dotnet build](../KoEnVue.csproj) 통과** + **[dotnet test](../tests/KoEnVue.Tests/) 전부 통과 (현재 82개)** + **[GitHub Actions](../.github/workflows/build.yml) 녹색** (이전 main 푸시 기준).
+- **로컬 [dotnet build](../KoEnVue.csproj) 통과** + **[dotnet test](../tests/KoEnVue.Tests/) 전부 통과 (현재 90개)** + **[GitHub Actions](../.github/workflows/build.yml) 녹색** (이전 main 푸시 기준).
 - **CHANGELOG.md** 의 `[Unreleased]` 섹션이 비어 있지 않은지 확인. 릴리스 직전에 `[Unreleased]` → `[X.Y.Z] — YYYY-MM-DD` 로 승격하고 새 빈 `[Unreleased]` 헤더를 추가.
 
 ## 2. 버전 bump
