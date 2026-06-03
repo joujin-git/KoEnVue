@@ -897,13 +897,14 @@ case IDM_ADMIN_ELEVATION:
     AppConfig newAdminConfig = config with { AdminElevation = !config.AdminElevation };
     updateConfig(newAdminConfig);                                  // ① config 즉시 저장 (mtime self-bump)
     StartupTaskManager.ReregisterIfAdminChanged(newAdminConfig);   // ② schtasks RunLevel 즉시 재등록 (등록 안 됐으면 noop)
-    User32.MessageBoxW(hwndMain, I18n.AdminElevationChangeNotice,  // ③ 통일 안내 (단일 메시지 + 단일 OK 버튼)
-        "KoEnVue", Win32Constants.MB_OK);
+    ShowMessage(I18n.AdminElevationChangeNotice);                  // ③ 통일 안내 (단일 메시지 + 단일 OK 버튼)
     User32.PostMessageW(hwndMain, Win32Constants.WM_CLOSE,         // ④ 자동 종료 → OnProcessExit → Overlay.Dispose
         IntPtr.Zero, IntPtr.Zero);
 }
 break;
 ```
+
+③ 의 안내는 fix #3 시점엔 `User32.MessageBoxW(hwndMain, …, "KoEnVue", MB_OK)` 직접 호출이었으나, 2026-06-03 (감사 DUP-6 합류) 에 같은 파일의 `ShowMessage(body)` 헬퍼 (`ModalDialogLoop.RunExternal(_hwndMain, () => User32.MessageBoxW(_hwndMain, body, DefaultConfig.AppName, uType: MB_OK))`) 위임으로 교체 — 트레이 안내 MessageBox 의 나머지 3 경로 (`ShowPositionError`/`CleanupPositions` empty/위치 기록 empty) 와 **단일 경로로 통합**. 동작 불변 (같은 owner `_hwndMain`·타이틀 `DefaultConfig.AppName`·MB_OK 단일 버튼) — 유일한 델타인 `RunExternal` 가드는 박스 표시 중 감지 인디 jitter 억제일 뿐, 박스 닫힌 뒤 ④ 의 `WM_CLOSE` 자동 종료라 무해.
 
 자동 spawn 안 함 — Windows token 모델의 admin→일반 down-grade 한계를 사용자 수동 재실행으로 자연 회피. 사용자가 일반 권한 재실행 시 `config.AdminElevation=true` → [`AdminElevation.TryRelaunchAsAdmin`](../App/Bootstrap/AdminElevation.cs) 가 UAC 1회로 admin 자동 진입, `false` → 일반 권한 그대로. admin 환경 재실행은 토큰 상속 (KoEnVue 통제 외 — fix #2 §7.2 의 down-grade 한계 그대로 보존).
 

@@ -313,9 +313,7 @@ internal static partial class Tray
                     // schtasks 의 RunLevel 즉시 갱신 — 등록 안 됐으면 noop.
                     StartupTaskManager.ReregisterIfAdminChanged(newAdminConfig);
 
-                    User32.MessageBoxW(hwndMain,
-                        I18n.AdminElevationChangeNotice, DefaultConfig.AppName,
-                        Win32Constants.MB_OK);
+                    ShowMessage(I18n.AdminElevationChangeNotice);
 
                     // "확인" 후 자동 종료 — 메인 인디 잔존 회귀 차단 + 사용자 mental model 정합.
                     User32.PostMessageW(hwndMain, Win32Constants.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
