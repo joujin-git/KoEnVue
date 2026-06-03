@@ -427,7 +427,7 @@ internal static partial class Program
                 return IntPtr.Zero;
 
             case Win32Constants.WM_DPICHANGED:
-                HandleDpiChanged(wParam, lParam);
+                HandleDpiChanged();
                 return IntPtr.Zero;
 
             case Win32Constants.WM_WTSSESSION_CHANGE:
@@ -1102,10 +1102,11 @@ internal static partial class Program
         RefreshVisibleIndicator();
     }
 
-    private static void HandleDpiChanged(IntPtr wParam, IntPtr lParam)
+    private static void HandleDpiChanged()
     {
-        // wParam: HIWORD=newDpiY, LOWORD=newDpiX
-        // lParam: RECT* (새 DPI에 맞는 권장 크기/위치)
+        // WM_DPICHANGED 페이로드(wParam: HIWORD/LOWORD=newDpiY/newDpiX, lParam: RECT* 권장 크기)는
+        // 현재 미사용 — Overlay 가 자체 DPI 재조회로 처리한다. per-monitor DPI 정밀 대응이 필요해지면
+        // dispatch 의 WM_DPICHANGED case 에서 wParam/lParam 을 다시 전달하면 된다(WndProc 에서 항상 가용).
         Overlay.HandleDpiChanged();
     }
 
