@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+## [0.9.9.5] — 2026-06-03 — 트레이 안내 MessageBox 단일 경로 통합 (DUP-6 완결 · 내부 리팩터)
+
+> 0.9.9.4 는 건너뜀 (의도 — 동양권 숫자 4 기피). 버전 점프는 오타가 아니며, 0.9.6~0.9.8 영구 건너뜀과 같은 의도적 스킵 계보.
+
 ### Changed
 
 - **트레이 `IDM_ADMIN_ELEVATION` 안내 MessageBox 를 `ShowMessage` 헬퍼로 위임 — DUP-6 완결 (AUDIT 묶음 3 후속, 2026-06-03)** — [종합 코드 감사](docs/improvement-plan/AUDIT-2026-06-02-codebase-review.md) "묶음 3" 의 DUP-6 마지막 잔여 경로 합류. [`Tray.cs`](App/UI/Tray.cs) `HandleMenuCommand` 의 `IDM_ADMIN_ELEVATION` case 에서 직접 호출하던 `User32.MessageBoxW(hwndMain, I18n.AdminElevationChangeNotice, DefaultConfig.AppName, Win32Constants.MB_OK)` 3줄을 같은 파일의 기존 private 헬퍼 위임 `ShowMessage(I18n.AdminElevationChangeNotice)` 1줄로 교체(`ShowMessage` = `ModalDialogLoop.RunExternal(_hwndMain, () => User32.MessageBoxW(_hwndMain, body, DefaultConfig.AppName, uType: MB_OK))`, 이미 3 경로가 사용 중). 묶음 3(2026-06-02) 당시엔 이 경로가 "확인 후 자동 종료" 흐름이라 헬퍼 미적용으로 남겼으나(타이틀만 `DefaultConfig.AppName` 으로 교체), 본 합류로 트레이 안내 MessageBox 가 `ShowPositionError`/`CleanupPositions` empty/위치 기록 empty 3 경로와 함께 **단일 경로(`ShowMessage`)로 통합** — `Tray.cs` 직접 `MessageBoxW` 는 `ShowMessage` 내부 1곳만 잔존. **순수 리팩터 — 사용자 가시 동작·렌더 결과 변화 0**: 같은 owner(`_hwndMain` == 전달된 `hwndMain`)·타이틀(`DefaultConfig.AppName`)·버튼(MB_OK)로 `MessageBoxW` 렌더 100% 동일. 유일한 델타인 `RunExternal` 가드는 박스 표시 중 감지 스레드의 인디케이터 jitter 억제(나머지 3 `ShowMessage` 경로와 일관)일 뿐이며, 박스가 닫힌 뒤 `PostMessageW(WM_CLOSE)` 자동 종료라 무해. 시각 산출물 변화 0이라 육안검증 불필요 — 자동검증(dotnet build 0/0 + AOT publish 0/0(exe 4,883,456 B 불변) + 90/90 PASS + reviewer P1–P6 0 위반 + `AdminElevationChangeNotice` App/ 카운트 4 유지)으로 닫힘. DUP-6 ✅ 추적은 [AUDIT 문서](docs/improvement-plan/AUDIT-2026-06-02-codebase-review.md).
