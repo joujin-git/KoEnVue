@@ -145,37 +145,56 @@ internal static class TrayIcon
     }
 
     /// <summary>
+    /// 단색 채우기 GDI 컨텍스트 — solid brush + NULL_PEN 을 선택하고, using 종료 시 원래
+    /// brush/pen 을 복원하고 brush 핸들을 해제한다. DrawCaretDot/DrawStrikeThrough 가 동일한
+    /// prologue/finally 보일러를 공유한다 (AUDIT DUP-12). NULL_PEN 은 stock object 라 복원만 하고
+    /// DeleteObject 하지 않으며, 정리 대상은 CreateSolidBrush 핸들뿐이다.
+    /// readonly ref struct — 스택 전용, 힙 할당 0 (NativeAOT 린 앱 부합 · 람다 클로저 회피).
+    /// </summary>
+    private readonly ref struct SolidFillScope
+    {
+        private readonly IntPtr _hdc;
+        private readonly IntPtr _hBrush;
+        private readonly IntPtr _hOldBrush;
+        private readonly IntPtr _hOldPen;
+
+        public SolidFillScope(IntPtr hdc, uint fgColor)
+        {
+            _hdc = hdc;
+            _hBrush = Gdi32.CreateSolidBrush(fgColor);
+            IntPtr hNullPen = Gdi32.GetStockObject(Win32Constants.NULL_PEN);
+            _hOldBrush = Gdi32.SelectObject(hdc, _hBrush);
+            _hOldPen = Gdi32.SelectObject(hdc, hNullPen);
+        }
+
+        public void Dispose()
+        {
+            Gdi32.SelectObject(_hdc, _hOldPen);
+            Gdi32.SelectObject(_hdc, _hOldBrush);
+            Gdi32.DeleteObject(_hBrush);
+        }
+    }
+
+    /// <summary>
     /// 캐럿(세로바) + 점 도형을 Fg 색으로 그린다.
     /// 아이콘 중앙 부근에 배치.
     /// </summary>
     private static void DrawCaretDot(IntPtr hdc, int iconW, int iconH, uint fgColor)
     {
-        IntPtr hFgBrush = Gdi32.CreateSolidBrush(fgColor);
-        IntPtr hNullPen = Gdi32.GetStockObject(Win32Constants.NULL_PEN);
-        IntPtr hOldBrush = Gdi32.SelectObject(hdc, hFgBrush);
-        IntPtr hOldPen = Gdi32.SelectObject(hdc, hNullPen);
+        using var _ = new SolidFillScope(hdc, fgColor);
 
-        try
-        {
-            // 캐럿 (세로바): 아이콘 중앙 왼쪽에 배치
-            int caretW = Math.Max(iconW / CaretWidthRatio, CaretMinWidth);
-            int caretH = iconH * CaretHeightNum / CaretHeightDen;
-            int caretX = (iconW - caretW) / 2 - iconW / CaretOffsetRatio;
-            int caretY = (iconH - caretH + 1) / 2 + CaretYOffsetPx;
-            Gdi32.Rectangle(hdc, caretX, caretY, caretX + caretW, caretY + caretH);
+        // 캐럿 (세로바): 아이콘 중앙 왼쪽에 배치
+        int caretW = Math.Max(iconW / CaretWidthRatio, CaretMinWidth);
+        int caretH = iconH * CaretHeightNum / CaretHeightDen;
+        int caretX = (iconW - caretW) / 2 - iconW / CaretOffsetRatio;
+        int caretY = (iconH - caretH + 1) / 2 + CaretYOffsetPx;
+        Gdi32.Rectangle(hdc, caretX, caretY, caretX + caretW, caretY + caretH);
 
-            // 점 (dot): 캐럿 오른쪽 하단에 작은 원
-            int dotSize = Math.Max(iconW / DotSizeRatio, DotMinSize);
-            int dotX = caretX + caretW + Math.Max(iconW / CaretOffsetRatio, DotGapMinPx);
-            int dotY = caretY + caretH - dotSize;
-            Gdi32.Ellipse(hdc, dotX, dotY, dotX + dotSize, dotY + dotSize);
-        }
-        finally
-        {
-            Gdi32.SelectObject(hdc, hOldPen);
-            Gdi32.SelectObject(hdc, hOldBrush);
-            Gdi32.DeleteObject(hFgBrush);
-        }
+        // 점 (dot): 캐럿 오른쪽 하단에 작은 원
+        int dotSize = Math.Max(iconW / DotSizeRatio, DotMinSize);
+        int dotX = caretX + caretW + Math.Max(iconW / CaretOffsetRatio, DotGapMinPx);
+        int dotY = caretY + caretH - dotSize;
+        Gdi32.Ellipse(hdc, dotX, dotY, dotX + dotSize, dotY + dotSize);
     }
 
     /// <summary>
@@ -184,27 +203,15 @@ internal static class TrayIcon
     /// </summary>
     private static void DrawStrikeThrough(IntPtr hdc, int iconW, int iconH, uint fgColor)
     {
-        IntPtr hFgBrush = Gdi32.CreateSolidBrush(fgColor);
-        IntPtr hNullPen = Gdi32.GetStockObject(Win32Constants.NULL_PEN);
-        IntPtr hOldBrush = Gdi32.SelectObject(hdc, hFgBrush);
-        IntPtr hOldPen = Gdi32.SelectObject(hdc, hNullPen);
+        using var _ = new SolidFillScope(hdc, fgColor);
 
-        try
-        {
-            int thick = Math.Max(iconH / StrikeThicknessRatio, StrikeThicknessMinPx);
-            int left = StrikeEdgeInsetPx;
-            int right = iconW - StrikeEdgeInsetPx;
+        int thick = Math.Max(iconH / StrikeThicknessRatio, StrikeThicknessMinPx);
+        int left = StrikeEdgeInsetPx;
+        int right = iconW - StrikeEdgeInsetPx;
 
-            // 단일선 — Y 중심 = iconH / 2
-            int centerY = iconH / 2;
-            int y = centerY - thick / 2;
-            Gdi32.Rectangle(hdc, left, y, right, y + thick);
-        }
-        finally
-        {
-            Gdi32.SelectObject(hdc, hOldPen);
-            Gdi32.SelectObject(hdc, hOldBrush);
-            Gdi32.DeleteObject(hFgBrush);
-        }
+        // 단일선 — Y 중심 = iconH / 2
+        int centerY = iconH / 2;
+        int y = centerY - thick / 2;
+        Gdi32.Rectangle(hdc, left, y, right, y + thick);
     }
 }
