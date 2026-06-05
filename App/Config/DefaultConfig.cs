@@ -247,6 +247,12 @@ internal static partial class DefaultConfig
         ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow_WASDK", "TopLevelWindowForOverflowXamlIsland", "ControlCenterWindow"];
     public static string[] DefaultSystemHideProcesses => ["ShellExperienceHost"];
 
+    // 모니터-국한 셸 UI: 특정 모니터에만 존재하는 작업표시줄. 다른 모니터의 메인 인디는
+    // 가리지 않으므로, foreground 라도 인디가 '다른 모니터'에 있으면 숨기지 않는다
+    // (Program.TryHandleFilter 의 cross-monitor 무시 게이트가 본 목록을 사용). 바탕화면
+    // (Progman/WorkerW)은 전체 데스크톱을 덮어 "다른 모니터" 개념이 없으므로 제외 — 항상 숨김.
+    public static string[] MonitorScopedShellClasses => ["Shell_TrayWnd", "Shell_SecondaryTrayWnd"];
+
     // === Validate clamp / SettingsDialog field range — Min/Max 단일 진실원 (D7) ===
     // Settings.Validate 의 Math.Clamp 인자와 SettingsDialog.Fields.cs 의 min/max 인자를 모두 본 const
     // 참조로 통일한다. 두 곳에 같은 리터럴을 두면 한 쪽만 변경됐을 때 다이얼로그 입력 → Validate 클램프

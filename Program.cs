@@ -1154,6 +1154,7 @@ internal static partial class Program
     {
         public IntPtr LastHwndFocus;
         public IntPtr LastHwndForeground;
+        public IntPtr LastNonFilteredForeground;  // 직전 non-filtered foreground (인디가 떠 있던 앱) — cross-monitor 셸 무시 게이트의 인디 모니터 기준
         public string LastForegroundProcessName;
         public RECT LastSystemInputFrame;
         public RECT LastWindowFrame;
@@ -1329,6 +1330,22 @@ internal static partial class Program
     private static bool TryHandleFilter(ref DetectionState state, IntPtr hwndForeground, IntPtr hwndFocus,
         out AppConfig appConfig)
     {
+        // 다른 모니터의 모니터-국한 셸 UI(작업표시줄)는 인디가 표시된 모니터를 가리지 않으므로
+        // 현 인디 상태를 그대로 둔다 — filtered 도 not-filtered 도 아닌 "무시". HIDE 미발신 +
+        // state 전부 불변 + return true 로 tick 종료(EmitStateChanges 미도달 → 위치/IME/focus 갱신 0).
+        // 인디는 직전 non-filtered 앱(LastNonFilteredForeground) 위치·anchor 그대로 유지된다.
+        // FilteredStreak 도 불변 — 올리면 셸 이탈 후 잔여 streak 오작동, 0 리셋하면 not-filtered
+        // 진입(위치 갱신 동반) 의미가 된다. anchor 미설정(첫 부팅, 인디 미표시)이면 기존 숨김 동작 폴백.
+        string fgClass = WindowProcessInfo.GetClassName(hwndForeground);
+        if (state.LastNonFilteredForeground != IntPtr.Zero
+            && SystemFilter.IsMonitorScopedShell(fgClass)
+            && !SystemFilter.SameMonitor(hwndForeground, state.LastNonFilteredForeground))
+        {
+            Logger.Debug($"Filter IGNORE (cross-monitor shell): fgClass={fgClass}, anchorHwnd=0x{state.LastNonFilteredForeground.ToInt64():X}");
+            appConfig = default!;
+            return true;
+        }
+
         AppConfig? resolved = Settings.ResolveForApp(_config, hwndForeground);
         bool currentlyFiltered = (resolved is null)
             || SystemFilter.ShouldHide(hwndForeground, hwndFocus, resolved);
@@ -1365,6 +1382,7 @@ internal static partial class Program
         }
 
         state.FilteredStreak = 0;
+        state.LastNonFilteredForeground = hwndForeground;
         appConfig = resolved!;
         return false;
     }
