@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
-using KoEnVue.App.Config;
 using KoEnVue.App.Models;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Color;
@@ -151,23 +150,6 @@ internal static class SystemFilter
             if (s.Equals(name, StringComparison.OrdinalIgnoreCase)) return true;
         return false;
     }
-
-    /// <summary>
-    /// 모니터-국한 셸 UI(작업표시줄) 클래스명인지 판정. 다른 모니터에 있으면 메인 인디를 숨기지
-    /// 않는 cross-monitor 무시 게이트(Program.TryHandleFilter)가 사용한다. 바탕화면(Progman/WorkerW)은
-    /// 전체 데스크톱을 덮어 제외 — DefaultConfig.MonitorScopedShellClasses 참조. 순수 문자열 매칭이라
-    /// 단위테스트 가능. 셸 클래스 매칭은 <see cref="MatchesAny"/> 단일 구현 재사용(P4).
-    /// </summary>
-    internal static bool IsMonitorScopedShell(string className)
-        => MatchesAny(className, DefaultConfig.MonitorScopedShellClasses, []);
-
-    /// <summary>
-    /// 두 창이 같은 모니터에 있는지. <c>MonitorFromWindow</c>(NEAREST)는 항상 유효 핸들을 반환하므로
-    /// 핸들 동일성(==)으로 판정한다. cross-monitor 무시 게이트의 "인디 모니터 ≠ 셸 모니터" 비교용.
-    /// </summary>
-    internal static bool SameMonitor(IntPtr hwndA, IntPtr hwndB)
-        => User32.MonitorFromWindow(hwndA, Win32Constants.MONITOR_DEFAULTTONEAREST)
-           == User32.MonitorFromWindow(hwndB, Win32Constants.MONITOR_DEFAULTTONEAREST);
 
     /// <summary>
     /// 현재 가상 데스크톱에 있는지 확인.
