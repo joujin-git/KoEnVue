@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **설정 앱 등 UWP 앱 클릭 시 메인 인디케이터가 사라지던 버그 수정 (PR-23, 2026-06-05)** — Windows 설정 앱(SystemSettings, UWP) 콘텐츠를 클릭하면 메인 인디케이터가 약 0.2초 뒤 사라지던 결함을 고침. 원인: 설정 앱 foreground 창은 `ApplicationFrameHost.exe` 가 소유하는 `ApplicationFrameWindow` 클래스지만 실제 콘텐츠는 **별도 프로세스**(`SystemSettings.exe`)의 `CoreWindow` 라, 콘텐츠 클릭 시 프레임 스레드 기준 `GetGUIThreadInfo` 의 `hwndFocus` 가 0 으로 떨어진다 → `SystemFilter.ShouldHide` 조건 6(`hwndFocus == 0 && HideWhenNoFocus`) 발동 → `FilteredStreak` 가 `HideHysteresisPolls`(=3) 도달 시 HIDE(스모킹건 로그 `Filter triggered HIDE: ... hwndFocus=0x0, fgClass=ApplicationFrameWindow, streak=3`). 수정: [`Program.cs`](Program.cs) `ResolveFocusWindow` 의 `hwndFocus=0` 폴백을 conhost(`ConsoleWindowClass`) 외에 UWP 프레임(`ApplicationFrameWindowClass`)까지 확장 — foreground 가 `ApplicationFrameWindow` 이고 `hwndFocus=0` 이면 `hwndForeground` 로 대체해 no-focus HIDE 오탐을 막는다. 시작 메뉴/검색의 `Windows.UI.Core.CoreWindow`(역시 `hwndFocus=0`)는 `SystemInputProcesses` 경로로 정상 숨김돼야 하므로 폴백에서 제외(시작메뉴 ESC 시 정상 소멸 회귀가드) — 일반 UWP 앱 프레임 `ApplicationFrameWindow` 로만 한정. [`Core/Native/Win32Types.cs`](Core/Native/Win32Types.cs) 에 `ApplicationFrameWindowClass = "ApplicationFrameWindow"` const 추가(P3 — 리터럴 정의 1곳, `ConsoleWindowClass` 와 동형). IME 감지 무영향(`ImeStatus.Detect` 의 `threadId` 는 `hwndForeground` 로 독립 결정). 상세: [PR-23-uwp-focus-fallback.md](docs/improvement-plan/PR-23-uwp-focus-fallback.md).
+
 ## [0.9.9.5] — 2026-06-03 — 트레이 안내 MessageBox 단일 경로 통합 (DUP-6 완결 · 내부 리팩터)
 
 > 0.9.9.4 는 건너뜀 (의도 — 동양권 숫자 4 기피). 버전 점프는 오타가 아니며, 0.9.6~0.9.8 영구 건너뜀과 같은 의도적 스킵 계보.

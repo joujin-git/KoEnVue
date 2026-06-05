@@ -427,9 +427,16 @@ Main thread:
 
 `foregroundChanged` flag triggers focus event independently of `hwndFocus` comparison, fixing the return-to-same-window case after a desktop switch.
 
-### Console host fallback
+### Console host + UWP frame fallback
 
-`hwndFocus == 0` + `ConsoleWindowClass` check → use foreground window as focus target. Console apps don't report focus to AccessibleObjects, so we fall back.
+`ResolveFocusWindow` 의 `hwndFocus == 0` 폴백은 **두 윈도우 클래스**를 포그라운드 윈도우로 대체한다 — `Win32Constants.ConsoleWindowClass`(conhost) **및** `Win32Constants.ApplicationFrameWindowClass`("ApplicationFrameWindow", UWP 앱 프레임). 둘 다 GUITHREADINFO 의 `hwndFocus` 가 0 으로 떨어지는 동형 증상이라 같은 폴백을 공유한다.
+
+- **conhost**: 콘솔 호스트는 포커스를 AccessibleObject 에 보고하지 않는다.
+- **UWP 프레임**: 설정 앱(SystemSettings) 등 UWP 앱의 foreground 창은 `ApplicationFrameHost.exe` 가 소유하는 `ApplicationFrameWindow` 지만 실제 콘텐츠는 **별도 프로세스의 CoreWindow**(예: `SystemSettings.exe`)다. 콘텐츠 클릭 시 프레임 스레드 기준 `GetGUIThreadInfo` 의 `hwndFocus = 0` → `SystemFilter.ShouldHide` 조건 6(`hwndFocus == 0 && HideWhenNoFocus`) 이 발동하고 `FilteredStreak` 가 `HideHysteresisPolls`(=3) 에 도달하면 메인 인디가 사라진다(스모킹건 로그: `Filter triggered HIDE: ... hwndFocus=0x0, fgClass=ApplicationFrameWindow, streak=3`). foreground 를 포커스 타깃으로 대체해 이 no-focus HIDE 오탐을 막는다.
+
+**`Windows.UI.Core.CoreWindow` 제외**: 시작 메뉴/검색의 `CoreWindow`(역시 `hwndFocus = 0`)는 폴백에서 **의도적으로 제외** — 이들은 `SystemInputProcesses` 경로로 *정상* 숨김돼야 하므로 폴백 대상은 일반 UWP 앱 프레임인 `ApplicationFrameWindow` 로만 한정한다(시작메뉴 ESC 시 정상 소멸 회귀가드).
+
+**IME 감지 무영향**: `ImeStatus.Detect(hwndFocus, threadId)` 의 `threadId` 는 `hwndForeground` 로 독립 결정되므로(Program.cs `DetectionLoop`), 본 폴백은 IME Tier 3(`GetKeyboardLayout`) 경로를 건드리지 않는다.
 
 ### Position update ordering
 

@@ -527,4 +527,10 @@ internal static class Win32Constants
 
     // --- 윈도우 클래스명 ---
     public const string ConsoleWindowClass = "ConsoleWindowClass";
+
+    // UWP 앱 프레임 (ApplicationFrameHost.exe 소유). 실제 콘텐츠는 별도 프로세스의
+    // CoreWindow 라 콘텐츠 클릭 시 프레임 스레드 기준 GUITHREADINFO.hwndFocus=0 이 된다
+    // (conhost 와 동형). ResolveFocusWindow 의 hwndFocus=0 폴백 한정자.
+    // WindowProcessInfo.ApplicationFrameHost(프로세스명)와 별개 — 이건 윈도우 클래스명.
+    public const string ApplicationFrameWindowClass = "ApplicationFrameWindow";
 }

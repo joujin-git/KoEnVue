@@ -1294,8 +1294,8 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// GUITHREADINFO 로 hwndFocus 를 획득한다. 콘솔 호스트(conhost)는
-    /// hwndFocus=0 이므로 포그라운드 윈도우로 대체.
+    /// GUITHREADINFO 로 hwndFocus 를 획득한다. 콘솔 호스트(conhost) 및
+    /// UWP 앱 프레임(ApplicationFrameWindow)은 hwndFocus=0 이므로 포그라운드 윈도우로 대체.
     /// </summary>
     private static IntPtr ResolveFocusWindow(uint threadId, IntPtr hwndForeground)
     {
@@ -1306,8 +1306,16 @@ internal static partial class Program
 
         if (hwndFocus == IntPtr.Zero)
         {
+            // conhost: 콘솔 호스트는 GUITHREADINFO 에 포커스를 보고하지 않는다.
+            // UWP 프레임(ApplicationFrameWindow): 콘텐츠가 별도 프로세스 CoreWindow 라
+            //   프레임 스레드 기준 hwndFocus=0 (conhost 와 동형). 둘 다 foreground 를
+            //   포커스 타깃으로 대체해 ShouldHide 조건 6(no-focus HIDE) 오탐을 막는다.
+            //   단, 시작 메뉴/검색의 Windows.UI.Core.CoreWindow 는 SystemInputProcesses
+            //   경로로 정상 숨김되므로 폴백에서 제외 — ApplicationFrameWindow(일반 UWP
+            //   앱 프레임)로만 한정한다.
             string fgClass = WindowProcessInfo.GetClassName(hwndForeground);
-            if (fgClass.Equals(Win32Constants.ConsoleWindowClass, StringComparison.OrdinalIgnoreCase))
+            if (fgClass.Equals(Win32Constants.ConsoleWindowClass, StringComparison.OrdinalIgnoreCase)
+                || fgClass.Equals(Win32Constants.ApplicationFrameWindowClass, StringComparison.OrdinalIgnoreCase))
                 hwndFocus = hwndForeground;
         }
         return hwndFocus;
