@@ -5,9 +5,15 @@
 
 ## [Unreleased]
 
+## [0.9.9.6] — 2026-06-08 — UWP 포커스 폴백 버그 수정 + 내부 견고성 정리
+
 ### Fixed
 
 - **설정 앱 등 UWP 앱 클릭 시 메인 인디케이터가 사라지던 버그 수정 (PR-23, 2026-06-05)** — Windows 설정 앱(SystemSettings, UWP) 콘텐츠를 클릭하면 메인 인디케이터가 약 0.2초 뒤 사라지던 결함을 고침. 원인: 설정 앱 foreground 창은 `ApplicationFrameHost.exe` 가 소유하는 `ApplicationFrameWindow` 클래스지만 실제 콘텐츠는 **별도 프로세스**(`SystemSettings.exe`)의 `CoreWindow` 라, 콘텐츠 클릭 시 프레임 스레드 기준 `GetGUIThreadInfo` 의 `hwndFocus` 가 0 으로 떨어진다 → `SystemFilter.ShouldHide` 조건 6(`hwndFocus == 0 && HideWhenNoFocus`) 발동 → `FilteredStreak` 가 `HideHysteresisPolls`(=3) 도달 시 HIDE(스모킹건 로그 `Filter triggered HIDE: ... hwndFocus=0x0, fgClass=ApplicationFrameWindow, streak=3`). 수정: [`Program.cs`](Program.cs) `ResolveFocusWindow` 의 `hwndFocus=0` 폴백을 conhost(`ConsoleWindowClass`) 외에 UWP 프레임(`ApplicationFrameWindowClass`)까지 확장 — foreground 가 `ApplicationFrameWindow` 이고 `hwndFocus=0` 이면 `hwndForeground` 로 대체해 no-focus HIDE 오탐을 막는다. 시작 메뉴/검색의 `Windows.UI.Core.CoreWindow`(역시 `hwndFocus=0`)는 `SystemInputProcesses` 경로로 정상 숨김돼야 하므로 폴백에서 제외(시작메뉴 ESC 시 정상 소멸 회귀가드) — 일반 UWP 앱 프레임 `ApplicationFrameWindow` 로만 한정. [`Core/Native/Win32Types.cs`](Core/Native/Win32Types.cs) 에 `ApplicationFrameWindowClass = "ApplicationFrameWindow"` const 추가(P3 — 리터럴 정의 1곳, `ConsoleWindowClass` 와 동형). IME 감지 무영향(`ImeStatus.Detect` 의 `threadId` 는 `hwndForeground` 로 독립 결정). 상세: [PR-23-uwp-focus-fallback.md](docs/improvement-plan/PR-23-uwp-focus-fallback.md).
+
+### Internal
+
+- **코드 리뷰 후속 수정 8건 — 레이스/동시성·견고성·중복 제거 (2026-06-08, `8a69191`)** — 전체 코드베이스 리뷰의 후속 정리. **사용자 가시 동작·렌더 결과·config 키 변화 0** (내부 리팩터 + 동시성 방어). **레이스/동시성**: (1) [`Core/Config/JsonSettingsManager.cs`](Core/Config/JsonSettingsManager.cs) `_lastMtime`(DateTime, 메인 Save/Load ↔ 감지 CheckReload 공유)을 `lock (_mtimeLock)` 으로 cross-thread 동기화 — `DateTime` 은 64bit 라 `volatile` 불가한 제약의 올바른 대응(I/O 는 lock 밖, 필드 대입/비교만 보호). (2) [`Program.cs`](Program.cs) `ProcessDetectionTick` 시작에서 `AppConfig cfg = _config` 틱 스냅샷(틱 내 일관성, `TryHandleFilter` 에 전달). (3) `HandleConfigChanged` 의 `Logger.Initialize` 를 `LogToFile`/`LogFilePath`/`LogMaxSizeMb` 변경 시에만 호출 — drain 스레드 `Join`(최대 3s) churn 으로 무변경 hot-reload 가 메인 스레드를 블록하던 것 제거. (4) [`App/Startup/StartupTaskManager.cs`](App/Startup/StartupTaskManager.cs) schtasks 출력을 `ReadToEndAsync` 동시 읽기로 회수 — stderr 미읽음 시 파이프 버퍼 포화 데드락 방지(3곳). **견고성**: (5) `WndProc`→`WndProcCore` 분리 + try/catch 래퍼 — `[UnmanagedCallersOnly]` 핸들러의 예상 일시 예외(Win32/COM/IO 등)를 흡수·로깅 후 메시지 루프 유지, 로직 버그는 필터 밖으로 전파(감지 스레드/콜백 catch 정책과 대칭). (6) `ResolveFocusWindow` 의 `GetGUIThreadInfo` 반환값 체크. **중복 제거(P4)**: (7) `ShowIndicatorAtForeground` 헬퍼로 "인디 표시" 3줄 패턴 6곳 단일화. (8) [`App/UI/Overlay.cs`](App/UI/Overlay.cs) `ResolveCornerPosition` 으로 `ResolveAnchor`(work area)·`ResolveRelativePosition`(창 프레임) 의 동일 corner 분기 통합. dotnet build 0/0 + AOT publish 경고 0 + 90/90 PASS + reviewer P1–P6 0 위반 + 수정 exe 실행 로그 ERROR/WARN 0.
 
 ## [0.9.9.5] — 2026-06-03 — 트레이 안내 MessageBox 단일 경로 통합 (DUP-6 완결 · 내부 리팩터)
 
