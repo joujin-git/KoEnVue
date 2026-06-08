@@ -259,7 +259,11 @@ function Test-WorkflowPhaseDrift {
 
 # Top-level error guard for hooks — log to state dir, never spill into transcript
 function Invoke-HookSafely {
-    param([Parameter(Mandatory)][scriptblock]$Body)
+    param(
+        [Parameter(Mandatory)][scriptblock]$Body,
+        [string]$FallbackContext = '',
+        [string]$EventName = ''
+    )
     try {
         & $Body
     } catch {
@@ -279,6 +283,15 @@ function Invoke-HookSafely {
                 Set-Content -Path $logPath -Value $tail -Encoding UTF8 -ErrorAction SilentlyContinue
             }
         } catch { }
+        # 안전망의 안전망 — context-injecting hook(inject-turn-context 등)이 Write-HookOutput
+        # 직전에 죽으면 그 턴의 주입(ultrathink/ultracode/effort)이 통째 증발한다. FallbackContext 가
+        # 주어지면 최소 한 줄이라도 내보내 ultracode 항상-ON 의 단일 실패점을 방어.
+        if ($FallbackContext -and $EventName) {
+            try {
+                $fb = @{ hookSpecificOutput = @{ hookEventName = $EventName; additionalContext = $FallbackContext } } | ConvertTo-Json -Compress -Depth 12
+                [Console]::Out.Write($fb)
+            } catch { }
+        }
         exit 0
     }
 }

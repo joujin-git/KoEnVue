@@ -25,8 +25,8 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 
 | 결정 | 내용 | 이유 |
 |------|------|------|
-| 모델 | `opus` (Opus 4.8) | "비용 무제한, 깊이 최우선" |
-| Effort | `max` (settings 명목) + `CLAUDE_CODE_EFFORT_LEVEL=max` (env, 실효) | 문서상 settings 는 xhigh 까지만 공식 수락하나 의도 명시를 위해 `max` 표기. env 가 실제 max 강제 — silent ignore / fallback 시에도 결과 동일 |
+| 모델 | `opus` (Opus 4.8) | "비용 무제한, 깊이 최우선". model/effort 는 statusLine payload(`payload.effort.level`)로 전달됨 — 미수신 시 statusline.ps1 이 env 폴백 |
+| Effort | `effortLevel: xhigh` (settings) + `CLAUDE_CODE_EFFORT_LEVEL=max` (env, 실효·최우선) | **공식 검증(claude-code-guide, 2026-06-08)**: env > settings > 모델기본 — env=max 가 실효 최우선. settings 의 `effortLevel` 은 공식 키지만 `max`/`ultracode` 값은 **session-only 라 settings 파일에선 무효**, 파일 최대 유효값은 `xhigh` → `xhigh` 로 정정(실효 effort 는 env=max 유지). **ultracode 공식 런타임 모드 = `xhigh` + dynamic workflow 오케스트레이션** — `max > xhigh` 이므로 공식 ultracode 활성화는 오히려 effort 강등 → "env=max + hook 으로 workflow 유도" 현행이 우월. settings.json 으로 ultracode 영속 불가 |
 | Thinking | `alwaysThinkingEnabled: true`, `showThinkingSummaries: true` | 모든 작업 ultrathink |
 | **ultracode** | **항상 ON** — `inject-turn-context` hook 이 매 턴 키워드+지시 주입, Workflow 멀티에이전트 오케스트레이션 | "비용 무제한·깊이 최우선" 을 멀티에이전트로 확장. effort=max 와 별개 축 — 둘 다 유지 |
 | ultrathink 키워드 | UserPromptSubmit hook 으로 매 턴 자동 주입 + **서브에이전트 6개 본문 첫 단락에 "ultrathink + max effort + thinking 모드" 명시 강제** | 사용자 입력에 누락돼도, 위임된 서브에이전트가 inject hook 미경유 경로로 진입해도 동일 effort 보장 |
@@ -66,9 +66,9 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 │   ├── codebase-audit.js      전체 코드 감사
 │   ├── design-compare.js      신규 기능 설계 비교 (judge panel)
 │   └── harness-optimize.js    하네스 자체 최적화
-├── scratch/                   ❌ ignored (디버깅 임시 ps1)
+├── scratch/                   ❌ ignored (디버깅 임시 ps1 — 현재 비었음, PR-15 권한상승 프로브 잔재 정리됨)
 ├── hooks/                     ✅ committed
-│   ├── lib/_common.ps1        공통 함수 + 공유 상수 ($ClaudeMdLineLimit, Hide-Secrets, Invoke-HookSafely, Invoke-Push, Sync-Memory, Test-WorkflowPhaseDrift)
+│   ├── lib/_common.ps1        공통 함수 + 공유 상수 ($ClaudeMdLineLimit, Hide-Secrets, Invoke-HookSafely, Invoke-Push, Invoke-WipCommit, Sync-Memory, Get-AutoMemoryDir, Test-WorkflowPhaseDrift)
 │   ├── inject-turn-context.ps1 UserPromptSubmit — ultrathink+max effort+ultracode 주입 (워크플로우 카탈로그 동적)
 │   ├── session-start.ps1      SessionStart — 이전 요약 주입 + push 안 한 commit 알림 + Sync-Memory
 │   ├── pre-compact.ps1        PreCompact — 압축 마커 append + git 스냅샷 additionalContext
@@ -128,7 +128,9 @@ docs/
 
 각 워크플로우는 KoEnVue 서브에이전트(explorer/planner/reviewer)를 `agentType` 으로 재사용하고 `schema` 로 구조화 출력을 강제합니다. 예: `Workflow({ name: 'release-review', args: { scope: 'PR-26 변경' } })`.
 
-**leaf vs 오케스트레이터**: 6개 서브에이전트의 `tools:` 에는 위임 도구가 없습니다(leaf). 오케스트레이션은 메인 세션 또는 워크플로우 스크립트가 담당하고, 서브에이전트는 워크플로우의 노드로 호출됩니다.
+**leaf vs 오케스트레이터**: 6개 서브에이전트의 `tools:` 에는 위임 도구가 없습니다(leaf). 오케스트레이션은 메인 세션 또는 워크플로우 스크립트가 담당합니다.
+
+**호출 경로 — 역할분담**: 저장된 워크플로우가 `agentType` 으로 실제 노드 호출하는 서브에이전트는 **explorer / planner / reviewer 3개뿐**입니다(explorer=harness-optimize Inspect·codebase-audit Scope, planner=design-compare Propose, reviewer=release-review Review·codebase-audit Gate). bug-hunt 의 `agent()` 는 `agentType` 미지정(기본 워크플로우 에이전트). **docs-keeper / historian / verifier 는 워크플로우 노드가 아니라 메인 세션 위임 전용**(PostToolUse 신호 / `/wrap-up` / release 전 등)입니다 — `README.md` 의 `agentType` enum 에 6개가 다 열거돼 있어도 노드로 쓰이는 건 3개. "서브에이전트는 워크플로우 노드로 호출"을 6개 전체로 일반화하지 마세요.
 
 **meta↔phase 자동 가드**: `.claude/workflows/README.md` 의 "meta.phases 의 title ↔ 본문 `phase('X')` 1:1" 규약을 `_common.ps1` 의 `Test-WorkflowPhaseDrift` 가 정규식 휴리스틱으로 기계 검증합니다. `/harness-status` 의 `## 워크플로우 무결성` 섹션이 매 진단 시 호출 — 불일치 워크플로우(meta-only / body-only phase)를 보고하고, 전부 일치면 "✅ 정합". 현재 5/5 정합(drift 0).
 
@@ -164,6 +166,7 @@ hook 이벤트 8개 (SessionStart · PreCompact · UserPromptSubmit · PostToolU
 - **보안 민감 매핑**: `Core/Native/` (P/Invoke 시그니처), `app.manifest` (UAC 레벨), `KoEnVue.csproj` (NuGet 추가/제거), `NuGet.config` (외부 피드) 변경 시 Reason 메시지에 `/security-review` 권장/필수 문구 자동 포함 — Claude Code 의 built-in 슬래시 커맨드로 보안 점검 유도.
 - `.claude/state/pending-docs.txt` 에 기록 → Stop hook 에서 사용
 - **중복 reminder 억제**: 같은 매핑(예: `App/*` → `docs/architecture.md`)이 한 턴에 여러 번 trigger 되면, 첫 번째만 컨텍스트 reminder. pending-docs.txt 에는 모든 파일 기록 (Stop hook 에서 다 표시).
+- **워크플로우 phase-drift 자동가드**: 편집 파일이 `.claude/workflows/*.js` 면 `Test-WorkflowPhaseDrift` 를 즉시 호출해 meta.phases ↔ 본문 `phase()` 불일치를 그 자리에서 경고(런타임/`/harness-status` 호출 전 조기 검출). drift 경고가 있으면 중복 억제와 무관하게 항상 내보냄.
 
 ### `PostToolUse(Bash git commit *)` → `auto-push.ps1`
 - "**커밋 = 푸시 항상 같이**" 규칙 구현
@@ -174,9 +177,11 @@ hook 이벤트 8개 (SessionStart · PreCompact · UserPromptSubmit · PostToolU
 
 ### `Stop` → `stop-record.ps1`
 - transcript `Get-Content -Tail 1000` 클램프 후 마지막 assistant 응답 발췌 (400자)
+- **빈 발췌 마커**: text 응답 없이 끝난 턴(도구 위임 / 구조화 출력)은 `(text 응답 없음 …)` 마커를 명시 append — 침묵 실패와 도구-위임 턴을 구분. 매 턴 이 마커면 transcript 파싱 점검 신호.
 - **secret 마스킹** (Hide-Secrets 함수) 후 기록 — 자세한 한계는 §9 참조
 - 이번 턴의 pending-docs 와 dirty tree 상태 정리 (30건 클램프)
 - `docs/sessions/YYYY-MM-DD.md` 끝에 `## [HH:MM] turn` 블록 append
+- **한계**: 세션 발췌는 transcript JSONL 의 내부 스키마(`type`/`message`/`content`)에 의존 — Claude Code 버전업으로 스키마가 바뀌면 발췌가 깨질 수 있음(위 빈 발췌 마커가 그 조기 신호).
 
 ### `SessionEnd` → `session-end.ps1`
 - dirty tree 가 있으면:
@@ -190,6 +195,8 @@ hook 이벤트 8개 (SessionStart · PreCompact · UserPromptSubmit · PostToolU
 - `_common.ps1` 의 `$ClaudeMdLineLimit`(현재 30) 초과면 경고 컨텍스트 주입 — 한계값은 harness-status 스킬과 공유하는 단일 진실원
 
 **안전망**: 모든 hook 은 `_common.ps1` 의 `Invoke-HookSafely { ... }` 로 감싸져 있어 에러가 transcript 에 새지 않고 `.claude/state/hook-errors.log` 에 기록 (100줄 초과 시 자동 rotation — 마지막 50줄만 유지).
+
+**안전망의 안전망 — `-FallbackContext`/`-EventName`**: context-injecting hook(inject-turn-context)이 `Write-HookOutput` 직전에 죽으면 그 턴의 주입(ultrathink/ultracode/effort)이 통째 증발 — ultracode 항상-ON 의 단일 실패점입니다. `Invoke-HookSafely` 에 `-FallbackContext`(+`-EventName`)를 주면 catch 경로에서 최소 fallback 컨텍스트 1줄을 `hookSpecificOutput.additionalContext` 로 내보내 깊이 손실을 방어합니다. inject-turn-context.ps1 이 이 옵션 사용.
 
 ## 5. 매핑 — 코드 변경 → 동기화 문서
 
@@ -230,7 +237,7 @@ post-edit-doc-sync.ps1 의 매핑 규칙:
 
 ### Claude Code built-in 명령 — 함께 활용
 
-위 5개 외에 Claude Code 표준 명령도 사용 가능:
+위 슬래시 커맨드(6개) 외에 Claude Code 표준 명령도 사용 가능:
 
 | 명령 | 용도 |
 |------|------|
@@ -319,6 +326,9 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 - **`.claude/worktrees/` 의 빌드 산출물 누적**: 서브에이전트가 publish 를 돌리면 worktree 안에 ~150 MB 산출물이 남고 정리 안 함. 주기적으로 `/cleanup-worktrees` SKILL 로 일주일 이상 미사용 worktree 제거 권장.
 - **ultracode 런타임 활성화 미검증**: `inject-turn-context.ps1` 의 키워드 주입이 ultracode "런타임 플래그"를 켜는지만 미확인 — 워크플로우 `/<name>` 자동 노출과 `Workflow({name})` 실제 다중 에이전트 fan-out 은 **확인됨**(2026-06-08 release-review/harness-optimize 실행 시 각 6 에이전트). 행동은 명시적 지시 + 워크플로우 실행으로 보장됨. ⚠️ statusLine 의 `ultracode` 는 항상 하드코딩 표시라 **런타임 검증 신호가 아님** — 검증은 `Workflow` 실제 fan-out 로그로. (memory `feedback-harness-design` 참조)
 - **ultracode 비용 급증**: substantive 작업마다 워크플로우 fan-out → 토큰 급증. 빠르고 싼 처리를 원하는 turn 은 작업이 trivial 함을 프롬프트에 명시하거나 워크플로우를 건너뛰도록 지시.
+- **statusLine 하드코딩 폴백**: `model`/`effort` 는 statusLine payload(`payload.effort.level`)가 오면 그 값을 쓰되, 미수신 시 폴백 — model 은 `'opus'` 고정, effort 는 이번 변경으로 `$env:CLAUDE_CODE_EFFORT_LEVEL`(실효 경로) 반영 후 없으면 `'max'`. 즉 표시값이 항상 런타임 진실은 아님(특히 model 은 여전히 하드코딩 폴백).
+- **PreCompact ↔ Stop 세션파일 동시 append 경합**: 두 hook 모두 `docs/sessions/YYYY-MM-DD.md` 끝에 `Add-Content` 로 블록을 붙임. 컴팩션과 턴 종료가 거의 동시에 발생하면 같은 파일 동시 쓰기로 블록이 섞이거나 누락될 가능성(append-only·저빈도라 실측 피해 미관측, OS 파일락 의존이라 §OS 감수 정책 대상).
+- **transcript JSONL 스키마 의존**: stop-record 의 세션 발췌는 transcript 내부 스키마(`type`/`message`/`content`)에 의존 — Claude Code 버전업 시 깨질 수 있음(§4 Stop 의 빈 발췌 마커가 조기 신호).
 
 ## 11. PR 분리 시 충돌 회피 정책
 
@@ -353,7 +363,7 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 이 컴퓨터의 **C: 드라이브는 보안 정책상 수시로 14일 전 시점으로 복원**됩니다. 기본 Claude Code memory 위치 (`C:\Users\<user>\.claude\projects\<project>\memory\`) 는 복원될 때마다 사라지므로, 본 하네스는 메모리를 프로젝트 트리(E:)로 옮기려 `autoMemoryDirectory` 를 설정했습니다.
 
-**그러나 2026-06-08 harness-optimize 점검에서 이 설정이 실제로는 무시되고 있음을 발견**했습니다 — `${CLAUDE_PROJECT_DIR}` 가 빈 값으로 전개돼(`autoMemoryDirectory` 가 무효) Claude Code 가 기본 위치 **C: 에 읽기/쓰기 중**입니다. 즉 E: 의 `.claude/memory/` 는 git 백업이고 Claude 가 직접 읽는 건 C: 입니다. **이 split-brain 은 아래 `Sync-Memory` hook 으로 해결**(2026-06-08) — C: 의 최신 메모리가 매 세션 E:(git) 로 백업되고, 복원 시 E: 에서 C: 로 자동 복구됩니다.
+**현 실태(2026-06-08 정리)**: `autoMemoryDirectory`(`${CLAUDE_PROJECT_DIR}` 빈 값 전개)는 **무효라 Claude Code 는 기본 위치 C: 에 읽기/쓰기**하지만, **`Sync-Memory` hook 이 매 SessionStart 에 C:↔E:(git)를 보전하므로 split-brain 의 실제 영향은 0** 입니다 — C: 의 최신 메모리는 E:(truth)로 백업되고, C: 복원 시 E:→C: 미러로 자동 복구. 즉 "설정은 무효지만 hook 으로 보전됨" 한 가지 상태이며, 무효함과 해결됨이 모순이 아닙니다.
 
 | 항목 | 실태 (2026-06-08) |
 |------|------|
@@ -367,6 +377,8 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 **근본 해결 (적용됨 2026-06-08)**: SessionStart hook 의 `Sync-Memory`(`_common.ps1`)가 매 세션 C:↔E: 동기화 — **E: 가 truth**(복원 무관), C: 의 더 새 파일만 E: 로 흡수(복원된 옛 C: 가 최신 E: 를 못 덮게 mtime UTC 비교), 그 뒤 E:→C: 미러로 복원된 C: 를 최신 복구. slug=`e--dev-KoEnVue`·`Copy-Item` mtime 보존 검증 완료, 최초 실행 시 `restored=5` 로 현재 split-brain 해소(C:=E: 해시 일치). `absorbed>0`(C: 에 새 메모리) 시 SessionStart 가 커밋 권장 알림 → 다음 commit 에 E: 백업 포함.
 
 ### 영구 보존되는 메모리
+
+> 표기 주의 — 아래 이름은 wikilink/표시용 **정규화 형태(hyphen)** 이고, **실제 파일은 underscore**(`feedback_harness_design.md`, `user_role.md`, `feedback_workflow_rules.md`, `feedback_version_format.md`). Claude Code 의 memory wikilink 가 둘을 정규화해 동일시하므로 본문은 hyphen 으로 적되 디스크 파일명은 underscore 다(`os-dependent-accept.md` 만 hyphen 실파일).
 
 - **`user-role`** — 사용자 프로필 (비개발자 + 바이브 코딩)
 - **`feedback-harness-design`** — 하네스 디자인 결정

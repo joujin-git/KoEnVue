@@ -40,8 +40,8 @@
 | P규칙 grep hardening 불일치(planner/explorer 박제) | ⏭️ | "예시 grep, 권위는 reviewer/conventions.md" 격하 |
 | release/codebase/design round/budget cap 부재 | 🟡 | release-review MAX_VERIFY 적용. 나머지 ⏭️ |
 | historian/정형 leaf 의 max effort 과지출 | 📋 | "정형 영구화 leaf 는 max 예외" 정책 |
-| settings.json ultracode 활성화 키 부재 | 🔍 | 공식 키 존재 확인 후 있으면 추가, 없으면 "관례" 로 정직 표기 |
-| 발견성 — skills+workflows 통합 카탈로그 부재 | ⏭️ | harness-status 에 워크플로우 이름/호출법 출력 확장 |
+| settings.json ultracode 활성화 키 부재 | ✅ | **검증완료(claude-code-guide, 2회차)**: `effortLevel` 은 공식 키지만 `max`/`ultracode` 는 session-only 라 settings 파일에선 무효 → 파일 최대 유효값 `xhigh` 로 정정(실효 effort 는 env=max 유지). ultracode 공식모드=`xhigh`+workflow 라 `max>xhigh` → settings 영속화는 effort 강등 → 현행(env max + hook workflow 유도) 유지. harness.md §1 박제 |
+| 발견성 — skills+workflows 통합 카탈로그 부재 | ✅ | `harness-status` SKILL 이 agents/skills/workflows/hooks 를 전부 동적 나열([skills/harness-status/SKILL.md](../../.claude/skills/harness-status/SKILL.md) "구성요소" 섹션 — `Get-ChildItem` 으로 SSOT) + 워크플로우 무결성(meta↔phase) 섹션까지 — 통합 카탈로그 충족 |
 | 장비간 hook-errors 노출(state/ 휘발) | ⏭️ | 치명 실패는 git-tracked 위치에도 1줄 |
 
 ## Low impact

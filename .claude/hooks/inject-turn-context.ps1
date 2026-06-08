@@ -1,6 +1,6 @@
 . (Join-Path $PSScriptRoot 'lib\_common.ps1')
 
-Invoke-HookSafely {
+Invoke-HookSafely -EventName 'UserPromptSubmit' -FallbackContext '[harness] inject hook 실패 — 이번 턴은 ultrathink + max effort + ultracode(substantive 작업은 Workflow 멀티에이전트 오케스트레이션)를 수동 적용하세요.' {
 
 # UserPromptSubmit — 매 턴 effort/thinking/ultracode 컨텍스트 주입.
 # 두 축을 독립 주입: (1) ultrathink + max effort, (2) ultracode 멀티에이전트 모드.

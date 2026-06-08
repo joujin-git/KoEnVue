@@ -5,7 +5,9 @@ Invoke-HookSafely {
 $payload = Read-HookInput
 
 $model = 'opus'
-$effort = 'max'
+# effort 폴백: payload.effort.level 미수신 시 env(실효 경로)를 반영 — 하드코딩 'max' 보다 실제에 가까움.
+# payload 에 effort.level 이 오면 아래에서 덮어씀(우선). env 도 없으면 'max'.
+$effort = if ($env:CLAUDE_CODE_EFFORT_LEVEL) { [string]$env:CLAUDE_CODE_EFFORT_LEVEL } else { 'max' }
 $branch = ''
 $dirty = ''
 

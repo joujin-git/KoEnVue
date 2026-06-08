@@ -14,6 +14,7 @@ shell: powershell
 - 스킬: `!`(Get-ChildItem .claude/skills -Directory -ErrorAction SilentlyContinue).Name -join ', '``
 - 워크플로우: `!`(Get-ChildItem .claude/workflows/*.js -ErrorAction SilentlyContinue).BaseName -join ', '``
 - hook 스크립트: `!`(Get-ChildItem .claude/hooks/*.ps1 -ErrorAction SilentlyContinue).Name -join ', '``
+- scratch (임시 프로브): `!`$n = @(Get-ChildItem .claude/scratch -File -ErrorAction SilentlyContinue).Count; if ($n -eq 0) { '0 (정리됨)' } else { "$n 개 — 보안 민감 프로브 누적 가능, 정리 검토" }``
 
 ## 워크플로우 무결성
 - meta↔phase 정합: `!`. .claude/hooks/lib/_common.ps1; $d = Test-WorkflowPhaseDrift; if ($d) { "⚠ drift: $($d -join '; ')" } else { "✅ 정합 (meta.phases ↔ phase() 일치)" }``

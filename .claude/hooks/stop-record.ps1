@@ -70,6 +70,10 @@ if ($lastAssistantText) {
     $block += ''
     $block += "> $($lastAssistantText -replace "`r?`n", ' ')"
     $block += ''
+} else {
+    # 빈 발췌 침묵 실패 가시화 — text 블록 없는 턴(도구 위임/구조화 출력)과 transcript 스키마 변경을 구분.
+    $block += '**최근 응답 발췌:** (text 응답 없음 — 도구 위임/구조화 출력으로 종료된 턴. 매 턴 이 마커면 transcript 파싱 점검 필요)'
+    $block += ''
 }
 if ($pendingDocs.Count -gt 0) {
     $block += '**문서 동기화 대기:**'
