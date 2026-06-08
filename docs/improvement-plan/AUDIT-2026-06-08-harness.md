@@ -30,11 +30,11 @@
 | statusline↔docs 검증 모순 | ✅ | docs/memory 를 "Workflow fan-out 으로 검증" 으로 정정 |
 | memory 파일명/wikilink 불일치 | ✅ | wikilink 를 실제 name 으로([[feedback-version-format]] 등) |
 | memory git추적 정책 drift(commands/ 표기) | ✅ | skills/workflows/memory 로 갱신 |
-| PreCompact hook 부재 | ⏭️ | 컴팩션 직전 wrap-up 유도 additionalContext — 가치 높음, 다음 |
+| PreCompact hook 부재 | ✅ | `pre-compact.ps1` 신설 (matcher `*` = auto+manual) — (1) 세션 로그에 compaction 마커 append, (2) additionalContext 로 git 스냅샷+세션파일 포인터 주입(연속성 복원). hook 이벤트 7→8개. harness.md §4 반영 |
 | inject-turn-context 매 턴 토큰(~700자) | 📋 | N턴마다 전체/이후 축약 + leaf 주입 가드 — leaf 주입 여부 실측 먼저 |
 | PR 충돌 점검 vs main 직커밋 정책 상충 | 📋 | docs-keeper §0/harness §11/planner 정렬 — 정책 결정 |
-| 워크플로우 meta↔본문 자동 가드 부재 | ⏭️ | harness-status 에 phase 정합 체크 1줄 |
-| 카탈로그 5곳 하드코딩 + 매직넘버 5 | ⏭️ | inject hook 동적 나열 또는 단일 진실원 포인터 |
+| 워크플로우 meta↔본문 자동 가드 부재 | ✅ | `_common.ps1` 에 `Test-WorkflowPhaseDrift`(meta.phases title ↔ 본문 phase() 정규식 정합 검사) + harness-status `## 워크플로우 무결성` 섹션 호출. 현재 5/5 정합(drift 0) |
+| 카탈로그 5곳 하드코딩 + 매직넘버 5 | 🟡 | inject hook 워크플로우 카탈로그를 `.claude/workflows/*.js` 동적 나열로 교체(SSOT, fallback 5종) + 매직넘버 30 을 `_common.ps1` `$ClaudeMdLineLimit` 로 단일화(size-check+harness-status 소비). 나머지 하드코딩 위치 정리는 ⏭️ |
 | read-only 에이전트(explorer/planner/reviewer) Bash 권한 | 📋 | "Bash 로도 변경 금지" 명문화 또는 planner Bash 제거 |
 | historian Write 도구 vs "append만" 모순 | ⏭️ | 문구 정합(없을 때만 생성) 또는 Write 제거 |
 | P규칙 grep hardening 불일치(planner/explorer 박제) | ⏭️ | "예시 grep, 권위는 reviewer/conventions.md" 격하 |

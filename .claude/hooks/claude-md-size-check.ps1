@@ -26,7 +26,7 @@ if (-not (Test-Path $path)) { exit 0 }
 # (Get-Content).Count returns the actual line-array length; Measure-Object -Line counts newline
 # characters and undercounts the trailing line.
 $lineCount = (Get-Content -Path $path -Encoding UTF8).Count
-$limit = 30
+$limit = $ClaudeMdLineLimit  # 단일 진실원: _common.ps1 (harness-status 와 공유)
 
 if ($lineCount -le $limit) { exit 0 }
 

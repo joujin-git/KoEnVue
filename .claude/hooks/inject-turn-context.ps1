@@ -19,7 +19,11 @@ if ($prompt -notmatch '(?i)ultrathink') {
 }
 
 if ($prompt -notmatch '(?i)ultracode') {
-    $lines.Add('[harness] ultracode 모드 (항상 ON — 하네스 정책). substantive 작업(다중 파일 변경·코드 리뷰·릴리즈 점검·버그/레이스 헌트·설계 비교·하네스 변경)은 Workflow 도구로 멀티에이전트 오케스트레이션하세요. trivial 편집·단순 대화·단일 사실 조회만 solo. 저장된 워크플로우 — release-review · bug-hunt · codebase-audit · design-compare · harness-optimize (.claude/workflows/). 적합하면 Workflow({name}) 로 호출, 없으면 작업에 맞게 즉석 작성. effort 는 max 그대로 유지됩니다.')
+    # 워크플로우 카탈로그는 .claude/workflows/*.js 파일시스템이 단일 진실원 — 동적 나열로 추가/삭제 자동 반영.
+    # (하드코딩 사본은 drift 원인 — AUDIT) 디렉토리 못 읽으면 알려진 5종으로 fallback.
+    $wfNames = @(Get-ChildItem -Path (Join-Path (Get-ProjectRoot) '.claude\workflows') -Filter '*.js' -File -ErrorAction SilentlyContinue | ForEach-Object { $_.BaseName } | Sort-Object)
+    $wfList = if ($wfNames.Count -gt 0) { $wfNames -join ' · ' } else { 'release-review · bug-hunt · codebase-audit · design-compare · harness-optimize' }
+    $lines.Add("[harness] ultracode 모드 (항상 ON — 하네스 정책). substantive 작업(다중 파일 변경·코드 리뷰·릴리즈 점검·버그/레이스 헌트·설계 비교·하네스 변경)은 Workflow 도구로 멀티에이전트 오케스트레이션하세요. trivial 편집·단순 대화·단일 사실 조회만 solo. 저장된 워크플로우 — $wfList (.claude/workflows/). 적합하면 Workflow({name}) 로 호출, 없으면 작업에 맞게 즉석 작성. effort 는 max 그대로 유지됩니다.")
 }
 
 if ($lines.Count -eq 0) { exit 0 }

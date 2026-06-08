@@ -15,6 +15,9 @@ shell: powershell
 - 워크플로우: `!`(Get-ChildItem .claude/workflows/*.js -ErrorAction SilentlyContinue).BaseName -join ', '``
 - hook 스크립트: `!`(Get-ChildItem .claude/hooks/*.ps1 -ErrorAction SilentlyContinue).Name -join ', '``
 
+## 워크플로우 무결성
+- meta↔phase 정합: `!`. .claude/hooks/lib/_common.ps1; $d = Test-WorkflowPhaseDrift; if ($d) { "⚠ drift: $($d -join '; ')" } else { "✅ 정합 (meta.phases ↔ phase() 일치)" }``
+
 ## 오늘 세션
 - 파일: `!`$f = "docs/sessions/$(Get-Date -Format yyyy-MM-dd).md"; if (Test-Path $f) { "$f ($((Get-Content $f).Count) 줄)" } else { "없음 — 첫 turn 후 자동 생성" }``
 - 가장 최근 블록 헤더: `!`$f = "docs/sessions/$(Get-Date -Format yyyy-MM-dd).md"; if (Test-Path $f) { (Select-String -Path $f -Pattern '^## ' | Select-Object -Last 1).Line } else { '없음' }``
@@ -28,10 +31,10 @@ shell: powershell
 - `!`if (Test-Path .claude/state/hook-errors.log) { Get-Content .claude/state/hook-errors.log -Tail 5 } else { '없음 — 모든 hook 정상' }``
 
 ## CLAUDE.md 크기
-- `!`$c = (Get-Content CLAUDE.md).Count; "$c 줄 / 30 줄 제한"``
+- `!`. .claude/hooks/lib/_common.ps1; $c = (Get-Content CLAUDE.md).Count; "$c 줄 / $ClaudeMdLineLimit 줄 제한"``
 
 ---
 
-위 정보를 받으면 사용자에게 한국어로 친절히 정리해주세요. 이상 신호 (hook error 누적, dirty tree 30건 이상, CLAUDE.md 30줄 초과, 서브에이전트 수가 6 미만, 스킬 수가 6 미만, 워크플로우 수가 5 미만, `inject-turn-context` hook 누락) 가 있으면 명시. 정상이면 한 줄로 요약 ("✅ 하네스 정상 — 6명 서브에이전트, 6개 스킬, 5개 워크플로우, ultracode ON, 오늘 N건 turn, 최근 wip 없음").
+위 정보를 받으면 사용자에게 한국어로 친절히 정리해주세요. 이상 신호 (hook error 누적, dirty tree 30건 이상, CLAUDE.md 줄 제한 초과, 서브에이전트 수가 6 미만, 스킬 수가 6 미만, 워크플로우 수가 5 미만, 워크플로우 phase drift, `inject-turn-context` hook 누락) 가 있으면 명시. 정상이면 한 줄로 요약 ("✅ 하네스 정상 — 6명 서브에이전트, 6개 스킬, 5개 워크플로우, ultracode ON, phase 정합, 오늘 N건 turn, 최근 wip 없음").
 
 추가 인자(있다면): $ARGUMENTS

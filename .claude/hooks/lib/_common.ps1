@@ -3,6 +3,11 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
 
+# ── 공유 임계 상수 (단일 진실원) ──────────────────────────────────────────
+# CLAUDE.md 줄 제한 — claude-md-size-check.ps1(InstructionsLoaded 가드)과 harness-status
+# 스킬이 공유. 두 곳에 독립 하드코딩하면 한쪽만 바뀔 때 drift → 여기로 단일화(AUDIT 매직넘버).
+$ClaudeMdLineLimit = 30
+
 function Read-HookInput {
     $raw = [Console]::In.ReadToEnd()
     if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
@@ -216,6 +221,40 @@ function Hide-Secrets {
     # Slack tokens
     $Text = $Text -replace 'xox[abprs]-[A-Za-z0-9\-]{10,}', 'xox*-***REDACTED***'
     return $Text
+}
+
+# 워크플로우 meta.phases[].title ↔ 본문 phase()/opts.phase 문자열 집합 정합 검사.
+# .claude/workflows/README.md 의 "meta.phases 와 phase() 1:1" 규약을 기계 검증(harness-status 가 호출).
+# 휴리스틱(정규식) — meta.phases 블록을 본문에서 제거한 뒤 phase('X') 호출과 opts.phase:'X' 할당을
+# 모아 meta 집합과 대조. title 중복·들여쓰기·루프 내 재호출은 Sort-Object -Unique 로 흡수(오탐 방지).
+# 반환: 불일치 워크플로우 설명 배열(전부 일치면 @()).
+function Test-WorkflowPhaseDrift {
+    $wfDir = Join-Path (Get-ProjectRoot) '.claude\workflows'
+    if (-not (Test-Path $wfDir)) { return @() }
+    $issues = @()
+    Get-ChildItem -Path $wfDir -Filter '*.js' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        try { $content = Get-Content -Path $_.FullName -Raw -Encoding UTF8 -ErrorAction Stop } catch { return }
+        $metaTitles = @()
+        $pm = [regex]::Match($content, '(?s)phases\s*:\s*\[(.*?)\]')
+        if ($pm.Success) {
+            $metaTitles = [regex]::Matches($pm.Groups[1].Value, "title\s*:\s*'([^']*)'") | ForEach-Object { $_.Groups[1].Value }
+        }
+        $body = $content -replace '(?s)phases\s*:\s*\[.*?\]', ''
+        $bodyTitles = @()
+        $bodyTitles += [regex]::Matches($body, "\bphase\(\s*'([^']*)'") | ForEach-Object { $_.Groups[1].Value }
+        $bodyTitles += [regex]::Matches($body, "\bphase\s*:\s*'([^']*)'") | ForEach-Object { $_.Groups[1].Value }
+        $metaSet = @($metaTitles | Sort-Object -Unique)
+        $bodySet = @($bodyTitles | Sort-Object -Unique)
+        $onlyMeta = @($metaSet | Where-Object { $_ -and $_ -notin $bodySet })
+        $onlyBody = @($bodySet | Where-Object { $_ -and $_ -notin $metaSet })
+        if ($onlyMeta.Count -or $onlyBody.Count) {
+            $desc = $_.BaseName + ':'
+            if ($onlyMeta.Count) { $desc += " meta-only[$($onlyMeta -join ',')]" }
+            if ($onlyBody.Count) { $desc += " body-only[$($onlyBody -join ',')]" }
+            $issues += $desc
+        }
+    }
+    return $issues
 }
 
 # Top-level error guard for hooks — log to state dir, never spill into transcript

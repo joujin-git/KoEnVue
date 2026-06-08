@@ -38,7 +38,7 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 | 언어 | UI/대화 한국어, 코드/커밋 메시지/PR 영어 | P2 + 외부 협업 친화 |
 | 히스토리 | 세션 요약 + 핵심 결정을 `docs/sessions/YYYY-MM-DD.md` | 다른 장비에서 사람·Claude 모두 읽기 쉬움 |
 | .claude/ git | 일부 추적 (settings·agents·skills·hooks 만) | 장비 간 하네스 공유 |
-| CLAUDE.md | ≤30 줄 하드 제한 | InstructionsLoaded hook 경고 |
+| CLAUDE.md | ≤30 줄 하드 제한 | InstructionsLoaded hook 경고. 줄 제한 상수는 `_common.ps1` 의 `$ClaudeMdLineLimit` 단일 진실원 (size-check hook + harness-status 공유) |
 
 ## 2. 파일 구조
 
@@ -68,14 +68,15 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 │   └── harness-optimize.js    하네스 자체 최적화
 ├── scratch/                   ❌ ignored (디버깅 임시 ps1)
 ├── hooks/                     ✅ committed
-│   ├── lib/_common.ps1        공통 함수 (Hide-Secrets, Invoke-HookSafely, Invoke-Push 포함)
-│   ├── inject-turn-context.ps1 UserPromptSubmit — ultrathink+max effort+ultracode 주입
-│   ├── session-start.ps1      SessionStart — 이전 요약 주입 + push 안 한 commit 알림
+│   ├── lib/_common.ps1        공통 함수 + 공유 상수 ($ClaudeMdLineLimit, Hide-Secrets, Invoke-HookSafely, Invoke-Push, Sync-Memory, Test-WorkflowPhaseDrift)
+│   ├── inject-turn-context.ps1 UserPromptSubmit — ultrathink+max effort+ultracode 주입 (워크플로우 카탈로그 동적)
+│   ├── session-start.ps1      SessionStart — 이전 요약 주입 + push 안 한 commit 알림 + Sync-Memory
+│   ├── pre-compact.ps1        PreCompact — 압축 마커 append + git 스냅샷 additionalContext
 │   ├── post-edit-doc-sync.ps1 PostToolUse(Edit/Write) — 문서 동기화 리마인더
 │   ├── auto-push.ps1          PostToolUse(Bash git commit) — 커밋 후 자동 push
 │   ├── stop-record.ps1        Stop — 진행 상황 append (secret 마스킹)
 │   ├── session-end.ps1        SessionEnd — wip 커밋 + auto push + 요약 파이널
-│   ├── claude-md-size-check.ps1  InstructionsLoaded — 30줄 검사
+│   ├── claude-md-size-check.ps1  InstructionsLoaded — CLAUDE.md 줄 제한 검사 ($ClaudeMdLineLimit)
 │   └── statusline.ps1         status line 렌더
 ├── state/                     ❌ ignored (런타임 상태, hook-errors.log 등)
 └── worktrees/                 ❌ ignored
@@ -111,7 +112,7 @@ docs/
 
 **effort 와 별개 축**: ultracode 는 effort 레벨(low/…/max)이 아닙니다. `CLAUDE_CODE_EFFORT_LEVEL=max` 는 그대로 유지되고, ultracode 는 그 위에서 Workflow 오케스트레이션을 켭니다. **env 를 `ultracode` 로 바꾸지 마세요** — max 를 잃을 수 있어, 키워드 주입 방식으로 둘 다 유지합니다.
 
-**발동 — 항상 자동**: `inject-turn-context.ps1` hook 이 매 턴 "ultracode" 키워드 + 행동 지시를 주입. substantive 작업(다중 파일 변경·코드 리뷰·릴리즈 점검·버그/레이스 헌트·설계 비교·하네스 변경)은 Workflow 도구로 오케스트레이션하고, trivial 편집·단순 대화·단일 사실 조회만 solo.
+**발동 — 항상 자동**: `inject-turn-context.ps1` hook 이 매 턴 "ultracode" 키워드 + 행동 지시를 주입. substantive 작업(다중 파일 변경·코드 리뷰·릴리즈 점검·버그/레이스 헌트·설계 비교·하네스 변경)은 Workflow 도구로 오케스트레이션하고, trivial 편집·단순 대화·단일 사실 조회만 solo. 주입되는 워크플로우 카탈로그는 `.claude/workflows/*.js` 파일시스템을 **단일 진실원**으로 동적 나열 — 워크플로우 추가/삭제가 매 턴 주입에 자동 반영(디렉토리 못 읽으면 알려진 5종 fallback). 하드코딩 사본을 두지 않아 drift 0.
 
 **Agent Team 과의 구분**: Workflow 도구 ≠ Agent Team(TeamCreate). Workflow 는 결정론적 제어흐름(loop/조건/fan-out)·resume(`resumeFromRunId`)·토큰 budget 을 지원해 도입. Agent Team 은 토큰 3–5배·resume 미지원이라 **계속 거부** — "단일 세션" 철학과 충돌 없음.
 
@@ -129,22 +130,32 @@ docs/
 
 **leaf vs 오케스트레이터**: 6개 서브에이전트의 `tools:` 에는 위임 도구가 없습니다(leaf). 오케스트레이션은 메인 세션 또는 워크플로우 스크립트가 담당하고, 서브에이전트는 워크플로우의 노드로 호출됩니다.
 
+**meta↔phase 자동 가드**: `.claude/workflows/README.md` 의 "meta.phases 의 title ↔ 본문 `phase('X')` 1:1" 규약을 `_common.ps1` 의 `Test-WorkflowPhaseDrift` 가 정규식 휴리스틱으로 기계 검증합니다. `/harness-status` 의 `## 워크플로우 무결성` 섹션이 매 진단 시 호출 — 불일치 워크플로우(meta-only / body-only phase)를 보고하고, 전부 일치면 "✅ 정합". 현재 5/5 정합(drift 0).
+
+**결과 반환 즉시 고정**: 워크플로우 산출(release-review/codebase-audit/harness-optimize 등)은 max effort 로 생성한 고비용 결과이므로, 메인 세션은 반환 즉시 git-tracked 파일(예: `docs/improvement-plan/AUDIT-YYYY-MM-DD-*.md`)로 박제해 컨텍스트 휘발을 막습니다. [AUDIT-2026-06-08-harness.md](improvement-plan/AUDIT-2026-06-08-harness.md) 가 첫 적용 사례.
+
 **⚠️ 검증 상태**: 워크플로우의 `/<name>` 자동 노출은 확인됨. 다만 hook 의 키워드 주입이 ultracode **런타임 플래그**를 켜는지는 미검증(ultrathink 와 달리 ultracode 는 세션 설정일 수 있음). 명시적 한국어 지시가 fallback 이라 행동은 보장되지만, 새 세션에서 statusLine 의 `ultracode` 표시로 확인하세요. 런타임 활성화가 안 되면 세션 시작 시 `/effort ultracode` 수동 입력이 대안(단 effort=max 와의 우선순위는 별도 확인).
 
 ## 4. Hook 라이프사이클
 
-각 hook 의 역할:
+hook 이벤트 8개 (SessionStart · PreCompact · UserPromptSubmit · PostToolUse×2 · Stop · SessionEnd · InstructionsLoaded). 각 hook 의 역할:
 
 ### `SessionStart` → `session-start.ps1`
 - 가장 최근 `docs/sessions/YYYY-MM-DD.md` 에서 **`## [HH:MM] 세션 정리` 블록만 추출**해 `additionalContext` 로 주입 (정리 블록 없으면 마지막 turn 헤더 3개만 표시 — 잡음 최소화)
 - 최근 3일 내 wip 커밋 알림 (5건까지)
 - dirty tree 면 알림 (30건 클램프)
 - 최근 hook 에러 3건 (있으면)
+- `Sync-Memory` 로 C:↔E: 메모리 동기화 (§12 참조)
 - P1–P6 규칙과 서브에이전트 활용 권장사항 reminder
+
+### `PreCompact` → `pre-compact.ps1`
+- 대화 압축(컴팩션, 자동 컨텍스트 한도 / 수동 `/compact`) **직전** 실행. ultracode 멀티에이전트가 컨텍스트를 빠르게 채워 컴팩션 빈도가 높아진 환경에서 작업 연속성을 보강. matcher `*` 라 auto·manual 둘 다 트리거, `payload.trigger` 로 구분 기록
+- **(1) 압축 마커 박제**: 오늘 세션 파일에 `## [HH:MM] compaction (trigger=auto|manual)` 블록 append → 압축 지점을 영구 기록 (압축 전 turn 기록이 상세 컨텍스트 원본임을 명시)
+- **(2) 연속성 컨텍스트**: `additionalContext` 로 git 스냅샷(미커밋 변경 30건 클램프 + 최근 커밋 5개) + 세션파일 복원 포인터를 주입 → 압축 직후 새 컨텍스트에서 진행 중이던 미커밋 작업의 연속성 즉시 복원 (SessionStart 와 동일 메커니즘)
 
 ### `UserPromptSubmit` → `inject-turn-context.ps1`
 - 사용자 입력에 `ultrathink` 가 없으면 — **"ultrathink + thinking 모드"** + **"항상 max effort — 단축/생략 없이"** 주입
-- 사용자 입력에 `ultracode` 가 없으면 — **ultracode 멀티에이전트 모드** 주입 (키워드 + 행동 지시 + 워크플로우 5종 카탈로그). 두 축 독립 — 해당 키워드가 입력에 있으면 그 축만 skip
+- 사용자 입력에 `ultracode` 가 없으면 — **ultracode 멀티에이전트 모드** 주입 (키워드 + 행동 지시 + 워크플로우 카탈로그). 카탈로그는 `.claude/workflows/*.js` BaseName 동적 나열 (단일 진실원, fallback 5종). 두 축 독립 — 해당 키워드가 입력에 있으면 그 축만 skip
 - effort=max 는 env(`CLAUDE_CODE_EFFORT_LEVEL=max`)로 별도 강제 — ultracode 가 effort 를 대체하지 않음. 서브에이전트 본문 강제 명시와 함께 effort 단축 경로 0 보장
 
 ### `PostToolUse(Edit|Write|NotebookEdit)` → `post-edit-doc-sync.ps1`
@@ -176,7 +187,7 @@ docs/
 
 ### `InstructionsLoaded` → `claude-md-size-check.ps1`
 - 로드된 파일이 `CLAUDE.md` 이면 줄 수 검사
-- 30줄 초과면 경고 컨텍스트 주입
+- `_common.ps1` 의 `$ClaudeMdLineLimit`(현재 30) 초과면 경고 컨텍스트 주입 — 한계값은 harness-status 스킬과 공유하는 단일 진실원
 
 **안전망**: 모든 hook 은 `_common.ps1` 의 `Invoke-HookSafely { ... }` 로 감싸져 있어 에러가 transcript 에 새지 않고 `.claude/state/hook-errors.log` 에 기록 (100줄 초과 시 자동 rotation — 마지막 50줄만 유지).
 
@@ -212,7 +223,7 @@ post-edit-doc-sync.ps1 의 매핑 규칙:
 | `/sync-docs` | docs-keeper 서브에이전트로 문서 동기화 |
 | `/resume-session` | 다른 장비에서 이어 작업 시 — 최근 세션과 git 상태 정리 후 다음 작업 제안 |
 | `/wrap-up` | 세션 마무리 — docs-keeper + historian 호출, dirty tree 정리 |
-| `/harness-status` | 하네스 현재 상태 한눈에 — 모델/effort, hook 동작, 서브에이전트 수, 오늘 세션, dirty tree, 최근 hook 에러 |
+| `/harness-status` | 하네스 현재 상태 한눈에 — 모델/effort, hook 동작, 서브에이전트 수, 워크플로우 meta↔phase 정합, 오늘 세션, dirty tree, 최근 hook 에러 |
 | `/cleanup-worktrees` | `.claude/worktrees/` 의 일주일 이상 미사용 디렉토리 정리 (빌드 산출물 ~GB 누적 방지) |
 
 각 명령은 `.claude/skills/<name>/SKILL.md` 에 정의. Skill 형식은 Claude Code 의 최신 권장. 향후 supporting files 가 필요해지면 같은 디렉토리에 추가 가능 (예: `.claude/skills/release/scripts/build.ps1`).
