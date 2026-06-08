@@ -3,7 +3,6 @@ using KoEnVue.App.Config;
 using KoEnVue.App.Models;
 using KoEnVue.Core.Color;
 using KoEnVue.Core.Dpi;
-using KoEnVue.Core.Logging;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Windowing;
 
@@ -75,7 +74,6 @@ internal static class Overlay
     /// </summary>
     public static void Show(int x, int y, ImeState state, AppConfig config)
     {
-        Logger.Debug($"DIAG Overlay.Show: pos=({x},{y}), wasVisible={_engine.IsVisible}");
         _engine.Show(x, y);
         _engine.Render(BuildStyle(config, state));
     }

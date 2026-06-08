@@ -505,7 +505,7 @@ internal static partial class Program
             CursorOverlay.SetImeState(newState);
 
         if (_config.UserHidden) return;
-        if (_lastForegroundHwnd == IntPtr.Zero) { Logger.Debug("DIAG ShowSkip: via=IME, reason=NoFg"); return; }
+        if (_lastForegroundHwnd == IntPtr.Zero) return;
 
         // PR-13: DisplayMode / EventTriggers / 렌더 인자 모두 per-app resolved 사용.
         AppConfig resolved = ResolveCurrent();
@@ -513,7 +513,6 @@ internal static partial class Program
         {
             _indicatorVisible = true;
             var (x, y) = GetAppPosition();
-            Logger.Info($"DIAG ShowMain: via=IME, fg=0x{_lastForegroundHwnd.ToInt64():X}, proc={_currentProcessName}, pos=({x},{y})");
             Animation.TriggerShow(x, y, newState, resolved, imeChanged: true);
         }
     }
@@ -521,14 +520,13 @@ internal static partial class Program
     private static void HandleFocusChanged(IntPtr newHwndFocus)
     {
         if (_config.UserHidden) return;
-        if (_lastForegroundHwnd == IntPtr.Zero) { Logger.Debug("DIAG ShowSkip: via=Focus, reason=NoFg"); return; }
+        if (_lastForegroundHwnd == IntPtr.Zero) return;
 
         AppConfig resolved = ResolveCurrent();
         if (resolved.DisplayMode == DisplayMode.Always || resolved.EventTriggers.OnFocusChange)
         {
             _indicatorVisible = true;
             var (x, y) = GetAppPosition();
-            Logger.Info($"DIAG ShowMain: via=Focus, fg=0x{_lastForegroundHwnd.ToInt64():X}, proc={_currentProcessName}, pos=({x},{y})");
             Animation.TriggerShow(x, y, _lastImeState, resolved, imeChanged: false);
         }
     }
@@ -557,7 +555,6 @@ internal static partial class Program
             _indicatorVisible = true;
             var (x, y) = GetAppPosition();
             Logger.Debug($"PositionUpdated: process={_currentProcessName}, pos=({x},{y}), saved={_config.IndicatorPositions.Count}");
-            Logger.Info($"DIAG ShowMain: via=Position, fg=0x{_lastForegroundHwnd.ToInt64():X}, proc={_currentProcessName}, pos=({x},{y}), fgChanged={foregroundChanged}, wasHidden={wasHidden}");
             // PR-13: per-app resolved (theme/색/투명도/폰트/라벨 등 시각 override 반영)
             Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
         }
