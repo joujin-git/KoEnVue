@@ -4,12 +4,12 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 
 ## 0. 첫 사용 가이드 (비개발자 시각)
 
-**이게 뭐예요?** Claude Code 는 명령줄에서 도는 AI 보조 도구입니다. "하네스" 는 그 도구가 KoEnVue 프로젝트에서 일관되게 동작하도록 잡아주는 설정 묶음 — 모델은 항상 Opus 최강, 매 요청은 깊이 추론(ultrathink), 코드 바꾸면 문서 안내 자동 표시, 세션 끝나면 자동 저장 등.
+**이게 뭐예요?** Claude Code 는 명령줄에서 도는 AI 보조 도구입니다. "하네스" 는 그 도구가 KoEnVue 프로젝트에서 일관되게 동작하도록 잡아주는 설정 묶음 — 모델은 항상 Opus 최강, 매 요청은 깊이 추론(ultrathink), 코드 바꾸면 문서 안내 자동 표시, 복잡한 작업은 여러 AI 가 나눠서 처리·교차검증(ultracode), 세션 끝나면 자동 저장 등.
 
 **왜 필요해요?** 매번 같은 설명을 다시 안 해도 되고, 다른 장비로 옮겨도 작업이 이어집니다. 잊을 만한 안전망(자동 wip 커밋, 비밀번호 마스킹) 도 자동으로 잡습니다.
 
 **처음 써보기 — 5단계**:
-1. **터미널에서 `claude` 실행** → 화면 아래 statusLine 에 `[opus · max] | git:main* | 한/En 하네스 ON` 같은 표시가 보이면 하네스 활성
+1. **터미널에서 `claude` 실행** → 화면 아래 statusLine 에 `[opus · max] | git:main* | ultracode · 한/En 하네스 ON` 같은 표시가 보이면 하네스 활성
 2. **`/harness-status` 입력** → 모델/effort, 서브에이전트 6명, 오늘 세션 파일, dirty tree, hook 에러 정상 여부를 한눈에 확인
 3. **자연어로 작업 요청** — 예: "한 레이블 색을 빨강으로 바꿔줘". 하네스가 알아서 ultrathink 모드로 처리하고, 필요하면 서브에이전트(explorer, planner 등)에 위임
 4. **작업 마무리할 때 `/wrap-up`** → 문서 동기화 + 세션 요약을 `docs/sessions/YYYY-MM-DD.md` 에 자동 기록
@@ -19,16 +19,18 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 - **서브에이전트 (subagent)**: 메인 대화를 깔끔하게 유지하려고 특정 작업을 위임받는 보조 Claude. 예: 코드 검색은 explorer 에게.
 - **hook**: 특정 사건(세션 시작, 코드 수정 등) 때 자동 실행되는 PowerShell 스크립트.
 - **slash command**: `/이름` 으로 실행하는 미리 정의된 작업.
+- **ultracode / 워크플로우**: 복잡한 작업을 여러 보조 Claude 가 병렬로 나눠 처리하고 서로 교차검증하는 멀티에이전트 모드. 항상 켜져 있고 큰 작업에서 자동 발동.
 
 ## 1. 디자인 원칙
 
 | 결정 | 내용 | 이유 |
 |------|------|------|
-| 모델 | `opus` (Opus 4.7) | "비용 무제한, 깊이 최우선" |
+| 모델 | `opus` (Opus 4.8) | "비용 무제한, 깊이 최우선" |
 | Effort | `max` (settings 명목) + `CLAUDE_CODE_EFFORT_LEVEL=max` (env, 실효) | 문서상 settings 는 xhigh 까지만 공식 수락하나 의도 명시를 위해 `max` 표기. env 가 실제 max 강제 — silent ignore / fallback 시에도 결과 동일 |
 | Thinking | `alwaysThinkingEnabled: true`, `showThinkingSummaries: true` | 모든 작업 ultrathink |
+| **ultracode** | **항상 ON** — `inject-turn-context` hook 이 매 턴 키워드+지시 주입, Workflow 멀티에이전트 오케스트레이션 | "비용 무제한·깊이 최우선" 을 멀티에이전트로 확장. effort=max 와 별개 축 — 둘 다 유지 |
 | ultrathink 키워드 | UserPromptSubmit hook 으로 매 턴 자동 주입 + **서브에이전트 6개 본문 첫 단락에 "ultrathink + max effort + thinking 모드" 명시 강제** | 사용자 입력에 누락돼도, 위임된 서브에이전트가 inject hook 미경유 경로로 진입해도 동일 effort 보장 |
-| 병렬 | 단일 세션 + 항상 서브에이전트 (Agent Team 미사용) | Agent Team 은 토큰 3–5배, resume 미지원, 동시 1팀만 — KoEnVue 규모에 과함 |
+| 병렬 | 단일 세션 + 서브에이전트 + **Workflow 도구**(ultracode). Agent Team(TeamCreate)만 미사용 | Workflow 는 결정론적·resume·budget 지원이라 도입. Agent Team 은 토큰 3–5배·resume 미지원·동시 1팀만이라 계속 제외 |
 | 권한 | `bypassPermissions` 전체 허용 | 사용자가 직접 git 으로 책임. 속도 우선 |
 | PR | main 직커밋, PR 없음 | 1인 프로젝트 기존 흐름 존중 |
 | **빌드** | **debug + release publish 항상 둘 다** | 한쪽만 하면 release exe outdated — verifier 가 강제 |
@@ -58,10 +60,16 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 │   ├── wrap-up/SKILL.md       /wrap-up (세션 마무리)
 │   ├── harness-status/SKILL.md /harness-status
 │   └── cleanup-worktrees/SKILL.md /cleanup-worktrees (worktree 빌드 산출물 정리)
+├── workflows/                 ✅ committed (ultracode 멀티에이전트 워크플로우)
+│   ├── release-review.js      릴리즈 전 멀티관점 리뷰
+│   ├── bug-hunt.js            버그/레이스 헌트 (loop-until-dry)
+│   ├── codebase-audit.js      전체 코드 감사
+│   ├── design-compare.js      신규 기능 설계 비교 (judge panel)
+│   └── harness-optimize.js    하네스 자체 최적화
 ├── scratch/                   ❌ ignored (디버깅 임시 ps1)
 ├── hooks/                     ✅ committed
 │   ├── lib/_common.ps1        공통 함수 (Hide-Secrets, Invoke-HookSafely, Invoke-Push 포함)
-│   ├── inject-ultrathink.ps1  UserPromptSubmit
+│   ├── inject-turn-context.ps1 UserPromptSubmit — ultrathink+max effort+ultracode 주입
 │   ├── session-start.ps1      SessionStart — 이전 요약 주입 + push 안 한 commit 알림
 │   ├── post-edit-doc-sync.ps1 PostToolUse(Edit/Write) — 문서 동기화 리마인더
 │   ├── auto-push.ps1          PostToolUse(Bash git commit) — 커밋 후 자동 push
@@ -80,7 +88,7 @@ docs/
     └── YYYY-MM-DD.md          하루 1개 append-only
 ```
 
-## 3. 서브에이전트 (단일 세션 + 항상 위임)
+## 3. 서브에이전트 + ultracode 워크플로우
 
 메인 세션은 가능한 한 서브에이전트에 위임해서 깔끔하게 유지합니다.
 
@@ -97,6 +105,32 @@ docs/
 
 전체 정의는 [.claude/agents/*.md](../.claude/agents/) 참조. **invariant grep 단일 진실원**: reviewer 는 grep 명령을 자체 보유하지 않고 [docs/conventions.md](conventions.md) 를 매 호출마다 새로 Read 해 전수 추출 (방법 A) — 현재 알려진 5 위치 (§P6 verification invariants, §P6 Additional sub-rule, §Silent catch §8 Core↔Logger, §Silent catch §9 Debug "failed", §AOT Verification). 자세한 추출 규칙은 [.claude/agents/reviewer.md §0](../.claude/agents/reviewer.md) 참조 — drift 방지.
 
+### ultracode — 멀티에이전트 워크플로우 (항상 ON)
+
+서브에이전트가 "단일 작업 위임"이라면, **ultracode 는 한 작업을 여러 에이전트로 쪼개 병렬·교차검증하는 오케스트레이션**입니다. 2026-06-08 전면 도입 (인터뷰: "비용 무제한·깊이 최우선" 을 멀티에이전트로 확장).
+
+**effort 와 별개 축**: ultracode 는 effort 레벨(low/…/max)이 아닙니다. `CLAUDE_CODE_EFFORT_LEVEL=max` 는 그대로 유지되고, ultracode 는 그 위에서 Workflow 오케스트레이션을 켭니다. **env 를 `ultracode` 로 바꾸지 마세요** — max 를 잃을 수 있어, 키워드 주입 방식으로 둘 다 유지합니다.
+
+**발동 — 항상 자동**: `inject-turn-context.ps1` hook 이 매 턴 "ultracode" 키워드 + 행동 지시를 주입. substantive 작업(다중 파일 변경·코드 리뷰·릴리즈 점검·버그/레이스 헌트·설계 비교·하네스 변경)은 Workflow 도구로 오케스트레이션하고, trivial 편집·단순 대화·단일 사실 조회만 solo.
+
+**Agent Team 과의 구분**: Workflow 도구 ≠ Agent Team(TeamCreate). Workflow 는 결정론적 제어흐름(loop/조건/fan-out)·resume(`resumeFromRunId`)·토큰 budget 을 지원해 도입. Agent Team 은 토큰 3–5배·resume 미지원이라 **계속 거부** — "단일 세션" 철학과 충돌 없음.
+
+**저장 워크플로우 5개** (`.claude/workflows/*.js`). 저장 즉시 `/<name>` 슬래시 커맨드로 자동 노출되며, 메인 세션은 `Workflow({ name })` 로 호출:
+
+| 워크플로우 | 무엇을 | 패턴 |
+|-----------|--------|------|
+| `release-review` | 릴리즈 전 correctness·보안·P1~P6·동시성 병렬 리뷰 → 적대적 검증 | pipeline + adversarial verify |
+| `bug-hunt` | 동시성·레이스·견고성 결함을 안 나올 때까지 반복 탐색 | loop-until-dry + 다관점 렌즈 |
+| `codebase-audit` | App/·Core/ 모듈 전수 병렬 점검 → P규칙 게이트 → AUDIT 종합 | scope→audit→gate |
+| `design-compare` | 기능 설계를 N접근법 제안 → 점수화 → 합성 (`args.feature` 필수) | judge panel |
+| `harness-optimize` | 하네스 구성요소 점검 → completeness critic | inspect + critic |
+
+각 워크플로우는 KoEnVue 서브에이전트(explorer/planner/reviewer)를 `agentType` 으로 재사용하고 `schema` 로 구조화 출력을 강제합니다. 예: `Workflow({ name: 'release-review', args: { scope: 'PR-26 변경' } })`.
+
+**leaf vs 오케스트레이터**: 6개 서브에이전트의 `tools:` 에는 위임 도구가 없습니다(leaf). 오케스트레이션은 메인 세션 또는 워크플로우 스크립트가 담당하고, 서브에이전트는 워크플로우의 노드로 호출됩니다.
+
+**⚠️ 검증 상태**: 워크플로우의 `/<name>` 자동 노출은 확인됨. 다만 hook 의 키워드 주입이 ultracode **런타임 플래그**를 켜는지는 미검증(ultrathink 와 달리 ultracode 는 세션 설정일 수 있음). 명시적 한국어 지시가 fallback 이라 행동은 보장되지만, 새 세션에서 statusLine 의 `ultracode` 표시로 확인하세요. 런타임 활성화가 안 되면 세션 시작 시 `/effort ultracode` 수동 입력이 대안(단 effort=max 와의 우선순위는 별도 확인).
+
 ## 4. Hook 라이프사이클
 
 각 hook 의 역할:
@@ -108,9 +142,10 @@ docs/
 - 최근 hook 에러 3건 (있으면)
 - P1–P6 규칙과 서브에이전트 활용 권장사항 reminder
 
-### `UserPromptSubmit` → `inject-ultrathink.ps1`
-- 사용자 입력에 `ultrathink` 가 없으면 한국어 컨텍스트 주입 — **"ultrathink + thinking 모드"** + **"항상 max effort 로 수행 — 단축/생략 없이"** 두 축 모두 명시
-- 서브에이전트 본문 강제 명시와 함께 effort 단축 경로 0 보장
+### `UserPromptSubmit` → `inject-turn-context.ps1`
+- 사용자 입력에 `ultrathink` 가 없으면 — **"ultrathink + thinking 모드"** + **"항상 max effort — 단축/생략 없이"** 주입
+- 사용자 입력에 `ultracode` 가 없으면 — **ultracode 멀티에이전트 모드** 주입 (키워드 + 행동 지시 + 워크플로우 5종 카탈로그). 두 축 독립 — 해당 키워드가 입력에 있으면 그 축만 skip
+- effort=max 는 env(`CLAUDE_CODE_EFFORT_LEVEL=max`)로 별도 강제 — ultracode 가 effort 를 대체하지 않음. 서브에이전트 본문 강제 명시와 함께 effort 단축 경로 0 보장
 
 ### `PostToolUse(Edit|Write|NotebookEdit)` → `post-edit-doc-sync.ps1`
 - 변경된 파일 경로를 매핑 테이블에 대조. rules 배열은 **first-match-wins** — 더 좁은 패턴 `^Core/Native/` 가 일반 `^Core/` 보다 먼저 정의돼 우선 매칭됨.
@@ -215,10 +250,10 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 ## 8. 비용 모니터링
 
-`bypassPermissions` + Opus + max effort + thinking + 매 턴 ultrathink 주입 = 보통 코딩 작업의 약 8~15배 토큰 소비. 사용자가 "비용 무제한, 깊이 최우선" 선택했음 (인터뷰 결과). 하네스는 자동 하향 조정 안 함.
+`bypassPermissions` + Opus + max effort + thinking + 매 턴 ultrathink/ultracode 주입 = 보통 코딩 작업의 약 8~15배, **ultracode 워크플로우가 도는 substantive 작업은 추가로 수 배~수십 배**(워크플로우당 최대 16 동시 / 1,000 누적 에이전트) 토큰 소비. 사용자가 "비용 무제한, 깊이 최우선" 선택했음 (인터뷰 결과). 하네스는 자동 하향 조정 안 함. 워크플로우는 `budget` 가드로 과소비를 일부 제어 (bug-hunt 등).
 
 가시화 수단:
-- **`statusLine`**: 매 턴 `[opus · max] | git:main* | 한/En 하네스 ON` 표시
+- **`statusLine`**: 매 턴 `[opus · max] | git:main* | ultracode · 한/En 하네스 ON` 표시
 - **`showTurnDuration: true`**: 매 응답 후 소요 시간 노출 → 비용 자각
 - **`awaySummaryEnabled: true`**: 자리 비운 동안의 진행 요약
 - **`/status`**: 누적 토큰/비용 (Claude Code built-in)
@@ -269,8 +304,10 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
   ```
   Windows PowerShell 5.x (기본 내장) 만으로는 hook 전부 fail. 단 KoEnVue 는 `net10.0-windows` 타깃이라 빌드/실행은 Windows 전용 — Mac/Linux 는 documentation·planning 작업에만 한정.
 - **`/wrap-up` 의 race condition**: `docs/sessions/YYYY-MM-DD.md` 의 쓰기는 hook(stop-record / session-end) 과 historian subagent 만 수행 — 메인 세션이 직접 같은 파일을 Edit/Write 하면 충돌 가능. [skills/wrap-up/SKILL.md](../.claude/skills/wrap-up/SKILL.md) 의 "쓰기 단일 진실원" 규약 참조.
-- **inject-ultrathink hook 오버헤드**: 매 UserPromptSubmit 마다 PowerShell 프로세스 생성. 측정(Win): `Measure-Command { '{"prompt":""}' | pwsh -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/inject-ultrathink.ps1 }`. 실측 **~381 ms** (Opus 4.7, 2026-05-22, fresh pwsh 시동 1회). "항상 ultrathink" 요구사항을 위한 안전망이지만, 빠른 응답을 원할 때 부담.
+- **inject-turn-context hook 오버헤드**: 매 UserPromptSubmit 마다 PowerShell 프로세스 생성. 측정(Win): `Measure-Command { '{"prompt":""}' | pwsh -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/inject-turn-context.ps1 }`. 실측 **~381 ms** (Opus 4.7, 2026-05-22, inject-ultrathink 시절 측정, fresh pwsh 시동 1회). ultrathink+ultracode 매 턴 주입 안전망이지만, 빠른 응답을 원할 때 부담.
 - **`.claude/worktrees/` 의 빌드 산출물 누적**: 서브에이전트가 publish 를 돌리면 worktree 안에 ~150 MB 산출물이 남고 정리 안 함. 주기적으로 `/cleanup-worktrees` SKILL 로 일주일 이상 미사용 worktree 제거 권장.
+- **ultracode 런타임 활성화 미검증**: `inject-turn-context.ps1` 의 키워드 주입이 ultracode 런타임 플래그를 켜는지는 미확인 — 워크플로우의 `/<name>` 자동 노출은 확인됨. 행동은 명시적 지시로 보장되나, 런타임 멀티에이전트 모드 자체는 새 세션의 statusLine `ultracode` 표시로 검증 필요. (memory `feedback-harness-design` 참조)
+- **ultracode 비용 급증**: substantive 작업마다 워크플로우 fan-out → 토큰 급증. 빠르고 싼 처리를 원하는 turn 은 작업이 trivial 함을 프롬프트에 명시하거나 워크플로우를 건너뛰도록 지시.
 
 ## 11. PR 분리 시 충돌 회피 정책
 

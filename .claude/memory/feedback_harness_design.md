@@ -11,7 +11,7 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정).
 
 ## 핵심 규칙
 
-- **모델**: `opus` (Opus 4.7). `effortLevel: "max"` (settings 명목 — schema 가 silent ignore / clamp 시에도 env 가 fallback). `CLAUDE_CODE_EFFORT_LEVEL=max` (env 로 실효 max 강제). 검증: statusline payload 가 `effort.level=max` 로 받음.
+- **모델**: `opus` (Opus 4.8). `effortLevel: "max"` (settings 명목 — schema 가 silent ignore / clamp 시에도 env 가 fallback). `CLAUDE_CODE_EFFORT_LEVEL=max` (env 로 실효 max 강제). 검증: statusline payload 가 `effort.level=max` 로 받음.
 - **Thinking 항상**: `alwaysThinkingEnabled: true`. ultrathink 키워드는 `UserPromptSubmit` hook 으로 매 턴 자동 주입
 - **단일 세션 + 항상 서브에이전트**: Agent Team 안 씀 (토큰 3–5배, resume 미지원, 동시 1팀만)
 - **권한**: `bypassPermissions` 전체 — 사용자가 git 으로 책임짐. 속도 우선
@@ -32,6 +32,18 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정).
 - **verifier**: build/publish/test (UI 동작은 검증 불가)
 
 전체 정의는 `.claude/agents/*.md`.
+
+## ultracode — 멀티에이전트 워크플로우 (2026-06-08 전면 도입 확정)
+
+- **발동**: 항상 ON. `inject-turn-context.ps1` hook 이 매 턴 "ultracode" 키워드 + 행동 지시 주입. substantive 작업(다중 파일 변경·리뷰·감사·버그헌트·설계비교·하네스변경)은 Workflow 도구로 오케스트레이션, trivial 은 solo.
+- **effort 와 별개 축**: ultracode 는 effort 레벨이 아니다. `CLAUDE_CODE_EFFORT_LEVEL=max` 는 유지 — ultracode 가 effort 를 대체하지 않음(env 를 ultracode 로 바꾸면 max 손실 위험). 이번 세션이 env=max + 키워드 ultracode 조합으로 동작한 게 증거.
+- **Agent Team 은 여전히 거부**: Workflow 도구는 Agent Team(TeamCreate)과 다른 메커니즘 — 결정론적·resume(resumeFromRunId)·budget 지원. "단일 세션 + 서브에이전트" 철학과 충돌 없음.
+- **저장 워크플로우 5개**: `.claude/workflows/*.js` — release-review, bug-hunt, codebase-audit, design-compare, harness-optimize. `Workflow({name})` 호출 또는 `/<name>`.
+- **미검증(사용자 확인)**: hook 키워드 주입이 ultracode 런타임을 켜는지는 미검증 — 명시적 지시가 fallback. 새 세션에서 statusLine `ultracode` + `/` 자동완성 워크플로우 노출 확인.
+
+**Why**: 사용자 "비용 무제한, 깊이 최우선" 철학을 ultracode 에도 일관 적용 — 전면 도입 + 항상 자동 (2026-06-08 인터뷰).
+
+**How to apply**: ultracode 발동을 끄지 말 것. substantive 작업은 워크플로우 우선. effort=max 와 ultracode 둘 다 유지 — 어느 하나를 위해 다른 걸 끄는 변경 전 사용자 확인.
 
 ## 히스토리
 

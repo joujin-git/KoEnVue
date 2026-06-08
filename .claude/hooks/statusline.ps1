@@ -27,7 +27,7 @@ try {
 $parts = @()
 $parts += "[$model · $effort]"
 if ($branch) { $parts += "git:$branch$dirty" }
-$parts += '한/En 하네스 ON'
+$parts += 'ultracode · 한/En 하네스 ON'
 
 [Console]::Out.Write(($parts -join ' | '))
 exit 0
