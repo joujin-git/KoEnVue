@@ -50,3 +50,11 @@
 ## 메타 관찰 (focus 효과)
 
 3회차에서 focus 를 "변경검증+과복잡+self-비판"으로 좁힌 것이 적중 — 1·2차가 doc/wiring drift(표면)에 머문 반면 3차는 거짓 클린·self dedup·verify 환각 같은 **구조적 신뢰성 결함**을 잡았다. harness-optimize 의 self-audit(이번 적용)이 이를 상시화한다. 단 harness-optimize 를 하루 3회 돌린 것은 수렴 곡선의 끝 — 다음 점검은 실제 코드/하네스 변경이 누적된 뒤가 ROI 높다.
+
+## 후속 적용 — permissions.deny (PreToolUse 대안 실현, #18)
+
+위 보류 #18 을 같은 세션에 **실험·적용 완료** — AUDIT-2 2부에서 사용자가 "감수" 한 파괴명령 차단을 Claude Code 레벨에서 실현:
+- **echo deny 실험**: `Bash(echo KEVDENYTEST:*)`·`PowerShell(echo …:*)` deny 후 두 도구로 echo 시도 → **둘 다 차단**. 이로써 (a) bypassPermissions 에서도 `permissions.deny` 작동(PreToolUse hook 의 deny 가 무시되는 것과 **정반대** — 공식문서 "deny rules evaluated regardless of hook" 확증), (b) settings 런타임 즉시 반영(Edit 직후), (c) **PowerShell 도구 매칭**(KoEnVue 주사용 도구) 3가지 동시 확인.
+- **deny 적용**: `git push --force`/`-f`/`--force-with-lease`(+`git push * --force` origin 뒤 변형)·`git reset --hard`·`git filter-branch` — Bash·PowerShell 각각. `git push --force --dry-run` → 차단, 정상 `git status` → 통과(정상 commit/push 무영향) 검증.
+- **한계·부작용**: (1) prefix 매칭이라 flag 순서 변형(force 가 명령 끝)·env var 우회는 일부 미포착 — 흔한 형태는 차단하는 1차 방어. (2) **중간 와일드카드 패턴(`git push * --force`)은 명령 문자열 어디든 키워드가 있으면 매칭 → 커밋 메시지에 차단 키워드가 들어간 정상 커밋까지 오탐 차단**(이 발견을 커밋하려다 실제로 걸림). force 직후 prefix 패턴만 유지하고 중간 와일드카드는 제거. 완벽 enforcement 아닌 1차 방어.
+- → PreToolUse 가 bypassPermissions 에서 무효(AUDIT-2 도구제약)였던 것을 `permissions.deny` 로 우회·실현. **메모리 정책의 "도구 제약 감수" 가 실은 더 강한 메커니즘으로 해결 가능했던 사례.**
