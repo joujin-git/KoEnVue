@@ -11,6 +11,15 @@ $lines.Add("[harness] KoEnVue 하네스 활성화 — 모든 작업은 ultrathin
 $lines.Add("기본 규칙: model=opus, effort=max, language=korean. P1–P6 규칙 준수가 필수입니다.")
 $lines.Add('')
 
+# 메모리 split-brain 동기화 (§12): E:(git truth, C: 복원 무관) ↔ C:(Claude 작업 사본).
+# 복원된 옛 C: 는 흡수 안 되고 최신 E: 로 복구됨. absorbed>0 = 새 메모리가 E: 로 백업됨(커밋 대상).
+$memSync = Sync-Memory
+if ($memSync.absorbed -gt 0 -or $memSync.restored -gt 0) {
+    $lines.Add("## 메모리 동기화 (C:↔E:)")
+    $lines.Add("C:→E: $($memSync.absorbed)건 흡수, E:→C: $($memSync.restored)건 복구. absorbed>0 이면 git 백업 위해 커밋 필요.")
+    $lines.Add('')
+}
+
 # Resume context: prefer the file containing a "세션 정리" wrap-up block (richer);
 # fall back to the most recent file's headers if no wrap-up exists.
 $latest = Get-LatestSessionFile

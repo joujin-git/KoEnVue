@@ -338,22 +338,22 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 - 메인 세션: 코드 변경에 대해서도 동일 점검 (필요 시 explorer 위임)
 - 사용자: 3안 선택은 사용자 결정 — 서브에이전트는 보고만
 
-## 12. Memory 시스템 — ⚠️ split-brain 알려진 문제 (2026-06-08 발견)
+## 12. Memory 시스템 — C:↔E: 동기화 (2026-06-08 split-brain 발견·해결)
 
 이 컴퓨터의 **C: 드라이브는 보안 정책상 수시로 14일 전 시점으로 복원**됩니다. 기본 Claude Code memory 위치 (`C:\Users\<user>\.claude\projects\<project>\memory\`) 는 복원될 때마다 사라지므로, 본 하네스는 메모리를 프로젝트 트리(E:)로 옮기려 `autoMemoryDirectory` 를 설정했습니다.
 
-**그러나 2026-06-08 harness-optimize 점검에서 이 설정이 실제로는 무시되고 있음을 발견**했습니다 — `${CLAUDE_PROJECT_DIR}` 가 빈 값으로 전개돼(`autoMemoryDirectory` 가 무효) Claude Code 가 기본 위치 **C: 에 읽기/쓰기 중**입니다. 즉 E: 의 `.claude/memory/` 는 git 백업이지만 **실제 auto-memory 가 아니며**, C: 의 최신 메모리는 다음 복원 때 소실됩니다.
+**그러나 2026-06-08 harness-optimize 점검에서 이 설정이 실제로는 무시되고 있음을 발견**했습니다 — `${CLAUDE_PROJECT_DIR}` 가 빈 값으로 전개돼(`autoMemoryDirectory` 가 무효) Claude Code 가 기본 위치 **C: 에 읽기/쓰기 중**입니다. 즉 E: 의 `.claude/memory/` 는 git 백업이고 Claude 가 직접 읽는 건 C: 입니다. **이 split-brain 은 아래 `Sync-Memory` hook 으로 해결**(2026-06-08) — C: 의 최신 메모리가 매 세션 E:(git) 로 백업되고, 복원 시 E: 에서 C: 로 자동 복구됩니다.
 
 | 항목 | 실태 (2026-06-08) |
 |------|------|
 | 실제 auto-memory 위치 | **C:** `C:\Users\<user>\.claude\projects\e--dev-KoEnVue\memory\` (설정 무시됨) |
 | E: `.claude/memory/` | git 추적 백업 — Claude 가 직접 읽진 않음 |
 | `autoMemoryDirectory` 설정 | `${CLAUDE_PROJECT_DIR}/.claude/memory` — 전개 실패로 **무효** |
-| 복원 영향 | ⚠️ C: 최신 메모리 소실 위험 — 근본 해결 미완 (아래) |
+| 복원 영향 | ✅ `Sync-Memory` hook 으로 보호 — 복원된 C: 는 매 SessionStart 에 E:(git)에서 복구 |
 
 **임시 구제 (적용됨)**: C: 에만 있던 `os-dependent-accept.md` 를 E: 로 복사 + MEMORY.md 갱신 + commit (소실 방지). 새 메모리 저장 시 수동으로 E: 에도 반영 권장.
 
-**근본 해결 (미정 — 사용자 결정 대기)**: ① `autoMemoryDirectory` 를 절대경로로 바꿔 작동 검증(단 장비별 경로 상이 주의), 또는 ② SessionStart hook 에서 C:↔E: 동기화 자동화(옛 C: 복원본이 최신 E: 를 덮어쓰지 않도록 타임스탬프/git 기반 신중 설계). 둘 다 검증 선행. 추적: docs/improvement-plan/AUDIT-2026-06-08-harness.md.
+**근본 해결 (적용됨 2026-06-08)**: SessionStart hook 의 `Sync-Memory`(`_common.ps1`)가 매 세션 C:↔E: 동기화 — **E: 가 truth**(복원 무관), C: 의 더 새 파일만 E: 로 흡수(복원된 옛 C: 가 최신 E: 를 못 덮게 mtime UTC 비교), 그 뒤 E:→C: 미러로 복원된 C: 를 최신 복구. slug=`e--dev-KoEnVue`·`Copy-Item` mtime 보존 검증 완료, 최초 실행 시 `restored=5` 로 현재 split-brain 해소(C:=E: 해시 일치). `absorbed>0`(C: 에 새 메모리) 시 SessionStart 가 커밋 권장 알림 → 다음 commit 에 E: 백업 포함.
 
 ### 영구 보존되는 메모리
 
@@ -372,13 +372,12 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 `Hide-Secrets` 는 transcript 발췌만 마스킹하고 **메모리 본문은 마스킹 대상 아님**. 사용자 책임.
 
-### C: 복원 후 복구 흐름 (⚠️ 위 split-brain 미해결 상태에선 불완전)
+### C: 복원 후 복구 흐름 (`Sync-Memory` hook 으로 자동)
 
-근본 해결 전까지는 자동 무손실이 보장되지 않습니다 — C: 복원 시 git-tracked E: 백업에서 수동 복구가 필요할 수 있습니다:
 1. C: 복원 — C: 의 auto-memory 가 14일 전으로 되돌아가거나 소실
-2. `git pull` 로 E: 백업(최신 commit) 받기
-3. E: `.claude/memory/` 내용을 C: auto-memory 위치로 수동 복사 (근본 해결 시 자동화 예정)
-4. `claude` 실행 → SessionStart hook 컨텍스트와 함께 사용자 프로필/규칙 복원
+2. (다른 장비 작업분 있으면) `git pull` 로 E: 백업 최신화
+3. `claude` 실행 → **SessionStart 의 `Sync-Memory` 가 E:(truth) → C: 미러로 자동 복구** (옛 C: 는 mtime 비교로 흡수 안 됨 → 최신 E: 안전)
+4. SessionStart hook 컨텍스트와 함께 사용자 프로필/규칙 복원
 
 ### 사라지지만 docs/sessions/ 가 보완하는 것
 

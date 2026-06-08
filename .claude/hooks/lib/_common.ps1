@@ -149,6 +149,45 @@ function Invoke-Push {
     }
 }
 
+# Claude Code 기본 auto-memory 위치 (C:) — autoMemoryDirectory(${CLAUDE_PROJECT_DIR} 전개 실패)가
+# 무시될 때 실제 읽기/쓰기 위치. slug = 프로젝트 절대경로의 드라이브문자 소문자 + ':' '\' → '-' 치환
+# (E:\dev\KoEnVue → e--dev-KoEnVue). 디렉토리 없으면 $null (호출부가 안전하게 skip).
+function Get-AutoMemoryDir {
+    $root = Get-ProjectRoot
+    $slug = $root -replace '[:\\]', '-'
+    if ($slug -match '^([A-Za-z])(.*)$') { $slug = $matches[1].ToLower() + $matches[2] }
+    $dir = Join-Path (Join-Path $env:USERPROFILE '.claude\projects') (Join-Path $slug 'memory')
+    if (Test-Path $dir) { return $dir }
+    return $null
+}
+
+# Memory split-brain 동기화 (docs/harness.md §12). E:(.claude/memory, git-tracked, C: 복원 대상 아님)
+# = truth, C:(auto-memory) = Claude 가 실제 읽는 작업 사본.
+#   (1) C: 의 '더 새로운' 파일만 E: 로 흡수 — 복원된 옛 C: 가 최신 E: 를 못 덮게 mtime(UTC) 비교.
+#   (2) E: → C: 미러 — 복원된 C: 를 최신으로 복구, E: 에만 있는 것도 C: 로.
+# 삭제는 동기화 안 함(추가/수정만). Copy-Item 은 mtime 보존 → 정상 세션엔 (2)가 무동작.
+# 반환: @{ absorbed; restored }. absorbed>0 이면 E: 변경됨 → 호출부가 commit 판단.
+function Sync-Memory {
+    $cDir = Get-AutoMemoryDir
+    if (-not $cDir) { return @{ absorbed = 0; restored = 0 } }
+    $eDir = Join-Path (Get-ProjectRoot) '.claude\memory'
+    if (-not (Test-Path $eDir)) { New-Item -ItemType Directory -Path $eDir -Force | Out-Null }
+    $absorbed = 0; $restored = 0
+    Get-ChildItem -Path $cDir -Filter '*.md' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        $eFile = Join-Path $eDir $_.Name
+        if (-not (Test-Path $eFile) -or $_.LastWriteTimeUtc -gt (Get-Item $eFile).LastWriteTimeUtc) {
+            Copy-Item $_.FullName $eFile -Force; $absorbed++
+        }
+    }
+    Get-ChildItem -Path $eDir -Filter '*.md' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        $cFile = Join-Path $cDir $_.Name
+        if (-not (Test-Path $cFile) -or $_.LastWriteTimeUtc -gt (Get-Item $cFile).LastWriteTimeUtc) {
+            Copy-Item $_.FullName $cFile -Force; $restored++
+        }
+    }
+    return @{ absorbed = $absorbed; restored = $restored }
+}
+
 # Mask common secret patterns before persisting transcript text to git-tracked files
 function Hide-Secrets {
     param([string]$Text)

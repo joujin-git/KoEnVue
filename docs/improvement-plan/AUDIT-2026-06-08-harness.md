@@ -12,7 +12,7 @@
 |---|------|------|------|
 | 1 | 코드→문서 매핑 3곳 중복 (docs-keeper / harness §5 / post-edit hook) | 📋 | 단일 진실원 승격(reviewer §0 패턴) — 구조 변경이라 사용자 결정 후 |
 | 2 | 워크플로우 런타임 계약 미문서화 | ✅ | `.claude/workflows/README.md` 신설 — 심볼 계약 + 작성 함정 박제 |
-| 3 | **메모리 split-brain** (autoMemoryDirectory 무효 → C: 사용, E:는 백업) | 🟡✅ + 🔍 | os-dependent-accept E: 구제 복사 + MEMORY.md 갱신 + §12 정정 **적용**. 근본해결(autoMemoryDirectory 절대경로 vs 동기화 hook) **사용자 결정 대기** |
+| 3 | **메모리 split-brain** (autoMemoryDirectory 무효 → C: 사용, E:는 백업) | ✅ | 구제(os-dependent E: 복사) + **근본해결: `Sync-Memory` hook**(_common.ps1, SessionStart) — E:=truth, C: 더 새 파일만 흡수, E:→C: 미러. 검증: slug/mtime보존 OK, restored=5, C:=E: 해시 일치 |
 | 4 | ultracode fan-out 하 git 쓰기 경합 (index.lock) | 🔍 | leaf 가 실제 git commit 하는지 실측 먼저(현재 leaf=read-only라 위험 낮음 추정). 확정 시 _common 에 Global mutex |
 | 5 | 비용 거버너 no-op (budget.total 미주입 시 상한 우회) | 🟡 | bug-hunt `round<8` + release-review `MAX_VERIFY=25` **적용**. codebase-audit/design-compare 는 고정단계라 영향 작음. budget 주입 규약은 ⏭️ |
 | 6 | effort 손실 — 워크플로우 결과 휘발 | ✅ | 이 AUDIT 문서가 첫 실천. harness.md 에 "결과 반환 즉시 고정" 규약 ⏭️ 추가 |
@@ -61,7 +61,7 @@
 
 ## 다음 우선순위 (제안)
 
-1. **메모리 근본 해결** (#3) — 사용자 결정 필요: autoMemoryDirectory 절대경로 vs 동기화 hook. 가장 중요(데이터 보존).
+1. ~~메모리 근본 해결 (#3)~~ — ✅ 완료: `Sync-Memory` hook 적용 (SessionStart C:↔E: 동기화).
 2. **PreCompact hook** (medium) — ultracode 가 컴팩션 빈도를 올려 연속성 보강 가치 높음.
 3. **카탈로그/매직넘버 단일화** + **meta-phase 자동 가드** — 워크플로우 추가/수정 시 drift 방지.
 4. git 쓰기 경합(#4)·inject 토큰(#) — 실측 후 판단.
