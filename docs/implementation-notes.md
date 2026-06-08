@@ -255,6 +255,8 @@ Null fallbacks (hardcoded, also logical px — scaled at apply time):
 
 Multi-monitor / resolution stability: offsets are stored relative to a `Corner` anchor, not as absolute pixel coordinates, and both Fixed-mode default-anchor and Window-mode relative deltas are DPI-normalized to 96 DPI logical pixels. The indicator's visual position relative to the anchor (work area corner for Fixed default, window frame corner for Window) is invariant across monitors of differing DPI scale. See "Window-relative position memory" above for the save/apply math — Fixed-mode default anchor follows the same pattern via `ComputeAnchorFromCurrentPosition` (divide by source monitor scale) and `ResolveAnchor` (multiply by target monitor scale).
 
+`Overlay.ResolveAnchor`(work area 기준)와 `Overlay.ResolveRelativePosition`(창 프레임 기준)은 동일한 corner 분기(`TopLeft/BottomLeft → Left+dx` vs `Right+dx`, `TopLeft/TopRight → Top+dy` vs `Bottom+dy`)를 갖고 있어, 공통 헬퍼 `ResolveCornerPosition(RECT frame, Corner, dx, dy, dpiScale)` 한 곳으로 통합되고 두 메서드는 각자의 기준 RECT 만 넘기는 1줄 위임이다 (P4 중복 제거 — 두 분기의 부호·DPI 승산이 갈라지지 않도록 단일 진실원).
+
 Tray menu:
 - **"현재 위치로 설정"**: branches on current mode — Fixed calls `Overlay.ComputeAnchorFromCurrentPosition()` (work area corners), Window calls `Overlay.ComputeRelativeFromCurrentPosition(hwndForeground)` (window frame corners). Both use Manhattan distance to pick the nearest corner
 - **"초기화"**: resets the current mode's field to null (menu item grayed when already null)
@@ -421,6 +423,8 @@ Main thread:
 
 `DetectionLoop`의 while 본문은 `catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or COMException or ArgumentException)` 로 래핑되어 단일 폴링 예외(예: `WindowProcessInfo.GetProcessName` 실패, UAC 전환 중 일시적 `COMException`)가 감지 스레드를 종료시키지 않는다. 로직 버그(`NullReferenceException` 등) 는 이 필터에 걸리지 않아 표면화된다. `Thread.Sleep`은 try 밖에 위치하여 예외 후에도 폴링 간격이 유지된다. `_stopping` 필드는 `volatile`로 선언되어 `OnProcessExit`에서의 쓰기가 감지 스레드에서 즉시 가시적이다.
 
+**메인 스레드 WndProc 도 대칭 catch**: 메인 윈도우 메시지 핸들러는 얇은 `[UnmanagedCallersOnly] WndProc` 래퍼 + 실제 디스패치 `WndProcCore` 로 분리되어 있다. 핸들러 예외가 unmanaged 경계(`DispatchMessageW`)를 넘으면 NativeAOT 가 예외를 전파하지 못해 **프로세스를 종료**시키므로 — 감지 스레드/`EnumWindows` 콜백([Snap callbacks](#enumwindows--enumchildwindows-nativeaot-callbacks))과 동일한 위험 — 래퍼가 `WndProcCore` 를 `try`로 감싸 예상 가능한 일시 예외(`Win32Exception`/`COMException`/`IOException`/`UnauthorizedAccessException`/`InvalidOperationException`/`ArgumentException`)만 잡아 `Logger.Error` 로그 후 `DefWindowProcW` 로 그 메시지만 스킵하고 메시지 루프를 유지한다. 로직 버그(`NullReferenceException` 등)는 필터 밖이라 그대로 전파돼 `AppDomain` 크래시 핸들러로 표면화된다 — 콜백 catch 정책과 대칭.
+
 **지수 백오프 + 중복 로그 스팸 억제**: 예외가 반복되면 `Thread.Sleep(PollIntervalMs + backoffMs)` 의 `backoffMs` 를 매 실패마다 `DefaultConfig.DetectionBackoffStepMs = 200` 씩 누적 (`DetectionBackoffMaxMs = 2000` 상한). 드문 COM apartment 과도기 상황에서 초당 12건의 Warning 이 수십 초간 누적되어 로그 파일을 오염시키던 시나리오를 차단한다. 동일 예외 메시지가 연속 발생하면 첫 발생만 `Logger.Warning` 으로 기록하고 이후는 `Logger.Debug` 로 강등, 새 메시지는 다시 Warning 1회. 성공 tick 이 돌아오면 `backoffMs = 0` 리셋 + "Detection loop recovered after backoff (prev=Nms)" Info 로그. 백오프 상한이 2초로 캡핑되어 있어 최악 경우 `OnProcessExit` 의 `_stopping = true` 신호가 `PollIntervalMs 80ms + backoff 2000ms ≈ 2.08초` 이내 전파된다.
 
 ### Foreground change detection
@@ -429,7 +433,9 @@ Main thread:
 
 ### Console host + UWP frame fallback
 
-`ResolveFocusWindow` 의 `hwndFocus == 0` 폴백은 **두 윈도우 클래스**를 포그라운드 윈도우로 대체한다 — `Win32Constants.ConsoleWindowClass`(conhost) **및** `Win32Constants.ApplicationFrameWindowClass`("ApplicationFrameWindow", UWP 앱 프레임). 둘 다 GUITHREADINFO 의 `hwndFocus` 가 0 으로 떨어지는 동형 증상이라 같은 폴백을 공유한다.
+`ResolveFocusWindow` 는 먼저 `User32.GetGUIThreadInfo` 의 **반환값**으로 `hwndFocus` 를 결정한다 — `GetGUIThreadInfo(threadId, ref gti) ? gti.hwndFocus : IntPtr.Zero`. 실패 시 `gti` 가 부분만 채워질 수 있어 stale `hwndFocus` 가 새는 것을 막고 명시적으로 0(no-focus) 으로 떨어뜨려 아래 폴백/필터 분기가 일관되게 동작하도록 한다.
+
+이어지는 `hwndFocus == 0` 폴백은 **두 윈도우 클래스**를 포그라운드 윈도우로 대체한다 — `Win32Constants.ConsoleWindowClass`(conhost) **및** `Win32Constants.ApplicationFrameWindowClass`("ApplicationFrameWindow", UWP 앱 프레임). 둘 다 GUITHREADINFO 의 `hwndFocus` 가 0 으로 떨어지는 동형 증상이라 같은 폴백을 공유한다.
 
 - **conhost**: 콘솔 호스트는 포커스를 AccessibleObject 에 보고하지 않는다.
 - **UWP 프레임**: 설정 앱(SystemSettings) 등 UWP 앱의 foreground 창은 `ApplicationFrameHost.exe` 가 소유하는 `ApplicationFrameWindow` 지만 실제 콘텐츠는 **별도 프로세스의 CoreWindow**(예: `SystemSettings.exe`)다. 콘텐츠 클릭 시 프레임 스레드 기준 `GetGUIThreadInfo` 의 `hwndFocus = 0` → `SystemFilter.ShouldHide` 조건 6(`hwndFocus == 0 && HideWhenNoFocus`) 이 발동하고 `FilteredStreak` 가 `HideHysteresisPolls`(=3) 에 도달하면 메인 인디가 사라진다(스모킹건 로그: `Filter triggered HIDE: ... hwndFocus=0x0, fgClass=ApplicationFrameWindow, streak=3`). foreground 를 포커스 타깃으로 대체해 이 no-focus HIDE 오탐을 막는다.
@@ -445,6 +451,8 @@ Detection loop sends `WM_POSITION_UPDATED` **before** `WM_IME_STATE_CHANGED` / `
 ### Per-poll filter evaluation
 
 `DetectionLoop` evaluates `ResolveForApp + SystemFilter.ShouldHide` every tick (not only on foreground change) and uses a `lastFiltered` flag to suppress duplicate `WM_HIDE_INDICATOR` messages. Fixes the "desktop click → same app return" case where nothing appeared to change but the indicator needed to reappear. Hide message is emitted only on `!lastFiltered → filtered` transitions.
+
+**틱 스냅샷**: `ProcessDetectionTick` 은 진입 시 `AppConfig cfg = _config` 를 한 번만 읽어 그 틱 내 모든 분기(잠금 가드, `TryHandleFilter` 의 `ResolveForApp(cfg, …)` 등)가 같은 인스턴스를 보도록 한다. 메인 스레드가 틱 도중 `_config` 를 `with` 로 통째 교체(레코드 — 참조 대입은 원자적)해도 한 틱 안의 일관성이 깨지지 않는다. 분할 헬퍼들은 이미 `appConfig`(per-app resolved) 스냅샷이나 `DefaultConfig` 상수를 쓰므로, 직접 `_config` 를 읽던 자리만 `cfg` 로 통일했다 — `ResolveCurrent()` 의 메인-스레드 재호출 모델(아래 [프로필 머지 파이프라인](#프로필-머지-파이프라인))과 같은 "다음 틱 자연 수렴" 정책의 연장.
 
 #### HIDE 디바운스 (flip-flop 흡수)
 

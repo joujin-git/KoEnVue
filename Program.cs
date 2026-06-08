@@ -347,6 +347,25 @@ internal static partial class Program
     [UnmanagedCallersOnly]
     private static IntPtr WndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
+        // [UnmanagedCallersOnly] 핸들러 예외가 unmanaged 경계(DispatchMessageW)를 넘으면 NativeAOT
+        // 가 프로세스를 종료시킨다. 예상 가능한 일시 예외(Win32/COM/I/O 등)는 로깅 후 해당 메시지만
+        // 스킵하고 메시지 루프를 유지한다 — 감지 스레드/콜백의 catch 정책과 대칭. 로직 버그(NullRef
+        // 등)는 필터 밖이라 그대로 전파되어 AppDomain 크래시 핸들러로 표면화된다.
+        try
+        {
+            return WndProcCore(hwnd, msg, wParam, lParam);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
+            or COMException or IOException or UnauthorizedAccessException
+            or InvalidOperationException or ArgumentException)
+        {
+            Logger.Error($"WndProc handler error (msg=0x{msg:X}): {ex}");
+            return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
+        }
+    }
+
+    private static IntPtr WndProcCore(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
+    {
         // === 동적 메시지 ID (switch 불가) ===
         // RegisterWindowMessageW 로 런타임에 받은 TaskbarCreated ID — 등록 실패 시 0.
         // 오버레이 창도 최상위라 같은 브로드캐스트를 받으므로 메인 창에서만 처리해 중복 방지.
@@ -491,6 +510,19 @@ internal static partial class Program
     // 이벤트 핸들러
     // ================================================================
 
+    /// <summary>
+    /// 현재 포그라운드 앱에 인디케이터를 표시한다 — <c>_indicatorVisible</c> 설정 + per-app 위치 계산
+    /// + <see cref="Animation.TriggerShow"/> 를 한 곳에 모은다. IME/Focus/Activate/UserHidden 해제/
+    /// Config 리프레시 등 여러 경로가 공유하던 3줄 패턴의 단일 진실원. 호출 전 <c>_lastForegroundHwnd</c>
+    /// 유효성(대부분 <c>!= IntPtr.Zero</c> 가드)은 호출자가 보장한다.
+    /// </summary>
+    private static void ShowIndicatorAtForeground(ImeState state, AppConfig resolved, bool imeChanged)
+    {
+        _indicatorVisible = true;
+        var (x, y) = GetAppPosition();
+        Animation.TriggerShow(x, y, state, resolved, imeChanged);
+    }
+
     private static void HandleImeStateChanged(ImeState newState)
     {
         _lastImeState = newState;
@@ -510,11 +542,7 @@ internal static partial class Program
         // PR-13: DisplayMode / EventTriggers / 렌더 인자 모두 per-app resolved 사용.
         AppConfig resolved = ResolveCurrent();
         if (resolved.DisplayMode == DisplayMode.Always || resolved.EventTriggers.OnImeChange)
-        {
-            _indicatorVisible = true;
-            var (x, y) = GetAppPosition();
-            Animation.TriggerShow(x, y, newState, resolved, imeChanged: true);
-        }
+            ShowIndicatorAtForeground(newState, resolved, imeChanged: true);
     }
 
     private static void HandleFocusChanged(IntPtr newHwndFocus)
@@ -524,11 +552,7 @@ internal static partial class Program
 
         AppConfig resolved = ResolveCurrent();
         if (resolved.DisplayMode == DisplayMode.Always || resolved.EventTriggers.OnFocusChange)
-        {
-            _indicatorVisible = true;
-            var (x, y) = GetAppPosition();
-            Animation.TriggerShow(x, y, _lastImeState, resolved, imeChanged: false);
-        }
+            ShowIndicatorAtForeground(_lastImeState, resolved, imeChanged: false);
     }
 
     private static void HandlePositionUpdated(IntPtr hwndForeground)
@@ -765,12 +789,20 @@ internal static partial class Program
 
     private static void HandleConfigChanged()
     {
+        AppConfig prev = _config;
         _config = Settings.Load();
         Logger.SetLevel(_config.LogLevel);
-        string resolvedLogPath = PortablePath.SanitizeLogPath(_config.LogFilePath, out string? logPathReject);
-        Logger.Initialize(_config.LogToFile, resolvedLogPath, _config.LogMaxSizeMb);
-        if (logPathReject is not null)
-            Logger.Warning($"{logPathReject}; using '{resolvedLogPath}'");
+        // Logger.Initialize 는 drain 스레드를 종료(Join 최대 3s)·재시작하는 무거운 작업이라, 로그 관련
+        // 설정이 실제로 바뀐 경우에만 재초기화한다 — 무변경 리로드가 메인 스레드를 블록하지 않도록.
+        if (prev.LogToFile != _config.LogToFile
+            || prev.LogFilePath != _config.LogFilePath
+            || prev.LogMaxSizeMb != _config.LogMaxSizeMb)
+        {
+            string resolvedLogPath = PortablePath.SanitizeLogPath(_config.LogFilePath, out string? logPathReject);
+            Logger.Initialize(_config.LogToFile, resolvedLogPath, _config.LogMaxSizeMb);
+            if (logPathReject is not null)
+                Logger.Warning($"{logPathReject}; using '{resolvedLogPath}'");
+        }
         I18n.Load(_config.Language);
         Settings.ClearProfileCache();
         ImeStatus.UpdateDetectionMethod(_config.DetectionMethod);
@@ -823,9 +855,7 @@ internal static partial class Program
         if (_config.UserHidden) return;
         if (_lastForegroundHwnd == IntPtr.Zero) return;
 
-        _indicatorVisible = true;
-        var (x, y) = GetAppPosition();
-        Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
+        ShowIndicatorAtForeground(_lastImeState, ResolveCurrent(), imeChanged: false);
     }
 
     /// <summary>
@@ -1006,11 +1036,7 @@ internal static partial class Program
         {
             // 표시 전환: 현재 포그라운드 앱에 즉시 인디 재표시 (PR-13: per-app)
             if (_lastForegroundHwnd != IntPtr.Zero)
-            {
-                _indicatorVisible = true;
-                var (x, y) = GetAppPosition();
-                Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
-            }
+                ShowIndicatorAtForeground(_lastImeState, ResolveCurrent(), imeChanged: false);
         }
     }
 
@@ -1041,10 +1067,7 @@ internal static partial class Program
                 // TriggerShow로 전체 갱신. TriggerShow는 UpdateConfig + Overlay.Show를 포함한다.
                 // PR-13: per-app resolved 로 갱신해 메뉴 변경 시점부터 프로필 시각 override 도 즉시 반영.
                 else if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
-                {
-                    var (x, y) = GetAppPosition();
-                    Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
-                }
+                    ShowIndicatorAtForeground(_lastImeState, ResolveCurrent(), imeChanged: false);
                 else if (_indicatorVisible)
                 {
                     Overlay.UpdateColor(_lastImeState, ResolveCurrent());
@@ -1071,10 +1094,7 @@ internal static partial class Program
     private static void RefreshVisibleIndicator()
     {
         if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
-        {
-            var (x, y) = GetAppPosition();
-            Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
-        }
+            ShowIndicatorAtForeground(_lastImeState, ResolveCurrent(), imeChanged: false);
     }
 
     private static void HandleDisplayChange()
@@ -1223,9 +1243,14 @@ internal static partial class Program
     /// </summary>
     private static void ProcessDetectionTick(ref DetectionState state)
     {
+        // 틱 스냅샷 — 이 틱이 도는 동안 메인 스레드가 _config 를 with 로 교체해도 한 틱 안의 모든
+        // 분기가 같은 인스턴스를 참조하도록 시작 시 한 번만 읽는다 (틱 내 일관성). 분할 헬퍼들은
+        // 이미 appConfig 스냅샷 또는 DefaultConfig 상수를 쓰므로 직접 _config 를 읽던 곳만 cfg 로 통일.
+        AppConfig cfg = _config;
+
         // 세션 잠금 중이고 HideOnLockScreen 활성 상태면 상태 전파 자체를 건너뜀.
         // LastFiltered=true 로 세팅해 잠금 해제 후 첫 정상 틱에서 foregroundChanged 가 유도되도록 한다.
-        if (_sessionLocked && _config.HideOnLockScreen)
+        if (_sessionLocked && cfg.HideOnLockScreen)
         {
             state.LastFiltered = true;
             return;
@@ -1251,7 +1276,7 @@ internal static partial class Program
 
         IntPtr hwndFocus = ResolveFocusWindow(threadId, hwndForeground);
 
-        if (TryHandleFilter(ref state, hwndForeground, hwndFocus, out AppConfig appConfig)) return;
+        if (TryHandleFilter(ref state, hwndForeground, hwndFocus, cfg, out AppConfig appConfig)) return;
 
         bool leavingSystemInput = UpdateForegroundProcessCache(ref state, hwndForeground);
 
@@ -1301,8 +1326,8 @@ internal static partial class Program
     {
         GUITHREADINFO gti = default;
         gti.cbSize = (uint)Marshal.SizeOf<GUITHREADINFO>();
-        User32.GetGUIThreadInfo(threadId, ref gti);
-        IntPtr hwndFocus = gti.hwndFocus;
+        // 실패 시 gti 가 부분만 채워질 수 있으므로 반환값을 체크해 명시적으로 0(no-focus)으로 떨어뜨린다.
+        IntPtr hwndFocus = User32.GetGUIThreadInfo(threadId, ref gti) ? gti.hwndFocus : IntPtr.Zero;
 
         if (hwndFocus == IntPtr.Zero)
         {
@@ -1327,9 +1352,9 @@ internal static partial class Program
     /// 필터링된 경우 숨김 메시지 전송 후 true 반환(continue).
     /// </summary>
     private static bool TryHandleFilter(ref DetectionState state, IntPtr hwndForeground, IntPtr hwndFocus,
-        out AppConfig appConfig)
+        AppConfig cfg, out AppConfig appConfig)
     {
-        AppConfig? resolved = Settings.ResolveForApp(_config, hwndForeground);
+        AppConfig? resolved = Settings.ResolveForApp(cfg, hwndForeground);
         bool currentlyFiltered = (resolved is null)
             || SystemFilter.ShouldHide(hwndForeground, hwndFocus, resolved);
 

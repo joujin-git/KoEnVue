@@ -34,6 +34,11 @@ internal class JsonSettingsManager<T>
 {
     private readonly string _filePath;
     private readonly JsonTypeInfo<T> _typeInfo;
+
+    // _lastMtime 은 메인 스레드(Save/Load)와 감지 스레드(CheckReload)가 공유한다. DateTime 은
+    // 64비트 값이라 volatile 키워드를 받지 못하므로 짧은 lock 으로 read/write 원자성·가시성을 보장한다
+    // (I/O 인 GetLastWriteTimeUtc 는 lock 밖에서 수행, 필드 대입/비교만 보호).
+    private readonly object _mtimeLock = new();
     private DateTime _lastMtime = DateTime.MinValue;
 
     public JsonSettingsManager(string filePath, JsonTypeInfo<T> typeInfo)
@@ -76,7 +81,8 @@ internal class JsonSettingsManager<T>
                 config = Validate(config);
                 config = ApplyTheme(config);
 
-                _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+                DateTime loadedMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+                lock (_mtimeLock) _lastMtime = loadedMtime;
                 LogProvider.Sink?.Info($"Config loaded from {_filePath}");
                 return config;
             }
@@ -87,7 +93,11 @@ internal class JsonSettingsManager<T>
                 // 정책 항목 1(타입 좁히기): I/O + JSON + 소스젠 비지원 타입만 잡고, 훅(Validate/Migrate/...)
                 // 의 로직 버그(NullRef 등)는 propagate 시켜 표면화하도록 한다.
                 LogProvider.Sink?.Warning($"Failed to load config from {_filePath}: {ex.Message}. Using defaults without overwriting.");
-                try { _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath); }
+                try
+                {
+                    DateTime staleMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+                    lock (_mtimeLock) _lastMtime = staleMtime;
+                }
                 catch (Exception innerEx) when (IsExpectedIoException(innerEx)) { }
                 return new T();
             }
@@ -115,7 +125,8 @@ internal class JsonSettingsManager<T>
             json = FormatJson(json);
             JsonSettingsFile.WriteAllText(_filePath, json);
 
-            _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+            DateTime savedMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+            lock (_mtimeLock) _lastMtime = savedMtime;
             LogProvider.Sink?.Debug($"Config saved to {_filePath}");
         }
         catch (Exception ex) when (IsExpectedSaveException(ex))
@@ -145,10 +156,13 @@ internal class JsonSettingsManager<T>
         try
         {
             DateTime mtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
-            if (mtime != _lastMtime)
+            lock (_mtimeLock)
             {
-                _lastMtime = mtime;
-                return true;
+                if (mtime != _lastMtime)
+                {
+                    _lastMtime = mtime;
+                    return true;
+                }
             }
         }
         catch (Exception ex) when (IsExpectedIoException(ex))

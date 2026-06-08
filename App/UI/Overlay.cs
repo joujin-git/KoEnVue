@@ -284,20 +284,26 @@ internal static class Overlay
     }
 
     /// <summary>
-    /// Corner anchor + 논리 px delta 를 타겟 모니터 DPI 스케일로 승산해 work area 기준 물리 px 절대 좌표로 변환.
+    /// Corner anchor + 논리 px delta 를 타겟 모니터 DPI 스케일로 승산해 기준 RECT(work area 또는 창
+    /// 프레임) 모서리 기준 물리 px 절대 좌표로 변환. <see cref="ResolveAnchor"/>(work area 기준) 과
+    /// <see cref="ResolveRelativePosition"/>(창 프레임 기준) 의 동일한 corner 분기 로직을 단일화.
     /// </summary>
-    private static (int x, int y) ResolveAnchor(RECT workArea, DefaultPositionConfig anchor, double dpiScale)
+    private static (int x, int y) ResolveCornerPosition(RECT frame, Corner corner, int deltaX, int deltaY, double dpiScale)
     {
-        int physicalDx = DpiHelper.Scale(anchor.DeltaX, dpiScale);
-        int physicalDy = DpiHelper.Scale(anchor.DeltaY, dpiScale);
-        int x = anchor.Corner is Corner.TopLeft or Corner.BottomLeft
-            ? workArea.Left + physicalDx
-            : workArea.Right + physicalDx;
-        int y = anchor.Corner is Corner.TopLeft or Corner.TopRight
-            ? workArea.Top + physicalDy
-            : workArea.Bottom + physicalDy;
+        int physicalDx = DpiHelper.Scale(deltaX, dpiScale);
+        int physicalDy = DpiHelper.Scale(deltaY, dpiScale);
+        int x = corner is Corner.TopLeft or Corner.BottomLeft
+            ? frame.Left + physicalDx
+            : frame.Right + physicalDx;
+        int y = corner is Corner.TopLeft or Corner.TopRight
+            ? frame.Top + physicalDy
+            : frame.Bottom + physicalDy;
         return (x, y);
     }
+
+    /// <summary>work area 기준 Corner anchor → 절대 좌표 (<see cref="ResolveCornerPosition"/> 위임).</summary>
+    private static (int x, int y) ResolveAnchor(RECT workArea, DefaultPositionConfig anchor, double dpiScale)
+        => ResolveCornerPosition(workArea, anchor.Corner, anchor.DeltaX, anchor.DeltaY, dpiScale);
 
     /// <summary>
     /// 주어진 frame RECT 의 4 모서리 중 (lastX, lastY) 와 맨해튼 거리가 가장 가까운 모서리를
@@ -407,17 +413,7 @@ internal static class Overlay
     /// </para>
     /// </summary>
     public static (int x, int y) ResolveRelativePosition(RECT windowFrame, RelativePositionConfig rel, double dpiScale)
-    {
-        int physicalDx = DpiHelper.Scale(rel.DeltaX, dpiScale);
-        int physicalDy = DpiHelper.Scale(rel.DeltaY, dpiScale);
-        int x = rel.Corner is Corner.TopLeft or Corner.BottomLeft
-            ? windowFrame.Left + physicalDx
-            : windowFrame.Right + physicalDx;
-        int y = rel.Corner is Corner.TopLeft or Corner.TopRight
-            ? windowFrame.Top + physicalDy
-            : windowFrame.Bottom + physicalDy;
-        return (x, y);
-    }
+        => ResolveCornerPosition(windowFrame, rel.Corner, rel.DeltaX, rel.DeltaY, dpiScale);
 
     /// <summary>
     /// 창 기준 모드의 기본 위치. 저장 위치 없는 앱에 사용.

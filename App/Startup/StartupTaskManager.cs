@@ -56,8 +56,12 @@ internal static class StartupTaskManager
                 RedirectStandardError = true,
             };
             using var proc = Process.Start(psi);
-            proc?.WaitForExit(SchtasksQueryTimeoutMs);
-            return proc?.ExitCode == 0;
+            if (proc is null) return false;
+            // stdout/stderr 를 비동기로 흡수해 파이프 버퍼 포화 데드락 방지 (exit code 만 사용).
+            _ = proc.StandardOutput.ReadToEndAsync();
+            _ = proc.StandardError.ReadToEndAsync();
+            proc.WaitForExit(SchtasksQueryTimeoutMs);
+            return proc.ExitCode == 0;
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
             or PlatformNotSupportedException or FileNotFoundException)
@@ -280,9 +284,13 @@ internal static class StartupTaskManager
             };
             using var proc = Process.Start(psi);
             if (proc is null) return (null, null, null);
-            string xml = proc.StandardOutput.ReadToEnd();
+            // stdout/stderr 동시 비동기 읽기 — stderr 를 안 읽으면 schtasks 가 stderr 를 채울 때
+            // 파이프 버퍼 포화로 데드락할 수 있다 (stdout ReadToEnd 가 EOF 대기 중 블록).
+            Task<string> xmlTask = proc.StandardOutput.ReadToEndAsync();
+            _ = proc.StandardError.ReadToEndAsync();
             proc.WaitForExit(SchtasksQueryTimeoutMs);
             if (proc.ExitCode != 0) return (null, null, null);
+            string xml = xmlTask.GetAwaiter().GetResult();
             return (ExtractTagFromXml(xml, "Command", unescape: true),
                     ExtractTagFromXml(xml, "Delay", unescape: false),
                     ExtractTagFromXml(xml, "RunLevel", unescape: false));
@@ -391,14 +399,17 @@ internal static class StartupTaskManager
             Logger.Warning($"schtasks {arguments}: Process.Start returned null");
             return false;
         }
-        string stdout = proc.StandardOutput.ReadToEnd();
-        string stderr = proc.StandardError.ReadToEnd();
+        // stdout/stderr 동시 비동기 읽기로 파이프 버퍼 포화 데드락 방지.
+        Task<string> stdoutTask = proc.StandardOutput.ReadToEndAsync();
+        Task<string> stderrTask = proc.StandardError.ReadToEndAsync();
         bool exited = proc.WaitForExit(SchtasksCommandTimeoutMs);
         if (!exited)
         {
             Logger.Warning($"schtasks {arguments}: timed out after {SchtasksCommandTimeoutMs}ms");
             return false;
         }
+        string stdout = stdoutTask.GetAwaiter().GetResult();
+        string stderr = stderrTask.GetAwaiter().GetResult();
         if (proc.ExitCode != 0)
         {
             Logger.Warning(
