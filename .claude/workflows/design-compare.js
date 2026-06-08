@@ -69,11 +69,17 @@ const scored = await parallel(proposals.filter(Boolean).map((p) => () =>
 phase('Synthesize')
 const ranked = scored.filter(Boolean).sort((a, b) => (b.score.total || 0) - (a.score.total || 0))
 const winner = ranked[0] || null
+// FEATURE 는 정상인데 하위 에이전트(planner proposal / judge)가 전멸한 경우를 '좋은 안 없음'이 아니라
+// 명시 실패로 — FEATURE 미입력 가드(위)와 대칭. 안 그러면 winner:null 을 '비교했더니 별로'로 오인.
+if (!winner) {
+  return { feature: FEATURE, error: '모든 설계안 생성/심사 실패 — planner/judge 노드 전멸(재시도 또는 feature 구체화 필요)', winner: null, ranking: [], graftIdeas: [], coreIdeas: [] }
+}
 const grafts = ranked.slice(1).flatMap((r) => ((r.score.bestIdeas) || []).map((idea) => ({ from: r.angle, idea })))
-log(`최선안: ${winner ? winner.angle : '없음'} (total ${winner ? winner.score.total : 'n/a'})`)
+log(`최선안: ${winner.angle} (total ${winner.score.total})`)
 return {
   feature: FEATURE,
-  winner: winner ? { angle: winner.angle, proposal: winner.proposal, score: winner.score } : null,
+  winner: { angle: winner.angle, proposal: winner.proposal, score: winner.score },
+  coreIdeas: (winner.score.bestIdeas) || [],  // winner 자신의 핵심 아이디어(합성 1순위) — graft 는 차선안만이라 누락됐었음
   ranking: ranked.map((r) => ({ angle: r.angle, total: r.score.total })),
   graftIdeas: grafts,
 }

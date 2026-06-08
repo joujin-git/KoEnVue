@@ -68,7 +68,7 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 │   └── harness-optimize.js    하네스 자체 최적화
 ├── scratch/                   ❌ ignored (디버깅 임시 ps1 — 현재 비었음, PR-15 권한상승 프로브 잔재 정리됨)
 ├── hooks/                     ✅ committed
-│   ├── lib/_common.ps1        공통 함수 + 공유 상수 ($ClaudeMdLineLimit, Hide-Secrets, Invoke-HookSafely, Write-HookError, Add-SessionBlock, Invoke-Push, Invoke-WipCommit, Sync-Memory, Get-AutoMemoryDir, Test-WorkflowPhaseDrift)
+│   ├── lib/_common.ps1        공통 함수 + 공유 상수 ($ClaudeMdLineLimit, Hide-Secrets, Invoke-HookSafely, Write-HookError, Add-SessionBlock, Invoke-Push, Invoke-WipCommit, Sync-Memory, Get-AutoMemoryDir, Test-WorkflowPhaseDrift, Get-PorcelainStatus)
 │   ├── inject-turn-context.ps1 UserPromptSubmit — ultrathink+max effort+ultracode 주입 (워크플로우 카탈로그 동적)
 │   ├── session-start.ps1      SessionStart — 이전 요약 주입 + push 안 한 commit 알림 + Sync-Memory
 │   ├── pre-compact.ps1        PreCompact — 압축 마커 append + git 스냅샷 additionalContext
@@ -120,13 +120,15 @@ docs/
 
 | 워크플로우 | 무엇을 | 패턴 |
 |-----------|--------|------|
-| `release-review` | 릴리즈 전 correctness·보안·P1~P6·동시성 4차원 병렬 리뷰 → 적대적 검증 → **Build 게이트**(verifier 가 build·publish·test 실행). invariant 차원이 버전 4-part 일관성(csproj·git태그·CHANGELOG)·P6 단방향(`git grep KoEnVue.App Core/`=0)도 명시 점검 | pipeline + adversarial verify + build gate |
+| `release-review` | 릴리즈 전 correctness·보안·P1~P6·동시성 4차원 병렬 리뷰 → 적대적 검증 → **Build 게이트**(verifier 가 build·publish·test 실행). invariant 차원이 버전 4-part 일관성(csproj·git태그·CHANGELOG)·P6 단방향(`git grep KoEnVue.App Core/`=0)도 명시 점검. ⚠️ 적대적 검증은 **동일 model·동일 코드 재독** 기반이라 finder 의 공통 환각은 못 거름 — 객관 신호인 **Build 게이트**가 보완. SCOPE 기본값은 `HEAD~1..HEAD`(직전 커밋 — main 직커밋이라 `main..HEAD` 는 보통 빔), 차원 에이전트 실패 시 그 차원을 `degraded` 로 분기해 `degradedDimensions` 로 노출(거짓 클린 방지) | pipeline + adversarial verify + build gate |
 | `bug-hunt` | 동시성·레이스·견고성 결함을 안 나올 때까지 반복 탐색 | loop-until-dry + 다관점 렌즈 |
-| `codebase-audit` | App/·Core/ 모듈 전수 병렬 점검 → P규칙 게이트 → AUDIT 종합 | scope→audit→gate |
-| `design-compare` | 기능 설계를 N접근법 제안 → 점수화 → 합성 (`args.feature` 필수) | judge panel |
-| `harness-optimize` | 하네스 구성요소 점검 → completeness critic | inspect + critic |
+| `codebase-audit` | App/·Core/ 모듈 전수 병렬 점검 → P규칙 게이트 → AUDIT 종합. Scope 가 `MAX_MODULES=24` 절대상한(초과 시 응집도 병합)·Scope null 은 `error` 반환(거짓 클린 방지)·실패 노드 수를 `agentsFailed` 로 노출(0건이 깨끗을 보장 안 함) | scope→audit→gate |
+| `design-compare` | 기능 설계를 N접근법(현재 3 angle 고정) 제안 → judge panel 점수화 → 합성 (`args.feature` 필수). winner null 은 명시 `error`(planner/judge 전멸을 '별로'로 오인 방지), `coreIdeas`(=winner 자신의 bestIdeas, 합성 1순위) 노출 | judge panel |
+| `harness-optimize` | 하네스 구성요소 점검 → completeness critic. area 기준 dedup(found+critic 양쪽), critic 입력 slice 40→60(절단 완화), self-audit 프롬프트(harness-optimize.js 자신의 설계 결함도 점검) | inspect + critic |
 
 각 워크플로우는 KoEnVue 서브에이전트(explorer/planner/reviewer/verifier)를 `agentType` 으로 재사용하고 `schema` 로 구조화 출력을 강제합니다. 예: `Workflow({ name: 'release-review', args: { scope: 'PR-26 변경' } })`.
+
+**라우팅 — 저비용 단일 위임 vs 고비용 워크플로우**: 모든 substantive 작업을 Workflow 로 보내지 마세요. **단일 관점이면 충분한 작업은 스킬 슬래시(저비용)** — 설계 한 건은 `/plan`(planner 1명), 문서 동기화는 `/sync-docs`(docs-keeper 1명). **여러 관점의 교차검증이 실익일 때만 Workflow**(fan-out 토큰 수 배~수십 배, §8). 특히 `/plan`(planner 단독, 저비용) vs `design-compare`(3 angle 제안 + judge panel 점수화 + 합성, 고비용)는 한 기능을 **여러 설계안으로 경쟁시켜 비교**할 때만 후자 — 단일 합리안이면 `/plan` 으로 충분.
 
 **선택 기준 — release-review vs bug-hunt** (동시성 점검 시 모호함 해소): `release-review` 는 릴리즈 직전 diff 를 1-pass 로 4차원(correctness·보안·P규칙·**동시성**)+빌드게이트로 훑어 동시성을 이미 커버한다. `bug-hunt` 는 레이스 의심이 깊을 때 전체 범위를 안 나올 때까지(loop-until-dry) 반복 탐색하는 더 무거운 도구 — release-review 가 1차로 동시성을 보고, 그래도 레이스 의심이 잔존하면 bug-hunt 를 추가로 돌린다.
 
@@ -147,15 +149,17 @@ hook 이벤트 8개 (SessionStart · PreCompact · UserPromptSubmit · PostToolU
 ### `SessionStart` → `session-start.ps1`
 - 가장 최근 `docs/sessions/YYYY-MM-DD.md` 에서 **`## [HH:MM] 세션 정리` 블록만 추출**해 `additionalContext` 로 주입 (정리 블록 없으면 마지막 turn 헤더 3개만 표시 — 잡음 최소화)
 - 최근 3일 내 wip 커밋 알림 (5건까지)
-- dirty tree 면 알림 (30건 클램프)
+- dirty tree 면 알림 (30건 클램프) — `Get-PorcelainStatus`(git status --porcelain **1회**)로 가드+클램프+count 를 한 번에 처리 (이전엔 git 3회 호출)
 - 최근 hook 에러 3건 (있으면)
 - `Sync-Memory` 로 C:↔E: 메모리 동기화 (§12 참조)
 - P1–P6 규칙과 서브에이전트 활용 권장사항 reminder
+- **`-FallbackContext`/`-EventName` 안전망**: `Write-HookOutput` 직전에 죽어도 catch 경로가 최소 fallback 컨텍스트(ultrathink/max/ultracode + 이전 세션 포인터) 1줄을 주입 — 이전엔 inject-turn-context 단독이었으나 SessionStart/PreCompact 로 확장(3곳)
 
 ### `PreCompact` → `pre-compact.ps1`
 - 대화 압축(컴팩션, 자동 컨텍스트 한도 / 수동 `/compact`) **직전** 실행. ultracode 멀티에이전트가 컨텍스트를 빠르게 채워 컴팩션 빈도가 높아진 환경에서 작업 연속성을 보강. matcher `*` 라 auto·manual 둘 다 트리거, `payload.trigger` 로 구분 기록
 - **(1) 압축 마커 박제**: 오늘 세션 파일에 `## [HH:MM] compaction (trigger=auto|manual)` 블록 append (`Add-SessionBlock` mutex 로 직렬화) → 압축 지점을 영구 기록 (압축 전 turn 기록이 상세 컨텍스트 원본임을 명시)
-- **(2) 연속성 컨텍스트**: `additionalContext` 로 git 스냅샷(미커밋 변경 30건 클램프 + 최근 커밋 5개) + 세션파일 복원 포인터를 주입 → 압축 직후 새 컨텍스트에서 진행 중이던 미커밋 작업의 연속성 즉시 복원 (SessionStart 와 동일 메커니즘)
+- **(2) 연속성 컨텍스트**: `additionalContext` 로 git 스냅샷(미커밋 변경 30건 클램프 + 최근 커밋 5개) + 세션파일 복원 포인터를 주입 → 압축 직후 새 컨텍스트에서 진행 중이던 미커밋 작업의 연속성 즉시 복원 (SessionStart 와 동일 메커니즘). 미커밋 변경은 `Get-PorcelainStatus`(git **1회**)로 축소
+- **`-FallbackContext`/`-EventName` 안전망**: SessionStart 와 동형 — `Write-HookOutput` 직전 사망 시 catch 경로가 "압축됨 — 연속성 확인 + ultrathink/max/ultracode 유지" 1줄 주입 (inject-turn-context 단독 → SessionStart/PreCompact 포함 3곳)
 
 ### `UserPromptSubmit` → `inject-turn-context.ps1`
 - 사용자 입력에 `ultrathink` 가 없으면 — **"ultrathink + thinking 모드"** + **"항상 max effort — 단축/생략 없이"** 주입
@@ -196,9 +200,9 @@ hook 이벤트 8개 (SessionStart · PreCompact · UserPromptSubmit · PostToolU
 - 로드된 파일이 `CLAUDE.md` 이면 줄 수 검사
 - `_common.ps1` 의 `$ClaudeMdLineLimit`(현재 30) 초과면 경고 컨텍스트 주입 — 한계값은 harness-status 스킬과 공유하는 단일 진실원
 
-**안전망**: 모든 hook 은 `_common.ps1` 의 `Invoke-HookSafely { ... }` 로 감싸져 있어 에러가 transcript 에 새지 않고 `.claude/state/hook-errors.log` 에 기록 (100줄 초과 시 자동 rotation — 마지막 50줄만 유지).
+**안전망**: 모든 hook 은 `_common.ps1` 의 `Invoke-HookSafely { ... }` 로 감싸져 있어 에러가 transcript 에 새지 않고 `.claude/state/hook-errors.log` 에 기록 (100줄 초과 시 자동 rotation — 마지막 50줄만 유지). `Write-HookError` 는 `HookName`/`Message` 가 빈 값이면 기록을 거부해 `' :: '` 같은 프로브성 잡음 라인이 로그에 안 쌓이게 가드.
 
-**안전망의 안전망 — `-FallbackContext`/`-EventName`**: context-injecting hook(inject-turn-context)이 `Write-HookOutput` 직전에 죽으면 그 턴의 주입(ultrathink/ultracode/effort)이 통째 증발 — ultracode 항상-ON 의 단일 실패점입니다. `Invoke-HookSafely` 에 `-FallbackContext`(+`-EventName`)를 주면 catch 경로에서 최소 fallback 컨텍스트 1줄을 `hookSpecificOutput.additionalContext` 로 내보내 깊이 손실을 방어합니다. inject-turn-context.ps1 이 이 옵션 사용.
+**안전망의 안전망 — `-FallbackContext`/`-EventName`**: context-injecting hook 이 `Write-HookOutput` 직전에 죽으면 그 턴의 주입(ultrathink/ultracode/effort 또는 연속성 컨텍스트)이 통째 증발 — ultracode 항상-ON 의 단일 실패점입니다. `Invoke-HookSafely` 에 `-FallbackContext`(+`-EventName`)를 주면 catch 경로에서 최소 fallback 컨텍스트 1줄을 `hookSpecificOutput.additionalContext` 로 내보내 깊이 손실을 방어합니다. **inject-turn-context·session-start·pre-compact 3곳이 이 옵션 사용**(이전엔 inject 단독 — context-injecting hook 전체로 확장).
 
 ## 5. 매핑 — 코드 변경 → 동기화 문서
 
@@ -222,20 +226,34 @@ post-edit-doc-sync.ps1 의 매핑 규칙:
 
 **모든 사용자 가시 변경**은 추가로 `CHANGELOG.md` 의 `## [Unreleased]` 섹션에 항목 추가.
 
-## 6. 슬래시 커맨드
+## 6. 슬래시 커맨드 (발견성 단일 진실원)
 
-`/<name> [args]` 로 호출:
+`/<name>` 슬래시는 **두 종류**가 같은 네임스페이스에 노출됩니다 — **skills**(대화형 단일 위임, `.claude/skills/<name>/SKILL.md`)와 **workflows**(ultracode 멀티에이전트, `.claude/workflows/<name>.js` 가 저장 즉시 `/<name>` 으로 자동 노출, §3). 본 표가 전체 슬래시의 발견성 정본입니다.
+
+**skills — 대화형 단일 위임** (`/<name> [args]`):
 
 | 커맨드 | 무엇을 함 |
 |--------|----------|
-| `/plan <작업 설명>` | planner 서브에이전트로 설계 위임 |
+| `/plan <작업 설명>` | planner 서브에이전트로 설계 위임 (단일 합리안 — 저비용; 여러 설계안 경쟁은 `/design-compare`) |
 | `/sync-docs` | docs-keeper 서브에이전트로 문서 동기화 |
 | `/resume-session` | 다른 장비에서 이어 작업 시 — 최근 세션과 git 상태 정리 후 다음 작업 제안 |
 | `/wrap-up` | 세션 마무리 — docs-keeper + historian 호출, dirty tree 정리 |
 | `/harness-status` | 하네스 현재 상태 한눈에 — 모델/effort, hook 동작, 서브에이전트 수, 워크플로우 meta↔phase 정합, 오늘 세션, dirty tree, 최근 hook 에러 |
 | `/cleanup-worktrees` | `.claude/worktrees/` 의 일주일 이상 미사용 디렉토리 정리 (빌드 산출물 ~GB 누적 방지) |
 
-각 명령은 `.claude/skills/<name>/SKILL.md` 에 정의. Skill 형식은 Claude Code 의 최신 권장. 향후 supporting files 가 필요해지면 같은 디렉토리에 추가 가능 (예: `.claude/skills/release/scripts/build.ps1`).
+각 skill 은 `.claude/skills/<name>/SKILL.md` 에 정의. Skill 형식은 Claude Code 의 최신 권장. 향후 supporting files 가 필요해지면 같은 디렉토리에 추가 가능 (예: `.claude/skills/release/scripts/build.ps1`).
+
+**ultracode 워크플로우 슬래시 — 멀티에이전트 교차검증** (각 `/<name>` = `Workflow({name})` 와 동일; 고비용 fan-out, §8). 상세 동작·선택 기준·라우팅은 §3:
+
+| 슬래시 | 무엇을 함 |
+|--------|----------|
+| `/release-review` | 릴리즈 전 4차원 병렬 리뷰 + 적대적 검증 + Build 게이트 |
+| `/bug-hunt` | 동시성·레이스·견고성 결함을 안 나올 때까지 반복 탐색 (loop-until-dry) |
+| `/codebase-audit` | App/·Core/ 모듈 전수 병렬 감사 → P규칙 게이트 |
+| `/design-compare` | 기능 설계 3 angle 제안 → judge panel 점수화 → 합성 (`args.feature` 필수) |
+| `/harness-optimize` | 하네스 구성요소 점검 → completeness critic |
+
+워크플로우 카탈로그의 추가/삭제는 `.claude/workflows/*.js` 파일시스템이 단일 진실원 — 위 표는 발견성 편의이고, 매 턴 주입(§3)과 `/harness-status` 점검은 디렉토리를 동적으로 읽습니다.
 
 ### Claude Code built-in 명령 — 함께 활용
 
@@ -270,7 +288,9 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 ## 8. 비용 모니터링
 
-`bypassPermissions` + Opus + max effort + thinking + 매 턴 ultrathink/ultracode 주입 = 보통 코딩 작업의 약 8~15배, **ultracode 워크플로우가 도는 substantive 작업은 추가로 수 배~수십 배**(워크플로우당 최대 16 동시 / 1,000 누적 에이전트) 토큰 소비. 사용자가 "비용 무제한, 깊이 최우선" 선택했음 (인터뷰 결과). 하네스는 자동 하향 조정 안 함. 워크플로우는 `budget` 가드로 과소비를 일부 제어 (bug-hunt 등).
+`bypassPermissions` + Opus + max effort + thinking + 매 턴 ultrathink/ultracode 주입 = 보통 코딩 작업의 약 8~15배, **ultracode 워크플로우가 도는 substantive 작업은 추가로 수 배~수십 배**(워크플로우당 최대 16 동시 / 1,000 누적 에이전트) 토큰 소비. 사용자가 "비용 무제한, 깊이 최우선" 선택했음 (인터뷰 결과). 하네스는 자동 하향 조정 안 함.
+
+**상한의 실제 — `budget` 가드는 거의 무실효**: `budget`(total/spent/remaining) 을 실제 읽는 워크플로우는 **bug-hunt 1개뿐**이고, 그조차 `budget.total` 미주입 시(현재 호출은 total 안 넘김) round hard cap(`round < 8`)만 실효 상한입니다. 나머지 4개(release-review·codebase-audit·design-compare·harness-optimize)는 budget 을 안 읽으며 **per-parallel-item cap** 이 유일 상한 — `MAX_VERIFY=25`(release-review)·`MAX_MODULES=24`(codebase-audit)·동시 16(전역). 즉 토큰 총량 가드가 아니라 fan-out 폭주 방지일 뿐. **⚠️ 미검증 단서**: 워크플로우 노드(`agent()`)가 메인 세션의 `CLAUDE_CODE_EFFORT_LEVEL=max` env 를 상속해 max effort 로 도는지는 미검증 — 노드가 effort 를 상속 안 하면 위 "수 배~수십 배" 추정이 과대일 수 있음(반대로 상속하면 추정대로). 비용 추정 시 이 단서를 감안.
 
 가시화 수단:
 - **`statusLine`**: 매 턴 `[opus · max] | git:main* | ultracode · 한/En 하네스 ON` 표시
@@ -324,17 +344,20 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
   ```
   Windows PowerShell 5.x (기본 내장) 만으로는 hook 전부 fail. 단 KoEnVue 는 `net10.0-windows` 타깃이라 빌드/실행은 Windows 전용 — Mac/Linux 는 documentation·planning 작업에만 한정.
 - **`/wrap-up` 의 race condition**: `docs/sessions/YYYY-MM-DD.md` 의 쓰기는 hook(stop-record / session-end) 과 historian subagent 만 수행 — 메인 세션이 직접 같은 파일을 Edit/Write 하면 충돌 가능. [skills/wrap-up/SKILL.md](../.claude/skills/wrap-up/SKILL.md) 의 "쓰기 단일 진실원" 규약 참조.
-- **inject-turn-context hook 오버헤드**: 매 UserPromptSubmit 마다 PowerShell 프로세스 생성. 측정(Win): `Measure-Command { '{"prompt":""}' | pwsh -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/inject-turn-context.ps1 }`. 실측 **~381 ms** (Opus 4.7, 2026-05-22, inject-ultrathink 시절 측정, fresh pwsh 시동 1회). ultrathink+ultracode 매 턴 주입 안전망이지만, 빠른 응답을 원할 때 부담.
+- **inject-turn-context hook 오버헤드**: 매 UserPromptSubmit 마다 PowerShell 프로세스 생성. 측정(Win): `Measure-Command { '{"prompt":""}' | pwsh -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/inject-turn-context.ps1 }`. **⚠️ 측정값 stale**: 기록된 **~381 ms** 는 Opus 4.7·2026-05-22·**inject-ultrathink 시절** 측정값으로, 이후 ultracode 워크플로우 카탈로그 동적 나열(`.claude/workflows/` 디렉토리 enum)이 추가돼 현 오버헤드와 다를 수 있음 — 빠른 응답이 중요하면 위 명령으로 재측정 권장. ultrathink+ultracode 매 턴 주입 안전망이지만, 빠른 응답을 원할 때 부담.
 - **`.claude/worktrees/` 의 빌드 산출물 누적**: 서브에이전트가 publish 를 돌리면 worktree 안에 ~150 MB 산출물이 남고 정리 안 함. 주기적으로 `/cleanup-worktrees` SKILL 로 일주일 이상 미사용 worktree 제거 권장.
 - **ultracode 런타임 활성화 미검증**: `inject-turn-context.ps1` 의 키워드 주입이 ultracode "런타임 플래그"를 켜는지만 미확인 — 워크플로우 `/<name>` 자동 노출과 `Workflow({name})` 실제 다중 에이전트 fan-out 은 **확인됨**(2026-06-08 release-review/harness-optimize 실행 시 각 6 에이전트). 행동은 명시적 지시 + 워크플로우 실행으로 보장됨. ⚠️ statusLine 의 `ultracode` 는 항상 하드코딩 표시라 **런타임 검증 신호가 아님** — 검증은 `Workflow` 실제 fan-out 로그로. (memory `feedback-harness-design` 참조)
 - **ultracode 비용 급증**: substantive 작업마다 워크플로우 fan-out → 토큰 급증. 빠르고 싼 처리를 원하는 turn 은 작업이 trivial 함을 프롬프트에 명시하거나 워크플로우를 건너뛰도록 지시.
-- **statusLine 하드코딩 폴백**: `model`/`effort` 는 statusLine payload(`payload.effort.level`)가 오면 그 값을 쓰되, 미수신 시 폴백 — model 은 `'opus'` 고정, effort 는 이번 변경으로 `$env:CLAUDE_CODE_EFFORT_LEVEL`(실효 경로) 반영 후 없으면 `'max'`. 즉 표시값이 항상 런타임 진실은 아님(특히 model 은 여전히 하드코딩 폴백).
+- **statusLine 하드코딩 폴백**: `model`/`effort` 는 statusLine payload(`payload.effort.level`)가 오면 그 값을 쓰되, **payload 미수신 시 하드코딩 폴백이라 런타임 진실이 아님** — model 은 `'opus'` 고정, effort 는 `$env:CLAUDE_CODE_EFFORT_LEVEL`(실효 경로) 반영 후 없으면 `'max'`(특히 model 은 항상 하드코딩 폴백). statusLine 은 화면 갱신마다 호출돼 가장 빈번하므로 **git 호출을 축소**: branch 는 `.git/HEAD` 를 직접 Read(rev-parse 프로세스 제거 — `ref: refs/heads/X` 파싱, detached 면 짧은 SHA), dirty `*` 는 `git status --porcelain --untracked-files=no` 1회(untracked 제외로 체감 비용 절감, 변경 신호는 보존). settings.json 의 statusLine 에 `timeout: 5` 추가로 렌더 지연 시 조기 차단.
 - **PreCompact ↔ Stop 세션파일 동시 append 경합**: 두 hook 모두 `docs/sessions/YYYY-MM-DD.md` 끝에 `Add-Content` 로 블록을 붙임. 컴팩션과 턴 종료가 거의 동시에 발생하면 같은 파일 동시 쓰기로 블록이 섞이거나 누락될 가능성(append-only·저빈도라 실측 피해 미관측, OS 파일락 의존이라 §OS 감수 정책 대상).
 - **transcript JSONL 스키마 의존**: stop-record 의 세션 발췌는 transcript 내부 스키마(`type`/`message`/`content`)에 의존 — Claude Code 버전업 시 깨질 수 있음(§4 Stop 의 빈 발췌 마커가 조기 신호).
+- **verify 공통 환각 (적대적 검증의 사각)**: release-review·bug-hunt 의 적대적 검증은 **동일 model·동일 코드 재독** 기반이라, finder 가 코드를 잘못 읽어 생긴 **공통 환각**(예: 실제로 없는 레이스를 양쪽 다 "있다"고 봄)은 못 거른다 — 검증자도 같은 오독을 반복하기 때문. **빌드 게이트 같은 객관 신호**(컴파일/테스트 통과)가 이 사각을 일부 보완하지만, 동작 차원의 공통 환각은 사람 손(`/run`·`/verify`)이 최종 방어선.
+- **워크플로우 결과 박제는 순수 메인세션 규율 — hook 안전망 없음**: §3 의 "결과 반환 즉시 git-tracked 파일로 박제"는 메인 세션의 규율일 뿐 hook 으로 강제·백업되지 않는다. 박제 **전에 컴팩션**이 일어나면 max effort 로 생성한 고비용 워크플로우 결과가 통째 휘발(전손) 가능 — PreCompact 의 연속성 컨텍스트는 git 스냅샷·세션 포인터만 담고 in-flight 워크플로우 산출은 못 살린다. 고비용 결과는 **받는 즉시** 박제(컴팩션 기다리지 말 것).
+- **메모리 slug 장비간 가정**: `Sync-Memory` 의 `Get-AutoMemoryDir` slug(`e--dev-KoEnVue`)는 **리포 절대경로 기반**이라, C: 미러가 E: 와 정합하려면 **모든 장비에서 리포 경로가 같아야** 한다(예: 어디서나 `E:\dev\KoEnVue`). 경로가 다르면 slug 가 달라져 각 장비의 C: auto-memory 는 서로 독립되고 — E:(git)만 공유 truth로 남는다(C:↔E: 미러는 장비별 로컬). 다른 경로의 새 장비를 쓸 땐 메모리는 git pull 로만 받고 C: 미러는 그 장비 로컬임을 인지.
 
 ## 11. PR 분리 시 충돌 회피 정책
 
-여러 PR 이 동시에 open 상태로 진행되는 분기에서, 같은 파일의 인접 영역을 건드리면 머지 충돌이 발생합니다. 본 정책은 docs-keeper [§ Step 0](../.claude/agents/docs-keeper.md) 의 사전 점검을 하네스 수준으로 끌어올린 것입니다 — 학습 트리거: 한 세션에서 PR #3 vs PR #4 의 dev-note 충돌이 본 점검 부재로 발생.
+여러 PR 이 동시에 open 상태로 진행되는 분기에서, 같은 파일의 인접 영역을 건드리면 머지 충돌이 발생합니다. **본 §11 이 충돌 회피 정책(특히 아래 3안 표)의 정본**이며, docs-keeper [§ Step 0](../.claude/agents/docs-keeper.md) 은 절차만 갖고 3안은 여기를 참조합니다(planner 가 §11 을 참조하는 방식과 통일 — 표 중복 제거로 드리프트 방지). 학습 트리거: 한 세션에서 PR #3 vs PR #4 의 dev-note 충돌이 본 점검 부재로 발생.
 
 **적용 시점**: 새 변경(코드/문서 모두)을 시작하기 전, 그리고 docs-keeper 위임 시 자동으로.
 
@@ -376,7 +399,7 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 **임시 구제 (적용됨)**: C: 에만 있던 `os-dependent-accept.md` 를 E: 로 복사 + MEMORY.md 갱신 + commit (소실 방지). 새 메모리 저장 시 수동으로 E: 에도 반영 권장.
 
-**근본 해결 (적용됨 2026-06-08)**: SessionStart hook 의 `Sync-Memory`(`_common.ps1`)가 매 세션 C:↔E: 동기화 — **E: 가 truth**(복원 무관), C: 의 더 새 파일만 E: 로 흡수(복원된 옛 C: 가 최신 E: 를 못 덮게 mtime UTC 비교), 그 뒤 E:→C: 미러로 복원된 C: 를 최신 복구. slug=`e--dev-KoEnVue`·`Copy-Item` mtime 보존 검증 완료, 최초 실행 시 `restored=5` 로 현재 split-brain 해소(C:=E: 해시 일치). `absorbed>0`(C: 에 새 메모리) 시 SessionStart 가 커밋 권장 알림 → 다음 commit 에 E: 백업 포함.
+**근본 해결 (적용됨 2026-06-08)**: SessionStart hook 의 `Sync-Memory`(`_common.ps1`)가 매 세션 C:↔E: 동기화 — **E: 가 truth**(복원 무관), C: 의 더 새 파일만 E: 로 흡수(복원된 옛 C: 가 최신 E: 를 못 덮게 mtime UTC 비교), 그 뒤 E:→C: 미러로 복원된 C: 를 최신 복구. slug=`e--dev-KoEnVue`·`Copy-Item` mtime 보존 검증 완료, 최초 실행 시 `restored=5` 로 현재 split-brain 해소(C:=E: 해시 일치). `absorbed>0`(C: 에 새 메모리) 시 SessionStart 가 커밋 권장 알림 → 다음 commit 에 E: 백업 포함. 각 파일 복사는 **per-file try/catch** 로 감싸 TOCTOU(`Test-Path` 후 복사 직전 파일 삭제·잠금)나 단일 파일 I/O 오류가 나머지 동기화를 중단시키지 않게 함.
 
 ### 영구 보존되는 메모리
 

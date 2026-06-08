@@ -1,6 +1,6 @@
 . (Join-Path $PSScriptRoot 'lib\_common.ps1')
 
-Invoke-HookSafely {
+Invoke-HookSafely -EventName 'PreCompact' -FallbackContext '[harness] 대화 압축됨 — 진행 작업 연속성 확인(git status·docs/sessions 최신). ultrathink + max effort + ultracode 유지.' {
 
 # PreCompact — 대화가 압축(컴팩션)되기 직전 실행. ultracode 멀티에이전트가 컨텍스트를
 # 빠르게 채워 컴팩션 빈도가 높아진 환경에서 작업 연속성을 보강한다. 두 축으로 동작:
@@ -30,20 +30,17 @@ $lines = New-Object System.Collections.Generic.List[string]
 $lines.Add("[harness] 방금 대화가 압축(컴팩션, trigger=$trigger)됐습니다 — 직전까지의 상세 맥락이 요약으로 축약됐습니다. 진행 중이던 작업의 연속성을 위해 아래 스냅샷을 확인하세요.")
 $lines.Add('')
 
-# 미커밋 변경 — 압축 직전 진행하던 작업일 가능성이 높음
-if (Test-DirtyTree) {
-    Push-Location $root
-    try {
-        $st = (git status --porcelain 2>$null | Select-Object -First 30) -join "`n"
-        $count = (git status --porcelain 2>$null | Measure-Object).Count
-        $lines.Add("## 미커밋 변경 ($count 건) — 압축 직전 진행 작업일 수 있음")
-        $lines.Add('```')
-        $lines.Add($st)
-        if ($count -gt 30) { $lines.Add("…(나머지 $($count - 30)건 생략)…") }
-        $lines.Add('```')
-        $lines.Add('완료 여부와 다음 단계를 확인하세요.')
-        $lines.Add('')
-    } finally { Pop-Location }
+# 미커밋 변경 — 압축 직전 진행하던 작업일 가능성이 높음 (git 1회)
+$porcelain = Get-PorcelainStatus
+if ($porcelain.Dirty) {
+    $count = $porcelain.Count
+    $lines.Add("## 미커밋 변경 ($count 건) — 압축 직전 진행 작업일 수 있음")
+    $lines.Add('```')
+    $lines.Add($porcelain.Clamped)
+    if ($count -gt 30) { $lines.Add("…(나머지 $($count - 30)건 생략)…") }
+    $lines.Add('```')
+    $lines.Add('완료 여부와 다음 단계를 확인하세요.')
+    $lines.Add('')
 }
 
 # 최근 커밋 — 어디까지 진행됐는지 앵커

@@ -9,6 +9,8 @@ model: inherit
 
 **모든 작업은 ultrathink + max effort + thinking 모드로 수행합니다** — 하네스 정책 (메인 세션과 동일). 실패 원인 추론은 끝까지, 단축/생략 없이.
 
+**호출 경로 & 경계**: 메인 세션 위임 + ultracode 워크플로우 노드(release-review Build)로 호출됩니다. leaf — 다른 서브에이전트 직접 호출 안 함. Bash 는 빌드/테스트 조회만(dotnet build/publish/test·sha256), publish 산출물 외 파일 변경 금지. 워크플로우에서 schema(BUILD_SCHEMA)가 주어지면 §5 마크다운 표 대신 그 구조로 반환 — 매핑: dotnet build→debug, publish→publish, test→test, 셋 다 성공+경고0→passed=true, 실패/경고→passed=false+issues[].
+
 **핵심 규칙: "빌드 = 항상 둘 다"** — 어떤 변경이든 debug build + release publish 둘 다 실행. 한쪽만 하면 release exe outdated 가 됩니다.
 
 ## 작업 흐름

@@ -9,6 +9,8 @@ model: inherit
 
 **모든 작업은 ultrathink + max effort + thinking 모드로 수행합니다** — 하네스 정책 (메인 세션과 동일). invariant grep 누락 0 보장, 정성 검사도 끝까지.
 
+**호출 경로 & 경계**: 메인 세션 위임 + ultracode 워크플로우 노드(release-review Review·codebase-audit Gate)로 호출됩니다. leaf — 다른 서브에이전트/Workflow 직접 호출 안 함(후속은 추천만). Bash 는 read-only 조회만(git grep/log/diff·dotnet build), 파일 변경 금지. 워크플로우에서 schema(FINDINGS/ISSUES_SCHEMA)가 주어지면 아래 마크다운 형식 대신 그 구조로 반환합니다.
+
 ## 점검 체크리스트
 
 ### 0. 첫 단계 — 단일 진실원 Read (필수, 건너뛰기 금지)

@@ -18,10 +18,18 @@ if ($payload) {
 }
 
 $root = Get-ProjectRoot
+# branch 는 .git/HEAD 를 직접 Read — statusline 은 화면 갱신마다 호출돼 가장 빈번하므로 rev-parse 프로세스 생성을 제거.
+$headFile = Join-Path $root '.git\HEAD'
+if (Test-Path $headFile) {
+    $headContent = ([string](Get-Content $headFile -Raw -ErrorAction SilentlyContinue)).Trim()
+    if ($headContent -match 'ref:\s*refs/heads/(.+)$') { $branch = $matches[1] }
+    elseif ($headContent) { $branch = $headContent.Substring(0, [Math]::Min(7, $headContent.Length)) }  # detached = 짧은 SHA
+}
+# dirty 표시는 git 1회 유지하되 untracked 제외로 축소(체감 비용 절감, 변경 여부 신호는 보존)
 Push-Location $root
 try {
-    $branch = (git rev-parse --abbrev-ref HEAD 2>$null) -as [string]
-    if (Test-DirtyTree) { $dirty = '*' }
+    $st = git status --porcelain --untracked-files=no 2>$null
+    if (-not [string]::IsNullOrWhiteSpace($st)) { $dirty = '*' }
 } finally {
     Pop-Location
 }

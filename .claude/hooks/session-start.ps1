@@ -1,6 +1,6 @@
 . (Join-Path $PSScriptRoot 'lib\_common.ps1')
 
-Invoke-HookSafely {
+Invoke-HookSafely -EventName 'SessionStart' -FallbackContext '[harness] session-start 실패 — ultrathink + max effort + ultracode 적용, P1-P6 준수. 이전 세션 컨텍스트는 docs/sessions 최신 파일 참조.' {
 
 $payload = Read-HookInput
 $source = if ($payload) { [string]$payload.source } else { 'startup' }
@@ -108,22 +108,17 @@ try {
     Pop-Location
 }
 
-# Surface uncommitted changes (clamped)
-if (Test-DirtyTree) {
-    Push-Location $root
-    try {
-        $st = (git status --porcelain 2>$null | Select-Object -First 30) -join "`n"
-        $count = (git status --porcelain 2>$null | Measure-Object).Count
-        $lines.Add('')
-        $lines.Add("## 주의: 커밋되지 않은 변경 ($count 건)")
-        $lines.Add('```')
-        $lines.Add($st)
-        if ($count -gt 30) { $lines.Add("…(나머지 $($count - 30)건 생략)…") }
-        $lines.Add('```')
-        $lines.Add('이전 세션의 임시 변경일 수 있습니다. 작업 이어가기 전에 상태를 확인하세요.')
-    } finally {
-        Pop-Location
-    }
+# Surface uncommitted changes (clamped) — git status 1회(Get-PorcelainStatus)
+$porcelain = Get-PorcelainStatus
+if ($porcelain.Dirty) {
+    $count = $porcelain.Count
+    $lines.Add('')
+    $lines.Add("## 주의: 커밋되지 않은 변경 ($count 건)")
+    $lines.Add('```')
+    $lines.Add($porcelain.Clamped)
+    if ($count -gt 30) { $lines.Add("…(나머지 $($count - 30)건 생략)…") }
+    $lines.Add('```')
+    $lines.Add('이전 세션의 임시 변경일 수 있습니다. 작업 이어가기 전에 상태를 확인하세요.')
 }
 
 # Recent hook errors (silent fail log)

@@ -33,3 +33,5 @@ ultracode 멀티에이전트 워크플로우(`Workflow` 도구로 실행). 각 `
 ## 워크플로우 카탈로그
 
 카탈로그 단일 진실원은 이 디렉토리(`.claude/workflows/*.js`) — `inject-turn-context.ps1` 이 매 턴 동적으로 광고하고 `/harness-status` 가 수를 점검. 새 `.js` 추가/삭제가 자동 반영되므로 개수를 여기 박지 않는다. 상세는 [docs/harness.md §3](../../docs/harness.md).
+
+**라우팅 — 워크플로우를 새로 만들기 전에**: 모든 substantive 작업이 워크플로우감은 아니다. **단일 관점이면 충분하면 스킬 슬래시(저비용)** 로 충분 — 설계 한 건은 `/plan`(planner 1명), 문서 동기화는 `/sync-docs`(docs-keeper 1명). **여러 관점 교차검증이 실익일 때만 Workflow**(fan-out 토큰 수 배~수십 배). 예: `/plan`(planner 단독, 저비용) vs `design-compare`(**3 angle 고정** 제안 + judge panel 점수화 + 합성, 고비용)는 한 기능을 여러 설계안으로 **경쟁시킬 때만** 후자. inject 가 매 턴 광고하는 건 워크플로우 카탈로그뿐이라 이 저비용 경로(스킬)를 놓치기 쉬움 — 발견성 정본은 [harness.md §6](../../docs/harness.md)(skills + workflows 두 종류 한 표). 라우팅 상세는 [§3](../../docs/harness.md).

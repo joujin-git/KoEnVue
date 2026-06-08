@@ -37,13 +37,22 @@ const ISSUES_SCHEMA = {
   required: ['issues'],
 }
 
+// LLM 출력이라 모듈 수가 무경계 — release-review MAX_VERIFY 와 동형의 절대 상한(런어웨이 방지).
+const MAX_MODULES = 24
+
 phase('Scope')
 const scoped = await agent(
-  `KoEnVue 코드베이스에서 감사 대상 모듈/파일 목록을 만들어라. App/ 와 Core/ 의 .cs 파일을 응집도 있는 단위(파일 또는 하위폴더)로 그룹화해 8~20개 모듈 경로를 반환. Program.cs 도 포함. 테스트(tests/)는 제외.`,
+  `KoEnVue 코드베이스에서 감사 대상 모듈/파일 목록을 만들어라. App/ 와 Core/ 의 .cs 파일을 응집도 있는 단위(파일 또는 하위폴더)로 그룹화해 최대 ${MAX_MODULES}개 모듈 경로를 반환(초과 시 응집도 높은 단위로 병합). Program.cs 도 포함. 테스트(tests/)는 제외.`,
   { label: 'scope', phase: 'Scope', agentType: 'explorer', schema: FILES_SCHEMA }
 )
-const modules = (scoped && scoped.modules) || []
-log(`감사 대상 ${modules.length}개 모듈`)
+// null(Scope 에이전트 실패/schema 위반)과 빈 결과(정상 0개)를 구분 — null 을 []로 흡수하면 'modules 0개'로
+// 조용히 진행해 Audit/Gate 가 빈 입력으로 돌고 '이슈 0건'을 거짓 클린으로 반환한다.
+if (!scoped || !scoped.modules) {
+  log('Scope 실패 — 감사 미수행 (Scope 에이전트 null)')
+  return { error: 'Scope 단계 실패 — 감사 대상 모듈을 못 얻음. 재시도 필요(거짓 클린 아님)', moduleCount: 0, totalIssues: 0, bySeverity: { high: [], medium: [], low: [] } }
+}
+const modules = scoped.modules.slice(0, MAX_MODULES)
+log(`감사 대상 ${modules.length}개 모듈${scoped.modules.length > MAX_MODULES ? ` (${scoped.modules.length}개 중 상위 ${MAX_MODULES})` : ''}`)
 
 phase('Audit')
 const audited = await pipeline(
@@ -63,16 +72,21 @@ const gate = await agent(
 )
 
 phase('Synthesize')
+// null(에이전트 실패)과 빈 결과(정상 0건)를 구분 — 실패 노드 수를 결과에 실어 '0건=깨끗 vs 실패해서 0건' 판별.
+const okAudits = audited.filter(Boolean)
+const auditsFailed = audited.length - okAudits.length
+const gateFailed = gate ? 0 : 1
 const allIssues = [
-  ...audited.filter(Boolean).flatMap((r) => r.issues || []),
+  ...okAudits.flatMap((r) => r.issues || []),
   ...((gate && gate.issues) || []),
 ]
 const bySeverity = { high: [], medium: [], low: [] }
 for (const i of allIssues) { (bySeverity[i.severity] || bySeverity.low).push(i) }
-log(`총 ${allIssues.length}건 (high ${bySeverity.high.length} / medium ${bySeverity.medium.length} / low ${bySeverity.low.length})`)
+log(`총 ${allIssues.length}건 (high ${bySeverity.high.length} / medium ${bySeverity.medium.length} / low ${bySeverity.low.length})${auditsFailed || gateFailed ? ` ⚠ 실패 노드 audit ${auditsFailed}/gate ${gateFailed}` : ''}`)
 return {
   moduleCount: modules.length,
+  agentsFailed: auditsFailed + gateFailed,
   totalIssues: allIssues.length,
   bySeverity,
-  note: 'docs/improvement-plan/AUDIT-<날짜>-codebase-review.md 형식으로 기록 권장 — 날짜 스탬프는 메인 세션이 처리',
+  note: 'docs/improvement-plan/AUDIT-<날짜>-codebase-review.md 형식으로 기록 권장 — 날짜 스탬프는 메인 세션이 처리. agentsFailed>0 이면 그만큼 커버리지 누락(0건이 깨끗을 보장 안 함).',
 }

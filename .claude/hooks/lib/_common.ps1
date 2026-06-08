@@ -123,6 +123,23 @@ function Test-DirtyTree {
     }
 }
 
+# git status --porcelain 1회로 dirty/count/클램프를 한 번에 — session-start·pre-compact 가 같은 git 을
+# 3회씩(가드+클램프+count) 부르던 것을 1회로(프로세스 생성 비용 절감). 반환: @{ Dirty; Count; Clamped(앞 30줄) }.
+function Get-PorcelainStatus {
+    $root = Get-ProjectRoot
+    Push-Location $root
+    try {
+        $lines = @(git status --porcelain 2>$null)
+    } finally {
+        Pop-Location
+    }
+    return [pscustomobject]@{
+        Dirty   = ($lines.Count -gt 0)
+        Count   = $lines.Count
+        Clamped = (($lines | Select-Object -First 30) -join "`n")
+    }
+}
+
 function Invoke-WipCommit {
     param([string]$Note = '')
     $root = Get-ProjectRoot
@@ -179,16 +196,22 @@ function Sync-Memory {
     if (-not (Test-Path $eDir)) { New-Item -ItemType Directory -Path $eDir -Force | Out-Null }
     $absorbed = 0; $restored = 0
     Get-ChildItem -Path $cDir -Filter '*.md' -File -ErrorAction SilentlyContinue | ForEach-Object {
-        $eFile = Join-Path $eDir $_.Name
-        if (-not (Test-Path $eFile) -or $_.LastWriteTimeUtc -gt (Get-Item $eFile).LastWriteTimeUtc) {
-            Copy-Item $_.FullName $eFile -Force; $absorbed++
-        }
+        try {
+            $eFile = Join-Path $eDir $_.Name
+            $eItem = Get-Item $eFile -ErrorAction SilentlyContinue
+            if (-not $eItem -or $_.LastWriteTimeUtc -gt $eItem.LastWriteTimeUtc) {
+                Copy-Item $_.FullName $eFile -Force; $absorbed++
+            }
+        } catch { }
     }
     Get-ChildItem -Path $eDir -Filter '*.md' -File -ErrorAction SilentlyContinue | ForEach-Object {
-        $cFile = Join-Path $cDir $_.Name
-        if (-not (Test-Path $cFile) -or $_.LastWriteTimeUtc -gt (Get-Item $cFile).LastWriteTimeUtc) {
-            Copy-Item $_.FullName $cFile -Force; $restored++
-        }
+        try {
+            $cFile = Join-Path $cDir $_.Name
+            $cItem = Get-Item $cFile -ErrorAction SilentlyContinue
+            if (-not $cItem -or $_.LastWriteTimeUtc -gt $cItem.LastWriteTimeUtc) {
+                Copy-Item $_.FullName $cFile -Force; $restored++
+            }
+        } catch { }
     }
     return @{ absorbed = $absorbed; restored = $restored }
 }
@@ -261,6 +284,7 @@ function Test-WorkflowPhaseDrift {
 # additionalContext 못 띄움)의 직접 쓰기가 같은 '[stamp] hook :: msg' 포맷 + rotation 을 공유.
 function Write-HookError {
     param([string]$HookName, [string]$Message)
+    if ([string]::IsNullOrWhiteSpace($HookName) -or [string]::IsNullOrWhiteSpace($Message)) { return }  # 빈 프로브성 잡음(' :: ') 기록 거부
     try {
         $logPath = Join-Path (Get-StateDir) 'hook-errors.log'
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'

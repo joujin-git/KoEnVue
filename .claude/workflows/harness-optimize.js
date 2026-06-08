@@ -48,22 +48,28 @@ const inspected = await parallel(COMPONENTS.map((c) => () =>
     { label: `inspect:${c.key}`, phase: 'Inspect', agentType: 'explorer', schema: SUGGESTIONS_SCHEMA }
   )
 ))
-const found = inspected.filter(Boolean).flatMap((r) => r.suggestions || [])
+const rawFound = inspected.filter(Boolean).flatMap((r) => r.suggestions || [])
+// area 기준 dedup — 여러 컴포넌트 explorer 가 같은 area 를 내면 종합에 중복 누적(self-audit: 실제 발생).
+const seenAreas = new Set()
+const found = rawFound.filter((s) => { const k = (s.area || '').trim().toLowerCase(); if (!k || seenAreas.has(k)) return false; seenAreas.add(k); return true })
 const rank = { high: 0, medium: 1, low: 2 }
-// critic 에 넘기기 전 impact 우선 정렬 — slice(0,40) 가 임의 부분집합이 아닌 상위 영향 제안을 보게.
+// critic 에 넘기기 전 impact 우선 정렬 — slice 가 임의 부분집합이 아닌 상위 영향 제안을 보게.
 found.sort((a, b) => ((rank[a.impact] ?? 1) - (rank[b.impact] ?? 1)) || ((rank[a.effort] ?? 1) - (rank[b.effort] ?? 1)))
-log(`구성요소 점검: ${found.length}건 제안`)
+log(`구성요소 점검: ${rawFound.length}건 → dedup ${found.length}건`)
 
 phase('Critic')
+const MAX_CRITIC_INPUT = 60  // dedup 후라 여유 — slice 절단으로 critic 의 completeness 입력이 잘리던 것 완화.
 const critic = await agent(
-  `다음은 KoEnVue 하네스 점검 결과다. 무엇이 빠졌는지 비판하라 — 점검 안 한 구성요소, 검증 안 한 가정, ultracode 도입으로 새로 생긴 리스크(비용 폭증·워크플로우 오용·effort 손실·장비간 연속성/메모리 영향). 빠진 것을 새 제안으로 추가하라.
-현재 제안: ${JSON.stringify(found.slice(0, 40))}`,
+  `다음은 KoEnVue 하네스 점검 결과다. 무엇이 빠졌는지 비판하라 — 점검 안 한 구성요소, 검증 안 한 가정, ultracode 도입으로 새로 생긴 리스크(비용 폭증·워크플로우 오용·effort 손실·장비간 연속성/메모리 영향). 이 점검을 생성한 harness-optimize.js 자신의 설계 결함(slice 절단·중복 미제거·self 사각)도 점검 대상에 포함하라. 빠진 것을 새 제안으로 추가하라.
+현재 제안: ${JSON.stringify(found.slice(0, MAX_CRITIC_INPUT))}`,
   { label: 'critic:completeness', phase: 'Critic', schema: SUGGESTIONS_SCHEMA }
 )
 const extra = (critic && critic.suggestions) || []
 
 phase('Synthesize')
-const all = [...found, ...extra]
+// found 와 extra(critic)가 같은 area 를 내면 종합에 중복 잔존 — 최종에도 area dedup(found 우선).
+const mergedSeen = new Set()
+const all = [...found, ...extra].filter((s) => { const k = (s.area || '').trim().toLowerCase(); if (!k || mergedSeen.has(k)) return false; mergedSeen.add(k); return true })
 all.sort((a, b) => ((rank[a.impact] ?? 1) - (rank[b.impact] ?? 1)) || ((rank[a.effort] ?? 1) - (rank[b.effort] ?? 1)))
-log(`총 ${all.length}건 개선안 (critic +${extra.length})`)
+log(`총 ${all.length}건 개선안 (구성요소 ${found.length} + critic ${extra.length}, dedup 후)`)
 return { focus: FOCUS, totalSuggestions: all.length, suggestions: all }

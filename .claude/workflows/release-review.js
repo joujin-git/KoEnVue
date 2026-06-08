@@ -10,7 +10,7 @@ export const meta = {
 }
 
 // 호출: Workflow({ name: 'release-review', args: { scope: 'PR-XX 변경' } })
-const SCOPE = (args && args.scope) ? String(args.scope) : 'git diff main..HEAD 의 변경 (없으면 최근 커밋의 변경 파일)'
+const SCOPE = (args && args.scope) ? String(args.scope) : 'HEAD~1..HEAD 의 변경 (직전 커밋 — main 직커밋 정책이라 main..HEAD 는 보통 빔). 변경이 비면 결과 최상단에 "scope 비어있음 — 리뷰 미수행" 을 명시'
 
 // 한 차원이 환각성으로 finding 을 과다 생성해도 verify fan-out 폭주를 막는 절대 상한 (동시 16 cap 과 별개)
 const MAX_VERIFY = 25
@@ -91,7 +91,10 @@ const results = await pipeline(
   (d) => agent(d.prompt, { label: `review:${d.key}`, phase: 'Review', agentType: d.agentType, schema: FINDINGS_SCHEMA }),
   (review, d) => {
     phase('Verify')
-    return parallel(((review && review.findings) || []).slice(0, MAX_VERIFY).map((f) => () =>
+    // review null(차원 에이전트 실패)과 findings:[](정상 0건) 구분 — null 흡수하면 그 차원이
+    // '발견 0'으로 묻혀 커버리지 구멍이 로그에도 안 남는다(거짓 클린).
+    if (!review) { log(`⚠ ${d.key} 차원 실패 (리뷰 에이전트 null) — 이 차원 커버리지 누락`); return [{ dimension: d.key, degraded: true }] }
+    return parallel((review.findings || []).slice(0, MAX_VERIFY).map((f) => () =>
       agent(
         `다음 코드 리뷰 발견이 실재하는 결함인지 적대적으로 검증하라. 반증을 적극 시도하고, 불확실하면 real=false.
 차원: ${d.key}
@@ -116,17 +119,20 @@ const build = await agent(
 
 phase('Synthesize')
 const all = results.flat().filter(Boolean)
-const confirmed = all.filter((f) => f.verdict && f.verdict.real)
+const degradedDimensions = all.filter((f) => f.degraded).map((f) => f.dimension)
+const realFindings = all.filter((f) => !f.degraded)
+const confirmed = realFindings.filter((f) => f.verdict && f.verdict.real)
 const sevRank = { critical: 0, high: 1, medium: 2, low: 3 }
 confirmed.sort((a, b) => (sevRank[a.severity] ?? 9) - (sevRank[b.severity] ?? 9))
-log(`리뷰 ${all.length}건 발견 → 적대적 검증 후 ${confirmed.length}건 확정. 빌드 게이트: ${build && build.passed ? 'PASS' : 'FAIL'}`)
+log(`리뷰 ${realFindings.length}건 발견 → 적대적 검증 후 ${confirmed.length}건 확정. 빌드 게이트: ${build && build.passed ? 'PASS' : 'FAIL'}${degradedDimensions.length ? ` ⚠ 실패 차원: ${degradedDimensions.join(',')}` : ''}`)
 return {
   scope: SCOPE,
   build,
+  degradedDimensions,
   confirmedCount: confirmed.length,
-  totalFindings: all.length,
+  totalFindings: realFindings.length,
   confirmed,
-  dismissed: all
+  dismissed: realFindings
     .filter((f) => !(f.verdict && f.verdict.real))
     .map((f) => ({ title: f.title, dimension: f.dimension, reason: f.verdict && f.verdict.reason })),
 }
