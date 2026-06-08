@@ -31,9 +31,10 @@ dotnet publish -r win-x64 -c Release
 
 ### 3. 단위 테스트 (있으면)
 ```bash
-dotnet test
+dotnet test tests\KoEnVue.Tests\KoEnVue.Tests.csproj
 ```
-- `tests/` 디렉토리가 있을 때만
+- **csproj 명시 필수** — 루트에서 bare `dotnet test` 는 메인 csproj 를 잡아 "0개 실행·exit 0" false-pass (CLAUDE.md 규칙). 절대 bare `dotnet test` 쓰지 말 것
+- `tests\KoEnVue.Tests\KoEnVue.Tests.csproj` 가 있을 때만
 - xUnit 사용 (P1 예외 — dev-only)
 - 실패 시 첫 3개 케이스 보고
 

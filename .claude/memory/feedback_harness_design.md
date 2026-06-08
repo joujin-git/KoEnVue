@@ -39,7 +39,7 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정).
 - **effort 와 별개 축**: ultracode 는 effort 레벨이 아니다. `CLAUDE_CODE_EFFORT_LEVEL=max` 는 유지 — ultracode 가 effort 를 대체하지 않음(env 를 ultracode 로 바꾸면 max 손실 위험). 이번 세션이 env=max + 키워드 ultracode 조합으로 동작한 게 증거.
 - **Agent Team 은 여전히 거부**: Workflow 도구는 Agent Team(TeamCreate)과 다른 메커니즘 — 결정론적·resume(resumeFromRunId)·budget 지원. "단일 세션 + 서브에이전트" 철학과 충돌 없음.
 - **저장 워크플로우 5개**: `.claude/workflows/*.js` — release-review, bug-hunt, codebase-audit, design-compare, harness-optimize. `Workflow({name})` 호출 또는 `/<name>`.
-- **미검증(사용자 확인)**: hook 키워드 주입이 ultracode 런타임을 켜는지는 미검증 — 명시적 지시가 fallback. 새 세션에서 statusLine `ultracode` + `/` 자동완성 워크플로우 노출 확인.
+- **검증 상태(2026-06-08 갱신)**: 워크플로우 `/<name>` 자동 노출 + `Workflow({name})` 다중 에이전트 fan-out 확인됨(release-review/harness-optimize 각 6 에이전트 실행). hook 키워드가 ultracode "런타임 플래그"를 켜는지만 미확인이나 명시적 지시 + 워크플로우 실행으로 행동 보장. statusLine `ultracode` 는 항상 하드코딩 표시라 검증 신호 아님.
 
 **Why**: 사용자 "비용 무제한, 깊이 최우선" 철학을 ultracode 에도 일관 적용 — 전면 도입 + 항상 자동 (2026-06-08 인터뷰).
 
@@ -53,13 +53,15 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정).
 
 ## .claude/ git 추적 정책
 
-선택적 추적: `settings.json`, `agents/`, `commands/`, `hooks/` 만 commit. `settings.local.json`, `worktrees/`, `state/`, 옛 PS 스크립트는 gitignore.
+선택적 추적: `settings.json`, `agents/`, `skills/`, `workflows/`, `hooks/`, `memory/` 만 commit. `settings.local.json`, `worktrees/`, `state/`, 옛 PS 스크립트는 gitignore. (구 `commands/` → skills/ 로 전환됨)
 
 ## CLAUDE.md 30줄 하드 제한
 
-`InstructionsLoaded` hook 이 검사. 초과 시 경고. 모든 부가 내용은 [[harness-design]] 참고하여 `docs/` 하위로.
+`InstructionsLoaded` hook 이 검사. 초과 시 경고. 모든 부가 내용은 docs/harness.md 참고하여 `docs/` 하위로.
 
 ## 관련 메모리
 
 - [[user-role]]
-- [[version-format]]
+- [[feedback-version-format]]
+- [[feedback-workflow-rules]]
+- [[os-dependent-accept]]

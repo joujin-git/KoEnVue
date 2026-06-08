@@ -11,6 +11,9 @@ export const meta = {
 // 호출: Workflow({ name: 'release-review', args: { scope: 'PR-XX 변경' } })
 const SCOPE = (args && args.scope) ? String(args.scope) : 'git diff main..HEAD 의 변경 (없으면 최근 커밋의 변경 파일)'
 
+// 한 차원이 환각성으로 finding 을 과다 생성해도 verify fan-out 폭주를 막는 절대 상한 (동시 16 cap 과 별개)
+const MAX_VERIFY = 25
+
 const FINDINGS_SCHEMA = {
   type: 'object',
   properties: {
@@ -72,15 +75,18 @@ phase('Review')
 const results = await pipeline(
   DIMENSIONS,
   (d) => agent(d.prompt, { label: `review:${d.key}`, phase: 'Review', agentType: d.agentType, schema: FINDINGS_SCHEMA }),
-  (review, d) => parallel(((review && review.findings) || []).map((f) => () =>
-    agent(
-      `다음 코드 리뷰 발견이 실재하는 결함인지 적대적으로 검증하라. 반증을 적극 시도하고, 불확실하면 real=false.
+  (review, d) => {
+    phase('Verify')
+    return parallel(((review && review.findings) || []).slice(0, MAX_VERIFY).map((f) => () =>
+      agent(
+        `다음 코드 리뷰 발견이 실재하는 결함인지 적대적으로 검증하라. 반증을 적극 시도하고, 불확실하면 real=false.
 차원: ${d.key}
 발견: ${JSON.stringify(f)}
 해당 파일을 직접 읽어 확인하라.`,
-      { label: `verify:${d.key}`, phase: 'Verify', schema: VERDICT_SCHEMA }
-    ).then((v) => ({ ...f, dimension: d.key, verdict: v }))
-  ))
+        { label: `verify:${d.key}`, phase: 'Verify', schema: VERDICT_SCHEMA }
+      ).then((v) => ({ ...f, dimension: d.key, verdict: v }))
+    ))
+  }
 )
 
 phase('Synthesize')

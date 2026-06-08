@@ -2,3 +2,4 @@
 - [User role — 비개발자 + 바이브 코딩](user_role.md) — 1인 개발자, 용어 풀이 곁들이기, 결정 효과 구체적으로.
 - [Harness design](feedback_harness_design.md) — Opus + max + ultrathink, ultracode 항상 ON(Workflow 멀티에이전트; Agent Team 은 거부), 단일 세션 + 서브에이전트, bypass, main 직커밋, 일자별 append.
 - [Workflow rules](feedback_workflow_rules.md) — 빌드 = debug + release publish 항상 둘 다, 커밋 = `git push` 까지 항상 같이 (auto-push hook).
+- [OS 의존 버그 감수](os-dependent-accept.md) — 제어 불가 OS(Win32/셸) 동작에 의존하는 버그는 무리한 수정보다 감수 선호.

@@ -306,7 +306,7 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 - **`/wrap-up` 의 race condition**: `docs/sessions/YYYY-MM-DD.md` 의 쓰기는 hook(stop-record / session-end) 과 historian subagent 만 수행 — 메인 세션이 직접 같은 파일을 Edit/Write 하면 충돌 가능. [skills/wrap-up/SKILL.md](../.claude/skills/wrap-up/SKILL.md) 의 "쓰기 단일 진실원" 규약 참조.
 - **inject-turn-context hook 오버헤드**: 매 UserPromptSubmit 마다 PowerShell 프로세스 생성. 측정(Win): `Measure-Command { '{"prompt":""}' | pwsh -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/inject-turn-context.ps1 }`. 실측 **~381 ms** (Opus 4.7, 2026-05-22, inject-ultrathink 시절 측정, fresh pwsh 시동 1회). ultrathink+ultracode 매 턴 주입 안전망이지만, 빠른 응답을 원할 때 부담.
 - **`.claude/worktrees/` 의 빌드 산출물 누적**: 서브에이전트가 publish 를 돌리면 worktree 안에 ~150 MB 산출물이 남고 정리 안 함. 주기적으로 `/cleanup-worktrees` SKILL 로 일주일 이상 미사용 worktree 제거 권장.
-- **ultracode 런타임 활성화 미검증**: `inject-turn-context.ps1` 의 키워드 주입이 ultracode 런타임 플래그를 켜는지는 미확인 — 워크플로우의 `/<name>` 자동 노출은 확인됨. 행동은 명시적 지시로 보장되나, 런타임 멀티에이전트 모드 자체는 새 세션의 statusLine `ultracode` 표시로 검증 필요. (memory `feedback-harness-design` 참조)
+- **ultracode 런타임 활성화 미검증**: `inject-turn-context.ps1` 의 키워드 주입이 ultracode "런타임 플래그"를 켜는지만 미확인 — 워크플로우 `/<name>` 자동 노출과 `Workflow({name})` 실제 다중 에이전트 fan-out 은 **확인됨**(2026-06-08 release-review/harness-optimize 실행 시 각 6 에이전트). 행동은 명시적 지시 + 워크플로우 실행으로 보장됨. ⚠️ statusLine 의 `ultracode` 는 항상 하드코딩 표시라 **런타임 검증 신호가 아님** — 검증은 `Workflow` 실제 fan-out 로그로. (memory `feedback-harness-design` 참조)
 - **ultracode 비용 급증**: substantive 작업마다 워크플로우 fan-out → 토큰 급증. 빠르고 싼 처리를 원하는 turn 은 작업이 trivial 함을 프롬프트에 명시하거나 워크플로우를 건너뛰도록 지시.
 
 ## 11. PR 분리 시 충돌 회피 정책
@@ -338,16 +338,22 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 - 메인 세션: 코드 변경에 대해서도 동일 점검 (필요 시 explorer 위임)
 - 사용자: 3안 선택은 사용자 결정 — 서브에이전트는 보고만
 
-## 12. Memory 시스템 — E: 드라이브 영구화
+## 12. Memory 시스템 — ⚠️ split-brain 알려진 문제 (2026-06-08 발견)
 
-이 컴퓨터의 **C: 드라이브는 보안 정책상 수시로 14일 전 시점으로 복원**됩니다. 기본 Claude Code memory 위치 (`~/.claude/projects/<project>/memory/` — C: 드라이브) 는 복원될 때마다 사라지므로, 본 하네스는 **메모리를 프로젝트 트리(E: 드라이브)로 옮겼습니다**.
+이 컴퓨터의 **C: 드라이브는 보안 정책상 수시로 14일 전 시점으로 복원**됩니다. 기본 Claude Code memory 위치 (`C:\Users\<user>\.claude\projects\<project>\memory\`) 는 복원될 때마다 사라지므로, 본 하네스는 메모리를 프로젝트 트리(E:)로 옮기려 `autoMemoryDirectory` 를 설정했습니다.
 
-| 항목 | 위치 |
+**그러나 2026-06-08 harness-optimize 점검에서 이 설정이 실제로는 무시되고 있음을 발견**했습니다 — `${CLAUDE_PROJECT_DIR}` 가 빈 값으로 전개돼(`autoMemoryDirectory` 가 무효) Claude Code 가 기본 위치 **C: 에 읽기/쓰기 중**입니다. 즉 E: 의 `.claude/memory/` 는 git 백업이지만 **실제 auto-memory 가 아니며**, C: 의 최신 메모리는 다음 복원 때 소실됩니다.
+
+| 항목 | 실태 (2026-06-08) |
 |------|------|
-| 메모리 디렉토리 | `.claude/memory/` (프로젝트 트리 안) |
-| 설정 | `settings.json` 의 `"autoMemoryDirectory": "${CLAUDE_PROJECT_DIR}/.claude/memory"` |
-| git 추적 | ✅ commit 됨 — 다른 장비도 동일 메모리 |
-| 복원 영향 | 0 — E: 드라이브는 복원 대상 아님 |
+| 실제 auto-memory 위치 | **C:** `C:\Users\<user>\.claude\projects\e--dev-KoEnVue\memory\` (설정 무시됨) |
+| E: `.claude/memory/` | git 추적 백업 — Claude 가 직접 읽진 않음 |
+| `autoMemoryDirectory` 설정 | `${CLAUDE_PROJECT_DIR}/.claude/memory` — 전개 실패로 **무효** |
+| 복원 영향 | ⚠️ C: 최신 메모리 소실 위험 — 근본 해결 미완 (아래) |
+
+**임시 구제 (적용됨)**: C: 에만 있던 `os-dependent-accept.md` 를 E: 로 복사 + MEMORY.md 갱신 + commit (소실 방지). 새 메모리 저장 시 수동으로 E: 에도 반영 권장.
+
+**근본 해결 (미정 — 사용자 결정 대기)**: ① `autoMemoryDirectory` 를 절대경로로 바꿔 작동 검증(단 장비별 경로 상이 주의), 또는 ② SessionStart hook 에서 C:↔E: 동기화 자동화(옛 C: 복원본이 최신 E: 를 덮어쓰지 않도록 타임스탬프/git 기반 신중 설계). 둘 다 검증 선행. 추적: docs/improvement-plan/AUDIT-2026-06-08-harness.md.
 
 ### 영구 보존되는 메모리
 
@@ -366,12 +372,13 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 `Hide-Secrets` 는 transcript 발췌만 마스킹하고 **메모리 본문은 마스킹 대상 아님**. 사용자 책임.
 
-### C: 복원 후 복구 흐름
+### C: 복원 후 복구 흐름 (⚠️ 위 split-brain 미해결 상태에선 불완전)
 
-1. C: 복원 — `.claude/memory/` 는 E: 드라이브라 무손실
-2. (다른 장비에서 갱신했다면) `git pull` 로 최신 메모리 받기
-3. `claude` 실행 — `autoMemoryDirectory` 가 E: 위치 가리키므로 자동 로드
-4. SessionStart hook 의 컨텍스트와 함께 사용자 프로필/규칙 즉시 복원
+근본 해결 전까지는 자동 무손실이 보장되지 않습니다 — C: 복원 시 git-tracked E: 백업에서 수동 복구가 필요할 수 있습니다:
+1. C: 복원 — C: 의 auto-memory 가 14일 전으로 되돌아가거나 소실
+2. `git pull` 로 E: 백업(최신 commit) 받기
+3. E: `.claude/memory/` 내용을 C: auto-memory 위치로 수동 복사 (근본 해결 시 자동화 예정)
+4. `claude` 실행 → SessionStart hook 컨텍스트와 함께 사용자 프로필/규칙 복원
 
 ### 사라지지만 docs/sessions/ 가 보완하는 것
 

@@ -188,7 +188,10 @@ function Invoke-HookSafely {
         try {
             $logPath = Join-Path (Get-StateDir) 'hook-errors.log'
             $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-            $msg = "[$stamp] $($MyInvocation.ScriptName) :: $($_.Exception.Message)"
+            # $MyInvocation.ScriptName 은 이 함수가 정의된 _common.ps1 이라 호출 hook 식별 불가 →
+            # scriptblock 이 정의된 파일(=호출 hook)을 Ast 로 얻어 'session-start' 처럼 표기.
+            $hookName = try { if ($Body.Ast.Extent.File) { Split-Path -Leaf $Body.Ast.Extent.File } else { 'unknown-hook' } } catch { 'unknown-hook' }
+            $msg = "[$stamp] $hookName :: $($_.Exception.Message)"
             Add-Content -Path $logPath -Value $msg -Encoding UTF8 -ErrorAction SilentlyContinue
 
             # Rotation — keep last 50 lines when log exceeds 100

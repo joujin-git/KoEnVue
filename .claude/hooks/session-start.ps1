@@ -133,7 +133,7 @@ if (Test-Path $errLog) {
 
 $lines.Add('')
 $lines.Add('## 항상 적용 규칙')
-$lines.Add('1. **서브에이전트 재사용**: 탐색은 explorer, 설계는 planner, 검증은 reviewer, 문서는 docs-keeper, 빌드는 verifier. 메인 세션을 깔끔하게 유지하세요.')
+$lines.Add('1. **서브에이전트 재사용**: 탐색은 explorer, 설계는 planner, 검증은 reviewer, 문서는 docs-keeper, 빌드는 verifier, 세션 정리는 historian. 메인 세션을 깔끔하게 유지하세요.')
 $lines.Add('2. **코드 변경 → 문서 동기화**: App/, Core/, *.csproj, app.manifest 수정 시 docs-keeper가 docs/ 변경 필수.')
 $lines.Add('3. **P1–P6 불변식**: docs/conventions.md 의 grep 명령이 모두 0건이어야 합니다.')
 $lines.Add('4. **세션 종료**: dirty tree면 자동 wip 커밋 + docs/sessions/ 요약이 추가됩니다. 의미 있게 종료하려면 `/wrap-up`.')
