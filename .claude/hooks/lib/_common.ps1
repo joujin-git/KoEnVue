@@ -280,6 +280,27 @@ function Test-WorkflowPhaseDrift {
     return $issues
 }
 
+# 워크플로우 JS 정적 문법검사 — node 로 async 함수 본문 파싱(실행 안 함)해 SyntaxError 만 조기 검출.
+# 워크플로우 본문은 런타임이 async 로 실행 → top-level await/return 이 정상이라 `node --check` 는 오탐.
+# AsyncFunction 파싱은 await/return 합법 + ESM export 만 제거하면 포맷 일치(check-workflow-syntax.cjs).
+# node/스크립트 부재 시 $null(검사 불가 → 침묵 skip). 반환: 문법오류 메시지(정상이면 $null).
+function Test-WorkflowSyntax {
+    param([Parameter(Mandatory)][string]$JsPath)
+    if (-not (Test-Path $JsPath)) { return $null }
+    $node = Get-Command node -ErrorAction SilentlyContinue
+    if (-not $node) { return $null }
+    $checker = Join-Path $PSScriptRoot 'check-workflow-syntax.cjs'
+    if (-not (Test-Path $checker)) { return $null }
+    # node 의 비-0 exit(문법오류 신호)가 $ErrorActionPreference='Stop' 과 결합해 throw 되지 않도록
+    # native 명령 한정으로 억제 — 결과는 $LASTEXITCODE 로 직접 분기한다(PS 7.3+ 는 기본 $true).
+    $prevNative = $PSNativeCommandUseErrorActionPreference
+    $PSNativeCommandUseErrorActionPreference = $false
+    try { $out = & $node.Source $checker $JsPath 2>&1 }
+    finally { $PSNativeCommandUseErrorActionPreference = $prevNative }
+    if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 2) { return $null }  # 0=OK, 2=사용오류(문법결함 아님)
+    return ($out | Out-String).Trim()
+}
+
 # hook-errors.log 일관 포맷 기록 — Invoke-HookSafely catch 경로와 session-end(SessionEnd 는
 # additionalContext 못 띄움)의 직접 쓰기가 같은 '[stamp] hook :: msg' 포맷 + rotation 을 공유.
 function Write-HookError {

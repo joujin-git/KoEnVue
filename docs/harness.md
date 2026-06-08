@@ -68,7 +68,7 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 │   └── harness-optimize.js    하네스 자체 최적화
 ├── scratch/                   ❌ ignored (디버깅 임시 ps1 — 현재 비었음, PR-15 권한상승 프로브 잔재 정리됨)
 ├── hooks/                     ✅ committed
-│   ├── lib/_common.ps1        공통 함수 + 공유 상수 ($ClaudeMdLineLimit, Hide-Secrets, Invoke-HookSafely, Write-HookError, Add-SessionBlock, Invoke-Push, Invoke-WipCommit, Sync-Memory, Get-AutoMemoryDir, Test-WorkflowPhaseDrift, Get-PorcelainStatus)
+│   ├── lib/_common.ps1        공통 함수 + 공유 상수 ($ClaudeMdLineLimit, Hide-Secrets, Invoke-HookSafely, Write-HookError, Add-SessionBlock, Invoke-Push, Invoke-WipCommit, Sync-Memory, Get-AutoMemoryDir, Test-WorkflowPhaseDrift, Test-WorkflowSyntax, Get-PorcelainStatus)
 │   ├── inject-turn-context.ps1 UserPromptSubmit — ultrathink+max effort+ultracode 주입 (워크플로우 카탈로그 동적)
 │   ├── session-start.ps1      SessionStart — 이전 요약 주입 + push 안 한 commit 알림 + Sync-Memory
 │   ├── pre-compact.ps1        PreCompact — 압축 마커 append + git 스냅샷 additionalContext
@@ -138,6 +138,8 @@ docs/
 
 **meta↔phase 자동 가드**: `.claude/workflows/README.md` 의 "meta.phases 의 title ↔ 본문 `phase('X')` 1:1" 규약을 `_common.ps1` 의 `Test-WorkflowPhaseDrift` 가 정규식 휴리스틱으로 기계 검증합니다. `/harness-status` 의 `## 워크플로우 무결성` 섹션이 매 진단 시 호출 — 불일치 워크플로우(meta-only / body-only phase)를 보고하고, 전부 일치면 "✅ 정합"(현재 drift 0).
 
+**JS 정적 문법 가드**: phase drift(의미 정합)와 별개로 `_common.ps1` 의 `Test-WorkflowSyntax` 가 워크플로우 `.js` 의 **순수 문법**을 검사합니다 — `check-workflow-syntax.cjs` 가 node 로 본문을 `AsyncFunction`(async 함수 본문)으로 파싱(실행 안 함)해 SyntaxError 만 검출. 워크플로우 본문은 런타임이 async 로 실행하므로 top-level `await`/`return` 이 합법인데 `node --check` 는 이를 오탐 → AsyncFunction 파싱은 await/return 둘 다 허용하고 ESM `export` 만 제거하면 포맷이 일치해 **오탐 0**. 이로써 종전 "정적 문법검사 불가" 한계는 해소(단 phase 실제 실행·`agent()` 호출 등 **런타임 의미검증은 여전히 런타임 전용**). node/스크립트 부재 시 침묵 skip.
+
 **결과 반환 즉시 고정**: 워크플로우 산출(release-review/codebase-audit/harness-optimize 등)은 max effort 로 생성한 고비용 결과이므로, 메인 세션은 반환 즉시 git-tracked 파일(예: `docs/improvement-plan/AUDIT-YYYY-MM-DD-*.md`)로 박제해 컨텍스트 휘발을 막습니다. [AUDIT-2026-06-08-harness.md](improvement-plan/AUDIT-2026-06-08-harness.md) 가 첫 적용 사례.
 
 **⚠️ 검증 상태**: 워크플로우의 `/<name>` 자동 노출은 확인됨. 다만 hook 의 키워드 주입이 ultracode **런타임 플래그**를 켜는지는 미검증(ultrathink 와 달리 ultracode 는 세션 설정일 수 있음). 명시적 한국어 지시가 fallback 이라 행동은 보장되지만, 새 세션에서 statusLine 의 `ultracode` 표시로 확인하세요. 런타임 활성화가 안 되면 세션 시작 시 `/effort ultracode` 수동 입력이 대안(단 effort=max 와의 우선순위는 별도 확인).
@@ -172,7 +174,7 @@ hook 이벤트 8개 (SessionStart · PreCompact · UserPromptSubmit · PostToolU
 - **보안 민감 매핑**: `Core/Native/` (P/Invoke 시그니처), `app.manifest` (UAC 레벨), `KoEnVue.csproj` (NuGet 추가/제거), `NuGet.config` (외부 피드) 변경 시 Reason 메시지에 `/security-review` 권장/필수 문구 자동 포함 — Claude Code 의 built-in 슬래시 커맨드로 보안 점검 유도.
 - `.claude/state/pending-docs.txt` 에 기록 → Stop hook 에서 사용
 - **중복 reminder 억제**: 같은 매핑(예: `App/*` → `docs/architecture.md`)이 한 턴에 여러 번 trigger 되면, 첫 번째만 컨텍스트 reminder. pending-docs.txt 에는 모든 파일 기록 (Stop hook 에서 다 표시).
-- **워크플로우 phase-drift 자동가드**: 편집 파일이 `.claude/workflows/*.js` 면 `Test-WorkflowPhaseDrift` 를 즉시 호출해 meta.phases ↔ 본문 `phase()` 불일치를 그 자리에서 경고(런타임/`/harness-status` 호출 전 조기 검출). drift 경고가 있으면 중복 억제와 무관하게 항상 내보냄.
+- **워크플로우 phase-drift + 문법 자동가드**: 편집 파일이 `.claude/workflows/*.js` 면 `Test-WorkflowPhaseDrift`(meta.phases ↔ 본문 `phase()` 불일치)와 `Test-WorkflowSyntax`(편집된 파일만 AsyncFunction 파싱으로 SyntaxError 검출)를 즉시 호출해 그 자리에서 경고(런타임/`/harness-status` 호출 전 조기 검출). drift/문법 경고가 있으면 중복 억제와 무관하게 항상 내보냄.
 
 ### `PostToolUse(Bash git commit *)` → `auto-push.ps1`
 - "**커밋 = 푸시 항상 같이**" 규칙 구현

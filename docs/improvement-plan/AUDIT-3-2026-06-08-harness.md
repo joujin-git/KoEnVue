@@ -58,3 +58,11 @@
 - **deny 적용**: `git push --force`/`-f`/`--force-with-lease`(+`git push * --force` origin 뒤 변형)·`git reset --hard`·`git filter-branch` — Bash·PowerShell 각각. `git push --force --dry-run` → 차단, 정상 `git status` → 통과(정상 commit/push 무영향) 검증.
 - **한계·부작용**: (1) prefix 매칭이라 flag 순서 변형(force 가 명령 끝)·env var 우회는 일부 미포착 — 흔한 형태는 차단하는 1차 방어. (2) **중간 와일드카드 패턴(`git push * --force`)은 명령 문자열 어디든 키워드가 있으면 매칭 → 커밋 메시지에 차단 키워드가 들어간 정상 커밋까지 오탐 차단**(이 발견을 커밋하려다 실제로 걸림). force 직후 prefix 패턴만 유지하고 중간 와일드카드는 제거. 완벽 enforcement 아닌 1차 방어.
 - → PreToolUse 가 bypassPermissions 에서 무효(AUDIT-2 도구제약)였던 것을 `permissions.deny` 로 우회·실현. **메모리 정책의 "도구 제약 감수" 가 실은 더 강한 메커니즘으로 해결 가능했던 사례.**
+
+## 후속 적용 2 — 보류 3건 실증 (정적게이트만 적용)
+
+보류 #4·#8/9·#12/14 를 저비용 실험으로 확정 — #18(permissions.deny)처럼 "미검증/감수" 를 실증으로 해소. 실증 3건 모두 통과, 적용은 사용자 결정으로 1건(정적게이트)만.
+
+- **#12/14 workflow 정적게이트 — 실증 + 적용**: `node --check` 가 top-level await/return 때문에 오탐하던 것을, **AsyncFunction 생성자로 async 함수 본문 파싱**(실행 안 함, `export` 만 제거)하면 오탐 0 으로 문법검출 가능 확인 — 워크플로우 5개 OK·깨진 JS 3종 차단·top-level await+return 파일 오탐 0. 배선: [`check-workflow-syntax.cjs`](../../.claude/hooks/lib/check-workflow-syntax.cjs) + `_common.ps1` `Test-WorkflowSyntax` + `post-edit-doc-sync.ps1`(phase-drift 옆, 편집 파일만 검사). **부작용 방어**: node 비-0 exit 이 `$ErrorActionPreference='Stop'`+`$PSNativeCommandUseErrorActionPreference`(PS7.3+ 기본 $true)와 결합해 throw→Invoke-HookSafely 가 삼키면 "문법오류 검출하고도 경고 증발" — 함수 내 native exit 억제로 방어(검증 threw=False 확인).
+- **#8/9 PostToolUse Workflow / SubagentStop — 실증 완료, 미구현 결정**: `SubagentStop` 은 **공식 부재**(확정). Workflow 는 백그라운드라 PostToolUse 미발화. 그러나 **PostToolUse matcher `Task` 가 서브에이전트(`tool_name=Agent`) 완료 후 발화 + `tool_response` 에 결과·agentType·토큰·소요시간 완전 포함**(probe 로그 확증). 서브에이전트 자동기록은 **실현 가능** — claude-code-guide 의 "결과 포함 불확실" 보다 실제가 우월. 단 사용자 결정 = **미구현**(hook +1 과복잡 회피, 현행 turn 기록 충분). "감수했던 게 실은 가능했던" 또 하나의 사례.
+- **#4 verify model 다양성 — 실증 완료, 현행 유지 결정**: `opts.model` 실제 라우팅 확정(probe: 미지정=opus / `model:'sonnet'`=sonnet / `model:'haiku'`=haiku, 3 distinct). 단 사용자 결정 = **현행 유지(전부 opus)** — opus-max 깊이우선상 약한 모델 혼입 손실 > 공통환각 완화 이득. 공통환각은 §10 한계로 문서화 유지.

@@ -63,19 +63,22 @@ if (Test-Path $stateFile) {
 $entry = ("{0}|{1}|{2}" -f (Get-Date -Format 'HH:mm:ss'), $normalized, $docsKey)
 Add-Content -Path $stateFile -Value $entry -Encoding UTF8
 
-# .claude/workflows/*.js 편집 시 meta↔phase 정합 자동 검사(런타임 호출 전 조기 경고).
-# Test-WorkflowPhaseDrift 는 _common 에 이미 존재 — 호출만 추가(비용 거의 0). dedup 과 무관하게 항상 검사.
+# .claude/workflows/*.js 편집 시 meta↔phase 정합 + 문법 정합 자동 검사(런타임 호출 전 조기 경고).
+# Test-WorkflowPhaseDrift / Test-WorkflowSyntax 는 _common 에 존재 — 호출만 추가. dedup 과 무관하게 항상 검사.
 $driftWarning = ''
+$syntaxWarning = ''
 if ($normalized -match '^\.claude/workflows/.*\.js$') {
     $drift = Test-WorkflowPhaseDrift
     if ($drift) { $driftWarning = " ⚠ 워크플로우 phase drift: $($drift -join '; ') — meta.phases ↔ phase() 를 1:1 로 맞추세요." }
+    $syntaxErr = Test-WorkflowSyntax -JsPath (Join-Path (Get-ProjectRoot) $normalized)
+    if ($syntaxErr) { $syntaxWarning = " ⚠ 워크플로우 문법오류 ($normalized): $syntaxErr — 런타임 실행 전 수정 필요." }
 }
 
-# Suppress duplicate reminder for the same mapping in the same turn — 단 phase drift 경고가 있으면 내보낸다
-if ($alreadyReminded -and -not $driftWarning) { exit 0 }
+# Suppress duplicate reminder for the same mapping in the same turn — 단 phase drift/문법 경고가 있으면 내보낸다
+if ($alreadyReminded -and -not $driftWarning -and -not $syntaxWarning) { exit 0 }
 
 $docList = $matched.Docs -join ', '
-$context = "[harness] $($matched.Reason): 이번 턴이 끝나기 전에 다음 문서 동기화 필요 — $docList. docs-keeper 서브에이전트 사용을 고려하세요.$driftWarning"
+$context = "[harness] $($matched.Reason): 이번 턴이 끝나기 전에 다음 문서 동기화 필요 — $docList. docs-keeper 서브에이전트 사용을 고려하세요.$driftWarning$syntaxWarning"
 
 Write-HookOutput @{
     hookSpecificOutput = @{

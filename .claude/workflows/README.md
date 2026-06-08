@@ -5,7 +5,7 @@ ultracode 멀티에이전트 워크플로우(`Workflow` 도구로 실행). 각 `
 ## 파일 형식
 
 - 첫 줄은 `export const meta = {...}` — **pure literal** (변수/함수호출/스프레드/보간 금지). 필수: `name`, `description`. 선택: `phases` (각 `{ title, detail }`).
-- meta 다음이 스크립트 본문 — async 컨텍스트, `await` 직접 사용. (이 `export` + top-level `return`/`await` 혼용은 워크플로우 런타임 전용 포맷이라 `node --check` 로는 검증 불가 — 런타임으로만 검증.)
+- meta 다음이 스크립트 본문 — async 컨텍스트, `await` 직접 사용. (이 `export` + top-level `return`/`await` 혼용은 워크플로우 런타임 전용 포맷이라 `node --check` 로는 오탐 — 단 **순수 문법**은 `Test-WorkflowSyntax`(`check-workflow-syntax.cjs`)가 본문을 AsyncFunction 으로 파싱해 정적 검사 가능하고, post-edit hook 이 편집 즉시 SyntaxError 를 조기 경고한다. phase 실제 실행·`agent()` 호출 등 **런타임 의미검증은 여전히 런타임 전용**.)
 - meta.phases 의 title 과 본문 `phase('X')` 호출은 1:1 로 맞출 것 (drift 시 진행 표시 어긋남).
 
 ## 주입 심볼 계약

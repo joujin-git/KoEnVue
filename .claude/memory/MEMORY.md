@@ -3,3 +3,4 @@
 - [Harness design](feedback_harness_design.md) — Opus + max + ultrathink, ultracode 항상 ON(Workflow 멀티에이전트; Agent Team 은 거부), 단일 세션 + 서브에이전트, bypass, main 직커밋, 일자별 append.
 - [Workflow rules](feedback_workflow_rules.md) — 빌드 = debug + release publish 항상 둘 다, 커밋 = `git push` 까지 항상 같이 (auto-push hook).
 - [OS 의존 버그 감수](os-dependent-accept.md) — 제어 불가 OS(Win32/셸) 동작에 의존하는 버그는 무리한 수정보다 감수 선호.
+- [도구 제약 — 감수 전 실험](tool-limit-verify-first.md) — 제어 가능한 제약(도구/SDK/설정)은 "못 한다" 단정 전 저비용 실험으로 재확인. permissions.deny·정적게이트·PostToolUse 자동기록 사례.
