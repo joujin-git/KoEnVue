@@ -37,7 +37,7 @@ if ($dirtyBefore) {
     $block += ''
     $block += '---'
 
-    Add-Content -Path $sessionFile -Value ($block -join "`n") -Encoding UTF8
+    Add-SessionBlock -Path $sessionFile -Content ($block -join "`n")
 
     # block append 후 wip — dirty + block 한 커밋에 묶임 (잔여물 0)
     Invoke-WipCommit -Note "session end ($reason)" | Out-Null
@@ -50,14 +50,12 @@ if ($ahead -gt 0) {
     if ($pushResult -ne 'pushed') {
         # SessionEnd 시점엔 additionalContext 를 사용자에게 못 띄우므로
         # hook-errors.log 에 기록 → 다음 SessionStart 의 "최근 hook 에러" 섹션에서 노출
-        $logPath = Join-Path (Get-StateDir) 'hook-errors.log'
-        $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         $reasonMsg = switch ($pushResult) {
             'no-upstream' { 'upstream branch 미설정 — git push -u origin <branch> 필요' }
             'failed'      { '원격 거부 / 네트워크 실패 — 수동 git push 로 확인' }
             default       { "unknown ($pushResult)" }
         }
-        Add-Content -Path $logPath -Value "[$stamp] session-end.ps1 :: auto-push $pushResult (ahead=$ahead) — $reasonMsg" -Encoding UTF8 -ErrorAction SilentlyContinue
+        Write-HookError -HookName 'session-end.ps1' -Message "auto-push $pushResult (ahead=$ahead) — $reasonMsg"
     }
 }
 

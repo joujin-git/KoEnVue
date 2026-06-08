@@ -68,7 +68,7 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 │   └── harness-optimize.js    하네스 자체 최적화
 ├── scratch/                   ❌ ignored (디버깅 임시 ps1 — 현재 비었음, PR-15 권한상승 프로브 잔재 정리됨)
 ├── hooks/                     ✅ committed
-│   ├── lib/_common.ps1        공통 함수 + 공유 상수 ($ClaudeMdLineLimit, Hide-Secrets, Invoke-HookSafely, Invoke-Push, Invoke-WipCommit, Sync-Memory, Get-AutoMemoryDir, Test-WorkflowPhaseDrift)
+│   ├── lib/_common.ps1        공통 함수 + 공유 상수 ($ClaudeMdLineLimit, Hide-Secrets, Invoke-HookSafely, Write-HookError, Add-SessionBlock, Invoke-Push, Invoke-WipCommit, Sync-Memory, Get-AutoMemoryDir, Test-WorkflowPhaseDrift)
 │   ├── inject-turn-context.ps1 UserPromptSubmit — ultrathink+max effort+ultracode 주입 (워크플로우 카탈로그 동적)
 │   ├── session-start.ps1      SessionStart — 이전 요약 주입 + push 안 한 commit 알림 + Sync-Memory
 │   ├── pre-compact.ps1        PreCompact — 압축 마커 append + git 스냅샷 additionalContext
@@ -102,7 +102,7 @@ docs/
 | **reviewer** | 코드 변경 후 commit 직전 — P규칙 invariant + 빌드 + 품질 | Read, Glob, Grep, Bash |
 | **docs-keeper** | Edit/Write 후 docs/ 동기화 — PostToolUse hook 이 신호 | Read, Edit, Write, Glob, Grep, Bash |
 | **historian** | 세션 정리 — `/wrap-up` 또는 SessionEnd 후속 | Read, Write, Edit, Bash |
-| **verifier** | release 전 / 큰 변경 후 — `dotnet build`/`publish`/`test` | Bash, Read, Glob, Grep |
+| **verifier** | release 전 / 큰 변경 후 — `dotnet build`/`publish`/`test` (release-review 의 Build phase 노드로도 호출) | Bash, Read, Glob, Grep |
 
 전체 정의는 [.claude/agents/*.md](../.claude/agents/) 참조. **invariant grep 단일 진실원**: reviewer 는 grep 명령을 자체 보유하지 않고 [docs/conventions.md](conventions.md) 를 매 호출마다 새로 Read 해 전수 추출 (방법 A) — 현재 알려진 5 위치 (§P6 verification invariants, §P6 Additional sub-rule, §Silent catch §8 Core↔Logger, §Silent catch §9 Debug "failed", §AOT Verification). 자세한 추출 규칙은 [.claude/agents/reviewer.md §0](../.claude/agents/reviewer.md) 참조 — drift 방지.
 
@@ -112,27 +112,29 @@ docs/
 
 **effort 와 별개 축**: ultracode 는 effort 레벨(low/…/max)이 아닙니다. `CLAUDE_CODE_EFFORT_LEVEL=max` 는 그대로 유지되고, ultracode 는 그 위에서 Workflow 오케스트레이션을 켭니다. **env 를 `ultracode` 로 바꾸지 마세요** — max 를 잃을 수 있어, 키워드 주입 방식으로 둘 다 유지합니다.
 
-**발동 — 항상 자동**: `inject-turn-context.ps1` hook 이 매 턴 "ultracode" 키워드 + 행동 지시를 주입. substantive 작업(다중 파일 변경·코드 리뷰·릴리즈 점검·버그/레이스 헌트·설계 비교·하네스 변경)은 Workflow 도구로 오케스트레이션하고, trivial 편집·단순 대화·단일 사실 조회만 solo. 주입되는 워크플로우 카탈로그는 `.claude/workflows/*.js` 파일시스템을 **단일 진실원**으로 동적 나열 — 워크플로우 추가/삭제가 매 턴 주입에 자동 반영(디렉토리 못 읽으면 알려진 5종 fallback). 하드코딩 사본을 두지 않아 drift 0.
+**발동 — 항상 자동**: `inject-turn-context.ps1` hook 이 매 턴 "ultracode" 키워드 + 행동 지시를 주입. substantive 작업(다중 파일 변경·코드 리뷰·릴리즈 점검·버그/레이스 헌트·설계 비교·하네스 변경)은 Workflow 도구로 오케스트레이션하고, trivial 편집·단순 대화·단일 사실 조회만 solo. 주입되는 워크플로우 카탈로그는 `.claude/workflows/*.js` 파일시스템을 **단일 진실원**으로 동적 나열 — 워크플로우 추가/삭제가 매 턴 주입에 자동 반영(디렉토리 못 읽으면 수치 없는 '`.claude/workflows/` 참조' 안내로 fallback — 하드코딩 사본을 안 두어 drift 0).
 
 **Agent Team 과의 구분**: Workflow 도구 ≠ Agent Team(TeamCreate). Workflow 는 결정론적 제어흐름(loop/조건/fan-out)·resume(`resumeFromRunId`)·토큰 budget 을 지원해 도입. Agent Team 은 토큰 3–5배·resume 미지원이라 **계속 거부** — "단일 세션" 철학과 충돌 없음.
 
-**저장 워크플로우 5개** (`.claude/workflows/*.js`). 저장 즉시 `/<name>` 슬래시 커맨드로 자동 노출되며, 메인 세션은 `Workflow({ name })` 로 호출:
+**저장 워크플로우** (`.claude/workflows/*.js` 가 단일 진실원 — 추가/삭제 자동 반영). 저장 즉시 `/<name>` 슬래시 커맨드로 자동 노출되며, 메인 세션은 `Workflow({ name })` 로 호출:
 
 | 워크플로우 | 무엇을 | 패턴 |
 |-----------|--------|------|
-| `release-review` | 릴리즈 전 correctness·보안·P1~P6·동시성 병렬 리뷰 → 적대적 검증 | pipeline + adversarial verify |
+| `release-review` | 릴리즈 전 correctness·보안·P1~P6·동시성 4차원 병렬 리뷰 → 적대적 검증 → **Build 게이트**(verifier 가 build·publish·test 실행). invariant 차원이 버전 4-part 일관성(csproj·git태그·CHANGELOG)·P6 단방향(`git grep KoEnVue.App Core/`=0)도 명시 점검 | pipeline + adversarial verify + build gate |
 | `bug-hunt` | 동시성·레이스·견고성 결함을 안 나올 때까지 반복 탐색 | loop-until-dry + 다관점 렌즈 |
 | `codebase-audit` | App/·Core/ 모듈 전수 병렬 점검 → P규칙 게이트 → AUDIT 종합 | scope→audit→gate |
 | `design-compare` | 기능 설계를 N접근법 제안 → 점수화 → 합성 (`args.feature` 필수) | judge panel |
 | `harness-optimize` | 하네스 구성요소 점검 → completeness critic | inspect + critic |
 
-각 워크플로우는 KoEnVue 서브에이전트(explorer/planner/reviewer)를 `agentType` 으로 재사용하고 `schema` 로 구조화 출력을 강제합니다. 예: `Workflow({ name: 'release-review', args: { scope: 'PR-26 변경' } })`.
+각 워크플로우는 KoEnVue 서브에이전트(explorer/planner/reviewer/verifier)를 `agentType` 으로 재사용하고 `schema` 로 구조화 출력을 강제합니다. 예: `Workflow({ name: 'release-review', args: { scope: 'PR-26 변경' } })`.
 
-**leaf vs 오케스트레이터**: 6개 서브에이전트의 `tools:` 에는 위임 도구가 없습니다(leaf). 오케스트레이션은 메인 세션 또는 워크플로우 스크립트가 담당합니다.
+**선택 기준 — release-review vs bug-hunt** (동시성 점검 시 모호함 해소): `release-review` 는 릴리즈 직전 diff 를 1-pass 로 4차원(correctness·보안·P규칙·**동시성**)+빌드게이트로 훑어 동시성을 이미 커버한다. `bug-hunt` 는 레이스 의심이 깊을 때 전체 범위를 안 나올 때까지(loop-until-dry) 반복 탐색하는 더 무거운 도구 — release-review 가 1차로 동시성을 보고, 그래도 레이스 의심이 잔존하면 bug-hunt 를 추가로 돌린다.
 
-**호출 경로 — 역할분담**: 저장된 워크플로우가 `agentType` 으로 실제 노드 호출하는 서브에이전트는 **explorer / planner / reviewer 3개뿐**입니다(explorer=harness-optimize Inspect·codebase-audit Scope, planner=design-compare Propose, reviewer=release-review Review·codebase-audit Gate). bug-hunt 의 `agent()` 는 `agentType` 미지정(기본 워크플로우 에이전트). **docs-keeper / historian / verifier 는 워크플로우 노드가 아니라 메인 세션 위임 전용**(PostToolUse 신호 / `/wrap-up` / release 전 등)입니다 — `README.md` 의 `agentType` enum 에 6개가 다 열거돼 있어도 노드로 쓰이는 건 3개. "서브에이전트는 워크플로우 노드로 호출"을 6개 전체로 일반화하지 마세요.
+**leaf vs 오케스트레이터**: 서브에이전트의 `tools:` 에는 위임 도구가 없습니다(leaf). 오케스트레이션은 메인 세션 또는 워크플로우 스크립트가 담당합니다.
 
-**meta↔phase 자동 가드**: `.claude/workflows/README.md` 의 "meta.phases 의 title ↔ 본문 `phase('X')` 1:1" 규약을 `_common.ps1` 의 `Test-WorkflowPhaseDrift` 가 정규식 휴리스틱으로 기계 검증합니다. `/harness-status` 의 `## 워크플로우 무결성` 섹션이 매 진단 시 호출 — 불일치 워크플로우(meta-only / body-only phase)를 보고하고, 전부 일치면 "✅ 정합". 현재 5/5 정합(drift 0).
+**호출 경로 — 역할분담**: 저장된 워크플로우가 `agentType` 으로 실제 노드 호출하는 서브에이전트는 **explorer / planner / reviewer / verifier**(explorer=harness-optimize Inspect·codebase-audit Scope, planner=design-compare Propose, reviewer=release-review Review·codebase-audit Gate, **verifier=release-review Build**). bug-hunt 의 `agent()` 는 `agentType` 미지정(기본 워크플로우 에이전트). **docs-keeper / historian 만 워크플로우 노드가 아닌 메인 세션 위임 전용**(PostToolUse 신호 / `/wrap-up` 등)입니다 — `README.md` 의 `agentType` enum 에 전 서브에이전트가 열거돼 있어도 노드로 쓰이는 건 위 4개. "서브에이전트는 워크플로우 노드로 호출"을 전체로 일반화하지 마세요. (1차에선 verifier 도 메인세션 위임 전용으로 적었으나, release-review 에 Build 게이트가 추가되며 노드로 승격.)
+
+**meta↔phase 자동 가드**: `.claude/workflows/README.md` 의 "meta.phases 의 title ↔ 본문 `phase('X')` 1:1" 규약을 `_common.ps1` 의 `Test-WorkflowPhaseDrift` 가 정규식 휴리스틱으로 기계 검증합니다. `/harness-status` 의 `## 워크플로우 무결성` 섹션이 매 진단 시 호출 — 불일치 워크플로우(meta-only / body-only phase)를 보고하고, 전부 일치면 "✅ 정합"(현재 drift 0).
 
 **결과 반환 즉시 고정**: 워크플로우 산출(release-review/codebase-audit/harness-optimize 등)은 max effort 로 생성한 고비용 결과이므로, 메인 세션은 반환 즉시 git-tracked 파일(예: `docs/improvement-plan/AUDIT-YYYY-MM-DD-*.md`)로 박제해 컨텍스트 휘발을 막습니다. [AUDIT-2026-06-08-harness.md](improvement-plan/AUDIT-2026-06-08-harness.md) 가 첫 적용 사례.
 
@@ -152,12 +154,12 @@ hook 이벤트 8개 (SessionStart · PreCompact · UserPromptSubmit · PostToolU
 
 ### `PreCompact` → `pre-compact.ps1`
 - 대화 압축(컴팩션, 자동 컨텍스트 한도 / 수동 `/compact`) **직전** 실행. ultracode 멀티에이전트가 컨텍스트를 빠르게 채워 컴팩션 빈도가 높아진 환경에서 작업 연속성을 보강. matcher `*` 라 auto·manual 둘 다 트리거, `payload.trigger` 로 구분 기록
-- **(1) 압축 마커 박제**: 오늘 세션 파일에 `## [HH:MM] compaction (trigger=auto|manual)` 블록 append → 압축 지점을 영구 기록 (압축 전 turn 기록이 상세 컨텍스트 원본임을 명시)
+- **(1) 압축 마커 박제**: 오늘 세션 파일에 `## [HH:MM] compaction (trigger=auto|manual)` 블록 append (`Add-SessionBlock` mutex 로 직렬화) → 압축 지점을 영구 기록 (압축 전 turn 기록이 상세 컨텍스트 원본임을 명시)
 - **(2) 연속성 컨텍스트**: `additionalContext` 로 git 스냅샷(미커밋 변경 30건 클램프 + 최근 커밋 5개) + 세션파일 복원 포인터를 주입 → 압축 직후 새 컨텍스트에서 진행 중이던 미커밋 작업의 연속성 즉시 복원 (SessionStart 와 동일 메커니즘)
 
 ### `UserPromptSubmit` → `inject-turn-context.ps1`
 - 사용자 입력에 `ultrathink` 가 없으면 — **"ultrathink + thinking 모드"** + **"항상 max effort — 단축/생략 없이"** 주입
-- 사용자 입력에 `ultracode` 가 없으면 — **ultracode 멀티에이전트 모드** 주입 (키워드 + 행동 지시 + 워크플로우 카탈로그). 카탈로그는 `.claude/workflows/*.js` BaseName 동적 나열 (단일 진실원, fallback 5종). 두 축 독립 — 해당 키워드가 입력에 있으면 그 축만 skip
+- 사용자 입력에 `ultracode` 가 없으면 — **ultracode 멀티에이전트 모드** 주입 (키워드 + 행동 지시 + 워크플로우 카탈로그). 카탈로그는 `.claude/workflows/*.js` BaseName 동적 나열 (단일 진실원, 디렉토리 못 읽으면 '`.claude/workflows/` 참조' 안내로 fallback). 두 축 독립 — 해당 키워드가 입력에 있으면 그 축만 skip
 - effort=max 는 env(`CLAUDE_CODE_EFFORT_LEVEL=max`)로 별도 강제 — ultracode 가 effort 를 대체하지 않음. 서브에이전트 본문 강제 명시와 함께 effort 단축 경로 0 보장
 
 ### `PostToolUse(Edit|Write|NotebookEdit)` → `post-edit-doc-sync.ps1`
@@ -180,12 +182,12 @@ hook 이벤트 8개 (SessionStart · PreCompact · UserPromptSubmit · PostToolU
 - **빈 발췌 마커**: text 응답 없이 끝난 턴(도구 위임 / 구조화 출력)은 `(text 응답 없음 …)` 마커를 명시 append — 침묵 실패와 도구-위임 턴을 구분. 매 턴 이 마커면 transcript 파싱 점검 신호.
 - **secret 마스킹** (Hide-Secrets 함수) 후 기록 — 자세한 한계는 §9 참조
 - 이번 턴의 pending-docs 와 dirty tree 상태 정리 (30건 클램프)
-- `docs/sessions/YYYY-MM-DD.md` 끝에 `## [HH:MM] turn` 블록 append
+- `docs/sessions/YYYY-MM-DD.md` 끝에 `## [HH:MM] turn` 블록 append (`Add-SessionBlock` mutex 로 직렬화 — PreCompact/SessionEnd 와 동시 append 시 블록 인터리브 방지)
 - **한계**: 세션 발췌는 transcript JSONL 의 내부 스키마(`type`/`message`/`content`)에 의존 — Claude Code 버전업으로 스키마가 바뀌면 발췌가 깨질 수 있음(위 빈 발췌 마커가 그 조기 신호).
 
 ### `SessionEnd` → `session-end.ps1`
 - dirty tree 가 있으면:
-  1. **먼저** 오늘 세션 파일에 `## [HH:MM] session-end (reason)` 블록 append (이 세션의 최근 10분 커밋 목록 + "방금 wip — 이 마무리 블록 포함" 한 줄)
+  1. **먼저** 오늘 세션 파일에 `## [HH:MM] session-end (reason)` 블록 append (`Add-SessionBlock` mutex 로 직렬화; 이 세션의 최근 10분 커밋 목록 + "방금 wip — 이 마무리 블록 포함" 한 줄)
   2. **그 다음** `wip: session YYYY-MM-DD HH:MM — session end (reason)` 커밋 — block 변경분 + 기존 dirty 가 같은 wip 커밋에 묶임 (다음 세션 시작 시 dirty 잔여물 0 보장)
 - dirty tree 가 없으면 nothing — 마무리 블록도 안 적고 wip 커밋도 만들지 않음 (잡음 0)
 - 위 처리 후 unpushed commit 이 있으면 `git push` 자동 시도 ("커밋 = 푸시 항상 같이" fallback)

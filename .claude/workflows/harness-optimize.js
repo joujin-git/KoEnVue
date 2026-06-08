@@ -51,7 +51,7 @@ const inspected = await parallel(COMPONENTS.map((c) => () =>
 const found = inspected.filter(Boolean).flatMap((r) => r.suggestions || [])
 const rank = { high: 0, medium: 1, low: 2 }
 // critic 에 넘기기 전 impact 우선 정렬 — slice(0,40) 가 임의 부분집합이 아닌 상위 영향 제안을 보게.
-found.sort((a, b) => (rank[a.impact] - rank[b.impact]) || (rank[a.effort || 'medium'] - rank[b.effort || 'medium']))
+found.sort((a, b) => ((rank[a.impact] ?? 1) - (rank[b.impact] ?? 1)) || ((rank[a.effort] ?? 1) - (rank[b.effort] ?? 1)))
 log(`구성요소 점검: ${found.length}건 제안`)
 
 phase('Critic')
@@ -64,6 +64,6 @@ const extra = (critic && critic.suggestions) || []
 
 phase('Synthesize')
 const all = [...found, ...extra]
-all.sort((a, b) => (rank[a.impact] - rank[b.impact]) || (rank[a.effort || 'medium'] - rank[b.effort || 'medium']))
+all.sort((a, b) => ((rank[a.impact] ?? 1) - (rank[b.impact] ?? 1)) || ((rank[a.effort] ?? 1) - (rank[b.effort] ?? 1)))
 log(`총 ${all.length}건 개선안 (critic +${extra.length})`)
 return { focus: FOCUS, totalSuggestions: all.length, suggestions: all }

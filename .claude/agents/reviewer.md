@@ -42,7 +42,7 @@ model: inherit
 ```bash
 dotnet build
 ```
-실패 시 첫 에러 메시지 보고.
+실패 시 첫 에러 메시지 보고. (commit 직전 verifier 를 곧 호출할 예정이면 이 debug build 는 생략 가능 — verifier 가 build+publish 둘 다 수행. reviewer 단독 호출 시에만 필수.)
 
 ### 3. 코드 품질 (정성 검사)
 

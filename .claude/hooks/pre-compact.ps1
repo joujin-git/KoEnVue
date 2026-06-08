@@ -23,7 +23,7 @@ $marker = @(
     '> 이 지점에서 대화가 압축됐습니다. 위쪽 turn 기록이 압축 후 세션의 상세 컨텍스트 원본입니다.'
     ''
 )
-Add-Content -Path $sessionFile -Value ($marker -join "`n") -Encoding UTF8
+Add-SessionBlock -Path $sessionFile -Content ($marker -join "`n")
 
 # (2) 연속성 컨텍스트 — 압축 후에도 살아남도록 additionalContext 로 주입
 $lines = New-Object System.Collections.Generic.List[string]

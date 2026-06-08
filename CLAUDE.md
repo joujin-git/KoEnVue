@@ -23,8 +23,4 @@ Windows IME state indicator (한 / En / EN). C# 14 / .NET 10 + NativeAOT single 
 
 ## Documentation map
 
-| File | Purpose |
-|------|---------|
-| [docs/harness.md](docs/harness.md) | 하네스 (subagents/hooks/workflows) · 전체 인덱스 [INDEX](docs/INDEX.md) |
-| [docs/architecture.md](docs/architecture.md) | Core/App 모듈 분리 |
-| [docs/conventions.md](docs/conventions.md) | P1–P6 enforcement, invariant grep |
+[docs/harness.md](docs/harness.md) 하네스(subagents/hooks/workflows) · [architecture.md](docs/architecture.md) Core/App 분리 · [conventions.md](docs/conventions.md) P1–P6 grep · 인덱스 [INDEX](docs/INDEX.md).

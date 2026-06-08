@@ -257,6 +257,36 @@ function Test-WorkflowPhaseDrift {
     return $issues
 }
 
+# hook-errors.log 일관 포맷 기록 — Invoke-HookSafely catch 경로와 session-end(SessionEnd 는
+# additionalContext 못 띄움)의 직접 쓰기가 같은 '[stamp] hook :: msg' 포맷 + rotation 을 공유.
+function Write-HookError {
+    param([string]$HookName, [string]$Message)
+    try {
+        $logPath = Join-Path (Get-StateDir) 'hook-errors.log'
+        $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+        Add-Content -Path $logPath -Value "[$stamp] $HookName :: $Message" -Encoding UTF8 -ErrorAction SilentlyContinue
+        $existing = Get-Content -Path $logPath -Encoding UTF8 -ErrorAction SilentlyContinue
+        if ($existing -and $existing.Count -gt 100) {
+            Set-Content -Path $logPath -Value ($existing | Select-Object -Last 50) -Encoding UTF8 -ErrorAction SilentlyContinue
+        }
+    } catch { }
+}
+
+# 세션 로그 append 를 named mutex 로 직렬화 — pre-compact/stop-record/session-end 가 거의 동시에
+# (auto-compaction 이 turn 종료와 근접) append 할 때 블록 인터리브(깨진 markdown) 방지.
+function Add-SessionBlock {
+    param([string]$Path, [string]$Content)
+    $mutex = New-Object System.Threading.Mutex($false, 'KoEnVue-session-md')
+    $acquired = $false
+    try {
+        try { $acquired = $mutex.WaitOne(2000) } catch [System.Threading.AbandonedMutexException] { $acquired = $true }
+        Add-Content -Path $Path -Value $Content -Encoding UTF8
+    } finally {
+        if ($acquired) { try { $mutex.ReleaseMutex() } catch { } }
+        $mutex.Dispose()
+    }
+}
+
 # Top-level error guard for hooks — log to state dir, never spill into transcript
 function Invoke-HookSafely {
     param(
@@ -267,22 +297,9 @@ function Invoke-HookSafely {
     try {
         & $Body
     } catch {
-        try {
-            $logPath = Join-Path (Get-StateDir) 'hook-errors.log'
-            $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-            # $MyInvocation.ScriptName 은 이 함수가 정의된 _common.ps1 이라 호출 hook 식별 불가 →
-            # scriptblock 이 정의된 파일(=호출 hook)을 Ast 로 얻어 'session-start' 처럼 표기.
-            $hookName = try { if ($Body.Ast.Extent.File) { Split-Path -Leaf $Body.Ast.Extent.File } else { 'unknown-hook' } } catch { 'unknown-hook' }
-            $msg = "[$stamp] $hookName :: $($_.Exception.Message)"
-            Add-Content -Path $logPath -Value $msg -Encoding UTF8 -ErrorAction SilentlyContinue
-
-            # Rotation — keep last 50 lines when log exceeds 100
-            $existing = Get-Content -Path $logPath -Encoding UTF8 -ErrorAction SilentlyContinue
-            if ($existing -and $existing.Count -gt 100) {
-                $tail = $existing | Select-Object -Last 50
-                Set-Content -Path $logPath -Value $tail -Encoding UTF8 -ErrorAction SilentlyContinue
-            }
-        } catch { }
+        # scriptblock 이 정의된 파일(=호출 hook)을 Ast 로 얻어 'session-start.ps1' 처럼 표기.
+        $hookName = try { if ($Body.Ast.Extent.File) { Split-Path -Leaf $Body.Ast.Extent.File } else { 'unknown-hook' } } catch { 'unknown-hook' }
+        Write-HookError -HookName $hookName -Message $_.Exception.Message
         # 안전망의 안전망 — context-injecting hook(inject-turn-context 등)이 Write-HookOutput
         # 직전에 죽으면 그 턴의 주입(ultrathink/ultracode/effort)이 통째 증발한다. FallbackContext 가
         # 주어지면 최소 한 줄이라도 내보내 ultracode 항상-ON 의 단일 실패점을 방어.

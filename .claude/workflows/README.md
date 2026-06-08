@@ -28,7 +28,8 @@ ultracode 멀티에이전트 워크플로우(`Workflow` 도구로 실행). 각 `
 - **fan-out 상한**: 동시 최대 16(초과는 큐잉), 단일 parallel/pipeline 최대 4096 items. finding/제안 수 비례 fan-out 은 `.slice(0, MAX)` 로 절대 상한(release-review `MAX_VERIFY`).
 - **무한루프**: `while` 종료를 LLM 출력(비결정 dedup 키)에만 의존하면 안 됨 — 항상 round hard cap 병행(bug-hunt `round < 8`).
 - **leaf 는 read-only 지향**: 파괴적 작업(git push/파일삭제)은 워크플로우 종료 후 오케스트레이터(메인 세션)가 수행. leaf 에이전트는 조사/검증만.
+- **isolation 미검증**: `agent()` opts 의 `isolation?` 는 계약상 존재하나 현재 모든 워크플로우가 미사용 — 런타임 동작이 검증된 적 없다. 쓰려면 1회 실증 후 사용(미검증 심볼에 의존 금지).
 
-## 현재 워크플로우 5종
+## 워크플로우 카탈로그
 
-`release-review` · `bug-hunt` · `codebase-audit` · `design-compare` · `harness-optimize`. 카탈로그 단일 진실원은 이 디렉토리(`.claude/workflows/*.js`) — `inject-turn-context.ps1` 이 매 턴 광고. 상세는 [docs/harness.md §3](../../docs/harness.md).
+카탈로그 단일 진실원은 이 디렉토리(`.claude/workflows/*.js`) — `inject-turn-context.ps1` 이 매 턴 동적으로 광고하고 `/harness-status` 가 수를 점검. 새 `.js` 추가/삭제가 자동 반영되므로 개수를 여기 박지 않는다. 상세는 [docs/harness.md §3](../../docs/harness.md).

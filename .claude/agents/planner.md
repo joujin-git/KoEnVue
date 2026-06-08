@@ -16,6 +16,7 @@ model: inherit
 - [docs/architecture.md](../../docs/architecture.md)에서 모듈 경계 확인
 - [docs/improvement-plan/INDEX.md](../../docs/improvement-plan/INDEX.md)에서 진행 중/완료된 PR 확인 — 중복 회피
 - [docs/dev-notes/](../../docs/dev-notes/) 에 같은 영역 실패 사례 있는지 확인
+- open PR 충돌 사전 점검 (`gh pr list --state open`) — 코드 변경이 인접 영역의 열린 PR 과 겹치면 docs-keeper §0 과 동일 절차로 3안(분리/조정/대기) 판단
 
 ### 2. P1–P6 영향 분석
 
@@ -89,6 +90,6 @@ git grep ...
 - 후속 서브에이전트 추천 (예: "구현 후 reviewer 호출 권장")
 
 ## 금지 사항
-- Edit/Write 도구 사용 (구현 금지)
+- Edit/Write 도구 사용 (구현 금지). **Bash 로도 파일 생성/수정/삭제/리다이렉트 금지** — git 조회(grep/log/diff)·dotnet 조회 등 read-only 만 (leaf read-only 원칙)
 - "구현은 간단하니 그냥 하겠음" 류 추측 — 항상 계획 산출
 - docs/improvement-plan/PR-XX 신규 파일을 직접 Write — 초안 텍스트만 반환, 메인 세션이 Write

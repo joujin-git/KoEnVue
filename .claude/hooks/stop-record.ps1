@@ -88,7 +88,7 @@ if ($dirty) {
     $block += ''
 }
 
-Add-Content -Path $sessionFile -Value ($block -join "`n") -Encoding UTF8
+Add-SessionBlock -Path $sessionFile -Content ($block -join "`n")
 exit 0
 
 }

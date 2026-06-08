@@ -96,4 +96,32 @@
 1. **정책 묶음** (사용자 결정 시): PreToolUse 가드(#2) + budget 비대칭(#4) — bypassPermissions·비용 안전망. 가장 impact 높은 미적용.
 2. **워크플로우 완전성**: release-review verifier(#3)/P6/버전4-part — 릴리즈 게이트 공백.
 3. **견고성 잔여**: `_common` 로드붕괴 가드, PreCompact↔Stop mutex.
-4. **정합 잔여**: reviewer §0 박제 격하, 매핑 단일화, 숫자 무수치화, CLAUDE.md 축약 — drift 표면 축소.
+4. **정합 잔여**: reviewer §0 박제 격하, 매핑 단일화 — drift 표면 축소.
+
+---
+
+## 2차 적용 — "비용상한 제외 나머지 모두" (사용자 요청, 같은 날)
+
+위 '보류' 항목 중 budget(비용상한)만 제외하고 적용:
+
+| area | 조치 |
+|------|------|
+| release-review verifier 누락 (#3, high) | ✅ `Build` phase 추가 — verifier 가 build·publish·test 실행 + BUILD_SCHEMA. invariant 차원에 버전 4-part·P6 단방향 명시 점검 |
+| `_common` dot-source 로드붕괴 (low) | 🟡 harness-status 에 `_common 로드` 스모크(Invoke-HookSafely 로드 확인) 추가 — 사전 감지. 각 hook 런타임 try/catch 가드는 ROI 낮아 보류 |
+| PreCompact↔Stop mutex (low) | ✅ `Add-SessionBlock`(named mutex `KoEnVue-session-md`) — pre-compact/stop-record/session-end 직렬화 |
+| hookName 추출/포맷 통일 (low) | ✅ `Write-HookError` 헬퍼 — Invoke-HookSafely catch + session-end 직접쓰기 통일 |
+| harness-optimize NaN 정렬 (low) | ✅ `rank[x] ?? 1` 폴백 (found/all sort) |
+| inject fallback 5종 하드코딩 (medium) | ✅ 무수치 안내로 |
+| historian Glob 부재 (low) | ✅ tools 에 Glob |
+| planner Bash read-only (medium) | ✅ 금지사항 'Bash 도 read-only' + §1 PR 충돌 점검(gh pr list) |
+| reviewer↔verifier build 중복 (low) | ✅ reviewer §2 에 'verifier 곧 호출 시 생략 가능' |
+| CLAUDE.md 30줄 무여유 (medium) | ✅ Documentation map 표→산문, 31→26줄(여유 4) |
+| 숫자 무수치화 (medium) | ✅ harness.md/README 워크플로우 '5종'→무수치(파일시스템 SSOT) |
+| 워크플로우 선택기준 (medium) | ✅ harness.md §3 release-review vs bug-hunt 가이드 |
+| 역할분담 3/6 (medium) | ✅ harness.md §3 — verifier 도 노드(release-review Build)로 승격 정정 |
+| isolation 죽은계약 (medium) | ✅ README 작성주의에 '미사용·미검증' 주석 |
+| reviewer §0 5위치 박제 (medium) | 🟡 이미 방어적 설계(수치 미박제, 방법 A 전수추출 우선) — 추가 불필요 판단, 유지 |
+
+### PreToolUse 파괴명령 가드 (#2) — 도구 제약으로 차단 불가
+
+claude-code-guide 공식 검증(code.claude.com/docs/en/hooks): **bypassPermissions 모드에서 PreToolUse 의 `permissionDecision:"deny"` 는 무시됨** — hook 은 실행되나 차단 효과 0("their decisions have no effect"). 즉 속도우선(bypass) 정책과 파괴명령 *차단* 이 Claude Code 레벨에서 양립 불가. 차선책(audit 로깅 / 권한모드 전환 / 감수)은 **사용자 결정 대기**.

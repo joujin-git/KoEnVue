@@ -4,7 +4,8 @@ export const meta = {
   phases: [
     { title: 'Review', detail: '4개 차원 병렬 리뷰' },
     { title: 'Verify', detail: '발견을 적대적 교차검증' },
-    { title: 'Synthesize', detail: '확정 결함 종합' },
+    { title: 'Build', detail: 'verifier 빌드·publish·테스트 게이트' },
+    { title: 'Synthesize', detail: '확정 결함 + 빌드 종합' },
   ],
 }
 
@@ -44,6 +45,18 @@ const VERDICT_SCHEMA = {
   required: ['real', 'reason'],
 }
 
+const BUILD_SCHEMA = {
+  type: 'object',
+  properties: {
+    passed: { type: 'boolean' },
+    debug: { type: 'string' },
+    publish: { type: 'string' },
+    test: { type: 'string' },
+    issues: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['passed'],
+}
+
 const DIMENSIONS = [
   {
     key: 'correctness',
@@ -61,7 +74,8 @@ const DIMENSIONS = [
     key: 'invariant',
     agentType: 'reviewer',
     prompt: `KoEnVue 의 P1~P6 invariant 와 docs/conventions.md 의 grep 게이트를 전수 점검하라. 위반을 finding 으로 보고(없으면 빈 배열).
-범위: ${SCOPE}. 너의 §0 추출 규칙대로 conventions.md 를 새로 Read 해 grep 을 전수 실행하고, 기대값(0/1/4 등 주석)과 다른 결과를 위반으로. 각 위반에 grep 명령과 매치 위치를 file:line 으로.`,
+범위: ${SCOPE}. 너의 §0 추출 규칙대로 conventions.md 를 새로 Read 해 grep 을 전수 실행하고, 기대값(0/1/4 등 주석)과 다른 결과를 위반으로. 각 위반에 grep 명령과 매치 위치를 file:line 으로.
+추가 — 이 프로젝트 고유의 릴리즈 리스크 2건을 명시 점검: (1) 버전 4-part — KoEnVue.csproj 버전·최신 git 태그·CHANGELOG 최상단이 모두 major.minor.build.revision 4-part 로 일치하는지(메모리 규칙), (2) P6 단방향 — App/ 이 Core/ 만 참조하고 Core/ 가 App/ 을 역참조하지 않는지(git grep KoEnVue\\.App Core/ → 0).`,
   },
   {
     key: 'concurrency',
@@ -89,14 +103,26 @@ const results = await pipeline(
   }
 )
 
+phase('Build')
+// 릴리즈 게이트 — 코드 리뷰만으론 '실제로 빌드·publish 되는가'를 못 봄. verifier 노드로 빌드 검증 포함.
+const build = await agent(
+  `KoEnVue 릴리즈 빌드 게이트. 순서대로 실행하고 결과 보고:
+1. dotnet build (debug) — 경고/에러 수
+2. dotnet publish -r win-x64 -c Release (AOT) — 경고/에러, 산출물 크기
+3. dotnet test tests\\KoEnVue.Tests\\KoEnVue.Tests.csproj — 통과/실패 수 (bare dotnet test 금지)
+셋 다 성공+경고0 이면 passed=true. 하나라도 실패/경고면 passed=false 와 issues 에 사유.`,
+  { label: 'build-gate', phase: 'Build', agentType: 'verifier', schema: BUILD_SCHEMA }
+)
+
 phase('Synthesize')
 const all = results.flat().filter(Boolean)
 const confirmed = all.filter((f) => f.verdict && f.verdict.real)
 const sevRank = { critical: 0, high: 1, medium: 2, low: 3 }
 confirmed.sort((a, b) => (sevRank[a.severity] ?? 9) - (sevRank[b.severity] ?? 9))
-log(`리뷰 ${all.length}건 발견 → 적대적 검증 후 ${confirmed.length}건 확정`)
+log(`리뷰 ${all.length}건 발견 → 적대적 검증 후 ${confirmed.length}건 확정. 빌드 게이트: ${build && build.passed ? 'PASS' : 'FAIL'}`)
 return {
   scope: SCOPE,
+  build,
   confirmedCount: confirmed.length,
   totalFindings: all.length,
   confirmed,
