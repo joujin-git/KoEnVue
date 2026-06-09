@@ -11,7 +11,7 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정).
 
 ## 핵심 규칙
 
-- **모델**: `opus` (Opus 4.8). `effortLevel: "max"` (settings 명목 — schema 가 silent ignore / clamp 시에도 env 가 fallback). `CLAUDE_CODE_EFFORT_LEVEL=max` (env 로 실효 max 강제). 검증: statusline payload 가 `effort.level=max` 로 받음.
+- **모델**: `opus` (Opus 4.8). `effortLevel: "xhigh"` — settings 파일 최대 유효값. `max`/`ultracode` 는 session-only 라 파일 스코프 무효(2026-06-08 AUDIT-2 claude-code-guide 2회 검증). schema enum 엔 `max` 포함되나(2026-06-09 schemastore 확인) 그건 JSON 작성 허용일 뿐 파일 스코프 persistent 적용과 별개 — 그래서 파일엔 xhigh. `CLAUDE_CODE_EFFORT_LEVEL=max` (env, 우선순위 최상 — 실효 max 강제). 검증: statusline payload 가 `effort.level=max` 로 받음.
 - **Thinking 항상**: `alwaysThinkingEnabled: true`. ultrathink 키워드는 `UserPromptSubmit` hook 으로 매 턴 자동 주입
 - **단일 세션 + 항상 서브에이전트**: Agent Team 안 씀 (토큰 3–5배, resume 미지원, 동시 1팀만)
 - **권한**: `bypassPermissions` 전체 — 사용자가 git 으로 책임짐. 속도 우선
@@ -20,7 +20,7 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정).
 
 **Why**: 사용자가 명시한 "비용 무제한, 깊이 최우선" + "단일 세션 + 항상 서브에이전트" + "main 직커밋 유지" 결정. 인터뷰 4라운드 결과.
 
-**How to apply**: 하네스 관련 결정을 다시 묻지 말 것. 이 결정과 충돌하는 변경(예: agent team 활성화, 자동 PR 생성)을 제안하기 전엔 사용자에게 명시적으로 확인 받기.
+**How to apply**: 하네스 관련 결정을 다시 묻지 말 것. 일상적 하네스 수정(설정 정합·버그 수정·정합성 교정)은 사전 확인 없이 바로 진행 — 사용자 명시 위임(2026-06-09 "안 물어보고 곧바로 고쳐도 돼"). 단 이 설계 결정과 충돌하는 변경(예: agent team 활성화, 자동 PR 생성, effort/ultracode 끄기)이나 비가역·권한 약화(permissions.deny 완화 등)는 제안 전 명시 확인.
 
 ## 서브에이전트 6명
 
