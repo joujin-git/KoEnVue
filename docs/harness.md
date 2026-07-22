@@ -73,7 +73,7 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 │   ├── session-start.ps1      SessionStart — 이전 요약 주입 + push 안 한 commit 알림 + Sync-Memory
 │   ├── pre-compact.ps1        PreCompact — 압축 마커 append + git 스냅샷 additionalContext
 │   ├── post-edit-doc-sync.ps1 PostToolUse(Edit/Write) — 문서 동기화 리마인더
-│   ├── auto-push.ps1          PostToolUse(Bash git commit) — 커밋 후 자동 push
+│   ├── auto-push.ps1          PostToolUse(Bash|PowerShell git commit) — 커밋 후 자동 push
 │   ├── stop-record.ps1        Stop — 진행 상황 append (secret 마스킹)
 │   ├── session-end.ps1        SessionEnd — wip 커밋 + auto push + 요약 파이널
 │   ├── claude-md-size-check.ps1  InstructionsLoaded — CLAUDE.md 줄 제한 검사 ($ClaudeMdLineLimit)
@@ -176,8 +176,9 @@ hook 이벤트 8개 (SessionStart · PreCompact · UserPromptSubmit · PostToolU
 - **중복 reminder 억제**: 같은 매핑(예: `App/*` → `docs/architecture.md`)이 한 턴에 여러 번 trigger 되면, 첫 번째만 컨텍스트 reminder. pending-docs.txt 에는 모든 파일 기록 (Stop hook 에서 다 표시).
 - **워크플로우 phase-drift + 문법 자동가드**: 편집 파일이 `.claude/workflows/*.js` 면 `Test-WorkflowPhaseDrift`(meta.phases ↔ 본문 `phase()` 불일치)와 `Test-WorkflowSyntax`(편집된 파일만 AsyncFunction 파싱으로 SyntaxError 검출)를 즉시 호출해 그 자리에서 경고(런타임/`/harness-status` 호출 전 조기 검출). drift/문법 경고가 있으면 중복 억제와 무관하게 항상 내보냄.
 
-### `PostToolUse(Bash git commit *)` → `auto-push.ps1`
+### `PostToolUse(Bash|PowerShell git commit *)` → `auto-push.ps1`
 - "**커밋 = 푸시 항상 같이**" 규칙 구현
+- **matcher 는 두 셸 도구 모두** — `env.CLAUDE_CODE_USE_POWERSHELL_TOOL=1` 이라 이 프로젝트의 주 셸 도구는 PowerShell 인데 matcher 가 `Bash` 뿐이어서 **PowerShell 로 커밋하면 hook 이 발화하지 않았다**(2026-07-22 발견·수정). `auto-push.ps1` 은 `tool_input.command` 를 읽으므로 두 도구 모두 동일하게 동작 — matcher 만 좁았던 침묵 실패
 - Claude 가 `git commit` 명령을 호출하면 즉시 발동 → `git push` 자동 실행
 - upstream 미설정 시 (`-u origin <branch>` 없이 처음 push) → skip + 사용자에게 알림
 - push 실패 (원격 거부 / 네트워크) → 컨텍스트에 실패 알림
@@ -390,18 +391,24 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 이 컴퓨터의 **C: 드라이브는 보안 정책상 수시로 14일 전 시점으로 복원**됩니다. 기본 Claude Code memory 위치 (`C:\Users\<user>\.claude\projects\<project>\memory\`) 는 복원될 때마다 사라지므로, 본 하네스는 메모리를 프로젝트 트리(E:)로 옮기려 `autoMemoryDirectory` 를 설정했습니다.
 
-**현 실태(2026-06-08 정리)**: `autoMemoryDirectory`(`${CLAUDE_PROJECT_DIR}` 빈 값 전개)는 **무효라 Claude Code 는 기본 위치 C: 에 읽기/쓰기**하지만, **`Sync-Memory` hook 이 매 SessionStart 에 C:↔E:(git)를 보전하므로 split-brain 의 실제 영향은 0** 입니다 — C: 의 최신 메모리는 E:(truth)로 백업되고, C: 복원 시 E:→C: 미러로 자동 복구. 즉 "설정은 무효지만 hook 으로 보전됨" 한 가지 상태이며, 무효함과 해결됨이 모순이 아닙니다.
+**현 실태(2026-07-22 갱신)**: `autoMemoryDirectory` 는 `${CLAUDE_PROJECT_DIR}` 전개 실패로 무효였고, Claude Code 는 기본 위치 C: 를 읽기/쓰기해 왔습니다. 2026-07-22 에 이 키를 **절대경로로 교체**해 런타임이 E: 를 직접 쓰도록 시도했습니다 — 다만 **효력 확인은 다음 세션 시작 시** 시스템 컨텍스트가 안내하는 memory 경로로만 가능합니다(무효로 판명돼도 `Sync-Memory` hook 이 C:↔E: 를 보전하므로 실제 영향은 0, 즉 실패 모드가 안전).
 
-| 항목 | 실태 (2026-06-08) |
+> ⚠ **2026-06-09 세션 기록의 판단은 오류**입니다 — "C: 0파일이니 실제 활성 store 는 E:, system-reminder 경로 안내는 오안내" 라고 결론냈으나, E: 에 파일이 쌓인 건 `Sync-Memory` 가 **백업**한 결과지 런타임이 직접 쓴 증거가 아닙니다. 2026-07-22 세션 컨텍스트가 다시 C: 경로를 memory 위치로 안내해 06-08 판단(설정 무효 → C: 사용)이 옳음이 확인됐습니다. 즉 06-09 시점에도 이미 recall 이 깨져 있었습니다.
+
+| 항목 | 실태 (2026-07-22) |
 |------|------|
-| 실제 auto-memory 위치 | **C:** `C:\Users\<user>\.claude\projects\e--dev-KoEnVue\memory\` (설정 무시됨) |
-| E: `.claude/memory/` | git 추적 백업 — Claude 가 직접 읽진 않음 |
-| `autoMemoryDirectory` 설정 | `${CLAUDE_PROJECT_DIR}/.claude/memory` — 전개 실패로 **무효** |
-| 복원 영향 | ✅ `Sync-Memory` hook 으로 보호 — 복원된 C: 는 매 SessionStart 에 E:(git)에서 복구 |
+| 실제 auto-memory 위치 | **C:** `C:\Users\<user>\.claude\projects\E--dev-KoEnVue\memory\` — 드라이브문자 대소문자는 Claude Code 버전에 따라 변동(2026-07 이전 `e--`, 이후 `E--`). Windows 는 대소문자 무시라 접근엔 무영향 |
+| E: `.claude/memory/` | git 추적 **truth** — 7파일, C: 복원과 무관하게 보존 |
+| `autoMemoryDirectory` 설정 | `E:/dev/KoEnVue/.claude/memory` (절대경로, 2026-07-22 변경 — AUDIT-2 #51 처리) — **효력 미검증**, 다음 세션에서 확인 |
+| 복원 영향 | ✅ `Sync-Memory` hook — 디렉토리째 소실돼도 생성 후 E:→C: 복구 (2026-07-22 수정) |
 
 **임시 구제 (적용됨)**: C: 에만 있던 `os-dependent-accept.md` 를 E: 로 복사 + MEMORY.md 갱신 + commit (소실 방지). 새 메모리 저장 시 수동으로 E: 에도 반영 권장.
 
 **근본 해결 (적용됨 2026-06-08)**: SessionStart hook 의 `Sync-Memory`(`_common.ps1`)가 매 세션 C:↔E: 동기화 — **E: 가 truth**(복원 무관), C: 의 더 새 파일만 E: 로 흡수(복원된 옛 C: 가 최신 E: 를 못 덮게 mtime UTC 비교), 그 뒤 E:→C: 미러로 복원된 C: 를 최신 복구. slug=`e--dev-KoEnVue`·`Copy-Item` mtime 보존 검증 완료, 최초 실행 시 `restored=5` 로 현재 split-brain 해소(C:=E: 해시 일치). `absorbed>0`(C: 에 새 메모리) 시 SessionStart 가 커밋 권장 알림 → 다음 commit 에 E: 백업 포함. 각 파일 복사는 **per-file try/catch** 로 감싸 TOCTOU(`Test-Path` 후 복사 직전 파일 삭제·잠금)나 단일 파일 I/O 오류가 나머지 동기화를 중단시키지 않게 함.
+
+**2026-07-22 재발과 수정 — 디렉토리째 부재 케이스**: 6주 공백 뒤 첫 세션에서 C: 프로젝트 디렉토리가 통째로 새로 생성돼 있었고(`memory` 서브디렉토리 **자체가 부재**), hook 이 복구를 전혀 하지 않았습니다. 원인은 `Get-AutoMemoryDir` 이 `Test-Path` 실패 시 `$null` 을 반환하고 `Sync-Memory` 가 즉시 `return` 하던 **비대칭** — E: 쪽은 없으면 `New-Item` 으로 만들면서 C: 쪽은 포기했습니다. 06-08 검증(`restored=5`)은 C: 디렉토리가 살아있는 *부분* 복원 상태여서 이 경로를 못 봤고, 결과적으로 **복구가 가장 필요한 순간(완전 소실)에 정확히 무동작**했습니다. 그동안 메모리 recall 은 0건이었습니다.
+
+수정 3점: ① `Get-AutoMemoryDir` 은 부재 시에도 **원형 slug 경로를 반환**(존재하는 대소문자 변형이 있으면 그쪽 우선) — `$null` 을 주지 않는 것이 핵심. ② `Sync-Memory` 는 C: 부재 시 **생성**하고(E: 와 대칭) 결과에 `created` 를 포함. ③ `session-start.ps1` 은 `created` 일 때 "C: 복원/초기화 감지" 경고를 띄움(이전엔 `absorbed`/`restored` 가 둘 다 0 이면 **침묵**해서, 무동작과 정상 무변화가 구분되지 않았음). 실측: `created=True`·`restored=7`·`absorbed=0`, E:↔C: **7/7 SHA256 MATCH**, `Copy-Item` mtime 보존 재확인.
 
 ### 영구 보존되는 메모리
 
@@ -424,10 +431,10 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 ### C: 복원 후 복구 흐름 (`Sync-Memory` hook 으로 자동)
 
-1. C: 복원 — C: 의 auto-memory 가 14일 전으로 되돌아가거나 소실
+1. C: 복원 — C: 의 auto-memory 가 14일 전으로 되돌아가거나, **디렉토리째 소실**(프로젝트 디렉토리 전체가 새로 생성되는 경우 포함 — 2026-07-22 실제 발생)
 2. (다른 장비 작업분 있으면) `git pull` 로 E: 백업 최신화
-3. `claude` 실행 → **SessionStart 의 `Sync-Memory` 가 E:(truth) → C: 미러로 자동 복구** (옛 C: 는 mtime 비교로 흡수 안 됨 → 최신 E: 안전)
-4. SessionStart hook 컨텍스트와 함께 사용자 프로필/규칙 복원
+3. `claude` 실행 → **SessionStart 의 `Sync-Memory` 가 E:(truth) → C: 미러로 자동 복구** — 디렉토리가 없으면 **생성부터** 하고 복구 (옛 C: 는 mtime 비교로 흡수 안 됨 → 최신 E: 안전)
+4. SessionStart hook 컨텍스트와 함께 사용자 프로필/규칙 복원. `created=$true` 면 "C: 복원/초기화 감지" 경고가 함께 표시됨 — 복구 건수를 확인할 것
 
 ### 사라지지만 docs/sessions/ 가 보완하는 것
 

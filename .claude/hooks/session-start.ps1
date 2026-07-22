@@ -14,8 +14,11 @@ $lines.Add('')
 # 메모리 split-brain 동기화 (§12): E:(git truth, C: 복원 무관) ↔ C:(Claude 작업 사본).
 # 복원된 옛 C: 는 흡수 안 되고 최신 E: 로 복구됨. absorbed>0 = 새 메모리가 E: 로 백업됨(커밋 대상).
 $memSync = Sync-Memory
-if ($memSync.absorbed -gt 0 -or $memSync.restored -gt 0) {
+if ($memSync.absorbed -gt 0 -or $memSync.restored -gt 0 -or $memSync.created) {
     $lines.Add("## 메모리 동기화 (C:↔E:)")
+    if ($memSync.created) {
+        $lines.Add("⚠ C: auto-memory 디렉토리가 없어 새로 생성했습니다 — **C: 복원/초기화 감지**. 아래 복구 건수를 확인하세요.")
+    }
     $lines.Add("C:→E: $($memSync.absorbed)건 흡수, E:→C: $($memSync.restored)건 복구. absorbed>0 이면 git 백업 위해 커밋 필요.")
     $lines.Add('')
 }

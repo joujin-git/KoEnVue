@@ -172,15 +172,21 @@ function Invoke-Push {
 }
 
 # Claude Code 기본 auto-memory 위치 (C:) — autoMemoryDirectory(${CLAUDE_PROJECT_DIR} 전개 실패)가
-# 무시될 때 실제 읽기/쓰기 위치. slug = 프로젝트 절대경로의 드라이브문자 소문자 + ':' '\' → '-' 치환
-# (E:\dev\KoEnVue → e--dev-KoEnVue). 디렉토리 없으면 $null (호출부가 안전하게 skip).
+# 무시될 때 실제 읽기/쓰기 위치. slug = 프로젝트 절대경로의 ':' '\' → '-' 치환.
+# 드라이브문자 대소문자는 Claude Code 버전에 따라 달랐다 — 2026-07 이전 소문자(e--dev-KoEnVue),
+# 이후 원형 유지(E--dev-KoEnVue). 실재하는 변형을 우선 반환하고, 어느 쪽도 없으면 원형 slug 경로를
+# 반환한다. **부재 시 $null 을 주지 않는 것이 핵심** — C: 복원 직후엔 디렉토리가 없는 게 정상이고
+# 그때가 E:→C: 복구가 가장 필요한 순간이라, $null 로 skip 하면 hook 이 무동작한다(2026-07-22 실측).
 function Get-AutoMemoryDir {
     $root = Get-ProjectRoot
     $slug = $root -replace '[:\\]', '-'
-    if ($slug -match '^([A-Za-z])(.*)$') { $slug = $matches[1].ToLower() + $matches[2] }
-    $dir = Join-Path (Join-Path $env:USERPROFILE '.claude\projects') (Join-Path $slug 'memory')
-    if (Test-Path $dir) { return $dir }
-    return $null
+    $lower = if ($slug -match '^([A-Za-z])(.*)$') { $matches[1].ToLower() + $matches[2] } else { $slug }
+    $base = Join-Path $env:USERPROFILE '.claude\projects'
+    foreach ($s in @($slug, $lower)) {
+        $dir = Join-Path (Join-Path $base $s) 'memory'
+        if (Test-Path $dir) { return $dir }
+    }
+    return (Join-Path (Join-Path $base $slug) 'memory')
 }
 
 # Memory split-brain 동기화 (docs/harness.md §12). E:(.claude/memory, git-tracked, C: 복원 대상 아님)
@@ -188,12 +194,19 @@ function Get-AutoMemoryDir {
 #   (1) C: 의 '더 새로운' 파일만 E: 로 흡수 — 복원된 옛 C: 가 최신 E: 를 못 덮게 mtime(UTC) 비교.
 #   (2) E: → C: 미러 — 복원된 C: 를 최신으로 복구, E: 에만 있는 것도 C: 로.
 # 삭제는 동기화 안 함(추가/수정만). Copy-Item 은 mtime 보존 → 정상 세션엔 (2)가 무동작.
-# 반환: @{ absorbed; restored }. absorbed>0 이면 E: 변경됨 → 호출부가 commit 판단.
+# C: 디렉토리 부재는 skip 사유가 아니라 **복구 대상** — C: 복원/초기화 직후의 정상 상태이므로
+# E: 쪽과 대칭으로 생성한다(2026-07-22: 부재 시 skip 하던 탓에 복원 후 복구가 통째로 불발).
+# 반환: @{ absorbed; restored; created }. absorbed>0 이면 E: 변경됨 → 호출부가 commit 판단.
+# created=$true 면 C: 가 복원/초기화된 것 → 호출부가 사용자에게 알린다.
 function Sync-Memory {
     $cDir = Get-AutoMemoryDir
-    if (-not $cDir) { return @{ absorbed = 0; restored = 0 } }
     $eDir = Join-Path (Get-ProjectRoot) '.claude\memory'
     if (-not (Test-Path $eDir)) { New-Item -ItemType Directory -Path $eDir -Force | Out-Null }
+    $created = $false
+    if (-not (Test-Path $cDir)) {
+        try { New-Item -ItemType Directory -Path $cDir -Force | Out-Null; $created = $true }
+        catch { return @{ absorbed = 0; restored = 0; created = $false } }
+    }
     $absorbed = 0; $restored = 0
     Get-ChildItem -Path $cDir -Filter '*.md' -File -ErrorAction SilentlyContinue | ForEach-Object {
         try {
@@ -213,7 +226,7 @@ function Sync-Memory {
             }
         } catch { }
     }
-    return @{ absorbed = $absorbed; restored = $restored }
+    return @{ absorbed = $absorbed; restored = $restored; created = $created }
 }
 
 # Mask common secret patterns before persisting transcript text to git-tracked files

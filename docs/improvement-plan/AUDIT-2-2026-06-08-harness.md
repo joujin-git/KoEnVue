@@ -48,7 +48,7 @@
 | budget 비대칭 (#4) | 비용가드 | release/codebase/harness/design 4개에 hard cap + 종료 note 에 `budget.spent()` |
 
 ### Medium
-- 📋 autoMemoryDirectory 무실효 잔존 — Sync-Memory 가 보전 중, 키 자체 정리(절대경로 테스트 or 제거)는 다음
+- ✅ autoMemoryDirectory 무실효 잔존 — **2026-07-22 처리**: 절대경로(`E:/dev/KoEnVue/.claude/memory`)로 교체, 효력은 다음 세션의 memory 경로 안내로 검증(무효여도 Sync-Memory 가 보전 → 실패 모드 안전). 같은 세션에 **Sync-Memory 자체의 치명 결함 발견·수정** — C: 디렉토리째 부재 시 `Get-AutoMemoryDir`→`$null`→skip 으로 복구 불발(= 복구가 가장 필요한 순간에 무동작). 상세 [harness.md §12](../harness.md)
 - 📋 hook pwsh 콜드 오버헤드(~381ms)·auto-push every-Bash — matcher 정규식 끌어올림/timeout 축소/_common 분리
 - 📋 reviewer §0 invariant '5 위치' 박제 stale — 전수 grep 단일화로 격하
 - 📋 문서 동기화 매핑 4곳 중복(docs-keeper/reviewer/post-edit/harness) — 단일 진실원 포인터

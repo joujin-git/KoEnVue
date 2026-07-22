@@ -4,3 +4,4 @@
 - [Workflow rules](feedback_workflow_rules.md) — 빌드 = debug + release publish 항상 둘 다, 커밋 = `git push` 까지 항상 같이 (auto-push hook).
 - [OS 의존 버그 감수](os-dependent-accept.md) — 제어 불가 OS(Win32/셸) 동작에 의존하는 버그는 무리한 수정보다 감수 선호.
 - [도구 제약 — 감수 전 실험](tool-limit-verify-first.md) — 제어 가능한 제약(도구/SDK/설정)은 "못 한다" 단정 전 저비용 실험으로 재확인. permissions.deny·정적게이트·PostToolUse 자동기록 사례.
+- [안전망은 실패 상태에서 검증](safety-net-verify-in-failure-state.md) — hook·복구 로직은 정상 상태 성공이 아니라 발동 조건(실패 상태)을 만들어 end-to-end 발화 확인. 침묵 실패 금지. Sync-Memory 6주 무동작 사례.
