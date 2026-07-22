@@ -398,7 +398,7 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 | 항목 | 실태 (2026-07-22) |
 |------|------|
 | 실제 auto-memory 위치 | **C:** `C:\Users\<user>\.claude\projects\E--dev-KoEnVue\memory\` — 드라이브문자 대소문자는 Claude Code 버전에 따라 변동(2026-07 이전 `e--`, 이후 `E--`). Windows 는 대소문자 무시라 접근엔 무영향 |
-| E: `.claude/memory/` | git 추적 **truth** — 7파일, C: 복원과 무관하게 보존 |
+| E: `.claude/memory/` | git 추적 **truth** — 9파일(메모리 8 + `MEMORY.md` 인덱스, 2026-07-22 기준), C: 복원과 무관하게 보존 |
 | `autoMemoryDirectory` 설정 | `E:/dev/KoEnVue/.claude/memory` (절대경로, 2026-07-22 변경 — AUDIT-2 #51 처리) — **효력 미검증**, 다음 세션에서 확인 |
 | 복원 영향 | ✅ `Sync-Memory` hook — 디렉토리째 소실돼도 생성 후 E:→C: 복구 (2026-07-22 수정) |
 
@@ -412,12 +412,16 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 ### 영구 보존되는 메모리
 
-> 표기 주의 — 아래 이름은 wikilink/표시용 **정규화 형태(hyphen)** 이고, **실제 파일은 underscore**(`feedback_harness_design.md`, `user_role.md`, `feedback_workflow_rules.md`, `feedback_version_format.md`). Claude Code 의 memory wikilink 가 둘을 정규화해 동일시하므로 본문은 hyphen 으로 적되 디스크 파일명은 underscore 다(`os-dependent-accept.md` 만 hyphen 실파일).
+> 표기 주의 — 아래 이름은 wikilink/표시용 **정규화 형태(hyphen)** 이고, 초기 4개만 **실제 파일이 underscore**(`feedback_harness_design.md`, `user_role.md`, `feedback_workflow_rules.md`, `feedback_version_format.md`). Claude Code 의 memory wikilink 가 둘을 정규화해 동일시하므로 본문은 hyphen 으로 적는다. 이후 추가된 메모리는 실파일도 hyphen 이다.
 
 - **`user-role`** — 사용자 프로필 (비개발자 + 바이브 코딩)
 - **`feedback-harness-design`** — 하네스 디자인 결정
 - **`feedback-workflow-rules`** — 빌드 = 둘 다, 커밋 = push 까지
 - **`feedback-version-format`** — 4-part 버전 형식
+- **`os-dependent-accept`** — 제어 불가 OS(Win32/셸) 동작 의존 버그는 무리한 수정보다 감수
+- **`tool-limit-verify-first`** — 제어 **가능한** 제약은 "못 한다" 단정 전 저비용 실험으로 재확인
+- **`safety-net-verify-in-failure-state`** — hook·복구 로직은 발동 조건(실패 상태)을 만들어 end-to-end 검증
+- **`verify-load-bearing-claims`** — 권고를 떠받치는 정량 주장(서브에이전트 실측·코드 주석)은 메인이 조건 바꿔 재현 (2026-07-22 추가)
 - **추가 메모리** — 새 결정/규칙을 Claude 가 자동 또는 사용자가 명시적으로 저장
 
 ### ⚠️ 주의 — 민감 정보 저장 금지
