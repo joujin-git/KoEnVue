@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Internal
+
+- **`PositionUpdated` 디버그 로그에 창 식별자(`hwnd`/`class`) 추가 + `Logger.IsEnabled` 레벨 가드 (2026-07-22)** — **사용자 가시 동작·렌더 결과·config 키 변화 0** (진단 로그 전용). 한 프로세스가 top-level 창을 여러 개 소유하는 앱(파일 관리자 + 내장 뷰어, 편집기 + 찾기 대화상자 등)에서 기존 로그는 `process=` 만 남겨, 인디 위치가 두 좌표를 오가는 현상이 **정상적인 창 전환인지 결함인지 구분 불가**했다([PR-26](docs/improvement-plan/PR-26-user-hidden-unhide-filter-bypass.md) 조사에서 진단이 막힌 지점). [`Program.cs`](Program.cs) `HandlePositionUpdated` 의 디버그 라인에 `hwnd=0x…`·`class=…` 를 추가. `WindowProcessInfo.GetClassName` 이 P/Invoke 이고 보간 문자열 합성은 호출 사이트 책임(`ILogSink` 계약)이라 [`Core/Logging/Logger.cs`](Core/Logging/Logger.cs) 에 `IsEnabled(LogLevel)` 를 신설해 가드로 감쌌다 — 레벨이 꺼져 있으면 조회 자체가 일어나지 않는다. 같은 가드를 `TryHandleFilter` 의 `Filter HIDE deferred` 라인에도 적용: 감지 스레드 핫패스(80ms 폴링)에서 `GetClassName` 을 로그 레벨과 무관하게 매번 평가하던 기존 비용 제거. dotnet build 0/0 + AOT publish 경고 0 + 90/90 PASS + P1–P6 invariant 위반 0.
+
 ## [0.9.9.6] — 2026-06-08 — UWP 포커스 폴백 버그 수정 + 내부 견고성 정리
 
 ### Fixed

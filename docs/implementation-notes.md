@@ -286,6 +286,10 @@ Path 3 (default position) is not clamped because `GetDefaultPosition` already co
 
 Win11 reuses a single HWND (e.g., `SearchHost 0x30254`) for both Start Menu and Search modes, distinguishing them only by rect. `DetectionLoop` caches `lastSystemInputFrame` and treats any DWM frame change on the same HWND as a foreground change, re-posting `WM_POSITION_UPDATED`. `HandlePositionUpdated` has a `sysInput` branch that re-resolves position even when `hwndForeground == _lastForegroundHwnd`, so Start Menu ↔ Search transitions re-anchor the indicator.
 
+### `PositionUpdated` diagnostic fields
+
+The debug line carries `hwnd=0x…` and `class=…` next to the process name. One process can own several top-level windows (a file manager and its built-in viewer, an editor and its find dialog), so the process name alone cannot tell which window the indicator anchored to — position oscillating between two coordinates under a single process name is indistinguishable from a legitimate window switch. `GetClassName` is a P/Invoke, so the call site sits behind `Logger.IsEnabled(LogLevel.Debug)`; the same guard was applied to the `Filter HIDE deferred` line, which had been paying that lookup on every detection poll regardless of the configured level.
+
 ### System input ESC-dismissal detection
 
 시스템 입력 프로세스(`StartMenuExperienceHost`, `SearchHost`, `SearchApp`)는 `SystemFilter` 블랙리스트에 의도적으로 포함되지 않으므로(인디케이터를 표시해야 하므로), 이들 UI가 ESC 등으로 닫힐 때 인디를 숨기는 별도 메커니즘이 `DetectionLoop`에 있다. 두 가지 닫힘 패턴이 경험적으로 확인됨:

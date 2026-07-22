@@ -50,6 +50,16 @@ internal static class Logger
     public static void SetLevel(LogLevel level) => _logLevel = level;
 
     /// <summary>
+    /// 현재 레벨에서 <paramref name="level"/> 이 실제로 기록되는지.
+    /// <para>
+    /// 보간 문자열 합성은 호출 사이트 책임(<see cref="ILogSink"/> 계약)이라, 인자 계산이
+    /// <b>비싼</b> 호출 사이트 — 예: <c>GetClassName</c> 같은 P/Invoke 조회 — 는 이 가드로
+    /// 감싸 레벨이 꺼져 있을 때의 비용을 없앤다. 인자가 필드/속성 읽기뿐이면 불필요하다.
+    /// </para>
+    /// </summary>
+    public static bool IsEnabled(LogLevel level) => level >= _logLevel;
+
+    /// <summary>
     /// 파일 로깅 초기화. 재초기화 안전 (기존 drain 스레드 종료 후 재시작).
     /// <paramref name="enabled"/>이 true이면 drain 스레드 시작, false이면 종료.
     /// <paramref name="logFilePath"/>가 null 또는 빈 문자열이면

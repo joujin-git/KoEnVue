@@ -578,7 +578,12 @@ internal static partial class Program
         {
             _indicatorVisible = true;
             var (x, y) = GetAppPosition();
-            Logger.Debug($"PositionUpdated: process={_currentProcessName}, pos=({x},{y}), saved={_config.IndicatorPositions.Count}");
+            // hwnd/class 를 함께 남긴다 — 한 프로세스가 top-level 창을 여러 개 쓰는 앱(파일 관리자의
+            // 내장 뷰어 등)에서 프로세스명만으로는 어느 창에 인디가 붙었는지 구분할 수 없어 진단이 막힌다.
+            // GetClassName 은 P/Invoke 라 레벨 가드로 감싼다 (Logger.IsEnabled 계약 참조).
+            if (Logger.IsEnabled(LogLevel.Debug))
+                Logger.Debug($"PositionUpdated: process={_currentProcessName}, hwnd=0x{hwndForeground.ToInt64():X}, " +
+                             $"class={WindowProcessInfo.GetClassName(hwndForeground)}, pos=({x},{y}), saved={_config.IndicatorPositions.Count}");
             // PR-13: per-app resolved (theme/색/투명도/폰트/라벨 등 시각 override 반영)
             Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
         }
@@ -1369,7 +1374,9 @@ internal static partial class Program
             // 현 인디 상태를 유지하고, 다음 틱이 진동의 반대 위상이면 Show 가 자연 복원한다.
             if (state.FilteredStreak < DefaultConfig.HideHysteresisPolls)
             {
-                Logger.Debug($"Filter HIDE deferred (streak={state.FilteredStreak}/{DefaultConfig.HideHysteresisPolls}, fgClass={WindowProcessInfo.GetClassName(hwndForeground)}, hwndFocus=0x{hwndFocus.ToInt64():X})");
+                // 감지 스레드 핫패스 — GetClassName(P/Invoke) 가 레벨과 무관하게 매 폴링 평가되던 것을 가드.
+                if (Logger.IsEnabled(LogLevel.Debug))
+                    Logger.Debug($"Filter HIDE deferred (streak={state.FilteredStreak}/{DefaultConfig.HideHysteresisPolls}, fgClass={WindowProcessInfo.GetClassName(hwndForeground)}, hwndFocus=0x{hwndFocus.ToInt64():X})");
                 appConfig = default!;
                 return true;
             }
