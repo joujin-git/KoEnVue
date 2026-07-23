@@ -735,8 +735,8 @@ internal static partial class Program
         if (_config.PositionMode == PositionMode.Window)
         {
             // 창 기준 모드: 절대좌표 → 창 기준 상대 오프셋으로 변환 후 저장.
-            // 상대 오프셋은 창 프레임 기준이므로 work area 클램프는 적용하지 않는다
-            // (창 밖 좌표라도 읽기 경로의 ClampToVisibleArea 가 표시 시점에 보정).
+            // 상대값은 창 프레임 기준이므로 저장 전 work-area 클램프를 하지 않는다
+            // (클램프하면 오프셋이 오염됨). 표시용 절대좌표만 Show 직전에 클램프.
             if (_currentProcessName.Length > 0)
             {
                 RelativePositionConfig? rel =
@@ -775,6 +775,9 @@ internal static partial class Program
                 Logger.Debug($"Saved indicator position for {_currentProcessName}: ({x}, {y})");
             }
         }
+        // Window 모드: 상대 저장은 드래그 원좌표 기준 유지, Show 만 화면 안으로.
+        // Fixed 모드는 위에서 이미 클램프됨(idempotent).
+        (x, y) = ClampToVisibleArea(x, y);
         // 새 위치의 모니터 DPI로 리소스 재생성
         Overlay.Show(x, y, _lastImeState, ResolveCurrent());
     }
@@ -894,10 +897,11 @@ internal static partial class Program
             var (x, y) = Overlay.ResolveRelativePosition(frame, relConfig, dpiScale);
             return ClampToVisibleArea(x, y);
         }
-        // 2. 기본 상대 위치
-        return Overlay.GetDefaultRelativePosition(
+        // 2. 기본 상대 위치 (창 프레임 기준 — 창이 화면 가장자리면 work area 밖일 수 있어 클램프)
+        var def = Overlay.GetDefaultRelativePosition(
             _lastForegroundHwnd, _currentProcessName,
             _config.DefaultIndicatorPositionRelative);
+        return ClampToVisibleArea(def.x, def.y);
     }
 
     /// <summary>RECT 의 4 필드를 모두 비교해 동등 여부 판정.</summary>
@@ -905,9 +909,10 @@ internal static partial class Program
         a.Left == b.Left && a.Top == b.Top && a.Right == b.Right && a.Bottom == b.Bottom;
 
     /// <summary>
-    /// 저장된 인디케이터 좌표를 현재 살아있는 모니터의 작업 영역 안으로 클램프.
-    /// 모니터 제거 / 해상도 변경 / DPI 변경 후 저장 위치가 화면 밖이 될 수 있는 문제를 방어.
-    /// 저장 값 자체는 덮어쓰지 않아서 원 모니터 복귀 시 원 위치가 복원된다.
+    /// 표시용 절대좌표를 현재 살아있는 모니터의 작업 영역 안으로 클램프.
+    /// 저장 좌표 읽기 · Window 기본 resolve · 드래그 종료 Show 등에서 사용.
+    /// 모니터 제거 / 해상도 변경 / DPI 변경 후 화면 밖이 될 수 있는 문제를 방어.
+    /// Fixed 저장 값 자체는 덮어쓰지 않아서 원 모니터 복귀 시 원 위치가 복원된다.
     /// </summary>
     private static (int x, int y) ClampToVisibleArea(int x, int y)
     {

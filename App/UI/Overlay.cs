@@ -232,8 +232,8 @@ internal static class Overlay
     public static (int x, int y) GetDefaultPosition(IntPtr hwndForeground, string processName)
     {
         IntPtr hMonitor = (hwndForeground != IntPtr.Zero)
-            ? User32.MonitorFromWindow(hwndForeground, Win32Constants.MONITOR_DEFAULTTOPRIMARY)
-            : User32.MonitorFromWindow(_engine.Hwnd, Win32Constants.MONITOR_DEFAULTTOPRIMARY);
+            ? User32.MonitorFromWindow(hwndForeground, Win32Constants.MONITOR_DEFAULTTONEAREST)
+            : User32.MonitorFromWindow(_engine.Hwnd, Win32Constants.MONITOR_DEFAULTTONEAREST);
         RECT workArea = DpiHelper.GetWorkArea(hMonitor);
 
         if (DefaultConfig.IsSystemInputProcess(processName)

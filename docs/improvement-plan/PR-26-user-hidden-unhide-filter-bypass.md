@@ -148,7 +148,7 @@ state.LastFiltered = true;                          // ← 조건문 바깥. 항
 | smoke (UserHidden 해제 @ `Shell_TrayWnd`) | `Forced show skipped on Shell_TrayWnd` 로그 확인 |
 | commit | `d615dcc` → main push |
 
-## 이번 PR 범위 밖 · 기록 유지 — 토탈 커맨더 인디 위치 진동
+## 이번 PR 범위 밖 · 아카이브(미추진) — 토탈 커맨더 인디 위치 진동
 
 `TOTALCMD64` 사용 중 메인 인디 위치가 두 좌표를 **자동으로 왕복**한다:
 
@@ -167,7 +167,7 @@ state.LastFiltered = true;                          // ← 조건문 바깥. 항
 - `TLister`(F3 내장 뷰어)가 필터에 걸린 기록 1회(`streak=1/3`, `hwndFocus` 정상). 사용자 확인 결과 **전체화면 아님** → 조건 7 배제. 창 생성 순간의 조건 2(`!IsWindowVisible`) 또는 조건 3(가상 데스크톱 미등록) 추정. 히스테리시스가 흡수해 실제 숨김으로는 이어지지 않음.
 - 커서 인디케이터를 켠 뒤 왕복 간격이 1~2초 → 0.75초로 짧아짐(**상관만 확인, 인과 미검증**).
 
-**진단 로그**: `PositionUpdated` 에 `hwnd`/`class` 추가는 **c359171 완료**(CHANGELOG Internal). 진동 원인 규명·수정은 **본 PR 범위 밖** — 기록만 유지. PR-27 캐럿 트윈·예측 외삽·Tier-3 관찰도 동일(작업 목록 제외).
+**진단 로그**: `PositionUpdated` 에 `hwnd`/`class` 추가는 **c359171 완료**(CHANGELOG Internal). 진동 원인 규명·수정은 **본 PR 범위 밖**이며, 2026-07-23 사용자 결정으로 **작업 목록에서 제거·미추진**. PR-27 캐럿 트윈·예측 외삽·Tier-3 관찰도 동일.
 
 ## 코드 좌표
 
