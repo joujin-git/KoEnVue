@@ -80,8 +80,12 @@ internal static partial class DefaultConfig
     /// <summary>확대 -> 원래 크기 복귀 시간 — <see cref="AppConfig.HighlightDurationMs"/> 의 디폴트.</summary>
     public const int HighlightDurationMs = 300;
 
-    /// <summary>애니메이션 프레임 간격 (~60fps)</summary>
-    public const uint AnimationFrameMs = 16;
+    /// <summary>
+    /// 애니메이션 프레임 간격.
+    /// SetTimer uElapse 는 ~15.625ms 격자로 양자화되므로 15 → 실배달 ~15.6ms(≈64fps),
+    /// 16 → ~30.8ms(≈32fps). 근거: docs/dev-notes/2026-07-22-settimer-tick-quantization.md
+    /// </summary>
+    public const uint AnimationFrameMs = 15;
 
     /// <summary>CAPS LOCK 폴링 간격 (메인 스레드 WM_TIMER 주기)</summary>
     public const uint CapsLockPollMs = 200;
@@ -327,8 +331,12 @@ internal static partial class DefaultConfig
     /// <summary>cursor 인디 마우스 모션 폴링 주기 (정지 검출 모드 — 50ms).</summary>
     public const uint   CursorMotionPollMs         = 50;
 
-    /// <summary>cursor 인디 마우스 모션 폴링 주기 (항상 표시 모드 — 16ms ≈ 60fps 추종).</summary>
-    public const uint   CursorAlwaysPollMs         = 16;
+    /// <summary>
+    /// cursor 인디 마우스 모션 폴링 주기 (항상 표시 모드).
+    /// SetTimer uElapse 양자화: 15 → 실배달 ~15.6ms(≈64fps), 16 → ~30.8ms(≈32fps).
+    /// 근거: docs/dev-notes/2026-07-22-settimer-tick-quantization.md
+    /// </summary>
+    public const uint   CursorAlwaysPollMs         = 15;
 
     /// <summary>
     /// cursor 인디 HWND_TOPMOST 재적용 주기 (ms). 항상 표시 모드 + 정지 검출 모드(가시 상태)
