@@ -159,7 +159,7 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — 101 
 | `default_indicator_position_relative.delta_y` | int | `-58` | 앵커에서 Y 오프셋 (논리 px) |
 | `snap_to_windows` | bool | `true` | 드래그 중 다른 창 엣지 + 모니터 작업영역 엣지에 자석처럼 붙음 |
 | `snap_gap_px` | int | `10` | 0 ~ 10 | 창 엣지 스냅 시 간격 (논리 px). 0 = 밀착, 양수 = 경계선 겹침 방지 여백. 화면 엣지에는 적용 안 됨 |
-| `drag_modifier` | enum | `"none"` | `none` / `ctrl` / `alt` / `ctrl_alt` | 드래그 개시 게이트. `none` = 항상 드래그 / 모디파이어 = 해당 키를 정확히 일치하는 조합으로 누른 상태에서만 개시 (크로스 프로세스 투과는 미구현) |
+| `drag_modifier` | enum | `"none"` | `none` / `ctrl` / `alt` / `ctrl_alt` | 드래그 개시 게이트. 짧은 좌클릭은 항상 일시 숨김(포커스·IME 변경 시 재표시). `none` = 임계 초과 시 드래그 / 모디파이어 = 해당 키를 정확히 누른 채 임계 초과 시에만 드래그 |
 
 ## 커서 추종 인디케이터 (Cursor Indicator)
 

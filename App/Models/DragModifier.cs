@@ -7,15 +7,15 @@ namespace KoEnVue.App.Models;
 /// config.json의 "drag_modifier" 키에 대응.
 ///
 /// <para>
-/// None = 기본 동작 (모든 좌클릭이 드래그 개시).
-/// Ctrl/Alt/CtrlAlt = 해당 키를 정확히 일치하는 조합으로 누른 상태에서만 드래그 개시.
-/// 키를 안 누른 상태의 클릭은 오버레이가 소비하며 반응 없음 (아래 창으로 전달되지 않음).
+/// 좌클릭 동작(2026-07): 짧은 좌클릭 = 일시 숨김(포커스·IME 변경 시 재표시).
+/// 마우스 이동이 시스템 드래그 임계(<c>SM_CXDRAG</c>/<c>SM_CYDRAG</c>) 이상일 때만
+/// 본 게이트를 검사해 네이티브 드래그(<c>HTCAPTION</c>)로 승격한다.
 /// </para>
 ///
 /// <para>
-/// 크로스 프로세스 클릭 투과는 <c>WS_EX_TRANSPARENT</c> 확장 스타일이 필요하지만,
-/// 이를 동적으로 토글하려면 WM_TIMER 폴러 또는 WH_KEYBOARD_LL 훅이 필요해 런타임 비용·
-/// NativeAOT 리스크 대비 이득이 작다고 판단, 본 옵션은 "드래그 개시 게이트" 용도로 한정.
+/// None = 임계 초과 시 항상 드래그 승격.
+/// Ctrl/Alt/CtrlAlt = 해당 키를 정확히 일치하는 조합으로 누른 상태에서만 승격.
+/// 키를 안 누른 채 임계만 넘기면 드래그하지 않고, 버튼 업 시 짧은 클릭과 같이 일시 숨김.
 /// </para>
 ///
 /// <para>
@@ -26,7 +26,7 @@ namespace KoEnVue.App.Models;
 [JsonConverter(typeof(JsonStringEnumConverter<DragModifier>))]
 internal enum DragModifier
 {
-    /// <summary>없음 — 기존 동작 (기본값).</summary>
+    /// <summary>없음 — 임계 초과 시 항상 드래그 (기본값).</summary>
     [JsonStringEnumMemberName("none")]
     None,
 

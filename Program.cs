@@ -48,6 +48,17 @@ internal static partial class Program
     private static volatile ImeState _lastImeState = ImeState.English;
     private static volatile bool _indicatorVisible;
 
+    // 메인 인디 좌클릭 일시 숨김 — UserHidden 과 무관. 포커스 변경 / 한·영(IME) 변경 시
+    // HandleFocusChanged·HandleImeStateChanged 가 클리어하며 재표시. 메인 스레드 전용.
+    private static bool _clickDismissed;
+
+    // 오버레이 좌버튼 캡처 중 드래그 승격 상태 — 메인 스레드 전용 (WndProc).
+    // pending=true 이면 LBUTTONDOWN 이후 업/승격 대기. promoted=true 이면 HTCAPTION 드래그로 넘김.
+    private static bool _overlayDragPending;
+    private static bool _overlayDragPromoted;
+    private static int _overlayDragOriginX;
+    private static int _overlayDragOriginY;
+
     // 포그라운드 윈도우 + 앱별 위치 (메인 스레드 전용)
     private static IntPtr _lastForegroundHwnd;
     private static string _currentProcessName = "";
@@ -462,19 +473,47 @@ internal static partial class Program
                     User32.PostQuitMessage(0);
                 return IntPtr.Zero;
 
-            // === 오버레이 드래그 ===
+            // === 오버레이 드래그 / 좌클릭 일시 숨김 ===
+            // HTCLIENT 고정 → SetCapture 후 임계(SM_CX/CYDRAG) 이상 + drag_modifier 통과 시
+            // WM_NCLBUTTONDOWN/HTCAPTION 승격(기존 ENTER/EXIT/MOVING 재사용). 미만이면 업에서
+            // 일시 숨김(_clickDismissed) — 포커스·IME 변경 시 재표시.
 
             case Win32Constants.WM_NCHITTEST:
                 if (hwnd == _hwndOverlay)
+                    return Win32Constants.HTCLIENT;
+                return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
+
+            case Win32Constants.WM_LBUTTONDOWN:
+                if (hwnd == _hwndOverlay)
                 {
-                    // DragModifier=None: 항상 드래그 가능 (기본 동작, 모든 클릭 소비).
-                    // 모디파이어 설정 시 해당 키가 눌려 있을 때만 HTCAPTION 반환 → 드래그 시작.
-                    // 안 눌렸으면 HTCLIENT 반환 → 오버레이가 클릭을 받지만 WM_LBUTTONDOWN 핸들러가 없어
-                    // 무반응 (클릭 소비만 함). 크로스 프로세스 투과는 WS_EX_TRANSPARENT 가 필요한데
-                    // 그 토글을 관리하는 메커니즘(타이머·훅)을 들이지 않기로 결정 → 드래그 게이트 용도만.
-                    return IsDragModifierPressed(_config.DragModifier)
-                        ? Win32Constants.HTCAPTION
-                        : Win32Constants.HTCLIENT;
+                    BeginOverlayPointerTrack();
+                    return IntPtr.Zero;
+                }
+                return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
+
+            case Win32Constants.WM_MOUSEMOVE:
+                if (hwnd == _hwndOverlay && _overlayDragPending && !_overlayDragPromoted)
+                {
+                    TryPromoteOverlayDrag(hwnd);
+                    return IntPtr.Zero;
+                }
+                return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
+
+            case Win32Constants.WM_LBUTTONUP:
+                if (hwnd == _hwndOverlay && _overlayDragPending)
+                {
+                    EndOverlayPointerTrack(dismissIfClick: !_overlayDragPromoted);
+                    return IntPtr.Zero;
+                }
+                return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
+
+            case Win32Constants.WM_CAPTURECHANGED:
+                if (hwnd == _hwndOverlay && _overlayDragPending && !_overlayDragPromoted)
+                {
+                    // 승격 경로의 ReleaseCapture 가 여기로 오므로 promoted 면 유지.
+                    // 그 외 캡처 상실(Alt-Tab 등)은 pending 만 리셋 — 숨김 안 함.
+                    _overlayDragPending = false;
+                    return IntPtr.Zero;
                 }
                 return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
 
@@ -518,6 +557,7 @@ internal static partial class Program
     /// </summary>
     private static void ShowIndicatorAtForeground(ImeState state, AppConfig resolved, bool imeChanged)
     {
+        _clickDismissed = false;
         _indicatorVisible = true;
         var (x, y) = GetAppPosition();
         Animation.TriggerShow(x, y, state, resolved, imeChanged);
@@ -540,8 +580,11 @@ internal static partial class Program
         if (_lastForegroundHwnd == IntPtr.Zero) return;
 
         // PR-13: DisplayMode / EventTriggers / 렌더 인자 모두 per-app resolved 사용.
+        // 좌클릭 일시 숨김(_clickDismissed) 중이면 EventTriggers 와 무관하게 한·영 변경으로 재표시.
         AppConfig resolved = ResolveCurrent();
-        if (resolved.DisplayMode == DisplayMode.Always || resolved.EventTriggers.OnImeChange)
+        if (_clickDismissed
+            || resolved.DisplayMode == DisplayMode.Always
+            || resolved.EventTriggers.OnImeChange)
             ShowIndicatorAtForeground(newState, resolved, imeChanged: true);
     }
 
@@ -551,7 +594,10 @@ internal static partial class Program
         if (_lastForegroundHwnd == IntPtr.Zero) return;
 
         AppConfig resolved = ResolveCurrent();
-        if (resolved.DisplayMode == DisplayMode.Always || resolved.EventTriggers.OnFocusChange)
+        // 좌클릭 일시 숨김 중이면 EventTriggers 와 무관하게 포커스 변경으로 재표시.
+        if (_clickDismissed
+            || resolved.DisplayMode == DisplayMode.Always
+            || resolved.EventTriggers.OnFocusChange)
             ShowIndicatorAtForeground(_lastImeState, resolved, imeChanged: false);
     }
 
@@ -568,6 +614,10 @@ internal static partial class Program
             _currentProcessName = WindowProcessInfo.GetProcessName(hwndForeground);
 
         if (_config.UserHidden) return;
+
+        // 좌클릭 일시 숨김은 포커스/IME 경로에서만 해제 — POSITION_UPDATED 의 wasHidden
+        // 재표시로 즉시 되살아나지 않게 한다 (창 이동 종료 등).
+        if (_clickDismissed) return;
 
         // 시스템 입력 프로세스(시작 메뉴 ↔ 검색 창)는 하나의 HWND를 모드별로 재사용하면서
         // 시각적 rect만 바꾼다. 감지 스레드가 rect 변화 기반으로 이 메시지를 다시 보낸 경우
@@ -591,9 +641,64 @@ internal static partial class Program
     }
 
     /// <summary>
+    /// 오버레이 좌버튼 다운 — 캡처 + 원점 기록. 이후 MOVE 에서 드래그 승격, UP 에서 클릭 숨김.
+    /// </summary>
+    private static void BeginOverlayPointerTrack()
+    {
+        User32.SetCapture(_hwndOverlay);
+        User32.GetCursorPos(out POINT pt);
+        _overlayDragOriginX = pt.X;
+        _overlayDragOriginY = pt.Y;
+        _overlayDragPending = true;
+        _overlayDragPromoted = false;
+    }
+
+    /// <summary>
+    /// 캡처 중 마우스 이동이 시스템 드래그 임계를 넘고 drag_modifier 가 맞으면
+    /// 네이티브 HTCAPTION 드래그로 승격한다.
+    /// </summary>
+    private static void TryPromoteOverlayDrag(IntPtr hwnd)
+    {
+        if (!User32.GetCursorPos(out POINT pt)) return;
+
+        int cxDrag = User32.GetSystemMetrics(Win32Constants.SM_CXDRAG);
+        int cyDrag = User32.GetSystemMetrics(Win32Constants.SM_CYDRAG);
+        int dx = Math.Abs(pt.X - _overlayDragOriginX);
+        int dy = Math.Abs(pt.Y - _overlayDragOriginY);
+        if (dx < cxDrag && dy < cyDrag) return;
+        if (!IsDragModifierPressed(_config.DragModifier)) return;
+
+        _overlayDragPromoted = true;
+        _overlayDragPending = false; // 네이티브 sizemove 로 이관 — LBUTTONUP 재진입 방지
+        User32.ReleaseCapture();
+        // 화면 좌표를 lParam 에 담아 기존 ENTERSIZEMOVE / MOVING / EXITSIZEMOVE 경로 재사용.
+        // 멀티모니터 음수 좌표도 LOWORD/HIWORD 로 올바르게 패킹 (부호 확장 방지).
+        int packed = (pt.X & (int)Win32Constants.LOWORD_MASK)
+            | ((pt.Y & (int)Win32Constants.LOWORD_MASK) << 16);
+        User32.SendMessageW(hwnd, Win32Constants.WM_NCLBUTTONDOWN,
+            (IntPtr)Win32Constants.HTCAPTION, (IntPtr)packed);
+    }
+
+    /// <summary>
+    /// 좌버튼 업 — 승격되지 않은 짧은 클릭이면 일시 숨김(클릭 자리 마우스 통과).
+    /// </summary>
+    private static void EndOverlayPointerTrack(bool dismissIfClick)
+    {
+        _overlayDragPending = false;
+        if (User32.GetCapture() == _hwndOverlay)
+            User32.ReleaseCapture();
+
+        if (!dismissIfClick || _overlayDragPromoted) return;
+        if (_config.UserHidden || !_indicatorVisible) return;
+
+        _clickDismissed = true;
+        HideOverlay("click dismiss");
+    }
+
+    /// <summary>
     /// 현재 드래그 활성 키 설정에 해당하는 모디파이어가 눌려 있는지 확인.
-    /// None 모드는 항상 true — 기존 동작(항상 드래그 가능) 유지.
-    /// WM_NCHITTEST 메인 스레드에서 호출 — GetAsyncKeyState 스레드 제약 없음.
+    /// None 모드는 항상 true — 임계 초과 시 드래그 승격 가능.
+    /// WM_MOUSEMOVE 메인 스레드에서 호출 — GetAsyncKeyState 스레드 제약 없음.
     /// </summary>
     private static bool IsDragModifierPressed(DragModifier mode)
     {

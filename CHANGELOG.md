@@ -7,6 +7,7 @@
 
 ### Changed
 
+- **메인 인디 좌클릭 = 일시 숨김, 드래그 = 위치 이동** — 짧은 좌클릭으로 인디를 숨기면 그 자리 마우스 클릭이 아래 창으로 통과한다. 포커스 변경 또는 한/영(IME) 변경 시 다시 표시 (`UserHidden`/트레이 「메인 인디케이터 숨김」과 별개). 드래그는 `SM_CXDRAG`/`SM_CYDRAG` 임계 초과 후 기존 `HTCAPTION` 경로로 승격. `drag_modifier` 는 승격 게이트로만 동작.
 - **커서 이동 중 시인성 저하 — 3원 공통 가우시안 안개 (PR-29, 디폴트 ON)** — 이동 중 Inner/Middle/Outer를 soft&gt;0 일 때 하드 코어 없이 가우시안 안개로(σ≈baseHalo×14, 색+흰색 혼합). CAPS ON=3원·OFF=2원(Outer는 CAPS 전용). `MotionFogPadLogicalPx=28` DIB 여유. 창 `SourceConstantAlpha` Full. `cursor_motion_dim_enabled`(**true**) / `cursor_motion_alpha`(0.22) / `cursor_motion_softness`(1.0). Settings「이동 중 옅게/안개 농도/안개 강도」+ 트레이. Commit0: `LayeredCursorBase` `_displayAlpha`·config 블리트1회·Initialize 커서 시드. [PR-29](docs/improvement-plan/PR-29-cursor-motion-distraction-reduction.md).
 - **커서 추종·애니메이션 프레임 디폴트 16→15ms (`CursorAlwaysPollMs` / `AnimationFrameMs`)** — Windows `SetTimer` 의 `uElapse` 가 ~15.625ms 격자로 양자화되어, 이전 디폴트 **16은 실배달 ~30.8ms(≈32fps)** 였고 **15는 ~15.6ms(≈64fps)** 다. 커서 인디 위치 추종과 메인/커서 애니메이션이 체감상 약 2배 부드러워진다(`timeBeginPeriod(1)` 은 USER 타이머에 효과 0). 근거: [dev-notes/2026-07-22-settimer-tick-quantization.md](docs/dev-notes/2026-07-22-settimer-tick-quantization.md), [PR-28](docs/improvement-plan/PR-28-cursor-lag-perceptual-masking.md).
 

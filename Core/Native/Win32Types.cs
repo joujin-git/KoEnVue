@@ -278,11 +278,17 @@ internal static class Win32Constants
     public const int SM_CXSMICON         = 49;
     public const int SM_CYSMICON         = 50;
     public const int SM_CXPADDEDBORDER   = 92;
+    /// <summary>드래그 개시 전 허용 이동폭 — GetSystemMetrics. 보통 4.</summary>
+    public const int SM_CXDRAG           = 68;
+    /// <summary>드래그 개시 전 허용 이동높이 — GetSystemMetrics. 보통 4.</summary>
+    public const int SM_CYDRAG           = 69;
 
     // --- Hit Test ---
     public const uint WM_NCHITTEST       = 0x0084;
     public const nint HTCLIENT           = 1;
     public const nint HTCAPTION          = 2;
+    /// <summary>비클라이언트 좌버튼 다운 — HTCAPTION 과 함께 네이티브 드래그 개시.</summary>
+    public const uint WM_NCLBUTTONDOWN   = 0x00A1;
 
     // --- 시스템 커서 (LoadCursorW) ---
     // WNDCLASSEXW.hCursor 가 NULL 이면 클라이언트 영역에서 시스템이 IDC_APPSTARTING(런칭 중 화살표+모래시계)
@@ -391,7 +397,10 @@ internal static class Win32Constants
     public const uint WM_DWMCOLORIZATIONCOLORCHANGED = 0x0320;
     public const uint WM_SETFONT         = 0x0030;
     public const uint WM_DPICHANGED     = 0x02E0;
+    public const uint WM_LBUTTONDOWN     = 0x0201;
     public const uint WM_LBUTTONUP       = 0x0202;
+    public const uint WM_MOUSEMOVE       = 0x0200;
+    public const uint WM_CAPTURECHANGED  = 0x0215;
     public const uint WM_APP             = 0x8000;
     public const uint WM_USER            = 0x0400;
 
