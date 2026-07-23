@@ -597,8 +597,8 @@ internal static partial class Tray
     // ================================================================
 
     /// <summary>
-    /// indicator_positions 정리 대화상자 — empty 안내 + dialog 띄우기. 비즈니스 로직은
-    /// <see cref="PositionCleanupService"/> 로 위임.
+    /// 앱별 위치 기록 정리 대화상자 — empty 안내 + dialog 띄우기. 비즈니스 로직은
+    /// <see cref="PositionCleanupService"/> 로 위임 (고정·창 기준 합집합, 모드 태그 라벨).
     /// </summary>
     private static void CleanupPositions(AppConfig config, Action<AppConfig> updateConfig)
     {

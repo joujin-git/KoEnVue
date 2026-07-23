@@ -87,10 +87,10 @@ internal static class I18n
         // 위치 기록 정리 다이얼로그 ("취소" 버튼은 ScaleDialogCancel 재사용)
         CleanupDialogTitle, CleanupDialogDescription,
         CleanupDialogSelectAll, CleanupDialogDelete,
+        CleanupModeFixed, CleanupModeWindow, CleanupRunningLabel,
 
         // 트레이 메시지 박스
         TrayPositionUnavailable, TrayPositionHistoryEmpty,
-        RunningSuffix,
 
         // 트레이 툴팁
         TooltipHangul, TooltipEnglish, TooltipNonKorean,
@@ -166,17 +166,19 @@ internal static class I18n
         // 위치 기록 정리 다이얼로그 (확인 버튼 = "삭제", 취소 버튼은 ScaleDialogCancel 재사용)
         [I18nKey.CleanupDialogTitle]        = ("위치 기록 정리", "Clean position history"),
         [I18nKey.CleanupDialogDescription]  = (
-            "삭제할 위치 기록을 선택하세요.",
-            "Select position history to delete."),
+            "고정 위치 모드, 창 기준 모드의 위치 기록을 모두 보여 줍니다.\n삭제하면 위치 기록이 두 모드에서 모두 지워지고 초기화 됩니다.",
+            "Shows position history for Fixed and Window modes.\nDeleting clears and resets the history in both modes."),
         [I18nKey.CleanupDialogSelectAll]    = ("전체 선택", "Select All"),
         [I18nKey.CleanupDialogDelete]       = ("삭제", "Delete"),
+        [I18nKey.CleanupModeFixed]          = ("고정", "Fixed"),
+        [I18nKey.CleanupModeWindow]         = ("창", "Window"),
+        [I18nKey.CleanupRunningLabel]       = ("실행 중", "running"),
 
         // 트레이 메시지 박스
         [I18nKey.TrayPositionUnavailable]   = (
             "인디케이터 위치를 확인할 수 없습니다. 잠시 후 다시 시도하세요.",
             "Cannot determine current indicator position. Please try again shortly."),
         [I18nKey.TrayPositionHistoryEmpty]  = ("저장된 위치 기록이 없습니다.", "No saved position history."),
-        [I18nKey.RunningSuffix]             = (" (실행 중)", " (running)"),
 
         // 트레이 툴팁
         [I18nKey.TooltipHangul]             = ("한글 모드", "Hangul Mode"),
@@ -298,6 +300,12 @@ internal static class I18n
     public static string CleanupDialogDescription => Get(I18nKey.CleanupDialogDescription);
     public static string CleanupDialogSelectAll   => Get(I18nKey.CleanupDialogSelectAll);
     public static string CleanupDialogDelete      => Get(I18nKey.CleanupDialogDelete);
+    /// <summary>모드 태그 — 고정 위치 기록.</summary>
+    public static string CleanupModeFixed         => Get(I18nKey.CleanupModeFixed);
+    /// <summary>모드 태그 — 창 기준 기록.</summary>
+    public static string CleanupModeWindow        => Get(I18nKey.CleanupModeWindow);
+    /// <summary>모드 태그 괄호 안 "실행 중" 조각 (선행 공백 없음).</summary>
+    public static string CleanupRunningLabel      => Get(I18nKey.CleanupRunningLabel);
 
     // 트레이 메시지 박스
     /// <summary>
@@ -307,12 +315,6 @@ internal static class I18n
 
     /// <summary>위치 기록 정리 시 저장된 항목이 없을 때 노출되는 안내 메시지.</summary>
     public static string TrayPositionHistoryEmpty => Get(I18nKey.TrayPositionHistoryEmpty);
-
-    /// <summary>
-    /// 위치 기록 정리 다이얼로그에서 "실행 중" 프로세스 옆에 표시되는 접미사.
-    /// 선행 공백 포함 (원본 프로세스명 뒤에 바로 이어 붙으므로).
-    /// </summary>
-    public static string RunningSuffix => Get(I18nKey.RunningSuffix);
 
     // 트레이 툴팁
     public static string TooltipHangul    => Get(I18nKey.TooltipHangul);

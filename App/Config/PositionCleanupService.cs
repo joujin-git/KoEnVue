@@ -6,18 +6,17 @@ using KoEnVue.Core.Logging;
 namespace KoEnVue.App.Config;
 
 /// <summary>
-/// <c>indicator_positions</c> 정리 작업의 비-UI 비즈니스 로직.
+/// <c>indicator_positions</c> / <c>indicator_positions_relative</c> 정리 작업의 비-UI 비즈니스 로직.
 /// Tray.cs 에서 분리(PR-04) — 다이얼로그 렌더링(<see cref="UI.Dialogs.CleanupDialog"/>)은 호출자가
-/// 담당하고, 본 서비스는 (1) 정리 대상 키 목록 + 실행 중 접미사 합성, (2) 사용자 선택 결과를
-/// 두 dict (<c>IndicatorPositions</c> / <c>IndicatorPositionsRelative</c>) 에서 제거한 새 AppConfig 생성
-/// 까지만 책임진다.
+/// 담당하고, 본 서비스는 (1) 정리 대상 키 목록 + 모드·실행 중 태그 라벨 합성, (2) 사용자 선택 결과를
+/// 두 dict 에서 제거한 새 AppConfig 생성까지만 책임진다.
 /// </summary>
 internal static class PositionCleanupService
 {
     /// <summary>
     /// 정리 대상 키(양쪽 dict 의 합집합) 의 표시 라벨 + 원본 키 매핑을 반환.
-    /// 실행 중인 프로세스는 라벨에 <see cref="I18n.RunningSuffix"/> 접미사가 붙는다.
-    /// 두 리스트는 같은 인덱스가 동일 항목을 가리키므로 사용자 선택 mapping 에 그대로 활용.
+    /// 라벨에는 모드 태그 <c>(고정)</c>/<c>(창)</c>/<c>(고정·창)</c> 과, 실행 중이면
+    /// <c>, 실행 중</c> 이 붙는다. 두 리스트는 같은 인덱스가 동일 항목을 가리킨다.
     /// 대상이 0개면 두 리스트가 모두 빈 상태로 반환되며 호출자는 "비어있음" 안내를 띄운다.
     /// </summary>
     internal static (List<string> DisplayItems, List<string> OriginalNames) Compute(AppConfig config)
@@ -33,13 +32,34 @@ internal static class PositionCleanupService
             return (displayItems, originalNames);
 
         var running = CollectRunningProcessNames();
-        string suffix = I18n.RunningSuffix;
         foreach (string name in allKeys)
         {
+            bool hasFixed = ContainsKeyIgnoreCase(config.IndicatorPositions, name);
+            bool hasRelative = ContainsKeyIgnoreCase(config.IndicatorPositionsRelative, name);
             originalNames.Add(name);
-            displayItems.Add(running.Contains(name) ? name + suffix : name);
+            displayItems.Add(FormatDisplayLabel(name, hasFixed, hasRelative, running.Contains(name)));
         }
         return (displayItems, originalNames);
+    }
+
+    /// <summary>
+    /// 프로세스명 + 모드 태그(+ 실행 중) 표시 라벨. 단위 테스트 박제용으로 <c>internal</c>.
+    /// <paramref name="hasFixed"/> / <paramref name="hasRelative"/> 중 최소 하나는 true 여야 한다.
+    /// </summary>
+    internal static string FormatDisplayLabel(
+        string processName, bool hasFixed, bool hasRelative, bool isRunning)
+    {
+        string modePart;
+        if (hasFixed && hasRelative)
+            modePart = $"{I18n.CleanupModeFixed}·{I18n.CleanupModeWindow}";
+        else if (hasFixed)
+            modePart = I18n.CleanupModeFixed;
+        else
+            modePart = I18n.CleanupModeWindow;
+
+        if (isRunning)
+            return $"{processName} ({modePart}, {I18n.CleanupRunningLabel})";
+        return $"{processName} ({modePart})";
     }
 
     /// <summary>
@@ -73,6 +93,16 @@ internal static class PositionCleanupService
             IndicatorPositions = cleanedFixed,
             IndicatorPositionsRelative = cleanedRelative,
         };
+    }
+
+    private static bool ContainsKeyIgnoreCase(Dictionary<string, int[]> dict, string name)
+    {
+        foreach (string key in dict.Keys)
+        {
+            if (string.Equals(key, name, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
     }
 
     private static HashSet<string> CollectRunningProcessNames()

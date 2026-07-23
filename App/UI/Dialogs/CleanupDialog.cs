@@ -7,7 +7,8 @@ using KoEnVue.App.Localization;
 namespace KoEnVue.App.UI.Dialogs;
 
 /// <summary>
-/// indicator_positions 항목을 체크박스 UI로 선택 삭제하는 Win32 모달 다이얼로그.
+/// 앱별 위치 기록(<c>indicator_positions</c> ∪ <c>indicator_positions_relative</c>)을
+/// 체크박스 UI로 선택 삭제하는 Win32 모달 다이얼로그.
 /// 항목이 DlgMaxVisibleItems를 초과하면 스크롤 가능한 뷰포트를 표시한다.
 /// DialogShell 이 라이프사이클을 담당하고, 본 파일은 자식 컨트롤 생성 + 스크롤 + WndProc 만 보유한다.
 /// </summary>
@@ -20,9 +21,9 @@ internal static class CleanupDialog
     private const int DlgCheckGap = 4;
     private const int DlgButtonWidth = 90;
     private const int DlgButtonHeight = 30;
-    private const int DlgMinWidth = 340;
+    private const int DlgMinWidth = 400;
     private const int DlgMaxVisibleItems = 15;
-    private const int DlgDescHeight = 20;
+    private const int DlgDescHeight = 48;
     private const int DlgSepGap = 12;
     private const int DlgItemIndent = 20;
     // etched 구분선 두께 (px). SettingsDialog.SectionSepH 와 값·의미가 같으나 각 다이얼로그

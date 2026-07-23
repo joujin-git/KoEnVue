@@ -748,7 +748,7 @@ All three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) share 
 
 ### CleanupDialog
 
-Position-mode-agnostic: regardless of the current `position_mode` setting, shows the union of `indicator_positions` (Fixed) and `indicator_positions_relative` (Window) keys. Deletion removes from both dicts simultaneously, so switching modes later won't resurrect deleted entries. Running processes are shown with a "(실행 중)" / "(running)" suffix. Full select/deselect toggle. "저장된 위치 기록이 없습니다" message when empty. When items exceed `DlgMaxVisibleItems` (15), a scrollable viewport child window with `WS_VSCROLL` + mouse wheel support is used — same pattern as `SettingsDialog.Scroll.cs`.
+Position-mode-agnostic: regardless of the current `position_mode` setting, shows the union of `indicator_positions` (Fixed) and `indicator_positions_relative` (Window) keys. Deletion removes from both dicts simultaneously, so switching modes later won't resurrect deleted entries. Description text explains the union/delete-both rule. Each row is tagged `(고정)` / `(창)` / `(고정·창)` (EN: Fixed / Window); running processes append `, 실행 중` / `, running` inside the same parentheses. Full select/deselect toggle. "저장된 위치 기록이 없습니다" message when empty. When items exceed `DlgMaxVisibleItems` (15), a scrollable viewport child window with `WS_VSCROLL` + mouse wheel support is used — same pattern as `SettingsDialog.Scroll.cs`.
 
 ### ScaleInputDialog
 
