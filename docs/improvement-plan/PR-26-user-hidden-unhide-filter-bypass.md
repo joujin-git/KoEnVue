@@ -1,6 +1,6 @@
 # PR-26: UserHidden 해제 시 SystemFilter 미재평가 — 필터 대상 위 메인 인디 잔류
 
-> 상태: **🚧 구현 완료 (커밋·머지 전)** — 2026-07-23. 조사(2026-07-22) → 설계 채택 **(a)+(b)+(c)** → 구현·검증 완료 (`dotnet build` 0/0, AOT publish 5,052,416 B, 102/102 PASS, DllImport 0).
+> 상태: **✅ merged** — 2026-07-23, commit `d615dcc` (main 직접). 조사(2026-07-22) → 설계 채택 **(a)+(b)+(c)** → 구현·검증·푸시 완료 (`dotnet build` 0/0, AOT publish 5,052,416 B, 102/102 PASS, DllImport 0). smoke: `Forced show skipped on Shell_TrayWnd` 확인.
 >
 > 조사 당시 대상: `v0.9.9.6` (`D:\_portable\KoEnVue\KoEnVue.exe`)
 
@@ -119,7 +119,7 @@ state.LastFiltered = true;                          // ← 조건문 바깥. 항
 | 전체화면 · 프로필 `enabled:false` | ①보다 나쁨 — 필터 대상이 앱 자신이라 **그 앱으로 돌아와도 해소 안 됨**. 제3의 창을 거쳐야 함 |
 | config 핫리로드 (반대 방향) | `user_hidden` 을 `false→true` 로 직접 편집하면 인디가 숨겨지지 않고 **낡은 위치·낡은 IME 라벨로 동결** |
 | `TryHandleModalGate` [`:1311`](../../Program.cs) | 동일한 `!LastFiltered` 에지 트리거 — 자체 모달 설정창 위 잔류 |
-| IME WinEvent 훅 | [`:526~546`](../../Program.cs) `HandleImeStateChanged` 가 `UserHidden` 만 보고 필터는 안 봄. 필터 지속 중 `IME state:` 로그가 관측됨(정황) |
+| IME WinEvent 훅 | [`:526~546`](../../Program.cs) `HandleImeStateChanged` 가 `UserHidden` 만 보고 필터는 안 봄 — **후속 가드 불필요로 결론**(아래 「IME/Focus 필터 가드」) |
 | 주석 오류 | [`:674~680`](../../Program.cs) 의 "감지 스레드가 한 틱 먼저 숨김 메시지를 보내므로 이 경로엔 도달하지 않는다"는 전제가 **거짓** |
 
 ## 채택 · 구현 (2026-07-23)
@@ -131,6 +131,22 @@ state.LastFiltered = true;                          // ← 조건문 바깥. 항
 3. **(c) 프레임 캐시 무효화** — `Overlay.ClearLastValidSystemInputFrame` — `HideOverlay` 에서 호출. SearchHost→StartMenu 가시 전환은 Hide 를 타지 않으므로 보정 캐시는 그 경로에서 유지.
 
 > ⚠ 이 영역은 2026-06-08 PR-25(grace period)에서 **애니메이션 경합으로 인디가 사라진 채 박제되는 회귀**를 겪은 곳이다. `_forceHidden` 은 NonKorean IME Hide 경로와 의미를 공유한다. (a) 는 히스테리시스(`HideHysteresisPolls`)를 유지해 flip-flop 흡수 회귀를 피했다.
+
+### IME/Focus 필터 가드 — 조사 후 **안 함** (2026-07-23)
+
+교차검증에서 `HandleImeStateChanged` / Focus 경로에 `ShouldHide` 가드를 추가할지 검토했으나 **채택하지 않음**.
+
+- 필터가 확정되면 감지 스레드가 `EmitStateChanges` 전에 조기 return → IME/포커스 변경이 Show 경로로 이어지지 않음.
+- `Progman` foreground 에서 한/영 토글 시 IME 로그 **0건** → Show 경로 미발화(실측).
+- (a)+(b) 로 UserHidden 해제·강제 Activate 잔류는 이미 막히므로, IME/Focus 쪽 추가 가드는 비용 대비 이득이 없다.
+
+### 검증 · 머지
+
+| 항목 | 결과 |
+|------|------|
+| `dotnet build` / AOT publish / tests / DllImport | 0/0 · 5,052,416 B · 102/102 PASS · 0 |
+| smoke (UserHidden 해제 @ `Shell_TrayWnd`) | `Forced show skipped on Shell_TrayWnd` 로그 확인 |
+| commit | `d615dcc` → main push |
 
 ## 이번 PR 범위 밖 · 기록 유지 — 토탈 커맨더 인디 위치 진동
 
