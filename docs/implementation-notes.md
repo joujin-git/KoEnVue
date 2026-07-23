@@ -258,7 +258,7 @@ Two nullable config fields store per-mode defaults for apps without a saved posi
 - **Window mode**: `config.default_indicator_position_relative` (`RelativePositionConfig` record) — `Corner` + `DeltaX` + `DeltaY` (logical px) resolved against the **foreground window's DWM frame** via `Overlay.ResolveRelativePosition(frame, rel, dpiScale)`
 
 Null fallbacks (hardcoded, also logical px — scaled at apply time):
-- Fixed: `DefaultConfig.DefaultIndicatorOffsetX = -200, Y = 10` (top-right of work area, scaled by target-monitor DPI before anchoring)
+- Fixed: work-area center of the foreground monitor (indicator bbox centered). Override via `default_indicator_position` (Corner + logical-px delta) or per-app `indicator_positions`.
 - Window: `DefaultConfig.DefaultRelativeCorner = BottomRight, X = -69, Y = -58` (inside bottom-right of window, scaled by target-monitor DPI before anchoring). `AppConfig.DefaultIndicatorPositionRelative` 의 init 디폴트는 본 3 const 를 직접 참조하는 `RelativePositionConfig` 객체 — 사용자가 명시적으로 `null` 을 저장한 경우에만 Overlay 폴백 경로가 동일 const 를 재참조 (두 경로 단일 진실원 일치)
 
 Multi-monitor / resolution stability: offsets are stored relative to a `Corner` anchor, not as absolute pixel coordinates, and both Fixed-mode default-anchor and Window-mode relative deltas are DPI-normalized to 96 DPI logical pixels. The indicator's visual position relative to the anchor (work area corner for Fixed default, window frame corner for Window) is invariant across monitors of differing DPI scale. See "Window-relative position memory" above for the save/apply math — Fixed-mode default anchor follows the same pattern via `ComputeAnchorFromCurrentPosition` (divide by source monitor scale) and `ResolveAnchor` (multiply by target monitor scale).

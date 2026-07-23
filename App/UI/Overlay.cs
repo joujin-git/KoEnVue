@@ -219,7 +219,7 @@ internal static class Overlay
     ///   창 rect는 DWM extended frame bounds로 받아 invisible resize border를 배제한다.
     ///   config.DefaultIndicatorPosition은 이 분기에 적용되지 않음.
     /// - 일반 프로세스: config.DefaultIndicatorPosition이 있으면 해당 모서리 anchor + delta로 계산,
-    ///   없으면 DefaultConfig.DefaultIndicatorOffset* 폴백(work area 우상단 근처).
+    ///   없으면 포그라운드 모니터 작업 영역 정중앙 (인디 bbox 중심 정렬).
     /// </summary>
     public static (int x, int y) GetDefaultPosition(IntPtr hwndForeground, string processName)
     {
@@ -273,14 +273,31 @@ internal static class Overlay
             // 캐시도 없는 경우 → 일반 기본 위치로 폴스루
         }
 
-        // anchor.DeltaX/Y · DefaultIndicatorOffset*: 논리 px (96 DPI 기준).
-        // 타겟 모니터 DPI 스케일로 승산해 물리 px 로 복원한다.
+        // anchor.DeltaX/Y: 논리 px (96 DPI 기준) → 타겟 모니터 DPI 로 물리 px 복원.
         double dpiScale = DpiHelper.GetScale(hMonitor);
         if (_config.DefaultIndicatorPosition is { } anchor)
             return ResolveAnchor(workArea, anchor, dpiScale);
 
-        return (workArea.Right + DpiHelper.Scale(DefaultConfig.DefaultIndicatorOffsetX, dpiScale),
-                workArea.Top + DpiHelper.Scale(DefaultConfig.DefaultIndicatorOffsetY, dpiScale));
+        return ResolveWorkAreaCenter(workArea, dpiScale);
+    }
+
+    /// <summary>
+    /// 작업 영역 정중앙에 인디 bbox 를 맞춘 좌상단 좌표.
+    /// 엔진 미초기화 시 LabelWidth/Height × IndicatorScale 논리 크기를 DPI 스케일해 폴백.
+    /// </summary>
+    private static (int x, int y) ResolveWorkAreaCenter(RECT workArea, double dpiScale)
+    {
+        (int w, int h) = _engine.GetBaseSize();
+        if (w <= 0 || h <= 0)
+        {
+            double scale = _config.IndicatorScale;
+            w = DpiHelper.Scale((int)Math.Round(_config.LabelWidth * scale), dpiScale);
+            h = DpiHelper.Scale((int)Math.Round(_config.LabelHeight * scale), dpiScale);
+        }
+
+        int x = workArea.Left + (workArea.Right - workArea.Left - w) / 2;
+        int y = workArea.Top + (workArea.Bottom - workArea.Top - h) / 2;
+        return (x, y);
     }
 
     /// <summary>

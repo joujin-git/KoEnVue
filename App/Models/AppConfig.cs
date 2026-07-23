@@ -131,8 +131,8 @@ internal sealed record AppConfig
     public Dictionary<string, int[]> IndicatorPositionsRelative { get; init; } = new();
 
     // [인디케이터 위치 -- 저장 안 된 앱의 기본 표시 위치 (고정)]
-    // null = 하드코딩 폴백 (work area 우상단, DefaultConfig.DefaultIndicatorOffset*).
-    // 값이 있으면 Corner anchor + delta로 포그라운드 모니터 work area 기준 위치 계산.
+    // null = 포그라운드 모니터 작업 영역 정중앙 (Overlay.ResolveWorkAreaCenter).
+    // 트레이 "기본 위치 → 현재 위치로 설정" 으로 Corner+delta 를 저장하면 그 값이 우선.
     public DefaultPositionConfig? DefaultIndicatorPosition { get; init; } = null;
 
     // [인디케이터 위치 -- 저장 안 된 앱의 기본 표시 위치 (창 기준)]
