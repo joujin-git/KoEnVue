@@ -47,10 +47,10 @@ internal sealed class LayeredCursorBase : IDisposable
     private CursorStyle? _lastRenderedStyle;
     private int _lastX;
     private int _lastY;
-    // cursor 인디는 페이드 없이 항상 alpha=255 로 표시. 메인 인디의 OverlayAnimator alpha 보간과 무관.
-    // 0 으로 두면 첫 Render 의 UpdateLayeredWindow 가 SourceConstantAlpha=0 (완전 투명) 으로 그려져
-    // 사용자가 못 봄.
-    private byte _lastAlpha = 255;
+    // 의도 표시 알파 (PR-29 이동 딤·평상시 Full). Hide/PrepareResources 의 임시 alpha=0 블리트는
+    // 이 값을 덮지 않는다 — 과거 _lastAlpha=0 캐시 + 수동 255 복원 누락이 "인디 통째로 안 보임"
+    // 침묵 회귀 원인이었다 (PR-28 A안).
+    private byte _displayAlpha = 255;
 
     public LayeredCursorBase(
         IntPtr hwnd,
@@ -115,62 +115,56 @@ internal sealed class LayeredCursorBase : IDisposable
     /// 윈도우는 항상 WS_VISIBLE 상태 유지 (CreateCursorOverlayWindow 에서 박음) — Hide 시 SW_HIDE 가
     /// 아닌 SourceConstantAlpha=0 으로 UpdateLayeredWindow 호출해 시각만 완전 투명. z-order 변경 0
     /// → 트레이 메뉴 modal loop 안에서 호출되어도 메뉴 dismiss 트리거 안 함.
-    /// <para>
-    /// <c>_lastAlpha</c> 는 255 로 복원 — 다음 Render 의 UpdateOverlay 가 alpha=255 로 정상 표시.
-    /// (UpdateOverlay 가 _lastAlpha 캐시 갱신하므로 별도 복원 필요.)
-    /// </para>
+    /// 임시 투명 블리트는 <see cref="_displayAlpha"/> 를 바꾸지 않는다.
     /// </summary>
     public void Hide()
     {
         if (_hwnd != IntPtr.Zero && _currentWidth > 0)
-        {
-            UpdateOverlay(_lastX, _lastY, _currentWidth, _currentHeight, 0);
-            _lastAlpha = 255;
-        }
+            BlitOverlay(_lastX, _lastY, _currentWidth, _currentHeight, 0, updateDisplayAlpha: false);
         _isVisible = false;
     }
 
     /// <summary>
     /// DIB 사전 생성 + alpha=0 으로 첫 UpdateLayeredWindow 호출 — WS_VISIBLE 윈도우의 비트맵 캐시
-    /// 보장 (dev-notes/2026-05-20 가설 A: Render 전 visible → 비트맵 없이 캐싱 → 후속 UpdateLayeredWindow
-    /// 안 그려짐 회피). 시각적으론 완전 투명 (alpha=0). Hide 와 동일하게 _lastAlpha 는 255 복원.
+    /// 보장 (dev-notes/2026-05-20 가설 A). 시각적으론 완전 투명. <see cref="_displayAlpha"/> 불변.
     /// </summary>
     public void PrepareResources(CursorStyle style)
     {
         EnsureDib(style);
         if (_currentWidth > 0)
-        {
-            UpdateOverlay(_lastX, _lastY, _currentWidth, _currentHeight, 0);
-            _lastAlpha = 255;
-        }
+            BlitOverlay(_lastX, _lastY, _currentWidth, _currentHeight, 0, updateDisplayAlpha: false);
     }
 
     /// <summary>
     /// CursorStyle 에 따라 DIB 를 (재) 생성하고 콜백을 호출해 픽셀 셰이딩 + premultiply +
     /// UpdateLayeredWindow. flip-flop 가드 — 동일 스타일이면 DIB 재생성 스킵 + 블리트만.
+    /// 블리트 알파는 <see cref="_displayAlpha"/> (UpdateAlpha 로 설정).
     /// </summary>
     public void Render(CursorStyle style)
     {
         if (_lastRenderedStyle is CursorStyle prev && prev == style)
         {
-            UpdateOverlay(_lastX, _lastY, _currentWidth, _currentHeight, _lastAlpha);
+            BlitOverlay(_lastX, _lastY, _currentWidth, _currentHeight, _displayAlpha, updateDisplayAlpha: false);
             return;
         }
 
         if (!PaintDib(style)) return;
-        UpdateOverlay(_lastX, _lastY, _currentWidth, _currentHeight, _lastAlpha);
+        BlitOverlay(_lastX, _lastY, _currentWidth, _currentHeight, _displayAlpha, updateDisplayAlpha: false);
     }
 
     public void UpdateAlpha(byte alpha)
     {
-        UpdateOverlay(_lastX, _lastY, _currentWidth, _currentHeight, alpha);
+        BlitOverlay(_lastX, _lastY, _currentWidth, _currentHeight, alpha, updateDisplayAlpha: true);
     }
+
+    /// <summary>의도 표시 알파만 갱신 (블리트 없음). 후속 <see cref="Render"/> 가 이 값으로 한 번 블리트.</summary>
+    public void SetDisplayAlpha(byte alpha) => _displayAlpha = alpha;
 
     public void UpdatePosition(int x, int y)
     {
         _lastX = x;
         _lastY = y;
-        UpdateOverlay(x, y, _currentWidth, _currentHeight, _lastAlpha);
+        BlitOverlay(x, y, _currentWidth, _currentHeight, _displayAlpha, updateDisplayAlpha: false);
     }
 
     /// <summary>
@@ -282,9 +276,13 @@ internal sealed class LayeredCursorBase : IDisposable
         }
     }
 
-    private void UpdateOverlay(int x, int y, int displayW, int displayH, byte alpha)
+    /// <param name="updateDisplayAlpha">
+    /// true 면 <see cref="_displayAlpha"/> 갱신(의도 표시값). Hide/Prepare 의 임시 0 블리트는 false.
+    /// </param>
+    private void BlitOverlay(int x, int y, int displayW, int displayH, byte alpha, bool updateDisplayAlpha)
     {
-        _lastAlpha = alpha;
+        if (updateDisplayAlpha)
+            _displayAlpha = alpha;
         if (_hwnd == IntPtr.Zero || _memDC == IntPtr.Zero) return;
 
         LayeredWindowBlit.Blit(_hwnd, _memDC, x, y, displayW, displayH, alpha);

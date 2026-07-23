@@ -324,6 +324,14 @@ internal static partial class SettingsDialog
             c => c.CursorIndicatorEnabled, (c, v) => c with { CursorIndicatorEnabled = v }));
         Add(Bool("항상 표시 (마우스 추종)", "Always show (follow cursor)",
             c => c.CursorAlwaysShow, (c, v) => c with { CursorAlwaysShow = v }));
+        Add(Bool("이동 중 옅게 표시", "Dim while moving",
+            c => c.CursorMotionDimEnabled, (c, v) => c with { CursorMotionDimEnabled = v }));
+        Add(Dbl("이동 중 안개 농도", "Motion fog opacity",
+            DefaultConfig.MinCursorMotionAlpha, DefaultConfig.MaxCursorMotionAlpha,
+            c => c.CursorMotionAlpha, (c, v) => c with { CursorMotionAlpha = v }));
+        Add(Dbl("이동 중 안개 강도", "Motion fog softness",
+            DefaultConfig.MinCursorMotionSoftness, DefaultConfig.MaxCursorMotionSoftness,
+            c => c.CursorMotionSoftness, (c, v) => c with { CursorMotionSoftness = v }));
         Add(Int("외부 원 반지름 (px)", "Outer radius (px)",
             DefaultConfig.MinCursorOuterRadius, DefaultConfig.MaxCursorOuterRadius,
             c => c.CursorOuterRadius, (c, v) => c with { CursorOuterRadius = v }));

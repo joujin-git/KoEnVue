@@ -175,6 +175,10 @@ internal sealed record AppConfig
     public bool   CursorChangeHighlight     { get; init; } = DefaultConfig.CursorChangeHighlight;
     public double CursorHighlightScale       { get; init; } = DefaultConfig.CursorHighlightScale;
     public int    CursorHighlightDurationMs  { get; init; } = DefaultConfig.CursorHighlightDurationMs;
+    // 이동 중 시인성 저하 (PR-29). on/off 는 트레이 + Settings. 알파/소프트는 Settings.
+    public bool   CursorMotionDimEnabled     { get; init; } = DefaultConfig.CursorMotionDimEnabled;
+    public double CursorMotionAlpha          { get; init; } = DefaultConfig.CursorMotionAlpha;
+    public double CursorMotionSoftness       { get; init; } = DefaultConfig.CursorMotionSoftness;
 
     // [고급]
     public AdvancedConfig Advanced { get; init; } = new();

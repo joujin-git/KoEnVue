@@ -72,6 +72,7 @@ internal static class I18n
         MenuSizeCustom,
         MenuCursorIndicator,
         MenuCursorHighlight,
+        MenuCursorMotionDim,
 
         // 상세 설정 다이얼로그
         SettingsDialogTitle, SettingsDialogDescription,
@@ -133,6 +134,7 @@ internal static class I18n
         [I18nKey.MenuUserHidden]           = ("메인 인디케이터 숨김", "Hide main indicator"),
         [I18nKey.MenuCursorIndicator]      = ("커서 인디케이터 숨김", "Hide cursor indicator"),
         [I18nKey.MenuCursorHighlight]      = ("커서 인디케이터 변경 강조", "Cursor indicator highlight"),
+        [I18nKey.MenuCursorMotionDim]      = ("커서 이동 중 옅게", "Dim cursor indicator while moving"),
         [I18nKey.MenuSettings]             = ("상세 설정...", "Settings..."),
         [I18nKey.MenuExit]                 = ("종료", "Exit"),
         [I18nKey.MenuDownload]             = ("다운로드", "Download"),
@@ -248,6 +250,7 @@ internal static class I18n
     public static string MenuUserHidden           => Get(I18nKey.MenuUserHidden);
     public static string MenuCursorIndicator      => Get(I18nKey.MenuCursorIndicator);
     public static string MenuCursorHighlight      => Get(I18nKey.MenuCursorHighlight);
+    public static string MenuCursorMotionDim      => Get(I18nKey.MenuCursorMotionDim);
     public static string MenuSettings             => Get(I18nKey.MenuSettings);
     public static string MenuExit                 => Get(I18nKey.MenuExit);
 

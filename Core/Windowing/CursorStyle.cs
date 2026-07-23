@@ -24,7 +24,15 @@ internal readonly record struct CursorStyle(
     uint MiddleColorArgb,
     uint OuterColorArgb,
     bool CapsLockOn,
-    double HighlightScale = 1.0
+    double HighlightScale = 1.0,
+    // PR-29 이동 딤: 안개 강도 0..1. BoundingBox 계산에 반영(패딩).
+    double MotionSoftness = 0.0,
+    // PR-29 이동 딤 시 DIB 추가 여유 (logical px). App이 soft&gt;0 일 때 설정.
+    int MotionFogPadLogicalPx = 0,
+    // PR-29 이동 딤: 원별 픽셀 알파 배수(1=평상시). 창 SourceConstantAlpha 와 별개.
+    double RingAlphaInner = 1.0,
+    double RingAlphaMiddle = 1.0,
+    double RingAlphaOuter = 1.0
 )
 {
     /// <summary>
@@ -50,7 +58,9 @@ internal readonly record struct CursorStyle(
             int outsideMargin = CoreThicknessLogicalPx / 2 + haloOuterExtension + 1;
             // 팝 최대 배율(MaxHighlightScale)까지 동심원이 확대돼도 DIB 안에 들어오도록 bbox 를 고정 확대.
             // HighlightScale(매 프레임 변동값) 이 아닌 MaxHighlightScale(상수) 기준이라 팝 중 DIB 재생성 0.
-            int halfExtent = (int)Math.Ceiling((maxRadius + outsideMargin) * MaxHighlightScale);
+            // 이동 안개(PR-29)는 MotionFogPadLogicalPx 만큼 추가 여유 — σ가 잘리지 않게.
+            int halfExtent = (int)Math.Ceiling((maxRadius + outsideMargin) * MaxHighlightScale)
+                + MotionFogPadLogicalPx;
             return halfExtent * 2;
         }
     }

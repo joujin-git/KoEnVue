@@ -18,7 +18,7 @@ namespace KoEnVue.App.UI;
 /// </para>
 /// <list type="bullet">
 ///   <item><b>정지 시 표시 모드 (디폴트)</b>: 마우스 이동 → 즉시 숨김. 정지 후 <c>idle_delay_ms</c> 경과 → 표시.</item>
-///   <item><b>항상 표시 모드</b> (<see cref="AppConfig.CursorAlwaysShow"/> = true): 16ms 폴링으로 위치 추종, 숨김 안 함.</item>
+///   <item><b>항상 표시 모드</b> (<see cref="AppConfig.CursorAlwaysShow"/> = true): 폴링으로 위치 추종, 숨김 안 함. 이동 중 시인성 저하(PR-29) 가능.</item>
 /// </list>
 /// <para>
 /// 색상 정책 — Inner/Middle 은 현재 IME 색상 (Hangul/English/NonKorean 각자), Outer 는 영문일 때
@@ -57,6 +57,10 @@ internal static class CursorOverlay
     private static bool _popActive;       // 팝 진행 중 여부.
     private static long _popStartTick;    // 팝 시작 tick (Environment.TickCount64 ms).
 
+    // PR-29 이동 중 시인성 저하 — AlwaysShow 경로에서만 사용.
+    private static bool _motionDimActive;
+    private static int _motionStillPolls;
+
     // 셸 UI 호버 판정 캐시 — 직전 폴링 tick 의 루트 hwnd 와 그 판정 결과. 같은 창 위에 머무는 동안
     // GetProcessName(OpenProcess) 반복 호출을 피한다 (마우스가 창 경계를 넘을 때만 재평가).
     private static IntPtr _lastShellHwnd;
@@ -85,8 +89,16 @@ internal static class CursorOverlay
         _lastTopmostTick = 0;
         _popActive = false;
         _popStartTick = 0;
+        _motionDimActive = false;
+        _motionStillPolls = 0;
         _lastShellHwnd = IntPtr.Zero;
         _lastShellResult = false;
+        // 첫 틱 이동 판정이 원점(0,0) 기준이 되지 않도록 현재 커서 좌표로 시드 (PR-28 A안 #3).
+        if (User32.GetCursorPos(out POINT seed))
+        {
+            _lastCursorX = seed.X;
+            _lastCursorY = seed.Y;
+        }
         _initialized = true;
         Logger.Info("CursorOverlay initialized");
     }
@@ -105,21 +117,25 @@ internal static class CursorOverlay
         if (_engine is null) return;
 
         StopPop();  // config 변경 시 진행 중 팝 중단 — 스타일 재합성 전 정리.
+        ResetMotionDim();
         _engine.HandleDpiChanged();
         _currentStyle = BuildStyle(config, _lastImeState, _capsLockOn);
-        _engine.PrepareResources(_currentStyle);
+        // 가시 중이면 Prepare(alpha=0) + Render 이중 블리트 대신 Render 1회 (PR-28 A안 #2).
         if (_isVisible)
         {
             _engine.Render(_currentStyle);
-            _engine.UpdateAlpha(255);
+            _engine.UpdateAlpha(CursorMotionDim.FullAlpha);
         }
-        Logger.Debug($"Cursor indicator config applied (alwaysShow={config.CursorAlwaysShow}, visible={_isVisible})");
+        else
+        {
+            _engine.PrepareResources(_currentStyle);
+        }
+        Logger.Debug($"Cursor indicator config applied (alwaysShow={config.CursorAlwaysShow}, motionDim={config.CursorMotionDimEnabled}, visible={_isVisible})");
     }
 
     /// <summary>
-    /// 50ms (정지 검출 모드) / 16ms (항상 표시 모드) 폴링 진입점. WM_TIMER 핸들러에서 호출.
-    /// 마우스 좌표 + 이전 위치 거리 → motion threshold 넘으면 "이동", 미만이면 "정지". 정지 진입
-    /// idle_delay_ms 경과 시 표시.
+    /// 폴링 진입점. WM_TIMER 핸들러에서 호출.
+    /// 마우스 좌표 + 이전 위치 거리 → motion threshold 넘으면 "이동", 미만이면 "정지".
     /// </summary>
     public static void HandleCursorMotionTimer()
     {
@@ -140,14 +156,13 @@ internal static class CursorOverlay
         {
             HideCursor("Cursor indicator hidden (over shell UI)");
             _idleStartTick = 0;
+            ResetMotionDim();
             return;
         }
 
         if (_config.CursorAlwaysShow)
         {
-            // 항상 표시 모드 — 가시화 보장 + 매 tick 위치 추종. idle 검출/숨김 skip.
-            RenderAtCursor(cursor);
-            // 다른 topmost 창(풀스크린/토스트/UAC)이 위로 올라와도 복구 — 주기 재적용.
+            ApplyMotionDimAndRender(cursor, moving);
             MaybeReassertTopmost();
             return;
         }
@@ -188,7 +203,7 @@ internal static class CursorOverlay
     {
         if (_lastImeState == state) return;
         _lastImeState = state;
-        _currentStyle = BuildStyle(_config, state, _capsLockOn);
+        _currentStyle = RebuildStylePreservingMotion(state, _capsLockOn);
         Logger.Debug($"Cursor indicator IME state: {state} (visible={_isVisible})");
         if (_isVisible && _engine is not null)
         {
@@ -209,7 +224,7 @@ internal static class CursorOverlay
     {
         if (_capsLockOn == on) return;
         _capsLockOn = on;
-        _currentStyle = BuildStyle(_config, _lastImeState, on);
+        _currentStyle = RebuildStylePreservingMotion(_lastImeState, on);
         Logger.Debug($"Cursor indicator CapsLock: {(on ? "ON" : "OFF")} (visible={_isVisible})");
         if (_isVisible && _engine is not null)
             _engine.Render(_currentStyle);
@@ -226,6 +241,7 @@ internal static class CursorOverlay
         _idleStartTick = 0;
         _lastTopmostTick = 0;
         _popStartTick = 0;
+        ResetMotionDim();
         if (wasInitialized)
             Logger.Info("CursorOverlay disposed");
     }
@@ -242,13 +258,76 @@ internal static class CursorOverlay
         _engine.Hide();
         _isVisible = false;
         StopPop();
+        ResetMotionDim();
         Logger.Debug(reason);
+    }
+
+    /// <summary>
+    /// AlwaysShow 경로 — 이동 딤 상태 갱신 + 두께/원별 알파 + 위치 렌더 (PR-29).
+    /// 팝 중에는 soft=0 · 원별 알파 1.0 (IME 전환 가독 우선). 창 SourceConstantAlpha 는 Full.
+    /// </summary>
+    private static void ApplyMotionDimAndRender(POINT cursor, bool moving)
+    {
+        if (_engine is null) return;
+
+        bool dimEnabled = _config.CursorMotionDimEnabled;
+        if (!dimEnabled)
+        {
+            if (_motionDimActive
+                || _currentStyle.MotionSoftness != 0.0
+                || _currentStyle.RingAlphaInner != 1.0)
+            {
+                ResetMotionDim();
+                _currentStyle = ClearMotionDimStyle(_currentStyle);
+            }
+        }
+        else
+        {
+            _motionDimActive = CursorMotionDim.AdvanceDimActive(
+                ref _motionStillPolls, moving, _motionDimActive, DefaultConfig.CursorMotionDimSettlePolls);
+        }
+
+        double soft = CursorMotionDim.EffectiveSoftness(
+            _motionDimActive, dimEnabled, _popActive, _config.CursorMotionSoftness);
+        var rings = CursorMotionDim.RingAlphas(
+            _motionDimActive, dimEnabled, _popActive, _config.CursorMotionAlpha,
+            DefaultConfig.CursorMotionRingInnerFactor,
+            DefaultConfig.CursorMotionRingMiddleFactor,
+            DefaultConfig.CursorMotionRingOuterFactor,
+            DefaultConfig.MinCursorMotionAlpha);
+
+        _currentStyle = _currentStyle with
+        {
+            MotionSoftness = soft,
+            MotionFogPadLogicalPx = soft > 0.0 ? DefaultConfig.CursorMotionFogPadLogicalPx : 0,
+            RingAlphaInner = rings.Inner,
+            RingAlphaMiddle = rings.Middle,
+            RingAlphaOuter = rings.Outer,
+        };
+
+        _engine.SetDisplayAlpha(CursorMotionDim.FullAlpha);
+        RenderAtCursor(cursor);
+    }
+
+    private static CursorStyle ClearMotionDimStyle(CursorStyle style) => style with
+    {
+        MotionSoftness = 0.0,
+        MotionFogPadLogicalPx = 0,
+        RingAlphaInner = 1.0,
+        RingAlphaMiddle = 1.0,
+        RingAlphaOuter = 1.0,
+    };
+
+    private static void ResetMotionDim()
+    {
+        _motionDimActive = false;
+        _motionStillPolls = 0;
     }
 
     /// <summary>
     /// cursor 위치 = DIB 정중앙. ShowAtCenter 가 monitor DPI + bbox 직접 계산해 정확한 좌상단 좌표 set.
     /// Render 가 같은 DPI 로 DIB 생성 → race 없음. 윈도우는 WS_VISIBLE 영구 박혀있어 ShowWindow 호출
-    /// 불요 — Render 의 UpdateLayeredWindow 가 alpha=255 (디폴트) 로 표시.
+    /// 불요 — Render 의 UpdateLayeredWindow 가 Full 알파로 표시 (딤은 셰이더 원별 알파).
     /// <para>
     /// 첫 가시화 (<c>!_isVisible</c>) 시 <see cref="ApplyTopmost"/> 로 명시 topmost 진입 +
     /// <c>_lastTopmostTick</c> 주기 카운터 첫 기준점 set. 이후 주기 재적용은
@@ -336,8 +415,10 @@ internal static class CursorOverlay
         int durationMs = _config.CursorHighlightDurationMs;
         double ratio = durationMs > 0 ? Math.Clamp((double)elapsed / durationMs, 0.0, 1.0) : 1.0;
         double scale = _config.CursorHighlightScale + (1.0 - _config.CursorHighlightScale) * ratio;
-        _currentStyle = _currentStyle with { HighlightScale = scale };
+        // 팝 중 soft=0 · 원별 알파 Full — 가독 우선 (PR-29).
+        _currentStyle = ClearMotionDimStyle(_currentStyle) with { HighlightScale = scale };
         _engine.Render(_currentStyle);
+        _engine.UpdateAlpha(CursorMotionDim.FullAlpha);
         if (ratio >= 1.0)
             StopPop();
     }
@@ -359,6 +440,25 @@ internal static class CursorOverlay
     /// AppConfig + IME 상태 + CAPS 토글 → CursorStyle 합성. 한글/비한글 IME 는 같은 카테고리로 묶어
     /// CAPS Outer 색상이 영문 색상이 되고, 영문 IME 일 때만 CAPS 가 한글 색상 (인터뷰 결정).
     /// </summary>
+    private static CursorStyle RebuildStylePreservingMotion(ImeState state, bool capsOn)
+    {
+        double soft = _currentStyle.MotionSoftness;
+        int fogPad = _currentStyle.MotionFogPadLogicalPx;
+        double ri = _currentStyle.RingAlphaInner;
+        double rm = _currentStyle.RingAlphaMiddle;
+        double ro = _currentStyle.RingAlphaOuter;
+        double hs = _currentStyle.HighlightScale;
+        return BuildStyle(_config, state, capsOn) with
+        {
+            MotionSoftness = soft,
+            MotionFogPadLogicalPx = fogPad,
+            RingAlphaInner = ri,
+            RingAlphaMiddle = rm,
+            RingAlphaOuter = ro,
+            HighlightScale = hs,
+        };
+    }
+
     private static CursorStyle BuildStyle(AppConfig config, ImeState state, bool capsOn)
     {
         string currentBg = state switch

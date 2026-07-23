@@ -152,6 +152,8 @@ internal static partial class Tray
         // 커서 IME 전환 스케일 팝 on/off — 메인 변경 강조 바로 아래 (강조 항목끼리 인접 배치).
         uint cursorHighlightFlags = config.CursorChangeHighlight ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
         User32.AppendMenuW(hMenu, cursorHighlightFlags, (nuint)IDM_CURSOR_HIGHLIGHT, I18n.MenuCursorHighlight);
+        uint cursorMotionDimFlags = config.CursorMotionDimEnabled ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
+        User32.AppendMenuW(hMenu, cursorMotionDimFlags, (nuint)IDM_CURSOR_MOTION_DIM, I18n.MenuCursorMotionDim);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
 
         bool isStartup = StartupTaskManager.IsStartupRegistered();
