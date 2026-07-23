@@ -149,10 +149,10 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — 101 
 | `position_mode` | enum | `"window"` | `fixed` / `window`. `fixed` = 화면 작업영역 기준 절대 좌표, `window` = 포그라운드 창 DWM 프레임 기준 상대 오프셋 (창 이동 시 인디도 따라감) |
 | `indicator_positions` | object | `{}` | (고정 모드) 프로세스명 → `[x, y]` 절대 좌표. 드래그 종료 시 자동 저장 |
 | `indicator_positions_relative` | object | `{}` | (창 기준 모드) 프로세스명 → `[corner, deltaX, deltaY]`. `corner`: 0=TopLeft / 1=TopRight / 2=BottomLeft / 3=BottomRight |
-| `default_indicator_position` | object? | `null` | (고정 모드) 저장 위치 없는 앱의 기본 위치. `{"corner": "TopRight", "delta_x": -200, "delta_y": 10}` 형식. `null` = 포그라운드 모니터 작업 영역 정중앙 |
-| `default_indicator_position.corner` | enum | `"TopRight"` | `TopLeft` / `TopRight` / `BottomLeft` / `BottomRight`. 작업영역 모서리 앵커 |
-| `default_indicator_position.delta_x` | int | `-200` | 앵커에서 X 오프셋 (음수 = 왼쪽 / 위쪽). 논리 px |
-| `default_indicator_position.delta_y` | int | `10` | 앵커에서 Y 오프셋 (양수 = 오른쪽 / 아래쪽). 논리 px |
+| `default_indicator_position` | object? | `null` | (고정 모드) 저장 위치 없는 앱의 기본 위치. 형식 예: `{"corner": "TopRight", "delta_x": -40, "delta_y": 10}`. `null` = 포그라운드 모니터 작업 영역 정중앙 (트레이「기본 위치 → 현재 위치로 설정」으로 Corner+delta 저장) |
+| `default_indicator_position.corner` | enum | `"TopRight"` | `TopLeft` / `TopRight` / `BottomLeft` / `BottomRight`. 작업영역 모서리 앵커 (객체 존재 시 init 디폴트) |
+| `default_indicator_position.delta_x` | int | `0` | 앵커에서 X 오프셋 (음수 = 왼쪽). 논리 px |
+| `default_indicator_position.delta_y` | int | `0` | 앵커에서 Y 오프셋 (양수 = 아래쪽). 논리 px |
 | `default_indicator_position_relative` | object? | `{corner: "BottomRight", delta_x: -69, delta_y: -58}` | (창 기준 모드) 저장 위치 없는 앱의 기본 위치. init 디폴트는 `DefaultConfig.DefaultRelative{Corner,OffsetX,OffsetY}` 3 const 를 직접 참조하는 객체이며, 사용자가 명시적으로 `null` 로 저장한 경우에도 Overlay 가 동일 const 로 폴백 (두 경로 단일 진실원) |
 | `default_indicator_position_relative.corner` | enum | `"BottomRight"` | 창 DWM visible frame 의 4 모서리 |
 | `default_indicator_position_relative.delta_x` | int | `-69` | 앵커에서 X 오프셋 (논리 px). 창의 모니터 DPI 스케일로 변환 후 적용 |

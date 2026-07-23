@@ -154,9 +154,8 @@ internal sealed record AppConfig
     public int SnapGapPx { get; init; } = DefaultConfig.SnapGapPx;
 
     // [인디케이터 위치 -- 드래그 활성 키]
-    // 드래그 개시 게이트. None = 모든 좌클릭이 드래그 개시. Ctrl/Alt/CtrlAlt = 해당 키를
-    // 정확히 일치하는 조합으로 누른 상태에서만 개시. 키 미누름 시 오버레이가 클릭을 소비만
-    // 하고 반응 없음 (크로스 프로세스 투과는 WS_EX_TRANSPARENT 동적 토글이 필요해 미구현).
+    // 드래그 승격 게이트. 짧은 좌클릭은 항상 일시 숨김. None = 임계 초과 시 드래그 승격.
+    // Ctrl/Alt/CtrlAlt = 해당 키를 정확히 누른 채 임계 초과 시에만 승격 (미보유면 업 시 숨김).
     // Shift 는 드래그 중 축 고정에 선점되어 제외.
     public DragModifier DragModifier { get; init; } = DragModifier.None;
 
