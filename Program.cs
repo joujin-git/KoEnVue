@@ -784,9 +784,9 @@ internal static partial class Program
     /// 프로필이 없거나 매치 실패 시 글로벌 <c>_config</c> 그대로.
     /// <para>
     /// <see cref="Settings.ResolveForApp"/> 가 <c>enabled:false</c> 프로필에 대해 null 을
-    /// 반환하지만, 그 케이스는 감지 스레드의 <see cref="TryHandleFilter"/> 가 한 틱 먼저
-    /// 인디 숨김 메시지를 보내므로 본 메서드를 호출하는 렌더 경로에는 도달하지 않는다.
-    /// 짧은 race window 방어 차원에서 null 폴백을 글로벌 <c>_config</c> 로 처리한다.
+    /// 반환할 수 있다. 감지 스레드 <see cref="TryHandleFilter"/> 가 보통 먼저 숨기지만,
+    /// UserHidden 해제·Activate 등 강제 Show 경로는 <see cref="TryShowIndicatorIfForegroundAllowed"/>
+    /// 가 라이브 재평가로 차단한다. 여기 null 폴백은 짧은 race 방어용이다.
     /// </para>
     /// <para>
     /// 호출 비용: <see cref="Settings.ResolveForApp"/> 의 LRU 캐시가 같은 프로세스명 키에서
@@ -798,6 +798,40 @@ internal static partial class Program
     {
         if (_lastForegroundHwnd == IntPtr.Zero) return _config;
         return Settings.ResolveForApp(_config, _lastForegroundHwnd) ?? _config;
+    }
+
+    /// <summary>
+    /// 라이브 포그라운드에 대해 SystemFilter / <c>enabled:false</c> 를 재평가한 뒤
+    /// 통과할 때만 인디를 표시한다 (PR-26). UserHidden 해제·두 번째 인스턴스 Activate 등
+    /// 강제 Show 경로용. stale <c>_lastForegroundHwnd</c> 를 쓰지 않는다.
+    /// 히스테리시스 없음(즉시 판정) — 탐색기 flip-flop 으로 한 번 스킵돼도 다음 non-filter
+    /// 틱의 <c>WM_POSITION_UPDATED</c> 로 자기치유.
+    /// </summary>
+    private static void TryShowIndicatorIfForegroundAllowed(ImeState state, bool imeChanged)
+    {
+        IntPtr hwndFg = User32.GetForegroundWindow();
+        if (hwndFg == IntPtr.Zero
+            || hwndFg == _hwndMain
+            || hwndFg == _hwndOverlay
+            || hwndFg == _hwndCursorOverlay)
+        {
+            Logger.Info("Forced show skipped: no usable foreground window");
+            return;
+        }
+
+        uint threadId = User32.GetWindowThreadProcessId(hwndFg, out _);
+        IntPtr hwndFocus = ResolveFocusWindow(threadId, hwndFg);
+        AppConfig? resolved = Settings.ResolveForApp(_config, hwndFg);
+        if (resolved is null || SystemFilter.ShouldHide(hwndFg, hwndFocus, resolved))
+        {
+            Logger.Info(
+                $"Forced show skipped: foreground filtered (hwnd=0x{hwndFg.ToInt64():X}, class={WindowProcessInfo.GetClassName(hwndFg)})");
+            return;
+        }
+
+        _lastForegroundHwnd = hwndFg;
+        _currentProcessName = WindowProcessInfo.GetProcessName(hwndFg);
+        ShowIndicatorAtForeground(state, resolved, imeChanged);
     }
 
     /// <summary>
@@ -922,8 +956,13 @@ internal static partial class Program
         // 커서 인디 lifecycle — config.json 리로드 경로. HandleMenuCommand 람다도 동일 헬퍼 호출.
         ApplyCursorConfigChange();
 
-        // 인디가 가시 상태라면 애니메이터 config 갱신 + 새 alpha/크기/색상 즉시 반영 (PR-13: per-app)
-        if (!_config.UserHidden)
+        // PR-26: config 핫리로드로 user_hidden false→true 시 즉시 숨김 (이전엔 가시 인디가 동결).
+        if (!prev.UserHidden && _config.UserHidden)
+        {
+            if (_indicatorVisible)
+                HideOverlay("config UserHidden");
+        }
+        else if (!_config.UserHidden)
             RefreshVisibleIndicator();
         if (_config.TrayEnabled)
             Tray.UpdateState(_lastImeState, _config);
@@ -963,9 +1002,8 @@ internal static partial class Program
     {
         Logger.Info("Activation request from second instance received");
         if (_config.UserHidden) return;
-        if (_lastForegroundHwnd == IntPtr.Zero) return;
-
-        ShowIndicatorAtForeground(_lastImeState, ResolveCurrent(), imeChanged: false);
+        // PR-26: 라이브 FG SystemFilter 재평가 — 바탕화면에서 바로가기 재실행 시 필터 대상 위 표시 방지
+        TryShowIndicatorIfForegroundAllowed(_lastImeState, imeChanged: false);
     }
 
     /// <summary>
@@ -984,6 +1022,9 @@ internal static partial class Program
         // 숨김 경로 추적 — source 로 호출자(시스템 필터 / 트레이 토글 / 세션 잠금)를 식별해
         // "인디케이터가 안 보인다" 류 문제의 원인 경로를 로그만으로 좁힌다.
         Logger.Info($"HideOverlay called: source={source}");
+        // PR-26 (c): 숨김 시 시스템 입력 패널 프레임 캐시 무효화.
+        // SearchHost→StartMenu 전환은 Hide 없이 가시 유지하므로 보정 캐시는 그 경로에서 보존됨.
+        Overlay.ClearLastValidSystemInputFrame();
         // forceHidden: Always 모드에서도 Idle이 아닌 완전 숨김으로 전환.
         // 시스템 필터(바탕화면/작업 표시줄), 트레이 토글 OFF 모두
         // "실제로 사라져야 하는" 의도이므로 Always 모드의 dim-idle 유지를 우회.
@@ -1144,9 +1185,9 @@ internal static partial class Program
         }
         else
         {
-            // 표시 전환: 현재 포그라운드 앱에 즉시 인디 재표시 (PR-13: per-app)
-            if (_lastForegroundHwnd != IntPtr.Zero)
-                ShowIndicatorAtForeground(_lastImeState, ResolveCurrent(), imeChanged: false);
+            // 표시 전환: 라이브 포그라운드 SystemFilter 재평가 후만 표시 (PR-26).
+            // stale _lastForegroundHwnd / 닫힌 검색 패널 좌표에 그리는 경로를 차단.
+            TryShowIndicatorIfForegroundAllowed(_lastImeState, imeChanged: false);
         }
     }
 
@@ -1418,9 +1459,14 @@ internal static partial class Program
         if (!ModalDialogLoop.IsActive || fgPid != (uint)Environment.ProcessId)
             return false;
 
-        if (!state.LastFiltered && _indicatorVisible)
+        // PR-26: 레벨 트리거 — LastFiltered 래치와 무관하게 가시 중이면 HIDE.
+        // (설정 모달 위 잔류 파생 결함과 동일 뿌리)
+        if (_indicatorVisible)
         {
-            Logger.Info($"ModalGate triggered HIDE: fgPid={fgPid}, processId={Environment.ProcessId}, ModalActive={ModalDialogLoop.IsActive}");
+            if (!state.LastFiltered)
+                Logger.Info($"ModalGate triggered HIDE: fgPid={fgPid}, processId={Environment.ProcessId}, ModalActive={ModalDialogLoop.IsActive}");
+            else if (Logger.IsEnabled(LogLevel.Debug))
+                Logger.Debug($"ModalGate re-HIDE while still visible: fgPid={fgPid}");
             User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
                 IntPtr.Zero, IntPtr.Zero);
         }
@@ -1486,10 +1532,15 @@ internal static partial class Program
                 return true;
             }
 
-            // 필터 확정(연속 N폴링) — 진입 시에만 숨김 메시지 전송 (중복 메시지 억제)
-            if (!state.LastFiltered && _indicatorVisible)
+            // 필터 확정(연속 N폴링) — PR-26: 레벨 트리거(_indicatorVisible).
+            // LastFiltered 는 중복 억제·foregroundChanged 유도용으로만 유지(PRD §7.2).
+            // UserHidden 등 외부 경로로 인디가 다시 켜져도 필터 대상에 머무는 한 HIDE 재전송.
+            if (_indicatorVisible)
             {
-                Logger.Info($"Filter triggered HIDE: hwndFg=0x{hwndForeground.ToInt64():X}, hwndFocus=0x{hwndFocus.ToInt64():X}, resolved_null={resolved is null}, fgClass={WindowProcessInfo.GetClassName(hwndForeground)}, streak={state.FilteredStreak}");
+                if (!state.LastFiltered)
+                    Logger.Info($"Filter triggered HIDE: hwndFg=0x{hwndForeground.ToInt64():X}, hwndFocus=0x{hwndFocus.ToInt64():X}, resolved_null={resolved is null}, fgClass={WindowProcessInfo.GetClassName(hwndForeground)}, streak={state.FilteredStreak}");
+                else if (Logger.IsEnabled(LogLevel.Debug))
+                    Logger.Debug($"Filter re-HIDE while still visible: hwndFg=0x{hwndForeground.ToInt64():X}, fgClass={WindowProcessInfo.GetClassName(hwndForeground)}");
                 User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
             }

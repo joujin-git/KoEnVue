@@ -1,8 +1,8 @@
 # PR-26: UserHidden 해제 시 SystemFilter 미재평가 — 필터 대상 위 메인 인디 잔류
 
-> 상태: **조사 완료 / 수정 보류** — 2026-07-22 코드 정독 + 멀티에이전트 교차검증(26 에이전트) + 실측 재현(DEBUG 로그)까지 마쳤고, 수정 착수는 사용자 검토 중. 코드 변경 0.
+> 상태: **🚧 구현 완료 (커밋·머지 전)** — 2026-07-23. 조사(2026-07-22) → 설계 채택 **(a)+(b)+(c)** → 구현·검증 완료 (`dotnet build` 0/0, AOT publish 5,052,416 B, 102/102 PASS, DllImport 0).
 >
-> 대상 버전: `v0.9.9.6` (`D:\_portable\KoEnVue\KoEnVue.exe`, main HEAD 와 동일 코드)
+> 조사 당시 대상: `v0.9.9.6` (`D:\_portable\KoEnVue\KoEnVue.exe`)
 
 ## 동기 (증상)
 
@@ -122,15 +122,17 @@ state.LastFiltered = true;                          // ← 조건문 바깥. 항
 | IME WinEvent 훅 | [`:526~546`](../../Program.cs) `HandleImeStateChanged` 가 `UserHidden` 만 보고 필터는 안 봄. 필터 지속 중 `IME state:` 로그가 관측됨(정황) |
 | 주석 오류 | [`:674~680`](../../Program.cs) 의 "감지 스레드가 한 틱 먼저 숨김 메시지를 보내므로 이 경로엔 도달하지 않는다"는 전제가 **거짓** |
 
-## 수정 방향 후보 (미채택 — 설계 선행 권장)
+## 채택 · 구현 (2026-07-23)
 
-1. **(a) 에지 트리거 제거** — [`:1378`](../../Program.cs) 에서 `!state.LastFiltered` 를 빼고 `_indicatorVisible` 만 남긴다. HIDE 후 `_indicatorVisible` 이 거짓이 되므로 중복 발송은 그것만으로 억제되고, 3폴링 히스테리시스(flip-flop 흡수)도 그대로 유지된다. 최소 변경이면서 ②를 직접 해소.
-2. **(b) 해제 시 필터 재평가** — `ApplyUserHiddenTransition` 표시 분기에서 SystemFilter 를 확인. 단 `ShouldHide` 를 메인 스레드에서 호출하게 되므로 감지 스레드 상태와의 정합을 설계해야 한다.
-3. **(c) stale 무효화** — `Overlay._lastValidSystemInputFrame` 를 시스템 입력 창 종료 시 리셋(`TryHandleSystemInputClose` 와 연동).
+세 후보 **전부 채택**. 구현 요약:
 
-> ⚠ 이 영역은 2026-06-08 PR-25(grace period)에서 **애니메이션 경합으로 인디가 사라진 채 박제되는 회귀**를 겪은 곳이다. `_forceHidden` 은 NonKorean IME Hide 경로와 의미를 공유한다. 구현 전 planner 설계 + reviewer 검증 + 실기 smoke 를 권장한다.
+1. **(a) HIDE 레벨 트리거** — `TryHandleFilter` / `TryHandleModalGate` 의 HIDE 게이트를 `_indicatorVisible` 만으로 발송. `LastFiltered` 는 중복억제·`foregroundChanged` 유도용으로 유지(PRD §7.2). 재HIDE 는 Debug 로그.
+2. **(b) 강제 Show 시 라이브 필터 재평가** — `TryShowIndicatorIfForegroundAllowed`: 라이브 `GetForegroundWindow` + `ResolveFocusWindow` + `ResolveForApp` + `ShouldHide`. `ApplyUserHiddenTransition` 표시 분기·`HandleActivateRequest` 가 사용. `HandleConfigChanged`: `prev.UserHidden==false && UserHidden && visible` → `HideOverlay("config UserHidden")`.
+3. **(c) 프레임 캐시 무효화** — `Overlay.ClearLastValidSystemInputFrame` — `HideOverlay` 에서 호출. SearchHost→StartMenu 가시 전환은 Hide 를 타지 않으므로 보정 캐시는 그 경로에서 유지.
 
-## 미해결 — 토탈 커맨더 인디 위치 진동 (별건, 원인 미규명)
+> ⚠ 이 영역은 2026-06-08 PR-25(grace period)에서 **애니메이션 경합으로 인디가 사라진 채 박제되는 회귀**를 겪은 곳이다. `_forceHidden` 은 NonKorean IME Hide 경로와 의미를 공유한다. (a) 는 히스테리시스(`HideHysteresisPolls`)를 유지해 flip-flop 흡수 회귀를 피했다.
+
+## 이번 PR 범위 밖 · 기록 유지 — 토탈 커맨더 인디 위치 진동
 
 `TOTALCMD64` 사용 중 메인 인디 위치가 두 좌표를 **자동으로 왕복**한다:
 
@@ -149,9 +151,7 @@ state.LastFiltered = true;                          // ← 조건문 바깥. 항
 - `TLister`(F3 내장 뷰어)가 필터에 걸린 기록 1회(`streak=1/3`, `hwndFocus` 정상). 사용자 확인 결과 **전체화면 아님** → 조건 7 배제. 창 생성 순간의 조건 2(`!IsWindowVisible`) 또는 조건 3(가상 데스크톱 미등록) 추정. 히스테리시스가 흡수해 실제 숨김으로는 이어지지 않음.
 - 커서 인디케이터를 켠 뒤 왕복 간격이 1~2초 → 0.75초로 짧아짐(**상관만 확인, 인과 미검증**).
 
-**진단 차단 지점**: [`Program.cs:581`](../../Program.cs) 의 `PositionUpdated` 디버그 로그가 **프로세스명만 남기고 HWND·클래스명을 남기지 않아**, 진동하는 두 창을 특정할 수 없다.
-
-**다음 단계**: 해당 로그에 `hwnd`·`GetClassName` 을 추가(디버그 레벨)한 뒤 재현하면 즉시 판별 가능. 토탈 커맨더처럼 한 프로세스가 다수 top-level 창을 쓰는 앱 전반의 진단에도 유용하다.
+**진단 로그**: `PositionUpdated` 에 `hwnd`/`class` 추가는 **c359171 완료**(CHANGELOG Internal). 진동 원인 규명·수정은 **본 PR 범위 밖** — 기록만 유지. PR-27 캐럿 트윈·예측 외삽·Tier-3 관찰도 동일(작업 목록 제외).
 
 ## 코드 좌표
 

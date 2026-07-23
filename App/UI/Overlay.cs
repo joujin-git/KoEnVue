@@ -197,6 +197,14 @@ internal static class Overlay
     /// </summary>
     private static RECT _lastValidSystemInputFrame;
 
+    /// <summary>
+    /// 시스템 입력 패널 프레임 캐시를 비운다 (PR-26). 메인 스레드 전용.
+    /// HideOverlay 등에서 호출 — 닫힌 SearchHost/StartMenu 좌표에 그리는 stale 경로 차단.
+    /// SearchHost→StartMenu 가시 전환은 Hide 를 타지 않으므로 보정 캐시는 그 경로에서 유지된다.
+    /// </summary>
+    public static void ClearLastValidSystemInputFrame()
+        => _lastValidSystemInputFrame = default;
+
     /// <summary>CAPS LOCK 막대 두께 (logical px, DPI 스케일링 전).</summary>
     private const int CapsLockBarWidthLogicalPx = 2;
 
