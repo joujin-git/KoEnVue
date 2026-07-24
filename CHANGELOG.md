@@ -19,6 +19,8 @@
 
 ### Fixed
 
+- **컨텍스트 메뉴·셸 표면 위 메인·커서 인디 일관 숨김 (PR-32)** — 클래식 메뉴(`#32768`)는 FG를 안 뺏어 메인만 남던 불일치 해소. `OverlaySuppressProbe`(WFP→루트) 공유: 메인 = FG `ShouldHide`(히스테리시스) **OR** Pointer 즉시 숨김; 커서 = 동일 프로브(+Start/Search). Forced Show도 Pointer면 스킵. WinUI/브라우저 커스텀 메뉴는 비보장. [PR-32](docs/improvement-plan/PR-32-context-menu-indicator-suppress.md).
+
 - **Window 위치 클램프·모니터 폴백을 Fixed와 대칭화** — (1) 창 기준 **기본** 위치(`GetDefaultRelativePosition`)도 `ClampToVisibleArea` — 저장 없는 앱에서 창이 화면 가장자리일 때 인디가 work area 밖이던 틈. (2) Window 드래그 종료: 상대 오프셋 저장은 유지, `Show` 직전 절대좌표만 클램프. (3) Fixed `GetDefaultPosition` 모니터 폴백 `MONITOR_DEFAULTTOPRIMARY` → `MONITOR_DEFAULTTONEAREST` (Window resolve·`ClampToVisibleArea` 와 통일; 창↔모니터 교차 시 동작 변화 0).
 
 - **UserHidden 해제·강제 Show 시 SystemFilter 미재평가로 필터 대상 위 메인 인디가 잔류하던 결함 (PR-26)** — 트레이「메인 인디케이터 숨김」을 껐을 때 바탕화면/`Shell_TrayWnd` 등 필터 대상 위에 인디가 떠 있고, 감지 스레드가 재숨김하지 못하던 문제. (a) `TryHandleFilter`/`TryHandleModalGate` HIDE 게이트를 `_indicatorVisible` 레벨 트리거로 변경(`LastFiltered` 는 중복억제·`foregroundChanged`용 유지, 재HIDE는 Debug). (b) `TryShowIndicatorIfForegroundAllowed` — 라이브 FG + `ShouldHide` 통과 시에만 Show (`ApplyUserHiddenTransition` 표시 분기·`HandleActivateRequest`). config 핫리로드 `user_hidden` false→true 시 즉시 `HideOverlay`. (c) `HideOverlay` 에서 `Overlay.ClearLastValidSystemInputFrame` — 닫힌 SearchHost 좌표 stale 그리기 차단. [PR-26](docs/improvement-plan/PR-26-user-hidden-unhide-filter-bypass.md).

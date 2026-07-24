@@ -542,4 +542,8 @@ internal static class Win32Constants
     // (conhost 와 동형). ResolveFocusWindow 의 hwndFocus=0 폴백 한정자.
     // WindowProcessInfo.ApplicationFrameHost(프로세스명)와 별개 — 이건 윈도우 클래스명.
     public const string ApplicationFrameWindowClass = "ApplicationFrameWindow";
+
+    // 클래식 팝업/컨텍스트 메뉴 (TrackPopupMenu 등). FG를 뺏지 않는 경우가 많아
+    // SystemFilter(FG 축)만으로는 놓치므로 OverlaySuppressProbe(WFP 축)에서 매칭 (PR-32).
+    public const string PopupMenuClass = "#32768";
 }

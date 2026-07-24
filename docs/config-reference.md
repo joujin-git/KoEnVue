@@ -96,9 +96,9 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — 101 
 
 | 키 | 타입 | 기본값 | 설명 |
 |---|---|---|---|
-| `system_hide_classes` | string[] | `["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow_WASDK", "TopLevelWindowForOverflowXamlIsland", "ControlCenterWindow"]` | 바탕화면 + 작업 표시줄 + Win11 트레이 오버플로 + Quick Settings (Win+A) 클래스명. 일반 사용자가 편집할 일은 거의 없음 |
-| `system_hide_classes_user` | string[] | `[]` | 사용자 추가 클래스명 |
-| `system_hide_processes` | string[] | `["ShellExperienceHost"]` | 작업 표시줄/바탕화면 우클릭 컨텍스트 메뉴 같은 Win11 팝업 (포그라운드 + null owner) |
+| `system_hide_classes` | string[] | `["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow_WASDK", "TopLevelWindowForOverflowXamlIsland", "ControlCenterWindow"]` | FG `SystemFilter` + 포인터 `OverlaySuppressProbe`(PR-32). `#32768` 메뉴는 키에 없고 프로브 전용 const. 일반 사용자가 편집할 일은 거의 없음 |
+| `system_hide_classes_user` | string[] | `[]` | 사용자 추가 클래스명 (FG+포인터 공용) |
+| `system_hide_processes` | string[] | `["ShellExperienceHost"]` | Win11 셸 메뉴 등 (FG + 포인터). 작업 표시줄/바탕 우클릭 팝업 |
 | `system_hide_processes_user` | string[] | `[]` | 사용자 추가 프로세스명 (확장자 없음) |
 
 ## 앱별 프로필 + 필터 (App Profiles + Filter)

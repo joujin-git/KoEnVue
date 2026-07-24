@@ -152,9 +152,9 @@ internal static class CursorOverlay
         _lastCursorX = cursor.X;
         _lastCursorY = cursor.Y;
 
-        // 셸 UI (작업 표시줄 / 시작 메뉴 / 검색 패널) 위에서는 커서 인디를 숨긴다. 이들은 시스템
+        // 셸·메뉴 (작업 표시줄 / 시작 / 검색 / #32768 등) 위에서는 커서 인디를 숨긴다. 셸은 시스템
         // z-band (시작/검색은 immersive 밴드) 라 일반 topmost 인 커서 인디가 위로 못 올라가 가려지므로,
-        // 가려진 채 어색하게 두지 않고 해당 영역에서는 일관되게 숨긴다 (사용자 결정 2026-06-01).
+        // 가려진 채 어색하게 두지 않고 해당 영역에서는 일관되게 숨긴다 (사용자 결정 2026-06-01 + PR-32).
         if (IsOverShellUi(cursor))
         {
             HideCursor("Cursor indicator hidden (over shell UI)");
@@ -470,11 +470,10 @@ internal static class CursorOverlay
     }
 
     /// <summary>
-    /// 커서 바로 아래 창이 셸 UI(작업 표시줄 / 시작 메뉴 / 검색 패널)인지. <see cref="User32.WindowFromPoint"/>
-    /// 는 WS_EX_TRANSPARENT 인 커서 인디 윈도우를 통과해 아래 창을 반환하므로 자기 감지 없음.
-    /// <see cref="Win32Constants.GA_ROOT"/> 로 최상위 루트까지 올라가 (작업 표시줄 자식 버튼 → Shell_TrayWnd)
-    /// 클래스/프로세스를 판정한다. 같은 루트 hwnd 면 직전 판정을 재사용해 매 폴링 tick GetProcessName
-    /// (OpenProcess) 호출을 피한다.
+    /// 커서 바로 아래 창이 셸·메뉴 suppress 표면인지 (PR-32).
+    /// <see cref="User32.WindowFromPoint"/> 는 WS_EX_TRANSPARENT 커서 인디를 통과한다.
+    /// <see cref="Win32Constants.GA_ROOT"/> 루트 캐시로 매 tick GetProcessName 을 피한다.
+    /// 판정은 <see cref="OverlaySuppressProbe"/> 단일 진실원 (메인 Pointer 축과 공유, Start/Search 포함).
     /// </summary>
     private static bool IsOverShellUi(POINT cursor)
     {
@@ -486,31 +485,10 @@ internal static class CursorOverlay
 
         if (root == _lastShellHwnd) return _lastShellResult;
 
-        bool result = IsShellUiWindow(root);
+        bool result = OverlaySuppressProbe.IsSuppressRoot(
+            root, _config, includeSystemInputProcesses: true);
         _lastShellHwnd = root;
         _lastShellResult = result;
         return result;
-    }
-
-    /// <summary>
-    /// 루트 창이 작업 표시줄/바탕화면/Win11 시스템 UI(클래스) 또는 시작 메뉴/검색(프로세스)인지.
-    /// 클래스 매칭은 메인 인디 <see cref="SystemFilter"/> 와 같은 <c>SystemHideClasses</c> 2-리스트를
-    /// <see cref="SystemFilter.MatchesAny"/> 로 재사용 — P4 단일 구현. 시작 메뉴/검색은 클래스가 아닌
-    /// 프로세스명이라 <see cref="DefaultConfig.IsSystemInputProcess"/> + <c>SystemHideProcesses</c> 로 보강.
-    /// 클래스 매칭이 먼저라 작업 표시줄 등은 가벼운 GetClassName 으로 단락 — GetProcessName 은 시작/검색
-    /// 후보일 때만 호출된다.
-    /// </summary>
-    private static bool IsShellUiWindow(IntPtr root)
-    {
-        string className = WindowProcessInfo.GetClassName(root);
-        if (!string.IsNullOrEmpty(className)
-            && SystemFilter.MatchesAny(className, _config.SystemHideClasses, _config.SystemHideClassesUser))
-            return true;
-
-        string processName = WindowProcessInfo.GetProcessName(root);
-        if (string.IsNullOrEmpty(processName)) return false;
-
-        return DefaultConfig.IsSystemInputProcess(processName)
-            || SystemFilter.MatchesAny(processName, _config.SystemHideProcesses, _config.SystemHideProcessesUser);
     }
 }

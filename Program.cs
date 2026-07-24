@@ -804,8 +804,8 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// 라이브 포그라운드에 대해 SystemFilter / <c>enabled:false</c> 를 재평가한 뒤
-    /// 통과할 때만 인디를 표시한다 (PR-26). UserHidden 해제·두 번째 인스턴스 Activate 등
+    /// 라이브 포그라운드에 대해 SystemFilter / <c>enabled:false</c> / Pointer suppress(PR-32) 를
+    /// 재평가한 뒤 통과할 때만 인디를 표시한다 (PR-26). UserHidden 해제·두 번째 인스턴스 Activate 등
     /// 강제 Show 경로용. stale <c>_lastForegroundHwnd</c> 를 쓰지 않는다.
     /// 히스테리시스 없음(즉시 판정) — 탐색기 flip-flop 으로 한 번 스킵돼도 다음 non-filter
     /// 틱의 <c>WM_POSITION_UPDATED</c> 로 자기치유.
@@ -829,6 +829,13 @@ internal static partial class Program
         {
             Logger.Info(
                 $"Forced show skipped: foreground filtered (hwnd=0x{hwndFg.ToInt64():X}, class={WindowProcessInfo.GetClassName(hwndFg)})");
+            return;
+        }
+
+        // PR-32: 메뉴·셸 표면 위에서는 FG가 통과해도 Show 금지 (커서 WFP 축과 대칭).
+        if (OverlaySuppressProbe.IsPointerOverSuppressSurface(_config, includeSystemInputProcesses: false))
+        {
+            Logger.Info("Forced show skipped: pointer over suppress surface");
             return;
         }
 
@@ -1515,6 +1522,28 @@ internal static partial class Program
     private static bool TryHandleFilter(ref DetectionState state, IntPtr hwndForeground, IntPtr hwndFocus,
         AppConfig cfg, out AppConfig appConfig)
     {
+        // PR-32 Pointer 축 — FG 히스테리시스와 독립. #32768 등 FG 미변경 메뉴는 즉시 HIDE.
+        // Start/Search 는 메인 표시 정책 유지(includeSystemInput: false). 커서만 SystemInput 숨김.
+        if (OverlaySuppressProbe.IsPointerOverSuppressSurface(cfg, includeSystemInputProcesses: false))
+        {
+            if (_indicatorVisible)
+            {
+                if (!state.LastFiltered)
+                    Logger.Info("Pointer suppress HIDE");
+                else if (Logger.IsEnabled(LogLevel.Debug))
+                    Logger.Debug("Pointer suppress re-HIDE while still visible");
+                User32.PostMessageW(_hwndMain, AppMessages.WM_HIDE_INDICATOR,
+                    IntPtr.Zero, IntPtr.Zero);
+            }
+            state.LastHwndForeground = hwndForeground;
+            state.LastHwndFocus = hwndFocus;
+            state.LastFiltered = true;
+            state.FilteredStreak = 0; // Pointer 축과 FG 히스테리시스 카운터 분리
+            state.LastSystemInputFrame = default;
+            appConfig = default!;
+            return true;
+        }
+
         AppConfig? resolved = Settings.ResolveForApp(cfg, hwndForeground);
         bool currentlyFiltered = (resolved is null)
             || SystemFilter.ShouldHide(hwndForeground, hwndFocus, resolved);

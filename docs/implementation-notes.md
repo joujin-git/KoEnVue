@@ -520,6 +520,8 @@ IME 감지 경로는 두 가지다 — (1) 디텍션 스레드 80ms 폴링 (`Det
 7. Fullscreen exclusive (covers monitor + no `WS_CAPTION`)
 8. App blacklist / whitelist (`app_filter_list` + `app_filter_mode`)
 
+**Pointer suppress 축 (PR-32)**: FG `ShouldHide` 와 직교. 감지 틱마다 `OverlaySuppressProbe.IsPointerOverSuppressSurface` (`GetCursorPos` → `WindowFromPoint` → `GA_ROOT`) 가 `#32768`(`Win32Constants.PopupMenuClass`) ∪ `SystemHideClasses`/`SystemHideProcesses` 를 매칭하면 **히스테리시스 없이** 즉시 HIDE. 클래식 메뉴는 FG를 안 뺏는 경우가 많아 FG 축만으로는 메인 인디가 남던 불일치를 해소. 커서 `IsOverShellUi` 도 동일 프로브(+ `IsSystemInputProcess`). Forced Show(`TryShowIndicatorIfForegroundAllowed`)도 Pointer면 스킵. WinUI/브라우저 커스텀 메뉴는 클래스 비표준이라 v1 비보장.
+
 **Per-tick 프로세스명 메모이제이션**: `ShouldHide` 본문에 `string? hwndProcess = null; string ResolveHwndProcess() => hwndProcess ??= WindowProcessInfo.GetProcessName(hwnd);` 로컬 클로저를 둔다. 조건 4-b 의 owner 루프(루트까지 최대 5단계 상승)가 각 노드마다 동일 hwnd 의 프로세스명을 재조회하고, 조건 5 직접 비교 + 조건 8 blacklist 조회가 또 한 번 호출하던 중복을 제거 — `GetProcessName` 은 내부적으로 `OpenProcess` + `QueryFullProcessImageNameW` + `Path.GetFileNameWithoutExtension` 체인이라 호출당 NT 핸들 오픈 + 커널 모드 전환이 발생하는 무거운 경로이다. 감지 스레드 80ms 핫패스에서 1 tick 당 평균 3~5회의 P/Invoke 체인을 절감한다. cross-tick 캐시는 불필요 — `DetectionState.LastForegroundProcessName` 이 이미 foreground 전환 레벨의 cross-tick 캐시 역할을 담당하므로, `ResolveHwndProcess` 는 1 tick 내부 국소 최적화 한정이다.
 
 ### Lock screen hiding (WTS session notification)

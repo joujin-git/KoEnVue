@@ -234,7 +234,8 @@ internal static partial class DefaultConfig
     // 오버레이 윈도우 클래스명 (AdvancedConfig.OverlayClassName 디폴트 + ValidateAdvanced 폴백).
     public const string DefaultOverlayClassName    = "KoEnVueOverlay";
 
-    // 시스템 숨김 클래스/프로세스 (메인 인디 SystemFilter + 커서 IsOverShellUi 공용 기본 목록).
+    // 시스템 숨김 클래스/프로세스 (메인 SystemFilter FG 축 + OverlaySuppressProbe WFP 축 공용 기본 목록).
+    // #32768(PopupMenuClass) 은 FG 목록에 넣지 않고 프로브 전용(PR-32) — FG 미변경 메뉴는 WFP 축.
     public static string[] DefaultSystemHideClasses =>
         ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow_WASDK", "TopLevelWindowForOverflowXamlIsland", "ControlCenterWindow"];
     public static string[] DefaultSystemHideProcesses => ["ShellExperienceHost"];

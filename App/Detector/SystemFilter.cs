@@ -139,8 +139,8 @@ internal static class SystemFilter
     /// <summary>
     /// name 이 두 배열(기본 + 사용자) 중 하나라도 대소문자 무시하여 일치하면 true.
     /// SystemHideClasses/SystemHideProcesses 등 "기본 + 사용자 추가" 2-리스트 조회를 단일화한다.
-    /// <para>커서 인디(<see cref="App.UI.CursorOverlay"/>)의 셸 UI 호버 판정도 같은 2-리스트 매칭을
-    /// 재사용하므로 <c>internal</c> 노출 — P4 단일 구현(메인 인디 필터와 커서 인디가 공유).</para>
+    /// <para>커서·메인 인디의 포인터 suppress(<see cref="OverlaySuppressProbe"/>)도 같은 2-리스트 매칭을
+    /// 재사용하므로 <c>internal</c> 노출 — P4 단일 구현.</para>
     /// </summary>
     internal static bool MatchesAny(string name, string[] baseList, string[] userList)
     {
