@@ -54,7 +54,8 @@ KoEnVue/
 │   ├── Bootstrap/           AdminElevation (admin_elevation self-relaunch, UIPI 우회)
 │   ├── Config/              DefaultConfig, Settings facade, ThemePresets,
 │   │                        AppSettingsManager : JsonSettingsManager<AppConfig>
-│   ├── Detector/            ImeStatus + SystemFilter + ImeConstants
+│   ├── Detector/            ImeStatus + SystemFilter + ImeConstants +
+│   │                        OverlaySuppressProbe (PR-32 WFP 축)
 │   ├── Localization/        I18n (Ko/En UI text, GetUserDefaultUILanguage)
 │   ├── Update/              UpdateChecker + GitHubRelease + UpdateInfo
 │   └── UI/                  Overlay facade + Animation facade + Tray + TrayIcon +
