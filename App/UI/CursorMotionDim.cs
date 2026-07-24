@@ -1,15 +1,41 @@
+using KoEnVue.App.Models;
+
 namespace KoEnVue.App.UI;
 
 /// <summary>
-/// 커서 이동 중 시인성 저하(PR-29/30)의 순수 상태 전이 — Win32/엔진 무의존.
-/// enter/exit 이 같은 이동량(δ)을 쓰고 exit 만 settle 틱 히스테리시스를 둔다
-/// (PR-28 B안 9Hz 리미트 사이클 회피).
-/// 딤 전용 δ 임계(<c>CursorMotionDimThresholdPx</c>)는 호출측(<c>CursorOverlay</c>)에서 분류한다.
+/// 커서 표시 방식(PR-29/30/31)의 순수 상태 전이 — Win32/엔진 무의존.
+/// Motion 모드는 enter/exit 동일 δ + exit settle 히스테리시스 (PR-28 B안 회피).
+/// Soft/Sharp 는 이동 무관 고정. 딤 전용 δ 임계는 호출측에서 분류.
 /// </summary>
 internal static class CursorMotionDim
 {
     /// <summary>창 SourceConstantAlpha Full — 딤은 셰이더 원별 알파로만.</summary>
     public const byte FullAlpha = 255;
+
+    /// <summary>
+    /// 표시 모드에 따라 딤 활성 여부. Soft=항상 ON, Sharp=항상 OFF,
+    /// Motion=이동 즉시 ON / 연속 정지 settle 후 OFF.
+    /// </summary>
+    public static bool AdvanceForMode(
+        CursorDisplayMode mode,
+        ref int stillPolls,
+        bool moving,
+        bool wasDimActive,
+        int settlePolls)
+    {
+        switch (mode)
+        {
+            case CursorDisplayMode.Sharp:
+                stillPolls = 0;
+                return false;
+            case CursorDisplayMode.Motion:
+                return AdvanceDimActive(ref stillPolls, moving, wasDimActive, settlePolls);
+            case CursorDisplayMode.Soft:
+            default:
+                stillPolls = 0;
+                return true;
+        }
+    }
 
     /// <summary>
     /// 이동 중이면 즉시 딤. 정지면 <paramref name="stillPolls"/> 를 누적해
@@ -39,10 +65,10 @@ internal static class CursorMotionDim
         return true;
     }
 
-    /// <summary>팝 중·비활성·비딤 → 0. 딤이면 softness(두께 보간) 그대로.</summary>
-    public static double EffectiveSoftness(bool dimActive, bool enabled, bool popActive, double softness)
+    /// <summary>비딤 → 0. 딤이면 softness 그대로 (IME 팝 중에도 Soft/딤 안개 유지).</summary>
+    public static double EffectiveSoftness(bool dimActive, double softness)
     {
-        if (popActive || !enabled || !dimActive)
+        if (!dimActive)
             return 0.0;
         if (softness < 0.0) return 0.0;
         if (softness > 1.0) return 1.0;
@@ -50,15 +76,15 @@ internal static class CursorMotionDim
     }
 
     /// <summary>
-    /// 원별 픽셀 알파. 딤 OFF/팝 → (1,1,1).
-    /// 딤 ON → 세 원에 거의 균일(안개) — motionAlpha×배수.
+    /// 원별 픽셀 알파. 비딤 → (1,1,1).
+    /// 딤 ON → 세 원에 거의 균일(안개) — motionAlpha×배수. 팝과 무관.
     /// </summary>
     public static (double Inner, double Middle, double Outer) RingAlphas(
-        bool dimActive, bool enabled, bool popActive, double motionAlpha,
+        bool dimActive, double motionAlpha,
         double innerFactor, double middleFactor, double outerFactor,
         double minAlpha = 0.04)
     {
-        if (popActive || !enabled || !dimActive)
+        if (!dimActive)
             return (1.0, 1.0, 1.0);
 
         double a = motionAlpha;

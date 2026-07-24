@@ -7,6 +7,9 @@
 
 ### Changed
 
+- **로그 파일 최대 크기 디폴트 10MB → 1MB** — `log_max_size_mb` / `DefaultConfig.LogMaxSizeMb`. config 없을 때·신규 설치에만 영향.
+- **커서 표시 3모드 (PR-31, 디폴트 soft)** — `cursor_display_mode`: **soft**(흐릿하게) / **sharp**(선명하게) / **motion**(이동 중 흐릿하게). 트레이「커서 인디케이터 표시」라디오 + Settings Combo. IME 팝 중 Soft/딤 안개 유지. 구 `cursor_motion_dim_enabled` 는 true→motion / false→sharp 마이그. α/soft 키명 유지. [PR-31](docs/improvement-plan/PR-31-cursor-display-mode.md).
+- **커서 이동 안개 디폴트 — α 0.55 / soft 0.35** — publish `config.json` 체감값을 코드 디폴트에 맞춤 (`cursor_motion_alpha` 0.30→0.55, `cursor_motion_softness` 1.0→0.35). config 없을 때·신규 설치에만 영향.
 - **커서 이동 딤 — 저속 감지·settle·α (PR-30)** — AlwaysShow 안개: 딤 전용 임계 `CursorMotionDimThresholdPx=1`(숨김용 `CursorMotionThresholdPx=5` 유지)로 저속 이동도 딤 유지. Full 복귀 settle 3→**8**틱(~125ms). `cursor_motion_alpha` 디폴트 **0.22→0.30**. config 키·셰이더 불변. [PR-30](docs/improvement-plan/PR-30-cursor-motion-dim-settle-tweak.md).
 - **위치 기록 정리 UX — 모드 태그 + 설명 보강** — 다이얼로그 설명: 「고정 위치 모드, 창 기준 모드의 위치 기록을 모두 보여 줍니다. / 삭제하면 … 초기화 됩니다.」 항목 라벨에 `(고정)`/`(창)`/`(고정·창)`(+ `, 실행 중`). `PositionCleanupService.FormatDisplayLabel` + 단위 테스트. 다이얼로그 폭 340→400, 설명 높이 48(2줄).
 - **고정 모드 기본 위치 — 작업 영역 우상단 → 정중앙** — `default_indicator_position` 이 `null` 일 때(앱별 저장 위치 없음) 포그라운드 모니터 작업 영역 정중앙에 인디 bbox 를 맞춘다. `DefaultConfig.DefaultIndicatorOffsetX/Y`(-200,+10) 제거. 트레이「기본 위치 → 현재 위치로 설정」으로 저장한 Corner+delta·앱별 `indicator_positions` 는 그대로 우선.

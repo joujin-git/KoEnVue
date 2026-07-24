@@ -152,8 +152,25 @@ internal static partial class Tray
         // 커서 IME 전환 스케일 팝 on/off — 메인 변경 강조 바로 아래 (강조 항목끼리 인접 배치).
         uint cursorHighlightFlags = config.CursorChangeHighlight ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
         User32.AppendMenuW(hMenu, cursorHighlightFlags, (nuint)IDM_CURSOR_HIGHLIGHT, I18n.MenuCursorHighlight);
-        uint cursorMotionDimFlags = config.CursorMotionDimEnabled ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
-        User32.AppendMenuW(hMenu, cursorMotionDimFlags, (nuint)IDM_CURSOR_MOTION_DIM, I18n.MenuCursorMotionDim);
+
+        IntPtr hCursorDisplayMenu = User32.CreatePopupMenu();
+        User32.AppendMenuW(hCursorDisplayMenu, Win32Constants.MF_STRING,
+            (nuint)IDM_CURSOR_DISPLAY_SOFT, I18n.MenuCursorDisplaySoft);
+        User32.AppendMenuW(hCursorDisplayMenu, Win32Constants.MF_STRING,
+            (nuint)IDM_CURSOR_DISPLAY_SHARP, I18n.MenuCursorDisplaySharp);
+        User32.AppendMenuW(hCursorDisplayMenu, Win32Constants.MF_STRING,
+            (nuint)IDM_CURSOR_DISPLAY_MOTION, I18n.MenuCursorDisplayMotion);
+        uint cursorDisplayCheckId = config.CursorDisplayMode switch
+        {
+            CursorDisplayMode.Sharp => (uint)IDM_CURSOR_DISPLAY_SHARP,
+            CursorDisplayMode.Motion => (uint)IDM_CURSOR_DISPLAY_MOTION,
+            _ => (uint)IDM_CURSOR_DISPLAY_SOFT,
+        };
+        User32.CheckMenuRadioItem(hCursorDisplayMenu,
+            (uint)IDM_CURSOR_DISPLAY_SOFT, (uint)IDM_CURSOR_DISPLAY_MOTION,
+            cursorDisplayCheckId, Win32Constants.MF_BYCOMMAND);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
+            (nuint)(nint)hCursorDisplayMenu, I18n.MenuCursorDisplay);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
 
         bool isStartup = StartupTaskManager.IsStartupRegistered();

@@ -197,7 +197,7 @@ internal static partial class DefaultConfig
     public const int    SnapGapPx              = 10;
 
     // 시스템
-    public const int    LogMaxSizeMb           = 10;
+    public const int    LogMaxSizeMb           = 1;
 
     // 고급 -- AdvancedConfig
     public const int    ForceTopmostIntervalMs = 5000;
@@ -338,14 +338,16 @@ internal static partial class DefaultConfig
     /// </summary>
     public const int    CursorMotionDimSettlePolls = 8;
 
-    public const bool   CursorMotionDimEnabled     = true;
+    /// <summary>커서 표시 방식 디폴트 — 항상 흐릿하게 (PR-31).</summary>
+    public const CursorDisplayMode CursorDisplayModeDefault = CursorDisplayMode.Soft;
+
     /// <summary>
-    /// 이동 중 안개(포그) 알파 기준 — 세 원에 거의 동일 적용.
-    /// 창 SourceConstantAlpha 는 Full 유지. PR-30: 0.22→0.30 (시인성↑).
+    /// Soft/Motion 안개 알파 기준 — 세 원에 거의 동일 적용.
+    /// 창 SourceConstantAlpha 는 Full 유지. 사용자 체감 디폴트(publish config).
     /// </summary>
-    public const double CursorMotionAlpha          = 0.30;
-    /// <summary>이동 중 안개 강도(0=선명, 1=최대 소프트).</summary>
-    public const double CursorMotionSoftness       = 1.0;
+    public const double CursorMotionAlpha          = 0.55;
+    /// <summary>Soft/Motion 안개 강도(0=선명하게, 1=최대 소프트). 사용자 체감 디폴트.</summary>
+    public const double CursorMotionSoftness       = 0.35;
 
     /// <summary>soft=1 일 때 가우시안 σ = baseHaloHalf × 이 값 (클수록 더 흐림).</summary>
     public const double CursorMotionFogSigmaMul    = 14.0;

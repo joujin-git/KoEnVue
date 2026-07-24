@@ -62,8 +62,10 @@ internal static partial class Tray
     private const int IDM_CURSOR_TOGGLE      = 4011;
     /// <summary>PR-21: 커서 인디 IME 전환 스케일 팝 on/off 토글 (메인 ChangeHighlight 와 동형).</summary>
     private const int IDM_CURSOR_HIGHLIGHT   = 4013;
-    /// <summary>PR-29: 커서 이동 중 시인성 저하(알파+소프트) on/off.</summary>
-    private const int IDM_CURSOR_MOTION_DIM  = 4014;
+    /// <summary>PR-31: 커서 표시 Soft / Sharp / Motion 라디오.</summary>
+    private const int IDM_CURSOR_DISPLAY_SOFT   = 4014;
+    private const int IDM_CURSOR_DISPLAY_SHARP  = 4015;
+    private const int IDM_CURSOR_DISPLAY_MOTION = 4016;
     /// <summary>PR-15: admin_elevation 토글 (UIPI 우회용 관리자 권한 실행 옵션).</summary>
     private const int IDM_ADMIN_ELEVATION    = 4012;
     // IDM_HOMEPAGE: 메뉴 최상단 헤더 라인의 단일 진입점. `_pendingUpdate` 상태에 따라
@@ -410,9 +412,22 @@ internal static partial class Tray
                 Logger.Info($"CursorChangeHighlight toggled via menu: {!config.CursorChangeHighlight}");
                 break;
 
-            case IDM_CURSOR_MOTION_DIM:
-                updateConfig(config with { CursorMotionDimEnabled = !config.CursorMotionDimEnabled });
-                Logger.Info($"CursorMotionDimEnabled toggled via menu: {!config.CursorMotionDimEnabled}");
+            case IDM_CURSOR_DISPLAY_SOFT:
+                UpdateIfChanged(updateConfig, config.CursorDisplayMode != CursorDisplayMode.Soft,
+                    config with { CursorDisplayMode = CursorDisplayMode.Soft },
+                    "Cursor display mode changed to Soft");
+                break;
+
+            case IDM_CURSOR_DISPLAY_SHARP:
+                UpdateIfChanged(updateConfig, config.CursorDisplayMode != CursorDisplayMode.Sharp,
+                    config with { CursorDisplayMode = CursorDisplayMode.Sharp },
+                    "Cursor display mode changed to Sharp");
+                break;
+
+            case IDM_CURSOR_DISPLAY_MOTION:
+                UpdateIfChanged(updateConfig, config.CursorDisplayMode != CursorDisplayMode.Motion,
+                    config with { CursorDisplayMode = CursorDisplayMode.Motion },
+                    "Cursor display mode changed to Motion");
                 break;
 
             // --- 상세 설정 ---

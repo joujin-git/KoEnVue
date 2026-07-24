@@ -1,6 +1,6 @@
 # `config.json` 전체 키 레퍼런스
 
-KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — 101 항목 (커서 인디 16 키 = 동심원 10 + 이동 딤 3 + 전환 효과 3, PR-15 `admin_elevation` 포함). 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
+KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — 101 항목 (커서 인디 16 키 = 동심원 10 + 표시모드·안개 3 + 전환 효과 3, PR-15 `admin_elevation` 포함). 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
 
 `config.json` 의 위치: `%LOCALAPPDATA%\KoEnVue\config.json` (기본) 또는 exe 폴더 (writable 일 때). 자세한 결정 절차는 [README §다운로드](../README.md) 의 권장 설치 위치 절을 참고하세요. 저장 즉시 **핫 리로드** 됩니다 (메인 스레드 mtime 폴링, ~5초 간격).
 
@@ -134,7 +134,7 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — 101 
 | `language` | enum | `"auto"` | `auto` / `ko` / `en` | UI 언어 (트레이 메뉴 / 다이얼로그 / 툴팁). `auto` = Windows 시스템 언어 자동 감지 |
 | `log_to_file` | bool | `true` | — | `koenvue.log` 파일 쓰기. `false` = Trace 만 (디버거 부착 시 가시) |
 | `log_file_path` | string | `""` | — | 사용자 지정 로그 경로. 빈 문자열 = 기본 (`exe폴더\koenvue.log` 또는 `%LOCALAPPDATA%\KoEnVue\koenvue.log`). [PortablePath.SanitizeLogPath](../App/Config/PortablePath.cs) 가 허용 루트 외 값은 거절 |
-| `log_max_size_mb` | int | `10` | 1 ~ 100 | 로그 파일 최대 크기 (MB). 도달 시 `koenvue.log.1` 로 단일 회전 |
+| `log_max_size_mb` | int | `1` | 1 ~ 100 | 로그 파일 최대 크기 (MB). 도달 시 `koenvue.log.1` 로 단일 회전 |
 
 ## 업데이트 (Update)
 
@@ -182,15 +182,15 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — 101 
 | `cursor_idle_delay_ms` | int | `100` | 0 ~ 2000 | (정지 검출 모드) 마우스 정지 후 인디 표시까지 대기 시간 (ms). 0 = 즉시 |
 | `cursor_motion_threshold_px` | int | `5` | 1 ~ 32 | (정지 검출 모드) 직전 폴링 좌표와 맨해튼 거리 임계 (px). 초과 시 "이동" 으로 분류 — 인디 즉시 숨김 |
 
-### 이동 중 시인성 (Motion Dim, PR-29)
+### 커서 표시 (Cursor Display, PR-31)
 
-항상 표시 모드(`cursor_always_show = true`)에서 커서 이동 중 인디 distraction↓ — **세 원(Inner/Middle/Outer) 공통 가우시안 안개**: soft&gt;0 이면 하드 코어 없음·σ≈헤일로반폭×14·색+흰색 혼합·알파≈0.30 균일(배수 Inner/Middle/Outer = 1.00/0.97/0.94). 이동 판정은 딤 전용 저임계(내부 `CursorMotionDimThresholdPx=1`) + Full 복귀는 연속 정지 8틱(~125ms). CAPS OFF 면 Outer 미표시(기존). DIB `MotionFogPadLogicalPx=28`. 창 `SourceConstantAlpha` 는 Full. IME 팝 중 soft=0·원별 α=1. Settings「이동 중 옅게 / 안개 농도 / 안개 강도」+ 트레이.
+항상 표시 모드(`cursor_always_show = true`)에서 동심원 선명도. **세 원 공통 가우시안 안개**(Soft/Motion): soft&gt;0 이면 하드 코어 없음·σ≈헤일로반폭×(1+soft×13)·색+흰색 혼합·알파≈0.55(배수 1.00/0.97/0.94). Motion만 딤 전용 저임계(`CursorMotionDimThresholdPx=1`) + Full 복귀 8틱. CAPS OFF면 Outer 미표시. DIB `MotionFogPadLogicalPx=28`. 창 알파는 Full. IME 팝 중에도 Soft/딤 안개 유지(스케일만 변경). 트레이「커서 인디케이터 표시」라디오 + Settings Combo.
 
 | 키 | 타입 | 기본값 | 범위 | 설명 |
 |---|---|---|---|---|
-| `cursor_motion_dim_enabled` | bool | `true` | — | 이동 중 딤 on/off. 트레이 메뉴 "커서 이동 중 옅게" 체크박스와 동일 (체크 = ON). Settings Bool 도 노출 |
-| `cursor_motion_alpha` | double | `0.30` | **0.04 ~ 1.0** | 이동 중 안개 알파 기준. Middle/Outer 배수 0.97 / 0.94 |
-| `cursor_motion_softness` | double | `1.0` | 0.0 ~ 1.0 | 안개 강도. 1=가우시안 σ≈14×헤일로반폭(하드 코어 없음) |
+| `cursor_display_mode` | enum | `"soft"` | `soft` / `sharp` / `motion` | **soft**=흐릿하게(기본) · **sharp**=선명하게 · **motion**=이동 중 흐릿하게(PR-29/30). 구 `cursor_motion_dim_enabled` 는 로드 시 true→motion / false→sharp 로 마이그 후 저장 시 소멸 |
+| `cursor_motion_alpha` | double | `0.55` | **0.04 ~ 1.0** | Soft/Motion 안개 알파 기준. Sharp에서는 무시(값 보존). Middle/Outer 배수 0.97 / 0.94 |
+| `cursor_motion_softness` | double | `0.35` | 0.0 ~ 1.0 | Soft/Motion 안개 강도. 1=σ≈14×헤일로반폭. Sharp에서는 무시 |
 
 ### 전환 효과 (Cursor Transition)
 

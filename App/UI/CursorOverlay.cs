@@ -130,7 +130,7 @@ internal static class CursorOverlay
         {
             _engine.PrepareResources(_currentStyle);
         }
-        Logger.Debug($"Cursor indicator config applied (alwaysShow={config.CursorAlwaysShow}, motionDim={config.CursorMotionDimEnabled}, visible={_isVisible})");
+        Logger.Debug($"Cursor indicator config applied (alwaysShow={config.CursorAlwaysShow}, displayMode={config.CursorDisplayMode}, visible={_isVisible})");
     }
 
     /// <summary>
@@ -266,34 +266,22 @@ internal static class CursorOverlay
     }
 
     /// <summary>
-    /// AlwaysShow 경로 — 이동 딤 상태 갱신 + 두께/원별 알파 + 위치 렌더 (PR-29).
+    /// AlwaysShow 경로 — 커서 표시 모드(PR-31)에 따라 안개/선명 + 위치 렌더.
+    /// Soft=항상 흐릿하게, Sharp=항상 선명하게, Motion=이동 중 흐릿하게(PR-29/30).
     /// 팝 중에는 soft=0 · 원별 알파 1.0 (IME 전환 가독 우선). 창 SourceConstantAlpha 는 Full.
     /// </summary>
     private static void ApplyMotionDimAndRender(POINT cursor, bool moving)
     {
         if (_engine is null) return;
 
-        bool dimEnabled = _config.CursorMotionDimEnabled;
-        if (!dimEnabled)
-        {
-            if (_motionDimActive
-                || _currentStyle.MotionSoftness != 0.0
-                || _currentStyle.RingAlphaInner != 1.0)
-            {
-                ResetMotionDim();
-                _currentStyle = ClearMotionDimStyle(_currentStyle);
-            }
-        }
-        else
-        {
-            _motionDimActive = CursorMotionDim.AdvanceDimActive(
-                ref _motionStillPolls, moving, _motionDimActive, DefaultConfig.CursorMotionDimSettlePolls);
-        }
+        CursorDisplayMode mode = _config.CursorDisplayMode;
+        _motionDimActive = CursorMotionDim.AdvanceForMode(
+            mode, ref _motionStillPolls, moving, _motionDimActive, DefaultConfig.CursorMotionDimSettlePolls);
 
         double soft = CursorMotionDim.EffectiveSoftness(
-            _motionDimActive, dimEnabled, _popActive, _config.CursorMotionSoftness);
+            _motionDimActive, _config.CursorMotionSoftness);
         var rings = CursorMotionDim.RingAlphas(
-            _motionDimActive, dimEnabled, _popActive, _config.CursorMotionAlpha,
+            _motionDimActive, _config.CursorMotionAlpha,
             DefaultConfig.CursorMotionRingInnerFactor,
             DefaultConfig.CursorMotionRingMiddleFactor,
             DefaultConfig.CursorMotionRingOuterFactor,
@@ -311,15 +299,6 @@ internal static class CursorOverlay
         _engine.SetDisplayAlpha(CursorMotionDim.FullAlpha);
         RenderAtCursor(cursor);
     }
-
-    private static CursorStyle ClearMotionDimStyle(CursorStyle style) => style with
-    {
-        MotionSoftness = 0.0,
-        MotionFogPadLogicalPx = 0,
-        RingAlphaInner = 1.0,
-        RingAlphaMiddle = 1.0,
-        RingAlphaOuter = 1.0,
-    };
 
     private static void ResetMotionDim()
     {
@@ -418,8 +397,9 @@ internal static class CursorOverlay
         int durationMs = _config.CursorHighlightDurationMs;
         double ratio = durationMs > 0 ? Math.Clamp((double)elapsed / durationMs, 0.0, 1.0) : 1.0;
         double scale = _config.CursorHighlightScale + (1.0 - _config.CursorHighlightScale) * ratio;
-        // 팝 중 soft=0 · 원별 알파 Full — 가독 우선 (PR-29).
-        _currentStyle = ClearMotionDimStyle(_currentStyle) with { HighlightScale = scale };
+        // HighlightScale 만 갱신 — Soft/딤 안개(MotionSoftness·RingAlpha*) 유지.
+        // 예전 ClearMotionDimStyle 은 한/영 팝마다 선명 플래시를 일으킴 (PR-31 후속).
+        _currentStyle = _currentStyle with { HighlightScale = scale };
         _engine.Render(_currentStyle);
         _engine.UpdateAlpha(CursorMotionDim.FullAlpha);
         if (ratio >= 1.0)

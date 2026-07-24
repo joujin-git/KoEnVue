@@ -170,6 +170,7 @@ internal static class Settings
             Language = EnumOrDefault(config.Language, AppLanguage.Auto),
             PositionMode = EnumOrDefault(config.PositionMode, PositionMode.Window),
             DragModifier = EnumOrDefault(config.DragModifier, DragModifier.None),
+            CursorDisplayMode = EnumOrDefault(config.CursorDisplayMode, DefaultConfig.CursorDisplayModeDefault),
 
             // 중첩 record 의 Corner — null 이면 건너뜀.
             DefaultIndicatorPosition = ValidateDefaultPosition(config.DefaultIndicatorPosition),
@@ -492,6 +493,17 @@ internal sealed partial class AppSettingsManager : JsonSettingsManager<AppConfig
     /// </summary>
     protected override AppConfig PostDeserializeFixup(AppConfig config, string mergedJson)
     {
+        // PR-31: 구 cursor_motion_dim_enabled → cursor_display_mode (원본 user 파일 기준).
+        if (CursorDisplayModeMigration.TryResolveFromUserFile(FilePath, out CursorDisplayMode migratedMode))
+        {
+            if (config.CursorDisplayMode != migratedMode)
+            {
+                Logger.Info(
+                    $"Migrated cursor display mode from legacy config → {migratedMode}");
+                config = config with { CursorDisplayMode = migratedMode };
+            }
+        }
+
         bool needsFixedFixup = config.IndicatorPositions.Count == 0;
         bool needsRelativeFixup = config.IndicatorPositionsRelative.Count == 0;
 
