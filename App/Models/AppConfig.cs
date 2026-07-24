@@ -120,22 +120,22 @@ internal sealed record AppConfig
     // false 로 두면 네트워크 호출 자체가 발생하지 않음 (오프라인/사내망 친화).
     public bool UpdateCheckEnabled { get; init; } = true;
 
-    // [인디케이터 위치 -- 모드]
+    // [플로팅 배지 위치 -- 모드]
     public PositionMode PositionMode { get; init; } = PositionMode.Window;
 
-    // [인디케이터 위치 -- 앱별 저장 (고정)]
+    // [플로팅 배지 위치 -- 앱별 저장 (고정)]
     public Dictionary<string, int[]> IndicatorPositions { get; init; } = new();
 
-    // [인디케이터 위치 -- 앱별 저장 (창 기준)]
+    // [플로팅 배지 위치 -- 앱별 저장 (창 기준)]
     // int[3]: [(int)Corner, DeltaX, DeltaY] — 포그라운드 창 DWM 프레임 기준 상대 오프셋.
     public Dictionary<string, int[]> IndicatorPositionsRelative { get; init; } = new();
 
-    // [인디케이터 위치 -- 저장 안 된 앱의 기본 표시 위치 (고정)]
+    // [플로팅 배지 위치 -- 저장 안 된 앱의 기본 표시 위치 (고정)]
     // null = 포그라운드 모니터 작업 영역 정중앙 (Overlay.ResolveWorkAreaCenter).
     // 트레이 "기본 위치 → 현재 위치로 설정" 으로 Corner+delta 를 저장하면 그 값이 우선.
     public DefaultPositionConfig? DefaultIndicatorPosition { get; init; } = null;
 
-    // [인디케이터 위치 -- 저장 안 된 앱의 기본 표시 위치 (창 기준)]
+    // [플로팅 배지 위치 -- 저장 안 된 앱의 기본 표시 위치 (창 기준)]
     // 디폴트는 DefaultConfig.DefaultRelative* 단일 진실원 참조. 사용자가 명시적으로 null 설정 시
     // Overlay 가 동일 폴백 const 를 그대로 사용 — 두 경로 일치.
     public RelativePositionConfig? DefaultIndicatorPositionRelative { get; init; } = new()
@@ -145,15 +145,15 @@ internal sealed record AppConfig
         DeltaY = DefaultConfig.DefaultRelativeOffsetY,
     };
 
-    // [인디케이터 위치 -- 드래그 중 창 엣지 스냅]
+    // [플로팅 배지 위치 -- 드래그 중 창 엣지 스냅]
     // true = 드래그 중 가시 창의 엣지와 모니터 work area 엣지에 자석처럼 붙음.
     public bool SnapToWindows { get; init; } = true;
 
-    // 창 엣지 스냅 시 인디케이터와 타겟 창 사이 간격 (DPI 스케일링 전 px).
+    // 창 엣지 스냅 시 플로팅 배지와 타겟 창 사이 간격 (DPI 스케일링 전 px).
     // 0 = 엣지에 밀착, 양수 = 경계선 겹침 방지 여백. 화면 엣지에는 적용 안 됨.
     public int SnapGapPx { get; init; } = DefaultConfig.SnapGapPx;
 
-    // [인디케이터 위치 -- 드래그 활성 키]
+    // [플로팅 배지 위치 -- 드래그 활성 키]
     // 드래그 승격 게이트. 짧은 좌클릭은 항상 일시 숨김. None = 임계 초과 시 드래그 승격.
     // Ctrl/Alt/CtrlAlt = 해당 키를 정확히 누른 채 임계 초과 시에만 승격 (미보유면 업 시 숨김).
     // Shift 는 드래그 중 축 고정에 선점되어 제외.
@@ -198,7 +198,7 @@ internal sealed record AdvancedConfig
 }
 
 /// <summary>
-/// 저장 위치가 없는 앱에 인디케이터를 표시할 기본 위치 (고정 모드).
+/// 저장 위치가 없는 앱에 플로팅 배지를 표시할 기본 위치 (고정 모드).
 /// Corner anchor + delta — 포그라운드 모니터 work area 기준으로 계산되므로
 /// 멀티모니터·해상도 변경에 안정적.
 /// </summary>
@@ -210,7 +210,7 @@ internal sealed record DefaultPositionConfig
 }
 
 /// <summary>
-/// 저장 위치가 없는 앱에 인디케이터를 표시할 기본 위치 (창 기준 모드).
+/// 저장 위치가 없는 앱에 플로팅 배지를 표시할 기본 위치 (창 기준 모드).
 /// Corner anchor + delta — 포그라운드 창의 DWM visible frame 기준.
 /// </summary>
 internal sealed record RelativePositionConfig

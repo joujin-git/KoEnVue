@@ -13,7 +13,7 @@ namespace KoEnVue.Core.Windowing;
 /// 현재 위치의 모니터 work area 도 후보로 포함 (간격 0 — 화면 엣지 스냅).
 /// </para>
 /// <para>
-/// 정적 캐시 (s_targets / s_ownerHwnd) 는 한 프로세스에 동시에 드래그 중인 인디케이터가
+/// 정적 캐시 (s_targets / s_ownerHwnd) 는 한 프로세스에 동시에 드래그 중인 플로팅 배지가
 /// 하나뿐이라는 가정 — LayeredOverlayBase 인스턴스가 앱당 1개임에 의존한다.
 /// <see cref="EnumWindowsCallback"/> 는 <c>[UnmanagedCallersOnly]</c> 라 인스턴스 필드에
 /// 접근할 수 없어 정적 브리지가 필수.

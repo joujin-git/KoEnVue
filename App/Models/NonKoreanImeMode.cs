@@ -9,15 +9,15 @@ namespace KoEnVue.App.Models;
 [JsonConverter(typeof(JsonStringEnumConverter<NonKoreanImeMode>))]
 internal enum NonKoreanImeMode
 {
-    /// <summary>인디케이터 숨김 (기본값).</summary>
+    /// <summary>플로팅 배지 숨김 (기본값).</summary>
     [JsonStringEnumMemberName("hide")]
     Hide,
 
-    /// <summary>인디케이터 표시 유지.</summary>
+    /// <summary>플로팅 배지 표시 유지.</summary>
     [JsonStringEnumMemberName("show")]
     Show,
 
-    /// <summary>감소된 투명도로 인디케이터 표시.</summary>
+    /// <summary>감소된 투명도로 플로팅 배지 표시.</summary>
     [JsonStringEnumMemberName("dim")]
     Dim,
 }

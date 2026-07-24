@@ -6,7 +6,7 @@ namespace KoEnVue.Core.Windowing;
 /// 주기적으로 SetWindowPos(HWND_TOPMOST) 를 재적용하기 위한 단일 WM_TIMER 워치독.
 /// <para>
 /// 다른 풀스크린 / topmost 윈도우가 자기를 위에 깔거나 셸이 z-order 를 갱신해도
-/// 인디케이터가 항상 최상단에 머무르도록 한다. OverlayAnimator 가 담당하던 페이드 /
+/// 플로팅 배지가 항상 최상단에 머무르도록 한다. OverlayAnimator 가 담당하던 페이드 /
 /// 슬라이드 / 하이라이트 / 홀드 / topmost 5 트랙 중 본 트랙만 시간 / 상태 의존성이
 /// 없어 분리해도 회귀 위험이 최소 — 나머지 4 트랙의 분해는 보류 (dev-notes 참조).
 /// </para>

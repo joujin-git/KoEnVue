@@ -67,7 +67,7 @@ internal static class Overlay
     // ================================================================
 
     /// <summary>
-    /// 지정 좌표에 인디케이터 렌더 + UpdateLayeredWindow.
+    /// 지정 좌표에 플로팅 배지 렌더 + UpdateLayeredWindow.
     /// 좌표가 속한 모니터 DPI로 리소스 갱신.
     /// PR-13 이후 <paramref name="config"/> 는 호출자가 per-app resolved AppConfig 를
     /// 전달한다 (글로벌 _config 대신) — `app_profiles` 의 시각 필드 override 가 본 렌더까지 도달.
@@ -227,7 +227,7 @@ internal static class Overlay
     ///   창 rect는 DWM extended frame bounds로 받아 invisible resize border를 배제한다.
     ///   config.DefaultIndicatorPosition은 이 분기에 적용되지 않음.
     /// - 일반 프로세스: config.DefaultIndicatorPosition이 있으면 해당 모서리 anchor + delta로 계산,
-    ///   없으면 포그라운드 모니터 작업 영역 정중앙 (인디 bbox 중심 정렬).
+    ///   없으면 포그라운드 모니터 작업 영역 정중앙 (배지 bbox 중심 정렬).
     /// </summary>
     public static (int x, int y) GetDefaultPosition(IntPtr hwndForeground, string processName)
     {
@@ -290,7 +290,7 @@ internal static class Overlay
     }
 
     /// <summary>
-    /// 작업 영역 정중앙에 인디 bbox 를 맞춘 좌상단 좌표.
+    /// 작업 영역 정중앙에 배지 bbox 를 맞춘 좌상단 좌표.
     /// 엔진 미초기화 시 LabelWidth/Height × IndicatorScale 논리 크기를 DPI 스케일해 폴백.
     /// </summary>
     private static (int x, int y) ResolveWorkAreaCenter(RECT workArea, double dpiScale)
@@ -366,7 +366,7 @@ internal static class Overlay
     }
 
     /// <summary>
-    /// 현재 인디 위치(`_lastX, _lastY`)에서 가장 가까운 모서리를 찾아
+    /// 현재 배지 위치(`_lastX, _lastY`)에서 가장 가까운 모서리를 찾아
     /// DefaultPositionConfig로 환산. 트레이 "기본 위치 → 현재 위치로 설정"에서 호출.
     /// 모니터는 현재 위치 기준으로 판정하므로 사용자가 멀티모니터 중 어느 화면에
     /// 인디를 뒀든 해당 화면의 work area가 anchor 기준이 된다.
@@ -399,7 +399,7 @@ internal static class Overlay
     }
 
     /// <summary>
-    /// 현재 인디 위치에서 포그라운드 창의 가장 가까운 모서리를 찾아
+    /// 현재 배지 위치에서 포그라운드 창의 가장 가까운 모서리를 찾아
     /// RelativePositionConfig로 환산. 트레이 "기본 위치 → 현재 위치로 설정"(창 기준 모드)에서 호출.
     /// <para>
     /// Delta 는 <b>논리 픽셀</b>(96 DPI 기준) 로 저장된다. 서로 다른 DPI 모니터 간 이동 시에도

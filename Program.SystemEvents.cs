@@ -71,7 +71,7 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// WM_WTSSESSION_CHANGE — 잠금 시 인디 즉시 숨김. 해제 시 감지 스레드가 다음 포그라운드
+    /// WM_WTSSESSION_CHANGE — 잠금 시 배지 즉시 숨김. 해제 시 감지 스레드가 다음 포그라운드
     /// 이벤트로 자연 복원하므로 별도 show 호출 없음. LOCK/UNLOCK 외 이벤트(로그오프 등)는 무시.
     /// </summary>
     private static void HandleSessionChange(uint sessionEvent)

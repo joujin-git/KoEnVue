@@ -5,8 +5,11 @@
 
 ## [Unreleased]
 
+## [0.9.9.7] — 2026-07-24 — 플로팅 배지·커서 헤일로·PR-32/33·오딧 후속
+
 ### Changed
 
+- **I18n — `ScaleDialogTitle` EN · 주석 용어 잔여** — EN `Custom Indicator Scale` → `Custom scale`. 코드/주석 「인디케이터」→「플로팅 배지」, 「커서 추종 인디(케이터)」→「커서 헤일로」(식별자·config 키·로그 영문 불변).
 - **I18n — `TrayPositionUnavailable` 용어 통일** — MessageBox KO/EN 「인디케이터/indicator」→「플로팅 배지/floating badge」.
 - **커서 헤일로 전환 강조 — IME 전환 한정 명문화 (BEH-2 방향 A)** — 동일 IME 앱 사이 전환 시 팝이 없는 것은 **정상**(플로팅 배지와 일관). IME가 실제로 바뀔 때만 강조. User_Guide / config-reference / DECISIONS 명문. 코드 변경 0. [AUDIT §BEH-2](docs/improvement-plan/AUDIT-2026-06-02-codebase-review.md).
 - **UI 용어 개명 — 「메인 인디케이터」→「플로팅 배지」, 「커서 인디케이터」→「커서 헤일로」** — 트레이·상세 설정 라벨(KO/EN) 및 문서·주석 전면 반영. EN: Floating badge / Cursor halo. config 키·C# 식별자·`cursor_halo_*` 부품 키는 불변.

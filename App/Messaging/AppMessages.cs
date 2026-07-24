@@ -33,7 +33,7 @@ internal static class AppMessages
     public const uint WM_POSITION_UPDATED = Win32Constants.WM_APP + 3;
 
     /// <summary>
-    /// 인디케이터 즉시 숨기기.
+    /// 플로팅 배지 즉시 숨기기.
     /// wParam: 0
     /// lParam: 0
     /// </summary>
@@ -56,7 +56,7 @@ internal static class AppMessages
 
     /// <summary>
     /// 중복 실행된 두 번째 인스턴스가 기존(실행 중) 인스턴스에 활성화를 요청.
-    /// 수신 시 현재 포그라운드 앱 기준으로 인디케이터를 즉시 표시해 사용자에게
+    /// 수신 시 현재 포그라운드 앱 기준으로 플로팅 배지를 즉시 표시해 사용자에게
     /// "이미 실행 중" 이라는 시각 피드백을 준다.
     /// wParam: 0
     /// lParam: 0
@@ -72,8 +72,8 @@ internal static class AppMessages
     public const nuint TIMER_ID_SLIDE         = 5;  // ~16ms, 슬라이드 위치 보간
     public const nuint TIMER_ID_CAPS          = 6;  // 200ms, CAPS LOCK 토글 폴링 (메인 스레드)
     public const nuint TIMER_ID_TRAY_ADD_RETRY = 7; // 1000ms, NIM_ADD 재시도 (부팅 레이스 복구)
-    public const nuint TIMER_ID_CURSOR_MOTION  = 8; // 50ms (정지 검출) 또는 16ms (항상 표시 모드), cursor 인디 마우스 모션 폴링
-    public const nuint TIMER_ID_CURSOR_POP     = 9; // ~16ms, cursor 인디 IME 전환 스케일 팝
+    public const nuint TIMER_ID_CURSOR_MOTION  = 8; // 50ms (정지 검출) 또는 16ms (항상 표시 모드), 커서 헤일로 마우스 모션 폴링
+    public const nuint TIMER_ID_CURSOR_POP     = 9; // ~16ms, 커서 헤일로 IME 전환 스케일 팝
 
     // --- WM_USER 기반 ---
 

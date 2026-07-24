@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace KoEnVue.App.Models;
 
 /// <summary>
-/// 인디케이터 위치 모드.
+/// 플로팅 배지 위치 모드.
 /// config.json의 "position_mode" 키에 대응.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<PositionMode>))]

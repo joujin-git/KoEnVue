@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace KoEnVue.App.Models;
 
 /// <summary>
-/// 인디케이터 드래그 활성 키 — 드래그 개시 게이트.
+/// 플로팅 배지 드래그 활성 키 — 드래그 개시 게이트.
 /// config.json의 "drag_modifier" 키에 대응.
 ///
 /// <para>

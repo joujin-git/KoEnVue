@@ -21,7 +21,7 @@ internal static partial class User32
     // char[] 배열로 선언하여 unsafe 의존 제거. 호출 시: var buf = new char[256]; GetClassNameW(hwnd, buf, 256);
 
     // WindowFromPoint — 지정 좌표의 최상위 visible 윈도우 핸들. WS_EX_TRANSPARENT 윈도우(커서 헤일로)는
-    // 통과해 그 아래 윈도우를 반환하므로 자기 감지 없음 (cursor 인디의 셸 UI 호버 판정에 사용).
+    // 통과해 그 아래 윈도우를 반환하므로 자기 감지 없음 (커서 헤일로의 셸 UI 호버 판정에 사용).
     [LibraryImport("user32.dll")]
     internal static partial IntPtr WindowFromPoint(POINT pt);
 

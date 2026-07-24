@@ -48,7 +48,7 @@ internal static partial class DefaultConfig
 
     /// <summary>
     /// 드래그 중 창 엣지 스냅 임계값 (DPI 스케일링 전 px).
-    /// 인디케이터 엣지와 타겟 엣지의 거리가 이 값 이하면 스냅.
+    /// 플로팅 배지 엣지와 타겟 엣지의 거리가 이 값 이하면 스냅.
     /// </summary>
     public const int SnapThresholdPx = 10;
 
@@ -225,7 +225,7 @@ internal static partial class DefaultConfig
     public const string DefaultNonKoreanFg         = "#FFFFFF";
     public const string DefaultBorderColor         = "#000000";
 
-    // 인디케이터 라벨 폰트/텍스트. DefaultDialogFontFamily 와 값은 같으나 의미 독립 (인디 폰트 vs 다이얼로그 폰트).
+    // 플로팅 배지 라벨 폰트/텍스트. DefaultDialogFontFamily 와 값은 같으나 의미 독립 (배지 폰트 vs 다이얼로그 폰트).
     public const string DefaultIndicatorFontFamily = "맑은 고딕";
     public const string DefaultHangulLabel         = "한";
     public const string DefaultEnglishLabel        = "En";
@@ -317,11 +317,11 @@ internal static partial class DefaultConfig
     public const int    MinCursorHighlightDurationMs   = 0;
     public const int    MaxCursorHighlightDurationMs   = 2000;
 
-    /// <summary>cursor 인디 마우스 모션 폴링 주기 (정지 검출 모드 — 50ms).</summary>
+    /// <summary>커서 헤일로 마우스 모션 폴링 주기 (정지 검출 모드 — 50ms).</summary>
     public const uint   CursorMotionPollMs         = 50;
 
     /// <summary>
-    /// cursor 인디 마우스 모션 폴링 주기 (항상 표시 모드).
+    /// 커서 헤일로 마우스 모션 폴링 주기 (항상 표시 모드).
     /// SetTimer uElapse 양자화: 15 → 실배달 ~15.6ms(≈64fps), 16 → ~30.8ms(≈32fps).
     /// 근거: docs/dev-notes/2026-07-22-settimer-tick-quantization.md
     /// </summary>
@@ -371,7 +371,7 @@ internal static partial class DefaultConfig
     public const double CursorFogWhitenessSoftSpan = 0.40;
 
     /// <summary>
-    /// cursor 인디 HWND_TOPMOST 재적용 주기 (ms). 항상 표시 모드 + 정지 검출 모드(가시 상태)
+    /// 커서 헤일로 HWND_TOPMOST 재적용 주기 (ms). 항상 표시 모드 + 정지 검출 모드(가시 상태)
     /// 양쪽에서 다른 topmost 창(풀스크린/토스트/UAC)이 위로 올라와도 복구하도록 주기 재적용.
     /// 플로팅 배지의 <see cref="ForceTopmostIntervalMs"/>(5000) 와 같은 기본값이나 의미 분리 —
     /// 커서/메인 주기를 독립 조정 가능. 0 이면 주기 재적용 비활성 (첫 표시 set 만 유지).

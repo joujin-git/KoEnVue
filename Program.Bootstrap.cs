@@ -72,7 +72,7 @@ internal static partial class Program
     /// 중복 실행 시 기존(실행 중) 인스턴스를 찾아 활성화 신호를 전송한다.
     /// 메인 윈도우 클래스명으로 <c>FindWindowW</c> 탐색 → <c>PostMessageW</c> 로
     /// <see cref="AppMessages.WM_APP_ACTIVATE"/> 게시. 기존 인스턴스는 WndProc 에서 이를 받아
-    /// 인디케이터를 즉시 표시한다.
+    /// 플로팅 배지를 즉시 표시한다.
     /// 탐색 실패(기존 창이 막 파괴 중이거나 클래스명이 달라진 경우)는 조용히 무시한다.
     /// </summary>
     private static void NotifyExistingInstance()

@@ -393,7 +393,7 @@ internal static partial class Tray
                 CleanupPositions(config, updateConfig);
                 break;
 
-            // --- 인디케이터 숨김 토글 ---
+            // --- 플로팅 배지 숨김 토글 ---
             // 좌클릭 동작이 Settings/None 이라 좌클릭 토글이 막혀 있어도 숨김 해제 경로를 보장.
             case IDM_USER_HIDDEN:
                 updateConfig(config with { UserHidden = !config.UserHidden });
@@ -533,7 +533,7 @@ internal static partial class Tray
     // ================================================================
 
     /// <summary>
-    /// 현재 인디케이터 위치를 가장 가까운 모서리 기준으로 환산하여 기본 위치로 저장.
+    /// 현재 플로팅 배지 위치를 가장 가까운 모서리 기준으로 환산하여 기본 위치로 저장.
     /// 고정 모드 → work area 기준, 창 기준 모드 → 포그라운드 창 기준.
     /// 인디가 한 번도 표시된 적이 없으면 경고.
     /// </summary>
@@ -570,7 +570,7 @@ internal static partial class Tray
     /// <summary>
     /// 트레이 안내 MessageBox (제목 = 앱명, 확인 버튼). MessageBoxW 는 자체 메시지 루프를
     /// 돌려 ModalDialogLoop.Run 으로 감쌀 수 없으므로 RunExternal 로 IsActive 가드만 씌워
-    /// 박스가 열린 동안 감지 스레드의 인디 튐을 억제한다. RunExternal 가드를 단일 경로로
+    /// 박스가 열린 동안 감지 스레드의 배지 튐을 억제한다. RunExternal 가드를 단일 경로로
     /// 모아 호출처마다 누락되지 않도록 한다.
     /// </summary>
     private static void ShowMessage(string body)

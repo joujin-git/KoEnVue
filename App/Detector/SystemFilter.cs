@@ -11,7 +11,7 @@ using KoEnVue.App.Localization;
 namespace KoEnVue.App.Detector;
 
 /// <summary>
-/// 시스템 필터. 8-조건 단락 평가로 인디케이터 숨김 여부를 판정한다.
+/// 시스템 필터. 8-조건 단락 평가로 플로팅 배지 숨김 여부를 판정한다.
 /// </summary>
 internal static class SystemFilter
 {
@@ -67,7 +67,7 @@ internal static class SystemFilter
     // ================================================================
 
     /// <summary>
-    /// 8-조건 단락 평가. 하나라도 true면 인디케이터를 숨긴다.
+    /// 8-조건 단락 평가. 하나라도 true면 플로팅 배지를 숨긴다.
     /// </summary>
     public static bool ShouldHide(IntPtr hwnd, IntPtr hwndFocus, AppConfig config)
     {

@@ -12,7 +12,7 @@ using KoEnVue.Core.Windowing;
 namespace KoEnVue.App.UI;
 
 /// <summary>
-/// 커서 추종 인디케이터의 정적 파사드. <see cref="LayeredCursorBase"/> 엔진 + 마우스 정지 검출 +
+/// 커서 헤일로의 정적 파사드. <see cref="LayeredCursorBase"/> 엔진 + 마우스 정지 검출 +
 /// IME/CAPS 상태 → <see cref="CursorStyle"/> 합성 책임.
 /// <para>
 /// 사용자 모델 — 동심원 3개 (Inner / Middle / Outer) + 헤일로. CAPS OFF 시 Outer 원 미표시.

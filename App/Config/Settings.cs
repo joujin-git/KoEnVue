@@ -251,7 +251,7 @@ internal static class Settings
 
     /// <summary>
     /// 앱별 프로필 적용. 매칭된 프로필의 키만 오버라이드, 나머지 상속.
-    /// null 반환 = enabled: false (해당 앱에서 인디케이터 비활성화).
+    /// null 반환 = enabled: false (해당 앱에서 플로팅 배지 비활성화).
     /// </summary>
     public static AppConfig? ResolveForApp(AppConfig global, IntPtr hwnd)
     {

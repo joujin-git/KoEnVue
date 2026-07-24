@@ -1,7 +1,7 @@
 namespace KoEnVue.Core.Windowing;
 
 /// <summary>
-/// 커서 추종 인디케이터 (동심원 3개 + 헤일로) 의 렌더 입력. <see cref="LayeredCursorBase"/>
+/// 커서 헤일로 (동심원 3개 + 헤일로) 의 렌더 입력. <see cref="LayeredCursorBase"/>
 /// 가 콜백에 전달하는 closed type — 플로팅 배지 <see cref="OverlayStyle"/> 와 형제 관계이며 별도 엔진 (LayeredCursorBase)
 /// 으로 처리된다. P4 ("하나의 구현만") 예외 정당화는 [docs/dev-notes/2026-05-27-cursor-indicator.md](../../docs/dev-notes/2026-05-27-cursor-indicator.md):
 /// 플로팅 배지 알파 race 미해결 영역에 변경면을 추가하지 않기 위해 엔진 분리.
@@ -68,7 +68,7 @@ internal readonly record struct CursorStyle(
 
 /// <summary>
 /// <see cref="LayeredCursorBase"/> 가 콜백에 전달하는 DPI 적용 후 메트릭.
-/// <see cref="OverlayMetrics"/> 와 형제 — cursor 인디 전용으로 필요한 3개 필드만.
+/// <see cref="OverlayMetrics"/> 와 형제 — 커서 헤일로 전용으로 필요한 3개 필드만.
 /// </summary>
 internal readonly record struct CursorMetrics(
     double DpiScale,

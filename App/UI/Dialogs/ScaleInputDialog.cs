@@ -7,7 +7,7 @@ using KoEnVue.App.Localization;
 namespace KoEnVue.App.UI.Dialogs;
 
 /// <summary>
-/// 인디케이터 배율 직접 입력용 Win32 모달 다이얼로그.
+/// 플로팅 배지 배율 직접 입력용 Win32 모달 다이얼로그.
 /// 커서 위치 근처에 표시되며 [1.0, 5.0] 범위 외 입력은 에러로 반려한다.
 /// DialogShell 이 라이프사이클(reentry guard / DPI / font / class 등록 / 모달 루프 / DestroyWindow)을
 /// 담당하고, 본 파일은 자식 컨트롤 생성과 WndProc, 입력 검증만 보유한다.
@@ -17,9 +17,9 @@ internal static class ScaleInputDialog
     // ================================================================
     // 범위/허용오차 상수
     // ================================================================
-    /// <summary>인디케이터 배율 최솟값 — <see cref="DefaultConfig.MinIndicatorScale"/> 와 동기.</summary>
+    /// <summary>플로팅 배지 배율 최솟값 — <see cref="DefaultConfig.MinIndicatorScale"/> 와 동기.</summary>
     public const double ScaleMinValue = DefaultConfig.MinIndicatorScale;
-    /// <summary>인디케이터 배율 최댓값 — <see cref="DefaultConfig.MaxIndicatorScale"/> 와 동기.</summary>
+    /// <summary>플로팅 배지 배율 최댓값 — <see cref="DefaultConfig.MaxIndicatorScale"/> 와 동기.</summary>
     public const double ScaleMaxValue = DefaultConfig.MaxIndicatorScale;
     public const double ScaleTolerance = 0.001;
 

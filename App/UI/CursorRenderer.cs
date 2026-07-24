@@ -5,7 +5,7 @@ using KoEnVue.Core.Windowing;
 namespace KoEnVue.App.UI;
 
 /// <summary>
-/// 커서 추종 인디케이터의 분석적 AA 픽셀 셰이더.
+/// 커서 헤일로의 분석적 AA 픽셀 셰이더.
 /// PR-29 이동 딤: <see cref="CursorStyle.MotionSoftness"/> &gt; 0 이면 하드 코어 없이
 /// 가우시안 안개 띠로 Inner/Middle/Outer 를 그림 (CAPS OFF 면 Outer 생략).
 /// </summary>

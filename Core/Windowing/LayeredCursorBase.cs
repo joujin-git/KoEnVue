@@ -6,7 +6,7 @@ using KoEnVue.Core.Native;
 namespace KoEnVue.Core.Windowing;
 
 /// <summary>
-/// 커서 추종 인디케이터 (동심원 3개 + 헤일로) 의 레이어드 오버레이 렌더 엔진.
+/// 커서 헤일로 (동심원 3개 + 헤일로) 의 레이어드 오버레이 렌더 엔진.
 /// <see cref="LayeredOverlayBase"/> 와 형제 — 플로팅 배지는 GDI 텍스트/RoundRect/폰트/드래그/스냅
 /// 책임이 있는 반면, 본 엔진은 분석적 AA 픽셀 셰이딩 (콜백에 ppvBits 직접 전달) 하나만 책임진다.
 /// <para>
@@ -17,7 +17,7 @@ namespace KoEnVue.Core.Windowing;
 /// (overlay = AA 엣지 보존 / cursor = 외곽 잡티 제거) 로 의도적 분기 보존.
 /// </para>
 /// <para>
-/// 콜백 시그니처 — 플로팅 배지의 콜백 (hdc 받음) 과 다르게 ppvBits 를 직접 받는다. cursor 인디는
+/// 콜백 시그니처 — 플로팅 배지의 콜백 (hdc 받음) 과 다르게 ppvBits 를 직접 받는다. 커서 헤일로는
 /// GDI 그리기 (DrawTextW / RoundRect) 사용 없이 픽셀 셰이딩만 수행하므로 GetCurrentObject +
 /// GetObjectDibSection 호출이 불필요 → main 의 Gdi32.cs 변경 0.
 /// </para>
@@ -48,7 +48,7 @@ internal sealed class LayeredCursorBase : IDisposable
     private int _lastX;
     private int _lastY;
     // 의도 표시 알파 (PR-29 이동 딤·평상시 Full). Hide/PrepareResources 의 임시 alpha=0 블리트는
-    // 이 값을 덮지 않는다 — 과거 _lastAlpha=0 캐시 + 수동 255 복원 누락이 "인디 통째로 안 보임"
+    // 이 값을 덮지 않는다 — 과거 _lastAlpha=0 캐시 + 수동 255 복원 누락이 "배지 통째로 안 보임"
     // 침묵 회귀 원인이었다 (PR-28 A안).
     private byte _displayAlpha = 255;
 
@@ -255,9 +255,9 @@ internal sealed class LayeredCursorBase : IDisposable
 
             if (a == 0)
             {
-                // cursor 인디 셰이더는 alpha 를 명시적으로 쓰므로 a==0 && RGB!=0 픽셀은 ShadeDib 의
+                // 커서 헤일로 셰이더는 alpha 를 명시적으로 쓰므로 a==0 && RGB!=0 픽셀은 ShadeDib 의
                 // round-down 부산물 (avgAlpha × 255 < 0.5). 메인 LayeredOverlayBase 의 동명 가드는
-                // GDI AA 엣지 보존 목적으로 a=255 복구하지만, cursor 인디에선 그 픽셀이 fully-opaque
+                // GDI AA 엣지 보존 목적으로 a=255 복구하지만, 커서 헤일로에선 그 픽셀이 fully-opaque
                 // 점이 되어 외곽 잡티의 원인 — RGB 까지 0 으로 정리한다.
                 if ((r | g | b) != 0)
                 {

@@ -158,7 +158,7 @@ public sealed class OverlayAnimator : IDisposable
     // ================================================================
 
     /// <summary>
-    /// 새 위치/상태로 인디케이터 표시. 파사드가 <c>Overlay.Show(x, y, state)</c>를 호출하기 전/후에
+    /// 새 위치/상태로 플로팅 배지 표시. 파사드가 <c>Overlay.Show(x, y, state)</c>를 호출하기 전/후에
     /// 필요한 작업(prev 좌표 기록, 슬라이드 시작, 하이라이트, 알파 목표 전이)을 수행한다.
     ///
     /// prev 좌표는 파사드가 <c>Overlay.GetLastPosition()</c>으로 먼저 조회하여 넘겨준다.
@@ -596,7 +596,7 @@ public sealed class OverlayAnimator : IDisposable
     }
 
     /// <summary>
-    /// prev/new 두 좌표가 같은 모니터에 속하는지. 모니터 간 slide 는 DPI/확대비율 전환(인디 크기
+    /// prev/new 두 좌표가 같은 모니터에 속하는지. 모니터 간 slide 는 DPI/확대비율 전환(배지 크기
     /// 변동)이 복잡하고 경계를 넘는 애니가 어색해, 다른 모니터면 slide 를 생략하고 즉시 이동한다
     /// (파사드 Show 가 이미 목적지에 그려두고, 도착 모니터 DPI 로 크기도 정확하다).
     /// </summary>

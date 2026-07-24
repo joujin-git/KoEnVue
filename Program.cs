@@ -42,7 +42,7 @@ internal static partial class Program
     // 단일 init-then-read 패턴 덕에 회귀 0 이지만, ARM64 weak memory model 회귀 방어용 volatile.
     private static volatile IntPtr _hwndMain;
     private static volatile IntPtr _hwndOverlay;
-    // 커서 추종 인디 전용 별도 HWND. config.CursorIndicatorEnabled = false 면 IntPtr.Zero — lazy 생성
+    // 커서 헤일로 전용 별도 HWND. config.CursorIndicatorEnabled = false 면 IntPtr.Zero — lazy 생성
     // 패턴 (HandleConfigChanged 의 OFF→ON 분기에서 첫 생성). 메인 _hwndOverlay 와 같은 클래스이나
     // WS_EX_TRANSPARENT 가 추가로 박힌다 (Program.Bootstrap.CreateCursorOverlayWindow).
     private static volatile IntPtr _hwndCursorOverlay;
@@ -268,7 +268,7 @@ internal static partial class Program
         // 8a-2. WM_APP_ACTIVATE 도 동일 UIPI 화이트리스트에 등록. admin(High IL) 으로 실행 중인데
         //       2nd 인스턴스가 Medium IL 로 남는 경로 (admin_elevation 재실행 UAC 취소, admin 환경
         //       외부 spawn, 설정 변경 과도기) 에서 NotifyExistingInstance 의 PostMessageW(WM_APP_ACTIVATE)
-        //       가 UIPI 로 차단돼 "이미 실행 중" 인디 즉시 표시 피드백이 소실된다. 화이트리스트로 복구.
+        //       가 UIPI 로 차단돼 "이미 실행 중" 배지 즉시 표시 피드백이 소실된다. 화이트리스트로 복구.
         //       동일 IL(일반 사용자) 이면 무해한 no-op. 정적 상수라 RegisterWindowMessage 불요.
         if (!User32.ChangeWindowMessageFilterEx(_hwndMain, AppMessages.WM_APP_ACTIVATE,
                 Win32Constants.MSGFLT_ALLOW, IntPtr.Zero))
@@ -309,7 +309,7 @@ internal static partial class Program
         _lastCapsLockState = (User32.GetKeyState(Win32Constants.VK_CAPITAL) & 1) != 0;
         User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_CAPS, DefaultConfig.CapsLockPollMs, IntPtr.Zero);
 
-        // 9e. 커서 추종 인디 — config.CursorIndicatorEnabled = true 일 때만 윈도우 + 엔진 + 폴링 타이머
+        // 9e. 커서 헤일로 — config.CursorIndicatorEnabled = true 일 때만 윈도우 + 엔진 + 폴링 타이머
         //     생성. false 면 비활성 — 메모리/CPU 0. HandleConfigChanged 의 OFF→ON 분기에서 lazy 생성.
         if (_config.CursorIndicatorEnabled)
             EnableCursorOverlay();
@@ -554,7 +554,7 @@ internal static partial class Program
     // ================================================================
 
     /// <summary>
-    /// 현재 포그라운드 앱에 인디케이터를 표시한다 — <c>_indicatorVisible</c> 설정 + per-app 위치 계산
+    /// 현재 포그라운드 앱에 플로팅 배지를 표시한다 — <c>_indicatorVisible</c> 설정 + per-app 위치 계산
     /// + <see cref="Animation.TriggerShow"/> 를 한 곳에 모은다. IME/Focus/Activate/UserHidden 해제/
     /// Config 리프레시 등 여러 경로가 공유하던 3줄 패턴의 단일 진실원. 호출 전 <c>_lastForegroundHwnd</c>
     /// 유효성(대부분 <c>!= IntPtr.Zero</c> 가드)은 호출자가 보장한다.
@@ -641,7 +641,7 @@ internal static partial class Program
             // PR-13: per-app resolved (theme/색/투명도/폰트/라벨 등 시각 override 반영)
             Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
         }
-        // 같은 앱 내 윈도우 이동 — 플로팅 인디케이터는 위치 고정이므로 무시
+        // 같은 앱 내 윈도우 이동 — 플로팅 배지는 위치 고정이므로 무시
     }
 
     /// <summary>
@@ -784,12 +784,12 @@ internal static partial class Program
         var (w, h) = Overlay.GetBaseSize();
         if (w <= 0 || h <= 0) return (x, y);  // 엔진 아직 초기화 전
 
-        // 인디 중심점 기준 가장 가까운 살아있는 모니터로 라우팅 (DEFAULTTONEAREST).
+        // 배지 중심점 기준 가장 가까운 살아있는 모니터로 라우팅 (DEFAULTTONEAREST).
         // 저장 좌표가 제거된 모니터에 있었다면 잔존 모니터 중 가장 가까운 쪽으로 재매핑된다.
         IntPtr hMonitor = DpiHelper.GetMonitorFromPoint(x + w / 2, y + h / 2);
         RECT workArea = DpiHelper.GetWorkArea(hMonitor);
 
-        // 인디 bbox 가 작업 영역 폭/높이를 초과하면 Left/Top 으로 고정 (Math.Clamp 역방향 방어).
+        // 배지 bbox 가 작업 영역 폭/높이를 초과하면 Left/Top 으로 고정 (Math.Clamp 역방향 방어).
         int maxX = Math.Max(workArea.Left, workArea.Right - w);
         int maxY = Math.Max(workArea.Top, workArea.Bottom - h);
         int clampedX = Math.Clamp(x, workArea.Left, maxX);
@@ -865,7 +865,7 @@ internal static partial class Program
 
     /// <summary>
     /// 중복 실행된 두 번째 인스턴스의 WM_APP_ACTIVATE 수신 핸들러.
-    /// 현재 포그라운드 앱 기준으로 인디케이터를 즉시 표시해 "이미 실행 중" 이라는 시각 피드백을 준다.
+    /// 현재 포그라운드 앱 기준으로 플로팅 배지를 즉시 표시해 "이미 실행 중" 이라는 시각 피드백을 준다.
     /// DisplayMode / EventTriggers 설정과 무관하게 강제 표시 — 사용자의 명시적 재실행 행위에 대한 응답.
     /// </summary>
     private static void HandleActivateRequest()
@@ -879,7 +879,7 @@ internal static partial class Program
     private static void HideOverlay(string source = "?")
     {
         // 숨김 경로 추적 — source 로 호출자(시스템 필터 / 트레이 토글 / 세션 잠금)를 식별해
-        // "인디케이터가 안 보인다" 류 문제의 원인 경로를 로그만으로 좁힌다.
+        // "플로팅 배지가 안 보인다" 류 문제의 원인 경로를 로그만으로 좁힌다.
         Logger.Info($"HideOverlay called: source={source}");
         // PR-26 (c): 숨김 시 시스템 입력 패널 프레임 캐시 무효화.
         // SearchHost→StartMenu 전환은 Hide 없이 가시 유지하므로 보정 캐시는 그 경로에서 보존됨.
@@ -915,8 +915,8 @@ internal static partial class Program
 
     /// <summary>
     /// 트레이 좌클릭 토글: UserHidden 상태를 반전하고 인디를 즉시 숨김/표시.
-    /// UserHidden=true 로 전환: 인디 숨김 + 트레이 아이콘에 취소선 오버레이.
-    /// UserHidden=false 로 전환: 현재 포그라운드 앱에 인디 즉시 재표시 + 취소선 제거.
+    /// UserHidden=true 로 전환: 배지 숨김 + 트레이 아이콘에 취소선 오버레이.
+    /// UserHidden=false 로 전환: 현재 포그라운드 앱에 배지 즉시 재표시 + 취소선 제거.
     /// config.json 에 즉시 저장 — 재기동/포그라운드 전환에도 상태 유지.
     /// </summary>
     private static void HandleTrayToggle()
@@ -935,7 +935,7 @@ internal static partial class Program
 
     /// <summary>
     /// UserHidden 전환을 오버레이에 반영한다. HandleTrayToggle(좌클릭) 과
-    /// HandleMenuCommand 의 updateConfig 람다(메뉴 "인디케이터 숨김" 토글 + 향후
+    /// HandleMenuCommand 의 updateConfig 람다(메뉴 "플로팅 배지 숨김" 토글 + 향후
     /// SettingsDialog 등) 양 경로에서 공유. 호출 전 <c>_config.UserHidden</c> 은 이미 새 값으로
     /// 갱신돼 있어야 한다.
     /// </summary>

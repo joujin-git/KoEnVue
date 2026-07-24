@@ -64,7 +64,7 @@ internal static partial class Dwmapi
     /// <summary>
     /// DWM colorization color 를 RGB 3 채널로 분리해 반환. 호출 실패 또는 DWM composition
     /// 비활성 시 false (호출자는 <c>GetSysColor(COLOR_HIGHLIGHT)</c> 등 폴백 사용).
-    /// alpha 채널은 무시 — 인디케이터 배경 색은 별도 opacity 키로 처리.
+    /// alpha 채널은 무시 — 플로팅 배지 배경 색은 별도 opacity 키로 처리.
     /// <para>
     /// DWM 의 ARGB DWORD 는 big-endian byte 순서로 0xAARRGGBB — R 이 high byte, B 가 low byte.
     /// <c>ColorRef</c>(COLORREF) 의 0x00BBGGRR 과는 R/B 순서가 반대다.

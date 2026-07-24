@@ -157,7 +157,7 @@ internal static class I18n
         [I18nKey.SettingsEmptyNotAllowedFmt]= ("{0}: 비워둘 수 없습니다.", "{0}: Cannot be empty."),
 
         // 크기 직접 지정 다이얼로그
-        [I18nKey.ScaleDialogTitle]          = ("크기 배율 직접 지정", "Custom Indicator Scale"),
+        [I18nKey.ScaleDialogTitle]          = ("크기 배율 직접 지정", "Custom scale"),
         [I18nKey.ScaleDialogPrompt]         = ("배율 (1.0 ~ 5.0):", "Scale (1.0 ~ 5.0):"),
         [I18nKey.ScaleDialogHint]           = ("소수점 첫째 자리까지 입력할 수 있습니다.", "Up to one decimal place."),
         [I18nKey.ScaleDialogOk]             = ("확인", "OK"),

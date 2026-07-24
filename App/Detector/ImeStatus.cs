@@ -195,7 +195,7 @@ internal static class ImeStatus
     /// IME 미장착 스레드는 단순 키보드 레이아웃(예: 0x0409_0409 en-US) 로 떨어지는데
     /// 이를 NonKorean 으로 분류하면 <c>Animation.TriggerShow</c> 의
     /// <c>NonKoreanImeMode.Hide</c> 가드(기본값) 가 작동해 인디가 표시 직후 강제 숨김된다.
-    /// 사용자 체감: conhost 포커스 진입 → 인디 플래시 → 즉시 사라짐 → 한/영 토글 1회 후
+    /// 사용자 체감: conhost 포커스 진입 → 배지 플래시 → 즉시 사라짐 → 한/영 토글 1회 후
     /// 정상화(토글로 한글 IME 가 스레드에 붙으면서 langId==0x0412 → English 분기).
     /// </para>
     /// </summary>
