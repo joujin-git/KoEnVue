@@ -11,7 +11,7 @@ namespace KoEnVue.App.UI.Dialogs;
 /// <summary>
 /// SettingsDialog 의 필드 정의/팩토리/빌더 분할.
 /// FieldDef/RowDef 메타데이터, 6개 팩토리(Bool/Int/Dbl/Str/ColorField/Combo),
-/// BuildRowDefs(14 섹션 — 일반/공용 색상/메인·커서 인디케이터 대분류), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
+/// BuildRowDefs(14 섹션 — 일반/공통 색상/메인·커서 인디케이터 대분류), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
 /// </summary>
 internal static partial class SettingsDialog
 {
@@ -71,7 +71,7 @@ internal static partial class SettingsDialog
     // ================================================================
 
     /// <summary>
-    /// 14개 섹션(일반/공용 색상/메인·커서 인디케이터 대분류)의 RowDef 리스트를 빌드하며 _fields를 채운다.
+    /// 14개 섹션(일반/공통 색상/메인·커서 인디케이터 대분류)의 RowDef 리스트를 빌드하며 _fields를 채운다.
     /// 각 섹션 제목, 라벨, 검증 범위는 언어(I18n.IsKorean)에 따라 결정된다.
     /// </summary>
     private static List<RowDef> BuildRowDefs()
@@ -89,7 +89,7 @@ internal static partial class SettingsDialog
             rows.Add(new RowDef { IsSection = false, Field = f });
         }
 
-        // 섹션은 일반 / 공용 색상 / 메인 인디케이터 / 커서 인디케이터 로 묶고 고급은 말미에 둔다. 각 FieldDef 의
+        // 섹션은 일반 / 공통 색상 / 메인 인디케이터 / 커서 인디케이터 로 묶고 고급은 말미에 둔다. 각 FieldDef 의
         // get/Commit 람다는 독립적이라 순서가 바뀌어도 정상 — _fields 인덱스와 컨트롤 짝만 Add 가 보장.
 
         // ================================================================
@@ -143,12 +143,12 @@ internal static partial class SettingsDialog
             (c, v) => c with { TrayQuickOpacityPresets = SetPresetAt(c.TrayQuickOpacityPresets, 2, v) }));
 
         // ================================================================
-        // 3. 인디케이터 — 색상 (메인/커서 인디케이터 공통)
+        // 3. 공통 — 색상 (메인/커서 인디케이터)
         // ================================================================
         // 배경색은 CursorOverlay.BuildStyle 이 커서 동심원 색으로도 그대로 사용한다 (메인·커서 공용).
         // 테마는 이 배경색(+글자색)을 일괄 지정/복원하는 프리셋이라 같은 섹션에 둔다. 메인·커서 공용이라
-        // 인디케이터 섹션들 맨 앞에 배치.
-        Sec("인디케이터 — 색상 (메인/커서 인디케이터 공통)", "Indicator — Colors (Shared by Main/Cursor Indicators)");
+        // 인디케이터 섹션들 맨 앞에 배치. 섹션 접두 "공통" = 트레이 메뉴 공통 블록과 용어 정합.
+        Sec("공통 — 색상", "Shared — Colors");
         Add(Combo("테마", "Theme",
             ko ? ["사용자 지정", "미니멀", "비비드", "파스텔", "다크", "시스템"]
                : ["Custom", "Minimal", "Vivid", "Pastel", "Dark", "System"],
