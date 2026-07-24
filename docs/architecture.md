@@ -63,6 +63,7 @@ KoEnVue/
 │   ├── Startup/             StartupTaskManager (schtasks LogonTrigger)
 │   ├── Logging/             App → Core Logger 배선 (LogProvider.Sink)
 │   ├── Localization/        I18n (Ko/En UI text, GetUserDefaultUILanguage) — ~63 Get 속성
+│   ├── Messaging/           AppMessages (WM_APP / timer ID — UI 밖, PR-33)
 │   ├── Update/              UpdateChecker + GitHubRelease + UpdateInfo
 │   └── UI/                  Overlay + Animation + Tray + TrayIcon +
 │       │                    CursorOverlay + CursorRenderer + CursorMotionDim +
@@ -72,17 +73,21 @@ KoEnVue/
 ├── Program.cs               Main message loop + WndProc. Detection 루프는
 │                            App/Detector/DetectionService 위임. Bootstrap 순서·
 │                            hwnd volatile (PR-18) 은 기존과 동일.
-├── Program.Bootstrap.cs     partial class: mutex, window classes, teardown,
+├── Program.Bootstrap.cs     partial: mutex, window classes, teardown,
 │                            second-instance activation, TaskbarCreated tray recovery
+├── Program.OverlayDrag.cs   partial: overlay drag / click-to-hide (PR-33)
+├── Program.SystemEvents.cs  partial: WTS / display / theme / DPI (PR-33)
+├── Program.Timers.cs        partial: WM_TIMER 분기 (PR-33)
 ├── KoEnVue.csproj
 │
 └── tests/KoEnVue.Tests/     xUnit (dev-only, P1 예외). InternalsVisibleTo.
-    └── Unit/                baseline **118 PASS** / **13 파일** (2026-07-24)
+    └── Unit/                baseline **142 PASS** / **16 파일** (2026-07-24, PR-33)
         ├── ColorHelperTests / DpiHelperTests / SettingsValidateTests
         ├── StartupTaskXmlTests / XmlEntityCodecTests / SanitizeLogPathTests
         ├── JsonSettingsMergeTests / OverlayAnimatorTests / AnimationFacadeTests
         ├── SettingsLayoutTests / CursorMotionDimTests
         ├── OverlaySuppressProbeTests / PositionCleanupServiceTests
+        ├── UpdateCheckerTests / SettingsProfileMergeTests / ThemePresetsBackupTests
 ```
 
 Every file in `Core/` is reusable in another Windows desktop project; every file in `App/` is product-specific. `tests/` 는 release exe 에 포함되지 않는 dev-only 예외 (P1).

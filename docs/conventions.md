@@ -311,7 +311,7 @@ The `SafeFontHandle` `using` pattern is critical — early release would crash `
 [tests/KoEnVue.Tests/](../tests/KoEnVue.Tests/) xUnit project (PR-10, dev-only — release exe 미포함 → P1 예외). `InternalsVisibleTo("KoEnVue.Tests")` 가 KoEnVue.csproj 에 박혀 internal API 접근 가능. 검증 매트릭스:
 
 - **Debug + Release build both clean** (0 warnings, 0 errors). A debug-only build leaves the release exe outdated
-- **`dotnet test tests/KoEnVue.Tests/`** — 현재 baseline **118 PASS** / Unit/ **13 파일** (2026-07-24, SanitizeLogPath reparse 1 Fact 추가). ⚠️ **테스트 csproj/디렉토리 명시 필수** — repo 루트에서 인자 없이 `dotnet test` 하면 cwd 의 메인 `KoEnVue.csproj`(테스트 0개)를 잡아 **0개 실행 후 exit 0** 으로 통과처럼 보이는 착시. 반드시 `dotnet test tests/KoEnVue.Tests/` 또는 `tests\KoEnVue.Tests\KoEnVue.Tests.csproj` 로 실행:
+- **`dotnet test tests/KoEnVue.Tests/`** — 현재 baseline **142 PASS** / Unit/ **16 파일** (2026-07-24, PR-33). ⚠️ **테스트 csproj/디렉토리 명시 필수** — repo 루트에서 인자 없이 `dotnet test` 하면 cwd 의 메인 `KoEnVue.csproj`(테스트 0개)를 잡아 **0개 실행 후 exit 0** 으로 통과처럼 보이는 착시. 반드시 `dotnet test tests/KoEnVue.Tests/` 또는 `tests\KoEnVue.Tests\KoEnVue.Tests.csproj` 로 실행:
   - **PR-10** (G1): `ColorHelperTests` / `DpiHelperTests` / `SettingsValidateTests`
   - **PR-20**: `StartupTaskXmlTests` / `XmlEntityCodecTests` / `SanitizeLogPathTests` (문자열 traversal + reparse/junction 거부)
   - **config 머지 P0**: `JsonSettingsMergeTests`
@@ -321,6 +321,7 @@ The `SafeFontHandle` `using` pattern is critical — early release would crash `
   - **PR-29/30/31**: `CursorMotionDimTests`
   - **PR-32**: `OverlaySuppressProbeTests`
   - **위치 정리**: `PositionCleanupServiceTests`
+  - **PR-33**: `UpdateCheckerTests` / `SettingsProfileMergeTests` / `ThemePresetsBackupTests`
 - **Smoke gate matrix** exercised manually: boot → tray icon appears → indicator follows foreground → IME toggle changes color → drag works → drag with Shift locks axis → drag with snap sticks to edges → CAPS LOCK toggles bars → config hot-reload → corrupted config spam check → update check (both branches: no update / new version) → Start Menu ESC dismissal hides indicator → Search bar ESC dismissal hides indicator
 - **`git grep` invariants** (listed above) all return 0
 - **Byte-size tracking** against the previous stage's baseline
