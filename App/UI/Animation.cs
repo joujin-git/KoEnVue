@@ -1,5 +1,6 @@
 using KoEnVue.App.Config;
 using KoEnVue.App.Models;
+using KoEnVue.App.Messaging;
 using KoEnVue.Core.Animation;
 using KoEnVue.Core.Native;
 

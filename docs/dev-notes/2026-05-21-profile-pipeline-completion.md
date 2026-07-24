@@ -13,7 +13,7 @@
 ### 3가지 잠재 버그가 동시 노출
 
 1. **테마 프리셋 무시**: 프로필이 `"theme":"dark"` 를 override 해도 `ThemePresets.Apply` 가 호출 안 돼 색상 6쌍이 갱신 안 됨. 사용자는 `theme` 키만 바꿔도 색이 그대로라는 직관 위반 시나리오 노출
-2. **범위 외 값 통과**: 프로필이 `"poll_interval_ms":999999` 같은 비정상 수치를 넣어도 `Validate` 의 clamp(50-500ms 범위) 가 호출 안 돼 그대로 통과. (실제 `DetectionLoop` 은 글로벌 `PollIntervalMs` 만 사용하므로 표시 측 키 위주로 더 큰 실해가 발생: `event_display_duration_ms` 가 30분으로 박혀 인디가 계속 떠 있는 등)
+2. **범위 외 값 통과**: 프로필이 `"poll_interval_ms":999999` 같은 비정상 수치를 넣어도 `Validate` 의 clamp(50-500ms 범위) 가 호출 안 돼 그대로 통과. (실제 `DetectionService` 은 글로벌 `PollIntervalMs` 만 사용하므로 표시 측 키 위주로 더 큰 실해가 발생: `event_display_duration_ms` 가 30분으로 박혀 인디가 계속 떠 있는 등)
 3. **`Theme.Custom` 백업/복원 무력화**: 프로필이 `"theme":"custom"` 으로 명시할 때 `RestoreCustomBackup` 가 호출 안 돼 백업 복원 로직 dead
 
 세 버그가 같은 누락 한 줄에서 파생되므로 한 PR 로 묶었다.

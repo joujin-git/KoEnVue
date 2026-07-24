@@ -1,5 +1,6 @@
 using KoEnVue.App.Config;
 using KoEnVue.App.Detector;
+using KoEnVue.App.Messaging;
 using KoEnVue.App.Models;
 using KoEnVue.Core.Color;
 using KoEnVue.Core.Logging;

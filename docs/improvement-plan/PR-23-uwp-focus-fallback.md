@@ -66,7 +66,7 @@ foreground 가 `ApplicationFrameWindow` 이고 `hwndFocus=0` 이면 `hwndForegro
 
 ## IME 감지 무영향
 
-[`ImeStatus.Detect(hwndFocus, threadId)`] 의 `threadId` 는 [`DetectionLoop`] 에서
+[`ImeStatus.Detect(hwndFocus, threadId)`] 의 `threadId` 는 [`DetectionService`](../../App/Detector/DetectionService.cs) 에서
 `hwndForeground` 로 **독립 결정**되므로 (Tier 3 `GetKeyboardLayout` 입력), 본 폴백이 바꾸는
 `hwndFocus` 는 IME Tier 3 경로를 건드리지 않는다. 폴백은 오직 `SystemFilter.ShouldHide` 의 no-focus
 판정에만 영향을 준다.

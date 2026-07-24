@@ -13,6 +13,10 @@ internal static class CursorRenderer
 {
     private const double HalfPixel = 0.5;
     private const double MinVisibleAlpha = 1.0 / 255.0;
+    // 단위구간 [0,1] — DefaultConfig.MinOpacity(0.1) 과 의미 다름 (P3).
+    private const double AlphaUnitMin = 0.0;
+    private const double AlphaUnitMax = 1.0;
+    private const double ByteChannelMax = (double)byte.MaxValue;
 
     private const double SubSampleLow = 0.25;
     private const double SubSampleHigh = 0.75;
@@ -34,7 +38,7 @@ internal static class CursorRenderer
         double innerR = DpiHelper.Scale(style.InnerRadiusLogicalPx, metrics.DpiScale) * scale;
         double baseCore = DpiHelper.Scale(style.CoreThicknessLogicalPx, metrics.DpiScale) * 0.5 * scale;
         double baseHalo = DpiHelper.Scale(style.HaloThicknessLogicalPx, metrics.DpiScale) * 0.5 * scale;
-        double haloOpacity = Math.Clamp(style.HaloOpacity, 0.0, 1.0);
+        double haloOpacity = Math.Clamp(style.HaloOpacity, AlphaUnitMin, AlphaUnitMax);
 
         double cx = w * 0.5;
         double cy = h * 0.5;
@@ -43,7 +47,7 @@ internal static class CursorRenderer
             ? Math.Max(outerR, Math.Max(middleR, innerR))
             : Math.Max(middleR, innerR);
 
-        double soft = Math.Clamp(style.MotionSoftness, 0.0, 1.0);
+        double soft = Math.Clamp(style.MotionSoftness, AlphaUnitMin, AlphaUnitMax);
         double fogSigma = 0.0;
         if (soft > 0.0)
         {
@@ -136,7 +140,7 @@ internal static class CursorRenderer
                     ptr[0] = (byte)Math.Round(accumB / accumA);
                     ptr[1] = (byte)Math.Round(accumG / accumA);
                     ptr[2] = (byte)Math.Round(accumR / accumA);
-                    ptr[3] = (byte)Math.Round(avgAlpha * 255.0);
+                    ptr[3] = (byte)Math.Round(avgAlpha * ByteChannelMax);
                 }
                 ptr += DibSectionFactory.BytesPerPixel;
             }
@@ -206,8 +210,8 @@ internal static class CursorRenderer
 
     private static double Clamp01(double v)
     {
-        if (v <= 0.0) return 0.0;
-        if (v >= 1.0) return 1.0;
+        if (v <= AlphaUnitMin) return AlphaUnitMin;
+        if (v >= AlphaUnitMax) return AlphaUnitMax;
         return v;
     }
 }

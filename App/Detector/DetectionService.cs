@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using KoEnVue.App.Config;
 using KoEnVue.App.Models;
-using KoEnVue.App.UI;
+using KoEnVue.App.Messaging;
 using KoEnVue.Core.Logging;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Windowing;
@@ -114,12 +114,16 @@ internal static class DetectionService
             Settings.CheckConfigFileChange(host.GetHwndMain());
 
         // 1. 포그라운드 윈도우 확인 — 자기 자신 무시 (메인/오버레이/커서 헤일로 3 hwnd 모두).
-        // _hwndCursorOverlay 가드는 cursor 윈도우가 어떤 이유로 foreground 잡혀 SystemFilter 가
-        // cursor 클래스 평가하는 race 차단 (안전망).
+        // Zero 선행: 커서 OFF 시 GetHwndCursorOverlay()==Zero 라 FG=0 이 self-hwnd 로
+        // 오인되는 틱 스킵을 막는다 (Program.TryShowIndicatorIfForegroundAllowed 와 대칭).
+        // 커서 HWND 가드는 non-zero 일 때만 — cursor 가 FG 잡혀 SystemFilter 가 cursor
+        // 클래스 평가하는 race 차단 (안전망).
         IntPtr hwndForeground = User32.GetForegroundWindow();
+        if (hwndForeground == IntPtr.Zero) return;
+        IntPtr hwndCursor = host.GetHwndCursorOverlay();
         if (hwndForeground == host.GetHwndMain()
             || hwndForeground == host.GetHwndOverlay()
-            || hwndForeground == host.GetHwndCursorOverlay())
+            || (hwndCursor != IntPtr.Zero && hwndForeground == hwndCursor))
             return;
 
         // 모달 게이트용 PID 와 GUITHREADINFO 용 threadId 를 한 번에 확보.

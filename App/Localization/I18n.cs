@@ -182,8 +182,8 @@ internal static class I18n
 
         // 트레이 메시지 박스
         [I18nKey.TrayPositionUnavailable]   = (
-            "인디케이터 위치를 확인할 수 없습니다. 잠시 후 다시 시도하세요.",
-            "Cannot determine current indicator position. Please try again shortly."),
+            "플로팅 배지 위치를 확인할 수 없습니다. 잠시 후 다시 시도하세요.",
+            "Cannot determine current floating badge position. Please try again shortly."),
         [I18nKey.TrayPositionHistoryEmpty]  = ("저장된 위치 기록이 없습니다.", "No saved position history."),
 
         // 트레이 툴팁

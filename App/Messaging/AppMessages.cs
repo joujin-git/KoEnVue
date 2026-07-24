@@ -1,10 +1,11 @@
 using KoEnVue.Core.Native;
 
-namespace KoEnVue.App.UI;
+namespace KoEnVue.App.Messaging;
 
 /// <summary>
 /// 커스텀 윈도우 메시지 정의.
 /// 감지 스레드와 훅 콜백이 PostMessage로 메인 스레드에 이벤트를 전달할 때 사용.
+/// UI 레이어 밖(<c>App/Messaging</c>)에 두어 Detector/Config → UI 역방향 의존을 피한다.
 /// </summary>
 internal static class AppMessages
 {

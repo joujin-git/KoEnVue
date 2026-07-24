@@ -1,6 +1,7 @@
 using KoEnVue.App.Bootstrap;
 using KoEnVue.App.Config;
 using KoEnVue.App.Localization;
+using KoEnVue.App.Messaging;
 using KoEnVue.App.Models;
 using KoEnVue.App.Startup;
 using KoEnVue.App.UI.Dialogs;

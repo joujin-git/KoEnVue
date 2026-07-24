@@ -4,6 +4,7 @@ using KoEnVue.App.Config;
 using KoEnVue.App.Detector;
 using KoEnVue.App.Models;
 using KoEnVue.App.Startup;
+using KoEnVue.App.Messaging;
 using KoEnVue.App.UI;
 using KoEnVue.App.Update;
 using KoEnVue.Core.Native;
@@ -21,8 +22,11 @@ namespace KoEnVue;
 /// <para>
 /// 가독성을 위해 partial class 분할:
 /// <list type="bullet">
-///   <item><c>Program.cs</c> — 진입점, MainImpl, 메시지 루프, WndProc, 이벤트 핸들러, 감지 스레드 기동(<see cref="DetectionService"/> 위임)</item>
+///   <item><c>Program.cs</c> — 진입점, MainImpl, 메시지 루프, WndProc, 표시/IME/포커스, 감지 스레드 기동(<see cref="DetectionService"/> 위임)</item>
 ///   <item><c>Program.Bootstrap.cs</c> — 다중 인스턴스, 윈도우 클래스/생성, ProcessExit</item>
+///   <item><c>Program.OverlayDrag.cs</c> — 플로팅 배지 클릭 숨김·드래그 승격·위치 저장</item>
+///   <item><c>Program.SystemEvents.cs</c> — 전원/디스플레이/테마/DPI/세션/TaskbarCreated</item>
+///   <item><c>Program.Timers.cs</c> — WM_TIMER 위임, CAPS 폴링, 커서 헤일로 lifecycle</item>
 /// </list>
 /// </para>
 /// </summary>
@@ -641,148 +645,6 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// 오버레이 좌버튼 다운 — 캡처 + 원점 기록. 이후 MOVE 에서 드래그 승격, UP 에서 클릭 숨김.
-    /// </summary>
-    private static void BeginOverlayPointerTrack()
-    {
-        User32.SetCapture(_hwndOverlay);
-        User32.GetCursorPos(out POINT pt);
-        _overlayDragOriginX = pt.X;
-        _overlayDragOriginY = pt.Y;
-        _overlayDragPending = true;
-        _overlayDragPromoted = false;
-    }
-
-    /// <summary>
-    /// 캡처 중 마우스 이동이 시스템 드래그 임계를 넘고 drag_modifier 가 맞으면
-    /// 네이티브 HTCAPTION 드래그로 승격한다.
-    /// </summary>
-    private static void TryPromoteOverlayDrag(IntPtr hwnd)
-    {
-        if (!User32.GetCursorPos(out POINT pt)) return;
-
-        int cxDrag = User32.GetSystemMetrics(Win32Constants.SM_CXDRAG);
-        int cyDrag = User32.GetSystemMetrics(Win32Constants.SM_CYDRAG);
-        int dx = Math.Abs(pt.X - _overlayDragOriginX);
-        int dy = Math.Abs(pt.Y - _overlayDragOriginY);
-        if (dx < cxDrag && dy < cyDrag) return;
-        if (!IsDragModifierPressed(_config.DragModifier)) return;
-
-        _overlayDragPromoted = true;
-        _overlayDragPending = false; // 네이티브 sizemove 로 이관 — LBUTTONUP 재진입 방지
-        User32.ReleaseCapture();
-        // 화면 좌표를 lParam 에 담아 기존 ENTERSIZEMOVE / MOVING / EXITSIZEMOVE 경로 재사용.
-        // 멀티모니터 음수 좌표도 LOWORD/HIWORD 로 올바르게 패킹 (부호 확장 방지).
-        int packed = (pt.X & (int)Win32Constants.LOWORD_MASK)
-            | ((pt.Y & (int)Win32Constants.LOWORD_MASK) << 16);
-        User32.SendMessageW(hwnd, Win32Constants.WM_NCLBUTTONDOWN,
-            (IntPtr)Win32Constants.HTCAPTION, (IntPtr)packed);
-    }
-
-    /// <summary>
-    /// 좌버튼 업 — 승격되지 않은 짧은 클릭이면 일시 숨김(클릭 자리 마우스 통과).
-    /// </summary>
-    private static void EndOverlayPointerTrack(bool dismissIfClick)
-    {
-        _overlayDragPending = false;
-        if (User32.GetCapture() == _hwndOverlay)
-            User32.ReleaseCapture();
-
-        if (!dismissIfClick || _overlayDragPromoted) return;
-        if (_config.UserHidden || !_indicatorVisible) return;
-
-        _clickDismissed = true;
-        HideOverlay("click dismiss");
-    }
-
-    /// <summary>
-    /// 현재 드래그 활성 키 설정에 해당하는 모디파이어가 눌려 있는지 확인.
-    /// None 모드는 항상 true — 임계 초과 시 드래그 승격 가능.
-    /// WM_MOUSEMOVE 메인 스레드에서 호출 — GetAsyncKeyState 스레드 제약 없음.
-    /// </summary>
-    private static bool IsDragModifierPressed(DragModifier mode)
-    {
-        if (mode == DragModifier.None) return true;
-
-        bool ctrl = (User32.GetAsyncKeyState(Win32Constants.VK_CONTROL) & Win32Constants.KEY_PRESSED) != 0;
-        bool alt  = (User32.GetAsyncKeyState(Win32Constants.VK_MENU) & Win32Constants.KEY_PRESSED) != 0;
-        return mode switch
-        {
-            DragModifier.Ctrl    => ctrl && !alt,
-            DragModifier.Alt     => alt && !ctrl,
-            DragModifier.CtrlAlt => ctrl && alt,
-            _                    => true,
-        };
-    }
-
-    /// <summary>
-    /// 오버레이 드래그 종료 → 새 위치를 현재 앱에 저장.
-    /// 시스템 입력 프로세스(시작 메뉴, 검색 창)는 z-band 한계로 창 위에 띄울 수 없어
-    /// 사용자가 드래그해 옮긴 위치가 가려지면 다시 잡을 수 없게 된다.
-    /// 저장하지 않고 항상 기본 위치를 사용한다.
-    /// </summary>
-    private static void HandleOverlayDragEnd()
-    {
-        var (x, y) = Overlay.EndDrag();
-
-        if (DefaultConfig.IsSystemInputProcess(_currentProcessName))
-        {
-            Logger.Debug($"Skip saving indicator position for system input process: {_currentProcessName}");
-            Overlay.Show(x, y, _lastImeState, ResolveCurrent());
-            return;
-        }
-
-        if (_config.PositionMode == PositionMode.Window)
-        {
-            // 창 기준 모드: 절대좌표 → 창 기준 상대 오프셋으로 변환 후 저장.
-            // 상대값은 창 프레임 기준이므로 저장 전 work-area 클램프를 하지 않는다
-            // (클램프하면 오프셋이 오염됨). 표시용 절대좌표만 Show 직전에 클램프.
-            if (_currentProcessName.Length > 0)
-            {
-                RelativePositionConfig? rel =
-                    Overlay.ComputeRelativeFromCurrentPosition(_lastForegroundHwnd);
-                if (rel is not null)
-                {
-                    var positions = new Dictionary<string, int[]>(
-                        _config.IndicatorPositionsRelative)
-                    {
-                        [_currentProcessName] = [(int)rel.Corner, rel.DeltaX, rel.DeltaY]
-                    };
-                    _config = _config with { IndicatorPositionsRelative = positions };
-                    Settings.Save(_config);
-                    Logger.Debug($"Saved relative position for {_currentProcessName}: "
-                        + $"corner={rel.Corner}, delta=({rel.DeltaX}, {rel.DeltaY}) logical px");
-                }
-            }
-        }
-        else
-        {
-            // 고정 모드: 저장 전 work area 로 클램프 — config.json 에 off-screen 좌표가
-            // 영구 기록되지 않도록 방어. 읽기 경로(GetAppPositionFixed)도 클램프하지만
-            // 저장 시점에 정제해 두면 설정 파일 값 품질이 보장된다.
-            (x, y) = ClampToVisibleArea(x, y);
-
-            if (_lastForegroundHwnd != IntPtr.Zero)
-                _hwndPositions[_lastForegroundHwnd] = (x, y);
-            if (_currentProcessName.Length > 0)
-            {
-                var positions = new Dictionary<string, int[]>(_config.IndicatorPositions)
-                {
-                    [_currentProcessName] = [x, y]
-                };
-                _config = _config with { IndicatorPositions = positions };
-                Settings.Save(_config);
-                Logger.Debug($"Saved indicator position for {_currentProcessName}: ({x}, {y})");
-            }
-        }
-        // Window 모드: 상대 저장은 드래그 원좌표 기준 유지, Show 만 화면 안으로.
-        // Fixed 모드는 위에서 이미 클램프됨(idempotent).
-        (x, y) = ClampToVisibleArea(x, y);
-        // 새 위치의 모니터 DPI로 리소스 재생성
-        Overlay.Show(x, y, _lastImeState, ResolveCurrent());
-    }
-
-    /// <summary>
     /// 현재 포그라운드 앱에 대한 per-app resolved AppConfig 반환 (PR-13).
     /// 프로필이 없거나 매치 실패 시 글로벌 <c>_config</c> 그대로.
     /// <para>
@@ -816,7 +678,7 @@ internal static partial class Program
         if (hwndFg == IntPtr.Zero
             || hwndFg == _hwndMain
             || hwndFg == _hwndOverlay
-            || hwndFg == _hwndCursorOverlay)
+            || (_hwndCursorOverlay != IntPtr.Zero && hwndFg == _hwndCursorOverlay))
         {
             Logger.Info("Forced show skipped: no usable foreground window");
             return;
@@ -1014,17 +876,6 @@ internal static partial class Program
         TryShowIndicatorIfForegroundAllowed(_lastImeState, imeChanged: false);
     }
 
-    /// <summary>
-    /// Explorer 재시작(업데이트, 크래시 복구) 시 셸이 브로드캐스트하는 TaskbarCreated 메시지 핸들러.
-    /// 셸은 재시작 시 모든 트레이 아이콘 등록 정보를 잃으므로 앱이 스스로 재등록해야 한다.
-    /// </summary>
-    private static void HandleTaskbarCreated()
-    {
-        Logger.Info("TaskbarCreated broadcast received, recreating tray icon");
-        if (_config.TrayEnabled)
-            Tray.Recreate(_lastImeState, _config);
-    }
-
     private static void HideOverlay(string source = "?")
     {
         // 숨김 경로 추적 — source 로 호출자(시스템 필터 / 트레이 토글 / 세션 잠금)를 식별해
@@ -1038,99 +889,6 @@ internal static partial class Program
         // "실제로 사라져야 하는" 의도이므로 Always 모드의 dim-idle 유지를 우회.
         Animation.TriggerHide(_config, forceHidden: true);
         _indicatorVisible = false;
-    }
-
-    /// <summary>
-    /// 커서 헤일로 lazy 활성화 — MainImpl 부팅 (config.CursorIndicatorEnabled=true) 또는
-    /// HandleConfigChanged 의 OFF→ON 분기에서 호출. 윈도우 생성 → CursorOverlay.Initialize →
-    /// 모션 폴링 타이머 등록 (50ms 또는 16ms).
-    /// </summary>
-    private static void EnableCursorOverlay()
-    {
-        _hwndCursorOverlay = CreateCursorOverlayWindow();
-        if (_hwndCursorOverlay == IntPtr.Zero)
-        {
-            Logger.Warning("Cursor overlay window creation failed; cursor halo disabled");
-            return;
-        }
-        CursorOverlay.Initialize(_hwndCursorOverlay, _hwndMain, _config, _lastImeState, _lastCapsLockState);
-        User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION,
-            _config.CursorAlwaysShow ? DefaultConfig.CursorAlwaysPollMs : DefaultConfig.CursorMotionPollMs,
-            IntPtr.Zero);
-    }
-
-    /// <summary>
-    /// 커서 헤일로 비활성화 — HandleConfigChanged 의 ON→OFF 분기에서 호출. 타이머 해제 + 엔진 dispose +
-    /// 윈도우 파괴. _hwndCursorOverlay = IntPtr.Zero 로 리셋 (lazy 재생성 게이트).
-    /// </summary>
-    private static void DisableCursorOverlay()
-    {
-        User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION);
-        CursorOverlay.Dispose();
-        if (_hwndCursorOverlay != IntPtr.Zero)
-        {
-            User32.DestroyWindow(_hwndCursorOverlay);
-            _hwndCursorOverlay = IntPtr.Zero;
-        }
-    }
-
-    /// <summary>
-    /// 커서 헤일로 lifecycle 3 분기 (OFF→ON / ON→OFF / ON 유지 + 값 변경). HandleConfigChanged
-    /// (config.json 리로드 경로) + HandleMenuCommand 람다 (트레이 메뉴 즉시 적용 경로) 양쪽에서
-    /// 공유. <c>_config</c> 는 호출 전 새 값으로 갱신돼 있어야 한다.
-    /// <para>
-    /// HandleMenuCommand 람다가 직접 본 헬퍼를 호출해야 하는 이유: 람다 내부의 Settings.Save 는
-    /// mtime self-bump 로 WM_CONFIG_CHANGED 를 차단 (감지 스레드의 mtime 폴러가 본인 변경을 다시
-    /// 알리지 않도록). 따라서 HandleConfigChanged 가 호출 안 되고 cursor lifecycle 분기도 자동
-    /// 진입 안 한다 — 람다가 직접 호출 필수.
-    /// </para>
-    /// </summary>
-    private static void ApplyCursorConfigChange()
-    {
-        if (_config.CursorIndicatorEnabled && _hwndCursorOverlay == IntPtr.Zero)
-        {
-            EnableCursorOverlay();
-        }
-        else if (!_config.CursorIndicatorEnabled && _hwndCursorOverlay != IntPtr.Zero)
-        {
-            DisableCursorOverlay();
-        }
-        else if (_config.CursorIndicatorEnabled)
-        {
-            CursorOverlay.HandleConfigChanged(_config);
-            User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION);
-            User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION,
-                _config.CursorAlwaysShow ? DefaultConfig.CursorAlwaysPollMs : DefaultConfig.CursorMotionPollMs,
-                IntPtr.Zero);
-        }
-    }
-
-    // --- Phase 04+ 스텁 ---
-
-    private static void HandleTimer(IntPtr timerId)
-    {
-        Animation.HandleTimer((nuint)(nint)timerId, _config);
-    }
-
-    /// <summary>
-    /// 메인 스레드 WM_TIMER(TIMER_ID_CAPS) 핸들러 — CAPS LOCK 토글 상태 폴링.
-    /// 토글 비트만 변경됐을 때 Overlay._capsLockOn 필드를 갱신하고 인디가 가시 상태면 즉시 재렌더.
-    /// 인디가 숨겨져 있으면 필드만 갱신하고 재렌더는 다음 표시 시점으로 지연된다.
-    /// </summary>
-    private static void HandleCapsLockTimer()
-    {
-        bool current = (User32.GetKeyState(Win32Constants.VK_CAPITAL) & 1) != 0;
-        if (current == _lastCapsLockState) return;
-
-        _lastCapsLockState = current;
-        Logger.Debug($"CapsLock: {(current ? "ON" : "OFF")}");
-        Overlay.SetCapsLock(current);
-        if (_indicatorVisible)
-            Overlay.UpdateColor(_lastImeState, ResolveCurrent());
-
-        // 커서 헤일로도 CAPS 토글에 따라 Outer 원 표시/숨김 + 색상 갱신
-        if (_config.CursorIndicatorEnabled)
-            CursorOverlay.SetCapsLock(current);
     }
 
     private static void HandleTrayCallback(IntPtr lParam)
@@ -1239,74 +997,6 @@ internal static partial class Program
                 // 호출하지만 이 람다는 mtime self-bump 가 없어 별도 무효화가 필요하다.
                 Settings.ClearProfileCache();
             });
-    }
-
-    private static void HandlePowerResume()
-    {
-        Logger.Info("Power resumed");
-        Overlay.HandleDpiChanged();
-    }
-
-    /// <summary>인디가 가시 상태(+ 포그라운드 유효)면 현재 위치로 TriggerShow 재호출 (per-app resolved,
-    /// imeChanged=false). config 리로드 / 디스플레이 변경 / 시스템 색 변경 등에서 가시 인디를 즉시 갱신한다.
-    /// HandleConfigChanged 는 추가로 !UserHidden 가드 후 호출 (숨김 상태 인디를 깨우지 않도록).</summary>
-    private static void RefreshVisibleIndicator()
-    {
-        if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
-            ShowIndicatorAtForeground(_lastImeState, ResolveCurrent(), imeChanged: false);
-    }
-
-    private static void HandleDisplayChange()
-    {
-        Logger.Info("Display changed");
-        Overlay.HandleDpiChanged();
-
-        RefreshVisibleIndicator();
-    }
-
-    private static void HandleSettingChange()
-    {
-        // 시스템 강조색 / 다크 모드 변경 시 프로필 머지 캐시 무효화 — 캐시된 머지 결과가
-        // 옛 시스템 색을 박제하고 있을 수 있다 (프로필이 theme=system 을 상속하는 케이스).
-        Settings.ClearProfileCache();
-
-        if (_config.Theme == Theme.System)
-        {
-            _config = ThemePresets.Apply(_config);
-            Overlay.HandleConfigChanged(_config);
-        }
-
-        // PR-13: 글로벌 재적용 후 per-app resolved 로 렌더 — 프로필이 theme=system 상속 시
-        //         프로필 색상 6쌍이 새 시스템 색으로 재계산된 인스턴스로 갱신된다.
-        RefreshVisibleIndicator();
-    }
-
-    private static void HandleDpiChanged()
-    {
-        // WM_DPICHANGED 페이로드(wParam: HIWORD/LOWORD=newDpiY/newDpiX, lParam: RECT* 권장 크기)는
-        // 현재 미사용 — Overlay 가 자체 DPI 재조회로 처리한다. per-monitor DPI 정밀 대응이 필요해지면
-        // dispatch 의 WM_DPICHANGED case 에서 wParam/lParam 을 다시 전달하면 된다(WndProc 에서 항상 가용).
-        Overlay.HandleDpiChanged();
-    }
-
-    /// <summary>
-    /// WM_WTSSESSION_CHANGE — 잠금 시 인디 즉시 숨김. 해제 시 감지 스레드가 다음 포그라운드
-    /// 이벤트로 자연 복원하므로 별도 show 호출 없음. LOCK/UNLOCK 외 이벤트(로그오프 등)는 무시.
-    /// </summary>
-    private static void HandleSessionChange(uint sessionEvent)
-    {
-        if (sessionEvent == Win32Constants.WTS_SESSION_LOCK)
-        {
-            _sessionLocked = true;
-            Logger.Info("Session locked");
-            if (_config.HideOnLockScreen && _indicatorVisible)
-                HideOverlay("Session lock");
-        }
-        else if (sessionEvent == Win32Constants.WTS_SESSION_UNLOCK)
-        {
-            _sessionLocked = false;
-            Logger.Info("Session unlocked");
-        }
     }
 
     // ================================================================

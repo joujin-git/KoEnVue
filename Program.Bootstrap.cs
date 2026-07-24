@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using KoEnVue.App.Config;
 using KoEnVue.App.Detector;
+using KoEnVue.App.Messaging;
 using KoEnVue.App.UI;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Logging;

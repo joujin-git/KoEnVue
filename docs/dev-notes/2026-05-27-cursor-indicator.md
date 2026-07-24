@@ -282,7 +282,7 @@ PR-C (#3) 머지 대기 중 explorer 위임으로 [App/Detector/ImeStatus.cs](..
 ### 감지 경로 정리 (코드 사실)
 
 두 경로 병행:
-1. **폴링** — [Program.cs:1109 DetectionLoop](../../Program.cs#L1109) 가 `PollIntervalMs` (80ms 디폴트) 주기로 `ImeStatus.Detect(hwndFocus, threadId, DetectionMethod)` 호출. 변화 시 `PostMessage(WM_IME_STATE_CHANGED)`.
+1. **폴링** — [`DetectionService.RunLoop`](../../App/Detector/DetectionService.cs) / `ProcessDetectionTick` 가 `PollIntervalMs` (80ms 디폴트) 주기로 `ImeStatus.Detect(hwndFocus, threadId, DetectionMethod)` 호출. 변화 시 `PostMessage(WM_IME_STATE_CHANGED)`.
 2. **WinEvent 훅** — [App/Detector/ImeStatus.cs:76 RegisterHook](../../App/Detector/ImeStatus.cs#L76) 가 `EVENT_OBJECT_IME_CHANGE` (0x8029, `WINEVENT_OUTOFCONTEXT`) 등록. `OnImeChange` 콜백이 `GetForegroundWindow` → `Detect` → 변화 시 같은 메시지 post.
 
 `Detect()` 의 `Auto` 분기 = 3-tier fallback:

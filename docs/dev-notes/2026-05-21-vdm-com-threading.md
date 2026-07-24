@@ -4,7 +4,7 @@
 
 ## 무엇 (What)
 
-`SystemFilter._vdm` 인스턴스(`IVirtualDesktopManager`) 는 메인 스레드 STA 의 `static SystemFilter()` 생성자에서 `Ole32.CoCreateInstance` 로 만들어진다. 호출 경로는 감지 스레드(`DetectionLoop`) 의 80ms 핫패스에서 `IsOnCurrentVirtualDesktop(hwnd)` → `_vdm.IsWindowOnCurrentVirtualDesktop(hwnd, …)` — STA 객체를 MTA 스레드에서 cross-apartment 호출하는 패턴.
+`SystemFilter._vdm` 인스턴스(`IVirtualDesktopManager`) 는 메인 스레드 STA 의 `static SystemFilter()` 생성자에서 `Ole32.CoCreateInstance` 로 만들어진다. 호출 경로는 감지 스레드(`DetectionService`) 의 80ms 핫패스에서 `IsOnCurrentVirtualDesktop(hwnd)` → `_vdm.IsWindowOnCurrentVirtualDesktop(hwnd, …)` — STA 객체를 MTA 스레드에서 cross-apartment 호출하는 패턴.
 
 `IVirtualDesktopManager.IsWindowOnCurrentVirtualDesktop` 자체는 `[PreserveSig]` 라 .NET 런타임이 자동 `COMException` throw 를 막아 HRESULT 가 int 로 반환된다. 그러나 RCW 상태 이상(`InvalidComObjectException`), cross-apartment 마샬링 오류, 드물게 `NullReferenceException` 등은 wide catch 로 포획되어 "숨기지 않음" 안전 폴백.
 

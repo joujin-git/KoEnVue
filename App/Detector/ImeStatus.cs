@@ -1,6 +1,6 @@
 using KoEnVue.App.Config;
 using KoEnVue.App.Models;
-using KoEnVue.App.UI;
+using KoEnVue.App.Messaging;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Color;
 using KoEnVue.Core.Dpi;

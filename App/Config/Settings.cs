@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
 using KoEnVue.App.Models;
-using KoEnVue.App.UI;
+using KoEnVue.App.Messaging;
 using KoEnVue.Core.Config;
 using KoEnVue.Core.Logging;
 using KoEnVue.Core.Native;
@@ -338,7 +338,10 @@ internal static class Settings
     /// 프로필 딕셔너리에서 키 매칭. process/class: 직접 조회, title: Regex 패턴.
     /// enabled: false → null 반환.
     /// </summary>
-    private static AppConfig? MatchProfile(AppConfig global, string key)
+    /// <remarks>
+    /// 단위 테스트 (<c>SettingsProfileMergeTests</c>) 박제 대상. private → internal 완화는 InternalsVisibleTo.
+    /// </remarks>
+    internal static AppConfig? MatchProfile(AppConfig global, string key)
     {
         if (global.AppProfileMatch == AppProfileMatch.Title)
         {
@@ -388,7 +391,10 @@ internal static class Settings
     /// global config에 프로필 오버라이드를 JSON 레벨에서 머지.
     /// 프로필에 명시된 키만 오버라이드, 나머지는 global 상속.
     /// </summary>
-    private static AppConfig MergeProfile(AppConfig global, JsonElement profile)
+    /// <remarks>
+    /// 단위 테스트 (<c>SettingsProfileMergeTests</c>) 박제 대상. private → internal 완화는 InternalsVisibleTo.
+    /// </remarks>
+    internal static AppConfig MergeProfile(AppConfig global, JsonElement profile)
     {
         // 고속 경로: 프로필에 실질 키가 0개 (예: {} 또는 {"enabled": true}) — 전역과 동일하므로 JSON roundtrip 생략.
         // IsDisabledProfile 은 호출 전 판정되므로 여기서는 enabled:true 만 걸러낸다.

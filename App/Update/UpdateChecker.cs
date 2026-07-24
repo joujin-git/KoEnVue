@@ -120,14 +120,20 @@ internal static class UpdateChecker
     /// 양쪽 모두 앞에 <c>v</c>/<c>V</c> 가 있으면 떼고, semver prerelease 접미사 (<c>-beta.1</c> 등)도 떼고 비교.
     /// 파싱 실패 시 false 반환 (= 업데이트 알림 표시 안 함).
     /// </summary>
-    private static bool IsNewer(string current, string latest)
+    /// <remarks>
+    /// 단위 테스트 (<c>UpdateCheckerTests</c>) 박제 대상. private → internal 완화는 InternalsVisibleTo.
+    /// </remarks>
+    internal static bool IsNewer(string current, string latest)
     {
         if (!Version.TryParse(NormalizeVersion(current), out var currentV)) return false;
         if (!Version.TryParse(NormalizeVersion(latest), out var latestV)) return false;
         return latestV > currentV;
     }
 
-    private static string NormalizeVersion(string s)
+    /// <remarks>
+    /// 단위 테스트 (<c>UpdateCheckerTests</c>) 박제 대상. private → internal 완화는 InternalsVisibleTo.
+    /// </remarks>
+    internal static string NormalizeVersion(string s)
     {
         if (string.IsNullOrEmpty(s)) return s;
 
