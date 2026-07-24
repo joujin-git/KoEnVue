@@ -81,4 +81,43 @@ public class SanitizeLogPathTests
         Assert.Contains("could not be normalized", reason);
         Assert.Equal(PortablePath.ResolveLogPath(), result);
     }
+
+    [Fact]
+    public void Reject_JunctionUnderAllowedRoot_ThatEscapes()
+    {
+        // admin_elevation 시 junction 탈출(H1) — FallbackRoot 아래 junction → Temp 바깥.
+        string juncDir = Path.Combine(PortablePath.FallbackRoot, "reparse-test-" + Guid.NewGuid().ToString("N"));
+        string target = Path.Combine(Path.GetTempPath(), "koenvue-reparse-target-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(PortablePath.FallbackRoot);
+        Directory.CreateDirectory(target);
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{juncDir}\" \"{target}\"")
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            using var proc = System.Diagnostics.Process.Start(psi);
+            Assert.NotNull(proc);
+            proc.WaitForExit(10_000);
+            if (proc.ExitCode != 0 || !Directory.Exists(juncDir))
+            {
+                // CI/권한 환경에서 junction 생성 불가 시 스킵 (문자열 접두 테스트는 기존 Theory가 커버).
+                return;
+            }
+
+            string requested = Path.Combine(juncDir, "koenvue.log");
+            string result = PortablePath.SanitizeLogPath(requested, out string? reason);
+            Assert.NotNull(reason);
+            Assert.Contains("reparse", reason, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(PortablePath.ResolveLogPath(), result);
+        }
+        finally
+        {
+            try { if (Directory.Exists(juncDir)) Directory.Delete(juncDir); } catch { /* best-effort */ }
+            try { if (Directory.Exists(target)) Directory.Delete(target); } catch { /* best-effort */ }
+        }
+    }
 }

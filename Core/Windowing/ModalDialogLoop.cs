@@ -26,14 +26,14 @@ namespace KoEnVue.Core.Windowing;
 /// </summary>
 internal static class ModalDialogLoop
 {
-    // s_activeDialog 는 UI 스레드에서 쓰이고 감지 스레드(Program.cs DetectionLoop)에서도
+    // s_activeDialog 는 UI 스레드에서 쓰이고 감지 스레드(DetectionService.RunLoop)에서도
     // IsActive 를 읽는다. IntPtr 은 volatile 키워드를 받지 않으므로 모든 접근에
     // Volatile.Read/Write 를 명시해 스레드 가시성을 보장한다.
     private static IntPtr s_activeDialog;
 
     /// <summary>
     /// 현재 활성 모달 다이얼로그 존재 여부.
-    /// UI 스레드(재진입 가드) + 감지 스레드(DetectionLoop 게이트) 양쪽에서 읽힌다.
+    /// UI 스레드(재진입 가드) + 감지 스레드(DetectionService 게이트) 양쪽에서 읽힌다.
     /// </summary>
     public static bool IsActive => Volatile.Read(ref s_activeDialog) != IntPtr.Zero;
 

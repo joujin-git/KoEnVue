@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using KoEnVue.Core.Logging;
+using KoEnVue.Core.Native;
 
 namespace KoEnVue.App.Config;
 
@@ -13,6 +14,8 @@ namespace KoEnVue.App.Config;
 /// B2 schtasks symlink, B5 elevated notepad) 이 자연 해소된다. 그러나 사용자가
 /// <c>config.json:log_file_path</c> 에 시스템 폴더를 지정하는 등 경계 외 write 시도는
 /// 여전히 가능하므로 <see cref="SanitizeLogPath"/> 가 허용 루트 하위인지 검증한다.
+/// <b>admin_elevation</b> 옵트인 시에는 문자열 접두만으로는 junction 탈출을 막지 못하므로
+/// <see cref="Kernel32.GetFinalPathNameByHandleW"/> 로 최종 경로를 재검증한다 (오딧 H1).
 /// </para>
 /// </summary>
 internal static class PortablePath
@@ -28,6 +31,8 @@ internal static class PortablePath
     // exe 디렉토리 writable 여부 캐시 — write probe (Create + Delete) 비용을 한 번만 지불.
     // 부팅 후 ACL 이 바뀌어도 다음 실행에서 재평가되므로 캐시는 프로세스 수명 한정.
     private static bool? _baseDirectoryWritable;
+
+    private static readonly IntPtr InvalidHandleValue = new(-1);
 
     /// <summary>
     /// 활성 <c>config.json</c> 경로. 결정 우선순위:
@@ -48,7 +53,7 @@ internal static class PortablePath
     /// <summary>
     /// 사용자가 지정한 <c>log_file_path</c> 를 검증해 효과적 경로를 반환.
     /// 허용된 루트 (<see cref="BaseDirectory"/> / <see cref="FallbackRoot"/>) 하위면 그대로,
-    /// 위반이거나 정규화 실패면 <see cref="ResolveLogPath"/> 로 폴백.
+    /// 위반이거나 정규화 실패·reparse 탈출이면 <see cref="ResolveLogPath"/> 로 폴백.
     /// <para>
     /// <paramref name="rejectionReason"/> 은 reject 사유를 영문으로 돌려준다 — null 이면 정상.
     /// Logger 가 초기화되기 전에 호출되므로 본 메서드 자체는 로그를 남기지 않고,
@@ -74,11 +79,28 @@ internal static class PortablePath
             return ResolveLogPath();
         }
 
-        if (IsUnderAllowedRoot(full)) return full;
+        if (!IsUnderAllowedRoot(full))
+        {
+            rejectionReason =
+                $"log_file_path '{requested}' is outside allowed roots (BaseDirectory or %LOCALAPPDATA%\\KoEnVue)";
+            return ResolveLogPath();
+        }
 
-        rejectionReason =
-            $"log_file_path '{requested}' is outside allowed roots (BaseDirectory or %LOCALAPPDATA%\\KoEnVue)";
-        return ResolveLogPath();
+        // 허용 루트 *안* 조상에 reparse(junction/symlink)가 있을 때만 최종 경로를 재검증.
+        // FallbackRoot 가 아직 없으면 부모(LocalAppData)까지 올라가지 않음 — 오탐 거부 방지.
+        if (HasReparseInAllowedAncestry(full))
+        {
+            bool resolved = TryResolveFinalPath(full, out string final);
+            if (!resolved || !IsUnderAllowedRoot(final))
+            {
+                rejectionReason = resolved
+                    ? $"log_file_path '{requested}' resolves outside allowed roots via reparse/junction (final='{final}')"
+                    : $"log_file_path '{requested}' contains a reparse point that could not be resolved safely";
+                return ResolveLogPath();
+            }
+        }
+
+        return full;
     }
 
     /// <summary>
@@ -87,6 +109,24 @@ internal static class PortablePath
     /// </summary>
     public static bool IsUnderAllowedRoot(string fullPath)
         => IsUnder(fullPath, BaseDirectory) || IsUnder(fullPath, FallbackRoot);
+
+    private static bool IsAllowedRootItself(string fullPath)
+    {
+        try
+        {
+            string p = Path.GetFullPath(fullPath).TrimEnd(Path.DirectorySeparatorChar);
+            string a = Path.GetFullPath(BaseDirectory).TrimEnd(Path.DirectorySeparatorChar);
+            string b = Path.GetFullPath(FallbackRoot).TrimEnd(Path.DirectorySeparatorChar);
+            return p.Equals(a, StringComparison.OrdinalIgnoreCase)
+                || p.Equals(b, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or PathTooLongException
+            or NotSupportedException or System.Security.SecurityException)
+        {
+            _ = ex;
+            return false;
+        }
+    }
 
     private static bool IsUnder(string fullPath, string root)
     {
@@ -102,6 +142,110 @@ internal static class PortablePath
             _ = ex;
             return false;
         }
+    }
+
+    /// <summary>
+    /// 허용 루트(및 그 자신) 범위 안의 존재하는 조상 중 reparse point 가 있는지.
+    /// 허용 루트 밖(예: LocalAppData)으로 올라가지 않는다.
+    /// </summary>
+    private static bool HasReparseInAllowedAncestry(string fullPath)
+    {
+        string? probe = fullPath;
+        while (!string.IsNullOrEmpty(probe))
+        {
+            if (!IsUnderAllowedRoot(probe) && !IsAllowedRootItself(probe))
+                break;
+
+            uint attrs = Kernel32.GetFileAttributesW(probe);
+            if (attrs != Kernel32.INVALID_FILE_ATTRIBUTES
+                && (attrs & Win32Constants.FILE_ATTRIBUTE_REPARSE_POINT) != 0)
+                return true;
+
+            string? parent = Path.GetDirectoryName(probe);
+            if (string.IsNullOrEmpty(parent) || parent == probe)
+                break;
+            probe = parent;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// 존재하는 가장 깊은 조상(파일 또는 디렉터리)을 열어 junction/symlink 를 해석한 최종 경로를 얻는다.
+    /// 경로가 아직 없으면 false.
+    /// </summary>
+    private static bool TryResolveFinalPath(string fullPath, out string finalPath)
+    {
+        finalPath = fullPath;
+        string? probe = fullPath;
+        while (!string.IsNullOrEmpty(probe))
+        {
+            uint attrs = Kernel32.GetFileAttributesW(probe);
+            if (attrs != Kernel32.INVALID_FILE_ATTRIBUTES)
+            {
+                IntPtr handle = Kernel32.CreateFileW(
+                    probe,
+                    Win32Constants.GENERIC_READ,
+                    Win32Constants.FILE_SHARE_READ
+                        | Win32Constants.FILE_SHARE_WRITE
+                        | Win32Constants.FILE_SHARE_DELETE,
+                    IntPtr.Zero,
+                    Win32Constants.OPEN_EXISTING,
+                    Win32Constants.FILE_FLAG_BACKUP_SEMANTICS,
+                    IntPtr.Zero);
+                if (handle == IntPtr.Zero || handle == InvalidHandleValue)
+                {
+                    string? parentFailed = Path.GetDirectoryName(probe);
+                    if (string.IsNullOrEmpty(parentFailed) || parentFailed == probe)
+                        return false;
+                    probe = parentFailed;
+                    continue;
+                }
+
+                try
+                {
+                    char[] buf = new char[520];
+                    uint len = Kernel32.GetFinalPathNameByHandleW(
+                        handle, buf, (uint)buf.Length, Win32Constants.FILE_NAME_NORMALIZED);
+                    if (len == 0 || len >= buf.Length)
+                        return false;
+
+                    string raw = new(buf, 0, (int)len);
+                    finalPath = StripExtendedPrefix(raw);
+                    if (!string.Equals(probe, fullPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        string leaf = Path.GetFileName(fullPath);
+                        if (!string.IsNullOrEmpty(leaf)
+                            && !string.Equals(Path.GetFileName(finalPath), leaf, StringComparison.OrdinalIgnoreCase))
+                        {
+                            finalPath = Path.Combine(finalPath, leaf);
+                        }
+                    }
+                    return true;
+                }
+                finally
+                {
+                    Kernel32.CloseHandle(handle);
+                }
+            }
+
+            string? parent = Path.GetDirectoryName(probe);
+            if (string.IsNullOrEmpty(parent) || parent == probe)
+                return false;
+            probe = parent;
+        }
+        return false;
+    }
+
+    /// <summary><c>\\?\C:\...</c> / <c>\\?\UNC\...</c> → 일반 경로.</summary>
+    private static string StripExtendedPrefix(string path)
+    {
+        const string DosPrefix = @"\\?\";
+        const string UncPrefix = @"\\?\UNC\";
+        if (path.StartsWith(UncPrefix, StringComparison.OrdinalIgnoreCase))
+            return @"\\" + path[UncPrefix.Length..];
+        if (path.StartsWith(DosPrefix, StringComparison.OrdinalIgnoreCase))
+            return path[DosPrefix.Length..];
+        return path;
     }
 
     private static string ResolveFile(string filename)

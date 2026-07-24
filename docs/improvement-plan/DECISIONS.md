@@ -41,6 +41,9 @@ EV/OV cert ROI 낮음. **결정**: GitHub Releases body에 SHA256 게시, README
 ```
 새 verification: `git grep "requireAdministrator" app.manifest` → 0 매치.
 
+### 2-8. BEH-2 커서 팝 — **방향 A (2026-07-24)**
+동일 IME 앱 전환 시 커서 헤일로 스케일 팝이 없는 것은 **정상**. IME가 실제로 바뀔 때만 팝(플로팅 배지와 일관). 코드 변경 0 · User_Guide / config-reference 명문화. 포커스 전환에도 팝(방향 B)은 **비채택**. 근거: [AUDIT-2026-06-02 §BEH-2](AUDIT-2026-06-02-codebase-review.md).
+
 ## 3. 철회된 발견 (False positives or weakened)
 
 1. **TrayIcon vs Overlay의 IME→fallback 색 발산**: `ImeState` enum 3-value, dead path. 우선순위 무시 가능.

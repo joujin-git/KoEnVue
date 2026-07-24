@@ -546,4 +546,16 @@ internal static class Win32Constants
     // 클래식 팝업/컨텍스트 메뉴 (TrackPopupMenu 등). FG를 뺏지 않는 경우가 많아
     // SystemFilter(FG 축)만으로는 놓치므로 OverlaySuppressProbe(WFP 축)에서 매칭 (PR-32).
     public const string PopupMenuClass = "#32768";
+
+    // --- CreateFileW / GetFinalPathNameByHandleW (PortablePath reparse 검사) ---
+    public const uint GENERIC_READ              = 0x80000000;
+    public const uint FILE_SHARE_READ           = 0x00000001;
+    public const uint FILE_SHARE_WRITE          = 0x00000002;
+    public const uint FILE_SHARE_DELETE         = 0x00000004;
+    public const uint OPEN_EXISTING             = 3;
+    public const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
+    /// <summary>디렉터리도 CreateFile 로 열 수 있게 함 (최종 경로 조회용).</summary>
+    public const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+    /// <summary>VOLUME_NAME_DOS — <c>\\?\C:\...</c> 형태.</summary>
+    public const uint FILE_NAME_NORMALIZED      = 0x0;
 }

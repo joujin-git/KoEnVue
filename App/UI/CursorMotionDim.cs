@@ -1,3 +1,4 @@
+using KoEnVue.App.Config;
 using KoEnVue.App.Models;
 
 namespace KoEnVue.App.UI;
@@ -82,7 +83,7 @@ internal static class CursorMotionDim
     public static (double Inner, double Middle, double Outer) RingAlphas(
         bool dimActive, double motionAlpha,
         double innerFactor, double middleFactor, double outerFactor,
-        double minAlpha = 0.04)
+        double minAlpha = DefaultConfig.MinCursorMotionAlpha)
     {
         if (!dimActive)
             return (1.0, 1.0, 1.0);

@@ -55,6 +55,16 @@ internal static partial class Program
             _mutex ??= new Mutex(true, DefaultConfig.MutexName, out _);
             return true;
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            // High IL 인스턴스가 보유한 mutex 에 Medium 2nd instance 가 접근 거부되는 경우
+            // (오딧 M1). 소유권은 얻지 못하지만 기존 인스턴스 활성화 신호는 보낼 수 있다 —
+            // 호출부가 NotifyExistingInstance() 를 이어서 호출한다.
+            Logger.Warning($"Mutex inaccessible (likely integrity-level mismatch): {ex.Message}");
+            _mutex?.Dispose();
+            _mutex = null;
+            return false;
+        }
     }
 
     /// <summary>

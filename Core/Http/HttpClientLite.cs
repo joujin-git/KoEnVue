@@ -1,4 +1,5 @@
 using System.Text;
+using KoEnVue.Core.Logging;
 using KoEnVue.Core.Native;
 
 namespace KoEnVue.Core.Http;
@@ -125,11 +126,12 @@ internal static class HttpClientLite
 
             return ReadResponseBody(hReq);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // 정책 항목 2(타입 좁히기 불가능): WinHTTP 호출 자체는 throw 하지 않으나
             // string marshalling 경로에서 OOM/AccessViolation 이 가능. 단방향 GET 1회용
             // 코드이므로 모든 예외를 흡수하고 null 반환 — 호출자는 어떤 실패도 동일하게 다룸.
+            LogProvider.Sink?.Debug($"HttpClientLite.GetString swallowed: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }

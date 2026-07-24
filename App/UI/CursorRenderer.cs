@@ -11,7 +11,6 @@ namespace KoEnVue.App.UI;
 /// </summary>
 internal static class CursorRenderer
 {
-    private const int BytesPerPixel = 4;
     private const double HalfPixel = 0.5;
     private const double MinVisibleAlpha = 1.0 / 255.0;
 
@@ -85,7 +84,7 @@ internal static class CursorRenderer
             double dyMin = Math.Min(dyTop, dyBot);
             if (dyMin * dyMin > maxOuterRSq)
             {
-                ptr += w * BytesPerPixel;
+                ptr += w * DibSectionFactory.BytesPerPixel;
                 continue;
             }
 
@@ -139,7 +138,7 @@ internal static class CursorRenderer
                     ptr[2] = (byte)Math.Round(accumR / accumA);
                     ptr[3] = (byte)Math.Round(avgAlpha * 255.0);
                 }
-                ptr += BytesPerPixel;
+                ptr += DibSectionFactory.BytesPerPixel;
             }
         }
     }
@@ -168,7 +167,8 @@ internal static class CursorRenderer
             byte cg = (byte)((colorArgb >> 8) & 0xFF);
             byte cb = (byte)(colorArgb & 0xFF);
             // 흰색 비중 ↑ (soft) → 더 안개답게
-            double whiteness = 0.45 + 0.40 * soft;
+            double whiteness = DefaultConfig.CursorFogWhitenessBase
+                + DefaultConfig.CursorFogWhitenessSoftSpan * soft;
             ringR = (byte)Math.Round(cr * (1.0 - whiteness) + HaloWhiteComponent * whiteness);
             ringG = (byte)Math.Round(cg * (1.0 - whiteness) + HaloWhiteComponent * whiteness);
             ringB = (byte)Math.Round(cb * (1.0 - whiteness) + HaloWhiteComponent * whiteness);

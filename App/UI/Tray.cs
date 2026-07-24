@@ -1,3 +1,4 @@
+using KoEnVue.App.Bootstrap;
 using KoEnVue.App.Config;
 using KoEnVue.App.Localization;
 using KoEnVue.App.Models;
@@ -497,12 +498,14 @@ internal static partial class Tray
         UriLauncher.Open($"https://github.com/{DefaultConfig.UpdateRepoOwner}/{DefaultConfig.UpdateRepoName}");
 
     /// <summary>
-    /// 현재 활성 config.json 을 메모장으로 연다 (트레이 좌클릭 "설정 파일 열기" 동작).
+    /// 현재 활성 config.json 을 연다 (트레이 좌클릭 "설정 파일 열기").
     /// <para>
-    /// <b>메모장 고정 이유</b> — 일반 사용자 PC 에는 <c>.json</c> 에 연결된 기본 앱이 없어
-    /// shell 의 <c>open</c> verb 가 "앱 선택" 다이얼로그를 띄우거나 무반응으로 보일 확률이 높다.
-    /// 메모장은 Windows 모든 버전에 기본 탑재되고 UTF-8 표시 + 저장 시 hot reload 감지가 즉시 된다.
-    /// 경로에 공백이 있을 수 있어 인자를 따옴표로 감싼다.
+    /// <b>비 elevated</b> — 메모장. 일반 PC 에 <c>.json</c> 연결 앱이 없어 shell open 이
+    /// "앱 선택"/무반응이 되기 쉽고, 메모장은 UTF-8 + hot reload 에 적합.
+    /// </para>
+    /// <para>
+    /// <b>elevated (admin_elevation)</b> — <c>explorer.exe /select</c> 로 Medium IL 탐색기에서
+    /// 파일을 연다. High IL notepad 상속(PR-03 B5 회귀, 오딧 M2)을 피한다.
     /// </para>
     /// </summary>
     internal static void OpenConfigFile()
@@ -511,6 +514,13 @@ internal static partial class Tray
         if (string.IsNullOrEmpty(path))
         {
             Logger.Warning("OpenConfigFile: ConfigFilePath is null (Settings.Load not yet called)");
+            return;
+        }
+
+        if (AdminElevation.IsCurrentProcessElevated())
+        {
+            Logger.Info("OpenConfigFile: elevated — opening via explorer /select (Medium IL)");
+            UriLauncher.Open("explorer.exe", $"/select,\"{path}\"");
             return;
         }
 

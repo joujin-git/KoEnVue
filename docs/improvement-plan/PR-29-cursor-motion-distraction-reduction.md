@@ -71,7 +71,7 @@
   - `RingAlpha*` = `cursor_motion_alpha` × (1.00 / 0.97 / 0.94)
 - soft=0: 기존 코어+헤일로 AA 경로
 - `MotionFogPadLogicalPx = 28` — soft&gt;0 일 때 bbox에 더해 σ 잘림 방지
-- IME 팝(PR-21) 중: soft=0·원별 α=1 (가독 우선)
+- IME 팝(PR-21) 중: **Soft/딤 안개 유지** (HighlightScale만 갱신 — PR-31 후속. 예전 soft=0 클리어는 한/영 팝마다 선명 플래시를 일으켜 폐기)
 
 ### Config (3키) — P4 4-축
 

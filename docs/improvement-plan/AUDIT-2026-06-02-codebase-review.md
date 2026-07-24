@@ -54,24 +54,22 @@ else
 ```
 `HandleConfigChanged`의 `StopPop()`(CursorOverlay.cs:107)이 이미 있어 토글 OFF 순간 진행 중 팝도 정리됨. **PR-22 후속**으로 분류. (단위 테스트는 커서가 GDI 의존이라 어려움 — 수동 smoke 영역.)
 
-### BEH-2 — 앱 포커싱 시 커서 강조 누락 (동일 IME 앱 전환 시) — 설계 결정 필요
+### BEH-2 — 앱 포커싱 시 커서 강조 누락 (동일 IME 앱 전환 시) — ✅ 방향 A 채택 (2026-07-24)
 
 **현상**: 앱 전환 시 커서 강조가 뜨는 경우와 안 뜨는 경우가 갈림. 명시적 한/영 전환은 정상.
 
-**근본 원인**: `CursorOverlay.SetImeState`는 **IME 상태가 실제 바뀔 때만** 호출되고(`Program.cs:504-505`, `HandleImeStateChanged` 내부), 자체적으로 `CursorOverlay.cs:201` `if (_lastImeState == state) return;` early return을 둔다. 앱 포커스 변경 핸들러(`Program.cs:520 HandleFocusChanged`)는 **커서 헤일로를 전혀 건드리지 않는다**. 따라서:
+**근본 원인**: `CursorOverlay.SetImeState`는 **IME 상태가 실제 바뀔 때만** 호출되고(`Program.cs` `HandleImeStateChanged`), 자체적으로 `if (_lastImeState == state) return;` early return을 둔다. 앱 포커스 변경 핸들러(`HandleFocusChanged`)는 **커서 헤일로를 전혀 건드리지 않는다**. 따라서:
 - 한글앱 → 영문앱 (IME 바뀜): `HandleImeStateChanged` → `SetImeState` → 팝 ✅
-- 한글앱 → 한글앱 (IME 동일): IME 미변경 → early return → 팝 없음 ❌
-- 추가 게이트: 전환 순간 마우스 이동 중이면 `_isVisible=false`(`CursorOverlay.cs:205`)라 팝 없음
+- 한글앱 → 한글앱 (IME 동일): IME 미변경 → early return → 팝 없음 ✅ **정상**
+- 추가 게이트: 전환 순간 마우스 이동 중이면 `_isVisible=false`라 팝 없음
 
 즉 사용자가 말한 "앱 포커싱 시 강조"는 실제로 **"앱 전환에 수반된 IME 변경 시 강조"**이고, 동일 IME 앱 사이 전환은 강조가 없다.
 
-**이것은 현재 설계 의도와 일치**: PR-21 범위는 "커서 헤일로 **IME 전환** 스케일 팝"이고, 플로팅 배지도 동일하게 IME 변경 시에만 highlight(`Core/Animation/OverlayAnimator.cs:177` `willHighlight = highlightTrigger && ChangeHighlight`; focus change는 `Program.cs:530`에서 `imeChanged:false`). 즉 메인/커서 둘 다 "포커스 변경만으로는 강조 안 함"이 일관된 현 동작 — 버그라기보다 **기대치 차이**.
+**이것은 현재 설계 의도와 일치**: PR-21 범위는 "커서 헤일로 **IME 전환** 스케일 팝"이고, 플로팅 배지도 동일하게 IME 변경 시에만 highlight. 메인/커서 둘 다 "포커스 변경만으로는 강조 안 함"이 일관된 현 동작 — 버그 아님.
 
-**두 방향 — 사용자 결정 필요**:
-- **방향 A (현행 유지 + 문서화)**: IME 전환 시에만 강조 = 플로팅 배지와 일관된 의도. "동일 IME 앱 전환은 강조 없음"을 정상 동작으로 User_Guide/config-reference에 명문화. **코드 변경 0**.
-- **방향 B (포커스 전환에도 강조 추가)**: `HandleFocusChanged`에서도 커서 팝 트리거(가시 상태 한정). 트레이드오프 — (a) 플로팅 배지는 focus 시 강조 안 하므로 메인↔커서 **비대칭** 발생(또는 메인까지 맞추면 변경 확대), (b) `EventTriggers.OnFocusChange` 연동 설계 필요, (c) 새 config 키(예: `cursor_highlight_on_focus`) 여부 결정. 비용 M+.
+**결정 (2026-07-24)**: **방향 A — 현행 유지 + 문서화**. 코드 변경 0. User_Guide / config-reference / implementation-notes 에 "동일 IME 앱 전환은 팝 없음 = 정상" 명문화(기존 서술 유지·감사 문서에서 A 확정). 방향 B(포커스 전환에도 팝)는 **비채택**.
 
-> BEH-1은 명확한 공백이라 수정 권장. BEH-2는 "현행이 의도된 동작"이라 방향 A(문서화)와 방향 B(기능 추가) 중 사용자 선호에 달림.
+> BEH-1은 ✅ Fixed (`AnimationEnabled && CursorChangeHighlight`). BEH-2는 ✅ 방향 A.
 
 ---
 
@@ -158,7 +156,7 @@ else
 | 묶음 | 포함 | 성격 | 비용 | 위험 |
 |------|------|------|------|------|
 | **묶음 0 — 동작(커서 마스터)** | BEH-1 (PR-22 후속 — 커서 팝 `AnimationEnabled &&` 게이팅) | 사용자 보고 공백 | S | 낮음 |
-| **묶음 0b — 동작(포커스 강조)** | BEH-2 (방향 A 문서화 / B 기능추가 — 결정 후) | 사용자 결정 대기 | 0~M+ | — |
+| **묶음 0b — 동작(포커스 강조)** | BEH-2 ✅ 방향 A (현행 유지 + 문서화, 2026-07-24) | 코드 변경 0 | 0 | — |
 | **묶음 1 — dead/명백 const** ✅ **완료 (2026-06-02)** | IMP-1, HC-13 (삭제) + HC-1·2·3·5·6·7·8·12 (P3 일괄, 이미 const 존재분 우선). **HC-17 은 보존 결정 (🔒, 제거 안 함)** — WinHttp 미사용 const 4개는 사용 중 상수의 짝/대안 | 즉시·거의 무위험 | S | 낮음 |
 | **묶음 2 — 설정 단일화** ★ ✅ **완료 (2026-06-02)** | DUP-1 | PR-17의 비-numeric 완성. 회귀 grep 동반 (양쪽 값 일치 박제) | M | 중 (디폴트 변경 표면) |
 | **묶음 3 — 다이얼로그 모듈화** ✅ **완료 (2026-06-02)** | DUP-2(✅) + DUP-5(◐ ScaleInputDialog만, SettingsDialog 보류) + DUP-6(✅ 2026-06-03 IDM_ADMIN_ELEVATION 합류로 완결) + HC-9·10·11·14·15·16(✅) | helper 추가(`SetupVScrollbar`/`ShowFieldError`) + `DefaultConfig.AppName` + 레이아웃 const. **동작 보존(값·문자열 불변)** | S–M | 낮음 |

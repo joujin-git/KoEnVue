@@ -7,6 +7,7 @@
 
 ### Changed
 
+- **커서 헤일로 전환 강조 — IME 전환 한정 명문화 (BEH-2 방향 A)** — 동일 IME 앱 사이 전환 시 팝이 없는 것은 **정상**(플로팅 배지와 일관). IME가 실제로 바뀔 때만 강조. User_Guide / config-reference / DECISIONS 명문. 코드 변경 0. [AUDIT §BEH-2](docs/improvement-plan/AUDIT-2026-06-02-codebase-review.md).
 - **UI 용어 개명 — 「메인 인디케이터」→「플로팅 배지」, 「커서 인디케이터」→「커서 헤일로」** — 트레이·상세 설정 라벨(KO/EN) 및 문서·주석 전면 반영. EN: Floating badge / Cursor halo. config 키·C# 식별자·`cursor_halo_*` 부품 키는 불변.
 - **트레이 메뉴·상세 설정 UI 블록 재정렬** — 메뉴를 메인 → 커서 → 공통(애니메이션) → 앱(시작·관리자) → 상세설정 → 종료 순으로 재배치(애니메이션은 커서 블록 직후). Settings 색상 섹션 제목만 `"인디케이터 — 색상 (플로팅 배지/커서 헤일로 공통)"` → `"공통 — 색상"` (`Shared — Colors`). 동작·config 키·필드 순서 변경 없음. 용어는 「플로팅 배지/커서 헤일로」.
 - **로그 파일 최대 크기 디폴트 10MB → 1MB** — `log_max_size_mb` / `DefaultConfig.LogMaxSizeMb`. config 없을 때·신규 설치에만 영향.
@@ -21,6 +22,7 @@
 
 ### Fixed
 
+- **관리자 권한 경로 hardening (오딧 후속)** — (1) `SanitizeLogPath` — 허용 루트 내 junction/symlink 를 `GetFinalPathNameByHandleW` 로 최종 경로 재검증. (2) High IL mutex 보유 시 Medium 2nd instance 의 `UnauthorizedAccessException` → `NotifyExistingInstance` 로 활성화. (3) elevated `OpenConfigFile` 은 High IL notepad 대신 `explorer /select` (Medium IL) — PR-03 B5 잔여 표면 축소.
 - **컨텍스트 메뉴·셸 표면 위 플로팅 배지·커서 헤일로 일관 숨김 (PR-32)** — 클래식 메뉴(`#32768`)는 FG를 안 뺏어 메인만 남던 불일치 해소. `OverlaySuppressProbe`(WFP→루트) 공유: 메인 = FG `ShouldHide`(히스테리시스) **OR** Pointer 즉시 숨김; 커서 = 동일 프로브(+Start/Search). Forced Show도 Pointer면 스킵. WinUI/브라우저 커스텀 메뉴는 비보장. [PR-32](docs/improvement-plan/PR-32-context-menu-indicator-suppress.md).
 
 - **Window 위치 클램프·모니터 폴백을 Fixed와 대칭화** — (1) 창 기준 **기본** 위치(`GetDefaultRelativePosition`)도 `ClampToVisibleArea` — 저장 없는 앱에서 창이 화면 가장자리일 때 인디가 work area 밖이던 틈. (2) Window 드래그 종료: 상대 오프셋 저장은 유지, `Show` 직전 절대좌표만 클램프. (3) Fixed `GetDefaultPosition` 모니터 폴백 `MONITOR_DEFAULTTOPRIMARY` → `MONITOR_DEFAULTTONEAREST` (Window resolve·`ClampToVisibleArea` 와 통일; 창↔모니터 교차 시 동작 변화 0).
@@ -29,6 +31,8 @@
 
 ### Internal
 
+- **감지 루프 `DetectionService` + `DetectionHost` 추출** — `Program.cs` 감지 while/tick 을 `App/Detector/` 로 이동. Program 은 `DetectionHost` 콜백 주입 + 스레드 기동만. 동작 불변.
+- **P3/P4 상수 정리 (오딧 후속)** — `CursorRenderer` stride → `DibSectionFactory.BytesPerPixel`; 안개 whiteness / `MinCursorMotionAlpha` → `DefaultConfig`; `HttpClientLite` 비-200·예외 → `Debug` + `HttpStatusOk` const.
 - **`PositionUpdated` 디버그 로그에 창 식별자(`hwnd`/`class`) 추가 + `Logger.IsEnabled` 레벨 가드 (2026-07-22)** — **사용자 가시 동작·렌더 결과·config 키 변화 0** (진단 로그 전용). 한 프로세스가 top-level 창을 여러 개 소유하는 앱(파일 관리자 + 내장 뷰어, 편집기 + 찾기 대화상자 등)에서 기존 로그는 `process=` 만 남겨, 인디 위치가 두 좌표를 오가는 현상이 **정상적인 창 전환인지 결함인지 구분 불가**했다([PR-26](docs/improvement-plan/PR-26-user-hidden-unhide-filter-bypass.md) 조사에서 진단이 막힌 지점). [`Program.cs`](Program.cs) `HandlePositionUpdated` 의 디버그 라인에 `hwnd=0x…`·`class=…` 를 추가. `WindowProcessInfo.GetClassName` 이 P/Invoke 이고 보간 문자열 합성은 호출 사이트 책임(`ILogSink` 계약)이라 [`Core/Logging/Logger.cs`](Core/Logging/Logger.cs) 에 `IsEnabled(LogLevel)` 를 신설해 가드로 감쌌다 — 레벨이 꺼져 있으면 조회 자체가 일어나지 않는다. 같은 가드를 `TryHandleFilter` 의 `Filter HIDE deferred` 라인에도 적용: 감지 스레드 핫패스(80ms 폴링)에서 `GetClassName` 을 로그 레벨과 무관하게 매번 평가하던 기존 비용 제거. dotnet build 0/0 + AOT publish 경고 0 + 90/90 PASS + P1–P6 invariant 위반 0.
 
 ## [0.9.9.6] — 2026-06-08 — UWP 포커스 폴백 버그 수정 + 내부 견고성 정리

@@ -365,6 +365,11 @@ internal static partial class DefaultConfig
     public const double MinCursorMotionSoftness    = 0.0;
     public const double MaxCursorMotionSoftness    = 1.0;
 
+    /// <summary>가우시안 안개 흰색 혼합 기저 (soft=0 일 때 whiteness).</summary>
+    public const double CursorFogWhitenessBase     = 0.45;
+    /// <summary>soft=1 일 때 추가로되는 흰색 비중 폭 — whiteness = Base + SoftSpan * soft.</summary>
+    public const double CursorFogWhitenessSoftSpan = 0.40;
+
     /// <summary>
     /// cursor 인디 HWND_TOPMOST 재적용 주기 (ms). 항상 표시 모드 + 정지 검출 모드(가시 상태)
     /// 양쪽에서 다른 topmost 창(풀스크린/토스트/UAC)이 위로 올라와도 복구하도록 주기 재적용.

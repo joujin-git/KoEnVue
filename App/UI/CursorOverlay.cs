@@ -268,7 +268,7 @@ internal static class CursorOverlay
     /// <summary>
     /// AlwaysShow 경로 — 커서 표시 모드(PR-31)에 따라 안개/선명 + 위치 렌더.
     /// Soft=항상 흐릿하게, Sharp=항상 선명하게, Motion=이동 중 흐릿하게(PR-29/30).
-    /// 팝 중에는 soft=0 · 원별 알파 1.0 (IME 전환 가독 우선). 창 SourceConstantAlpha 는 Full.
+    /// 팝 중에는 Soft/딤 안개 유지(HighlightScale만 갱신 — PR-31 후속). 창 SourceConstantAlpha 는 Full.
     /// </summary>
     private static void ApplyMotionDimAndRender(POINT cursor, bool moving)
     {
