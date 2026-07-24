@@ -36,15 +36,15 @@
 
 ## ⚠ 동작 이슈 (사용자 보고 — 코드 진단 완료)
 
-코드 품질 리뷰와 별개로 사용자가 보고한 **커서 인디 강조**(IME 전환 스케일 팝, PR-21) 동작 2건. 코드를 직접 추적해 근본 원인을 확정했다.
+코드 품질 리뷰와 별개로 사용자가 보고한 **커서 헤일로 강조**(IME 전환 스케일 팝, PR-21) 동작 2건. 코드를 직접 추적해 근본 원인을 확정했다.
 
 ### BEH-1 — 커서 강조가 `animation_enabled` 마스터를 무시 (공백, High)
 
-**현상**: 트레이 "애니메이션 사용"(`animation_enabled`) OFF여도 커서 인디의 IME 전환 강조(팝)가 계속 작동.
+**현상**: 트레이 "애니메이션 사용"(`animation_enabled`) OFF여도 커서 헤일로의 IME 전환 강조(팝)가 계속 작동.
 
-**근본 원인**: PR-22가 **메인 인디**는 `Animation.BuildAnimationConfig`에서 `ChangeHighlight/SlideAnimation = AnimationEnabled && ...`로 마스터 게이팅했으나(`App/UI/Animation.cs:154,157`), **커서 인디는 별도 파사드**라 그 합성을 안 거친다. `App/UI/CursorOverlay.cs:209` `if (_config.CursorChangeHighlight) TriggerPop();`이 `AnimationEnabled`를 **전혀 보지 않음** → PR-22의 "전체 마스터" 의도(라벨·PRD·config-reference)에서 커서 팝이 누락된 사각지대.
+**근본 원인**: PR-22가 **플로팅 배지**는 `Animation.BuildAnimationConfig`에서 `ChangeHighlight/SlideAnimation = AnimationEnabled && ...`로 마스터 게이팅했으나(`App/UI/Animation.cs:154,157`), **커서 헤일로는 별도 파사드**라 그 합성을 안 거친다. `App/UI/CursorOverlay.cs:209` `if (_config.CursorChangeHighlight) TriggerPop();`이 `AnimationEnabled`를 **전혀 보지 않음** → PR-22의 "전체 마스터" 의도(라벨·PRD·config-reference)에서 커서 팝이 누락된 사각지대.
 
-**수정 방안** (메인 인디와 평행, 비용 S, 회귀 낮음):
+**수정 방안** (플로팅 배지와 평행, 비용 S, 회귀 낮음):
 ```csharp
 // CursorOverlay.SetImeState (현재 line 209)
 if (_config.AnimationEnabled && _config.CursorChangeHighlight)
@@ -58,18 +58,18 @@ else
 
 **현상**: 앱 전환 시 커서 강조가 뜨는 경우와 안 뜨는 경우가 갈림. 명시적 한/영 전환은 정상.
 
-**근본 원인**: `CursorOverlay.SetImeState`는 **IME 상태가 실제 바뀔 때만** 호출되고(`Program.cs:504-505`, `HandleImeStateChanged` 내부), 자체적으로 `CursorOverlay.cs:201` `if (_lastImeState == state) return;` early return을 둔다. 앱 포커스 변경 핸들러(`Program.cs:520 HandleFocusChanged`)는 **커서 인디를 전혀 건드리지 않는다**. 따라서:
+**근본 원인**: `CursorOverlay.SetImeState`는 **IME 상태가 실제 바뀔 때만** 호출되고(`Program.cs:504-505`, `HandleImeStateChanged` 내부), 자체적으로 `CursorOverlay.cs:201` `if (_lastImeState == state) return;` early return을 둔다. 앱 포커스 변경 핸들러(`Program.cs:520 HandleFocusChanged`)는 **커서 헤일로를 전혀 건드리지 않는다**. 따라서:
 - 한글앱 → 영문앱 (IME 바뀜): `HandleImeStateChanged` → `SetImeState` → 팝 ✅
 - 한글앱 → 한글앱 (IME 동일): IME 미변경 → early return → 팝 없음 ❌
 - 추가 게이트: 전환 순간 마우스 이동 중이면 `_isVisible=false`(`CursorOverlay.cs:205`)라 팝 없음
 
 즉 사용자가 말한 "앱 포커싱 시 강조"는 실제로 **"앱 전환에 수반된 IME 변경 시 강조"**이고, 동일 IME 앱 사이 전환은 강조가 없다.
 
-**이것은 현재 설계 의도와 일치**: PR-21 범위는 "커서 인디 **IME 전환** 스케일 팝"이고, 메인 인디도 동일하게 IME 변경 시에만 highlight(`Core/Animation/OverlayAnimator.cs:177` `willHighlight = highlightTrigger && ChangeHighlight`; focus change는 `Program.cs:530`에서 `imeChanged:false`). 즉 메인/커서 둘 다 "포커스 변경만으로는 강조 안 함"이 일관된 현 동작 — 버그라기보다 **기대치 차이**.
+**이것은 현재 설계 의도와 일치**: PR-21 범위는 "커서 헤일로 **IME 전환** 스케일 팝"이고, 플로팅 배지도 동일하게 IME 변경 시에만 highlight(`Core/Animation/OverlayAnimator.cs:177` `willHighlight = highlightTrigger && ChangeHighlight`; focus change는 `Program.cs:530`에서 `imeChanged:false`). 즉 메인/커서 둘 다 "포커스 변경만으로는 강조 안 함"이 일관된 현 동작 — 버그라기보다 **기대치 차이**.
 
 **두 방향 — 사용자 결정 필요**:
-- **방향 A (현행 유지 + 문서화)**: IME 전환 시에만 강조 = 메인 인디와 일관된 의도. "동일 IME 앱 전환은 강조 없음"을 정상 동작으로 User_Guide/config-reference에 명문화. **코드 변경 0**.
-- **방향 B (포커스 전환에도 강조 추가)**: `HandleFocusChanged`에서도 커서 팝 트리거(가시 상태 한정). 트레이드오프 — (a) 메인 인디는 focus 시 강조 안 하므로 메인↔커서 **비대칭** 발생(또는 메인까지 맞추면 변경 확대), (b) `EventTriggers.OnFocusChange` 연동 설계 필요, (c) 새 config 키(예: `cursor_highlight_on_focus`) 여부 결정. 비용 M+.
+- **방향 A (현행 유지 + 문서화)**: IME 전환 시에만 강조 = 플로팅 배지와 일관된 의도. "동일 IME 앱 전환은 강조 없음"을 정상 동작으로 User_Guide/config-reference에 명문화. **코드 변경 0**.
+- **방향 B (포커스 전환에도 강조 추가)**: `HandleFocusChanged`에서도 커서 팝 트리거(가시 상태 한정). 트레이드오프 — (a) 플로팅 배지는 focus 시 강조 안 하므로 메인↔커서 **비대칭** 발생(또는 메인까지 맞추면 변경 확대), (b) `EventTriggers.OnFocusChange` 연동 설계 필요, (c) 새 config 키(예: `cursor_highlight_on_focus`) 여부 결정. 비용 M+.
 
 > BEH-1은 명확한 공백이라 수정 권장. BEH-2는 "현행이 의도된 동작"이라 방향 A(문서화)와 방향 B(기능 추가) 중 사용자 선호에 달림.
 

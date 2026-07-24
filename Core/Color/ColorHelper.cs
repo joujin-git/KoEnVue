@@ -24,7 +24,7 @@ internal static class ColorHelper
 
     /// <summary>
     /// HEX 문자열 (#RRGGBB 또는 RRGGBB)을 불투명 ARGB (0xFFRRGGBB)로 변환한다.
-    /// COLORREF(0x00BBGGRR, BGR)와 달리 RGB 순서이며 alpha=255 고정. 커서 인디 셰이더가
+    /// COLORREF(0x00BBGGRR, BGR)와 달리 RGB 순서이며 alpha=255 고정. 커서 헤일로 셰이더가
     /// 픽셀 채널을 직접 쓸 때 사용. 잘못된 형식은 불투명 검정 (0xFF000000) 반환.
     /// </summary>
     public static uint HexToArgb(string hex)

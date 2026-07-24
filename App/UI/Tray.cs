@@ -60,7 +60,7 @@ internal static partial class Tray
     private const int IDM_CHANGE_HIGHLIGHT   = 4007;
     private const int IDM_USER_HIDDEN        = 4009;
     private const int IDM_CURSOR_TOGGLE      = 4011;
-    /// <summary>PR-21: 커서 인디 IME 전환 스케일 팝 on/off 토글 (메인 ChangeHighlight 와 동형).</summary>
+    /// <summary>PR-21: 커서 헤일로 IME 전환 스케일 팝 on/off 토글 (메인 ChangeHighlight 와 동형).</summary>
     private const int IDM_CURSOR_HIGHLIGHT   = 4013;
     /// <summary>PR-31: 커서 표시 Soft / Sharp / Motion 라디오.</summary>
     private const int IDM_CURSOR_DISPLAY_SOFT   = 4014;
@@ -319,7 +319,7 @@ internal static partial class Tray
 
                     ShowMessage(I18n.AdminElevationChangeNotice);
 
-                    // "확인" 후 자동 종료 — 메인 인디 잔존 회귀 차단 + 사용자 mental model 정합.
+                    // "확인" 후 자동 종료 — 플로팅 배지 잔존 회귀 차단 + 사용자 mental model 정합.
                     User32.PostMessageW(hwndMain, Win32Constants.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
                 }
                 break;
@@ -398,8 +398,8 @@ internal static partial class Tray
                 Logger.Info($"UserHidden toggled via menu: {!config.UserHidden}");
                 break;
 
-            // --- 커서 인디케이터 숨김 토글 (메뉴 체크박스 — MF_CHECKED = 현재 숨김 상태) ---
-            // 메인 인디 IDM_USER_HIDDEN 과 같은 패턴. 라벨 "커서 인디케이터 숨김" + 체크 = 안 보임.
+            // --- 커서 헤일로 숨김 토글 (메뉴 체크박스 — MF_CHECKED = 현재 숨김 상태) ---
+            // 플로팅 배지 IDM_USER_HIDDEN 과 같은 패턴. 라벨 "커서 헤일로 숨김" + 체크 = 안 보임.
             // 클릭 시 enabled 반전 (체크 ON → enabled=true → 표시, 체크 OFF → enabled=false → 숨김).
             case IDM_CURSOR_TOGGLE:
                 updateConfig(config with { CursorIndicatorEnabled = !config.CursorIndicatorEnabled });

@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace KoEnVue.App.Models;
 
 /// <summary>
-/// 커서 인디 표시 방식 (PR-31). config.json <c>cursor_display_mode</c>.
+/// 커서 헤일로 표시 방식 (PR-31). config.json <c>cursor_display_mode</c>.
 /// AlwaysShow 모드에서만 체감. α/soft 키는 Soft·Motion에서 셰이더에 적용.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<CursorDisplayMode>))]

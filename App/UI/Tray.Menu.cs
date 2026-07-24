@@ -143,7 +143,7 @@ internal static partial class Tray
         // 블록 순서: 메인 → 커서 → 공통(애니메이션) → 앱(시작/관리자) → 상세설정 → 종료.
         // AnimationEnabled 는 메인 fade/highlight/slide + 커서 팝의 마스터 스위치 — 커서 블록 직후에 둔다.
 
-        // --- 메인 인디케이터 ---
+        // --- 플로팅 배지 ---
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hOpacityMenu, I18n.MenuOpacity);
         User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hSizeMenu, I18n.MenuSize);
         uint snapFlags = config.SnapToWindows ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
@@ -161,7 +161,7 @@ internal static partial class Tray
         User32.AppendMenuW(hMenu, userHiddenFlags, (nuint)IDM_USER_HIDDEN, I18n.MenuUserHidden);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
 
-        // --- 커서 인디케이터 ---
+        // --- 커서 헤일로 ---
         IntPtr hCursorDisplayMenu = User32.CreatePopupMenu();
         User32.AppendMenuW(hCursorDisplayMenu, Win32Constants.MF_STRING,
             (nuint)IDM_CURSOR_DISPLAY_SOFT, I18n.MenuCursorDisplaySoft);
@@ -182,7 +182,7 @@ internal static partial class Tray
             (nuint)(nint)hCursorDisplayMenu, I18n.MenuCursorDisplay);
         uint cursorHighlightFlags = config.CursorChangeHighlight ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
         User32.AppendMenuW(hMenu, cursorHighlightFlags, (nuint)IDM_CURSOR_HIGHLIGHT, I18n.MenuCursorHighlight);
-        // "커서 인디케이터 숨김" — 메인 "메인 인디케이터 숨김" 과 같은 패턴 (MF_CHECKED = 현재 숨김 상태).
+        // "커서 헤일로 숨김" — 메인 "플로팅 배지 숨김" 과 같은 패턴 (MF_CHECKED = 현재 숨김 상태).
         // 라벨이 "숨김" 이므로 체크 = "현재 숨김 중" = CursorIndicatorEnabled false. 클릭 시 enabled 반전.
         uint cursorToggleFlags = !config.CursorIndicatorEnabled ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
         User32.AppendMenuW(hMenu, cursorToggleFlags, (nuint)IDM_CURSOR_TOGGLE, I18n.MenuCursorIndicator);

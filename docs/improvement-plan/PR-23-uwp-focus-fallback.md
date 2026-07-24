@@ -1,11 +1,11 @@
-# PR-23: UWP(ApplicationFrameWindow) hwndFocus=0 폴백 — 설정 앱 클릭 시 메인 인디 소멸 수정
+# PR-23: UWP(ApplicationFrameWindow) hwndFocus=0 폴백 — 설정 앱 클릭 시 플로팅 배지 소멸 수정
 
 **상태**: 구현 완료 (2026-06-05)
 **유형**: 버그 수정 (사용자 가시)
 
 ## 동기
 
-Windows **설정 앱**(SystemSettings, UWP) 의 콘텐츠를 클릭하면 메인 인디케이터가 약 0.2초 뒤
+Windows **설정 앱**(SystemSettings, UWP) 의 콘텐츠를 클릭하면 플로팅 배지가 약 0.2초 뒤
 사라지는 결함. 설정 앱은 IME 토글이 멀쩡히 동작하는 일반 창인데도 인디가 없어져 "설정 만지는
 동안 한/영 상태를 못 본다" 는 사용성 저하.
 
@@ -27,7 +27,7 @@ Filter triggered HIDE: ... hwndFocus=0x0, fgClass=ApplicationFrameWindow, streak
 
 1. [`SystemFilter.ShouldHide`] **조건 6** (`hwndFocus == 0 && HideWhenNoFocus`) 발동 → filtered
 2. [`DetectionState.FilteredStreak`] 가 매 폴링 누적
-3. `DefaultConfig.HideHysteresisPolls`(= 3) 도달 시 HIDE 확정 → 메인 인디 소멸
+3. `DefaultConfig.HideHysteresisPolls`(= 3) 도달 시 HIDE 확정 → 플로팅 배지 소멸
 
 HIDE 디바운스(streak 3) 는 파일 탐색기류의 `hwndFocus` flip-flop 진동을 흡수하려는 장치인데,
 설정 앱 콘텐츠 클릭은 진동이 아니라 **연속 `hwndFocus=0`** 이라 디바운스를 통과해 HIDE 가 확정된다.
@@ -90,7 +90,7 @@ foreground 가 `ApplicationFrameWindow` 이고 `hwndFocus=0` 이면 `hwndForegro
 실제 foreground 상태) 에 의존해 **단위 테스트가 비현실적** — 핸드롤 mock 으로는 실제 UWP
 프레임/콘텐츠 분리 시나리오를 재현할 수 없다. **수동 smoke** 로 검증:
 
-1. **수정 대상** — Windows 설정 앱(SystemSettings) 콘텐츠 클릭 시 메인 인디가 **유지**되는지.
+1. **수정 대상** — Windows 설정 앱(SystemSettings) 콘텐츠 클릭 시 플로팅 배지가 **유지**되는지.
 2. **회귀가드** — 시작 메뉴를 열고(인디 정상 소멸) ESC 로 닫았을 때 정상 복원되는지. CoreWindow
    제외가 깨지면 시작 메뉴에서 인디가 사라지지 않으므로 본 항목이 가드.
 

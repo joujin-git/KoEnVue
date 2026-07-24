@@ -96,13 +96,13 @@ case 2 의 silent 충돌 차단. 사용자가 admin Total Commander 에서 KoEnV
 
 ### 3.2 다른 메뉴 항목과의 일관성 — admin 만 예외 정당
 
-Snap / Animation / Cursor indicator / Tray Click Action / Startup / Indicator Hidden 등 다른 메뉴 항목은 **모두 `config.*` 직접 반영** — 외부 환경 영향 받는 항목 0. 비교:
+Snap / Animation / Cursor halo / Tray Click Action / Startup / Indicator Hidden 등 다른 메뉴 항목은 **모두 `config.*` 직접 반영** — 외부 환경 영향 받는 항목 0. 비교:
 
 | 메뉴 항목 | 체크 분기 | 외부 환경 영향 |
 |---------|---------|---------------|
 | Snap | `config.SnapToWindows` | 없음 |
 | Animation | `config.UseAnimation` | 없음 |
-| Cursor indicator | `config.CursorIndicatorEnabled` | 없음 |
+| Cursor halo | `config.CursorIndicatorEnabled` | 없음 |
 | Startup | `config.StartupEnabled` | schtasks 등록 외부 상태 있음 — 별도 `IsStartupEnabledAsync` 로 dual check (config OR 실 등록) |
 | Indicator hidden | `config.IndicatorHidden` | 없음 |
 | **Admin elevation** | `config.AdminElevation` (fix #3) → **OR `IsCurrentProcessElevated()`** (fix #4) | **있음 — 부모 셸 토큰 상속** |

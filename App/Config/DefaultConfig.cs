@@ -276,7 +276,7 @@ internal static partial class DefaultConfig
     public const int    MinForceTopmostMs        = 0;
     public const int    MaxForceTopmostMs        = 60000;
 
-    // === 커서 인디케이터 (D7 — Settings.Validate clamp + SettingsDialog field range 단일 진실원) ===
+    // === 커서 헤일로 (D7 — Settings.Validate clamp + SettingsDialog field range 단일 진실원) ===
     // AppConfig 의 init 디폴트가 이 const 를 참조하므로 한 곳에서 값을 변경하면 양쪽이 자동 동기화.
 
     public const bool   CursorIndicatorEnabled     = true;
@@ -290,7 +290,7 @@ internal static partial class DefaultConfig
     public const int    CursorIdleDelayMs          = 100;
     public const int    CursorMotionThresholdPx    = 5;
 
-    // 전환 효과 (IME 한↔영 변경 시 스케일 팝) — 메인 인디 ChangeHighlight/HighlightScale/HighlightDurationMs 와 평행.
+    // 전환 효과 (IME 한↔영 변경 시 스케일 팝) — 플로팅 배지 ChangeHighlight/HighlightScale/HighlightDurationMs 와 평행.
     public const bool   CursorChangeHighlight      = true;
     public const double CursorHighlightScale       = 1.3;
     public const int    CursorHighlightDurationMs  = 300;
@@ -368,9 +368,9 @@ internal static partial class DefaultConfig
     /// <summary>
     /// cursor 인디 HWND_TOPMOST 재적용 주기 (ms). 항상 표시 모드 + 정지 검출 모드(가시 상태)
     /// 양쪽에서 다른 topmost 창(풀스크린/토스트/UAC)이 위로 올라와도 복구하도록 주기 재적용.
-    /// 메인 인디의 <see cref="ForceTopmostIntervalMs"/>(5000) 와 같은 기본값이나 의미 분리 —
+    /// 플로팅 배지의 <see cref="ForceTopmostIntervalMs"/>(5000) 와 같은 기본값이나 의미 분리 —
     /// 커서/메인 주기를 독립 조정 가능. 0 이면 주기 재적용 비활성 (첫 표시 set 만 유지).
-    /// <para>셸 UI(작업 표시줄/시작/검색) 위에서는 커서 인디를 아예 숨기므로(<c>CursorOverlay.IsOverShellUi</c>),
+    /// <para>셸 UI(작업 표시줄/시작/검색) 위에서는 커서 헤일로를 아예 숨기므로(<c>CursorOverlay.IsOverShellUi</c>),
     /// 그 영역 가려짐 대응으로 짧게 둘 필요가 없다 — 풀스크린/토스트/UAC 복구 목적의 5초가 적합.</para>
     /// </summary>
     public const int    CursorForceTopmostIntervalMs = 5000;

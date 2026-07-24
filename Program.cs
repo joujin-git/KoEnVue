@@ -48,7 +48,7 @@ internal static partial class Program
     private static volatile ImeState _lastImeState = ImeState.English;
     private static volatile bool _indicatorVisible;
 
-    // 메인 인디 좌클릭 일시 숨김 — UserHidden 과 무관. 포커스 변경 / 한·영(IME) 변경 시
+    // 플로팅 배지 좌클릭 일시 숨김 — UserHidden 과 무관. 포커스 변경 / 한·영(IME) 변경 시
     // HandleFocusChanged·HandleImeStateChanged 가 클리어하며 재표시. 메인 스레드 전용.
     private static bool _clickDismissed;
 
@@ -572,7 +572,7 @@ internal static partial class Program
         if (_config.TrayEnabled)
             Tray.UpdateState(newState, _config);
 
-        // 커서 인디는 IME 변경 시 색상 갱신 (가시 중이면 즉시 재렌더). enabled=false 면 무동작.
+        // 커서 헤일로는 IME 변경 시 색상 갱신 (가시 중이면 즉시 재렌더). enabled=false 면 무동작.
         if (_config.CursorIndicatorEnabled)
             CursorOverlay.SetImeState(newState);
 
@@ -965,7 +965,7 @@ internal static partial class Program
         // 글로벌 기준으로 엔진 캐시 재빌드 — 다음 per-app TriggerShow 가 style 차이 시 추가 무효화.
         Overlay.HandleConfigChanged(_config);
 
-        // 커서 인디 lifecycle — config.json 리로드 경로. HandleMenuCommand 람다도 동일 헬퍼 호출.
+        // 커서 헤일로 lifecycle — config.json 리로드 경로. HandleMenuCommand 람다도 동일 헬퍼 호출.
         ApplyCursorConfigChange();
 
         // PR-26: config 핫리로드로 user_hidden false→true 시 즉시 숨김 (이전엔 가시 인디가 동결).
@@ -1045,7 +1045,7 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// 커서 인디 lazy 활성화 — MainImpl 부팅 (config.CursorIndicatorEnabled=true) 또는
+    /// 커서 헤일로 lazy 활성화 — MainImpl 부팅 (config.CursorIndicatorEnabled=true) 또는
     /// HandleConfigChanged 의 OFF→ON 분기에서 호출. 윈도우 생성 → CursorOverlay.Initialize →
     /// 모션 폴링 타이머 등록 (50ms 또는 16ms).
     /// </summary>
@@ -1054,7 +1054,7 @@ internal static partial class Program
         _hwndCursorOverlay = CreateCursorOverlayWindow();
         if (_hwndCursorOverlay == IntPtr.Zero)
         {
-            Logger.Warning("Cursor overlay window creation failed; cursor indicator disabled");
+            Logger.Warning("Cursor overlay window creation failed; cursor halo disabled");
             return;
         }
         CursorOverlay.Initialize(_hwndCursorOverlay, _hwndMain, _config, _lastImeState, _lastCapsLockState);
@@ -1064,7 +1064,7 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// 커서 인디 비활성화 — HandleConfigChanged 의 ON→OFF 분기에서 호출. 타이머 해제 + 엔진 dispose +
+    /// 커서 헤일로 비활성화 — HandleConfigChanged 의 ON→OFF 분기에서 호출. 타이머 해제 + 엔진 dispose +
     /// 윈도우 파괴. _hwndCursorOverlay = IntPtr.Zero 로 리셋 (lazy 재생성 게이트).
     /// </summary>
     private static void DisableCursorOverlay()
@@ -1079,7 +1079,7 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// 커서 인디 lifecycle 3 분기 (OFF→ON / ON→OFF / ON 유지 + 값 변경). HandleConfigChanged
+    /// 커서 헤일로 lifecycle 3 분기 (OFF→ON / ON→OFF / ON 유지 + 값 변경). HandleConfigChanged
     /// (config.json 리로드 경로) + HandleMenuCommand 람다 (트레이 메뉴 즉시 적용 경로) 양쪽에서
     /// 공유. <c>_config</c> 는 호출 전 새 값으로 갱신돼 있어야 한다.
     /// <para>
@@ -1132,7 +1132,7 @@ internal static partial class Program
         if (_indicatorVisible)
             Overlay.UpdateColor(_lastImeState, ResolveCurrent());
 
-        // 커서 인디도 CAPS 토글에 따라 Outer 원 표시/숨김 + 색상 갱신
+        // 커서 헤일로도 CAPS 토글에 따라 Outer 원 표시/숨김 + 색상 갱신
         if (_config.CursorIndicatorEnabled)
             CursorOverlay.SetCapsLock(current);
     }
@@ -1218,7 +1218,7 @@ internal static partial class Program
                     I18n.Load(_config.Language);
                 ImeStatus.UpdateDetectionMethod(_config.DetectionMethod);
                 Overlay.HandleConfigChanged(_config);
-                // 커서 인디 lifecycle — mtime self-bump 로 HandleConfigChanged 우회되므로 직접 호출.
+                // 커서 헤일로 lifecycle — mtime self-bump 로 HandleConfigChanged 우회되므로 직접 호출.
                 ApplyCursorConfigChange();
 
                 if (wasHidden != _config.UserHidden)
@@ -1425,7 +1425,7 @@ internal static partial class Program
         if (state.PollCount % DefaultConfig.ConfigCheckIntervalPolls == 0)
             Settings.CheckConfigFileChange(_hwndMain);
 
-        // 1. 포그라운드 윈도우 확인 — 자기 자신 무시 (메인/오버레이/커서 인디 3 hwnd 모두).
+        // 1. 포그라운드 윈도우 확인 — 자기 자신 무시 (메인/오버레이/커서 헤일로 3 hwnd 모두).
         // _hwndCursorOverlay 가드는 cursor 윈도우가 어떤 이유로 foreground 잡혀 SystemFilter 가
         // cursor 클래스 평가하는 race 차단 (안전망).
         IntPtr hwndForeground = User32.GetForegroundWindow();
@@ -1554,7 +1554,7 @@ internal static partial class Program
 
             // flip-flop 디바운스: 일부 창(파일 탐색기 CabinetWClass 등)은 포커스 직후 hwndFocus 가
             // 0↔정상 으로 진동해 매 폴링 filtered↔non-filtered 가 뒤집힌다. 연속 HideHysteresisPolls
-            // 회 filtered 일 때만 HIDE 를 확정 — 단발 진동은 흡수해 메인 인디 깜박임/사라짐(애니 ON 시
+            // 회 filtered 일 때만 HIDE 를 확정 — 단발 진동은 흡수해 플로팅 배지 깜박임/사라짐(애니 ON 시
             // FadingOut race 박제)을 막는다. 잠정 구간엔 상태를 갱신하지 않아(LastFiltered/LastHwnd 불변)
             // 현 인디 상태를 유지하고, 다음 틱이 진동의 반대 위상이면 Show 가 자연 복원한다.
             if (state.FilteredStreak < DefaultConfig.HideHysteresisPolls)

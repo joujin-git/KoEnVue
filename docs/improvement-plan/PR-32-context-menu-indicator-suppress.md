@@ -1,4 +1,4 @@
-# PR-32: 컨텍스트 메뉴 위 메인·커서 인디 일관 숨김 (WFP 이중축)
+# PR-32: 컨텍스트 메뉴 위 플로팅 배지·커서 헤일로 일관 숨김 (WFP 이중축)
 
 > 상태: **✅ implemented** — 2026-07-24, main 직접. Tier-1 build/test/publish + reviewer ✅. 수동 smoke는 사용자 확인.
 >

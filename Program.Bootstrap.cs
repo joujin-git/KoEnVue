@@ -145,14 +145,14 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// 커서 인디케이터 전용 별도 HWND. 메인 overlay 와 동일 클래스 (한 클래스가 두 WS_POPUP 인스턴스
-    /// 를 가질 수 있음) + WS_EX_TRANSPARENT 추가로 마우스 hit-test 통과 보장 (커서 인디 위 클릭이
+    /// 커서 헤일로 전용 별도 HWND. 메인 overlay 와 동일 클래스 (한 클래스가 두 WS_POPUP 인스턴스
+    /// 를 가질 수 있음) + WS_EX_TRANSPARENT 추가로 마우스 hit-test 통과 보장 (커서 헤일로 위 클릭이
     /// 아래 창으로 자연 통과). dev-notes/2026-05-15-click-through-attempts.md F2: WS_EX_TRANSPARENT
     /// 영구 ON 이 OS 차원에서 유일한 신뢰 가능 클릭 통과 방식.
     /// <para>
     /// <b>WS_EX_TOPMOST 생성 시 제거</b> — 진단 결과 cursor 윈도우 첫 UpdateLayeredWindow 가 DWM 합성
     /// 시 다른 topmost 윈도우 (Shell_TrayWnd 도 topmost) 재정렬 trigger → Shell_TrayWnd 잠시
-    /// foreground → 메인 인디 SystemFilter hide 회귀. cursor 윈도우는 생성 시 일반 z-order 로 시작,
+    /// foreground → 플로팅 배지 SystemFilter hide 회귀. cursor 윈도우는 생성 시 일반 z-order 로 시작,
     /// 첫 표시 (RenderAtCursor) 시점에 명시 SetWindowPos(HWND_TOPMOST, SWP_NOSENDCHANGING) 으로
     /// topmost 진입 — 다른 윈도우에 z-order 변경 알림 차단.
     /// </para>
@@ -202,7 +202,7 @@ internal static partial class Program
         if (_hwndMain != IntPtr.Zero)
             User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_CAPS);
 
-        // 2a. 커서 인디 모션 폴링 타이머 명시적 해제 (활성 중일 때만 등록되어 있음)
+        // 2a. 커서 헤일로 모션 폴링 타이머 명시적 해제 (활성 중일 때만 등록되어 있음)
         if (_hwndMain != IntPtr.Zero)
             User32.KillTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION);
 

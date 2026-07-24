@@ -7,8 +7,8 @@ namespace KoEnVue.App.Detector;
 
 /// <summary>
 /// 포인터 아래 창이 셸·컨텍스트 메뉴 suppress 표면인지 판정 (PR-32).
-/// 메인 인디는 FG <see cref="SystemFilter"/> 와 직교하는 WFP 축으로 쓰고,
-/// 커서 인디는 기존 셸 UI 숨김을 이 헬퍼로 단일화한다 (P4).
+/// 플로팅 배지는 FG <see cref="SystemFilter"/> 와 직교하는 WFP 축으로 쓰고,
+/// 커서 헤일로는 기존 셸 UI 숨김을 이 헬퍼로 단일화한다 (P4).
 /// </summary>
 internal static class OverlaySuppressProbe
 {
@@ -59,7 +59,7 @@ internal static class OverlaySuppressProbe
 
     /// <summary>
     /// 커서 좌표 → <see cref="User32.WindowFromPoint"/> → <c>GA_ROOT</c> → suppress 여부.
-    /// WS_EX_TRANSPARENT 커서 인디는 통과되어 자기 감지 없음.
+    /// WS_EX_TRANSPARENT 커서 헤일로는 통과되어 자기 감지 없음.
     /// </summary>
     internal static bool IsOverSuppressSurface(
         POINT cursor, AppConfig config, bool includeSystemInputProcesses)

@@ -1,13 +1,13 @@
-# PR-21: 커서 인디케이터 스케일 팝 + config 신설 + SettingsDialog 대분류 재배치
+# PR-21: 커서 헤일로 스케일 팝 + config 신설 + SettingsDialog 대분류 재배치
 
 ## 동기
 
 커서 추종 인디(동심원 3개)는 IME 전환 시 색상만 즉시 교체(`CursorOverlay.SetImeState` → `Render`)되고
-시각적 피드백 강도가 약하다. 메인 인디는 IME 전환 시 Highlight 스케일 팝(1.3→1.0)으로 주의를
-끄는데, 커서 인디에는 그 대응물이 없다. 본 PR 은 (1) 커서 동심원에 메인과 동형의 스케일 팝을
+시각적 피드백 강도가 약하다. 플로팅 배지는 IME 전환 시 Highlight 스케일 팝(1.3→1.0)으로 주의를
+끄는데, 커서 헤일로에는 그 대응물이 없다. 본 PR 은 (1) 커서 동심원에 메인과 동형의 스케일 팝을
 추가하고, (2) 메인과 평행하되 독립 조정 가능한 커서 전용 config 3키를 신설하며, (3) 트레이 팝
 on/off 토글을 메인 ChangeHighlight 과 동형으로 노출하고, (4) SettingsDialog 13섹션을 일반/메인
-인디/커서 인디 대분류로 재배치한다.
+인디/커서 헤일로 대분류로 재배치한다.
 
 ## 사용자 확정 결정 (변경 불가)
 
@@ -56,7 +56,7 @@ on/off 토글을 메인 ChangeHighlight 과 동형으로 노출하고, (4) Setti
 |------|------|------|
 | (a) 메인 `OverlayAnimator` 재사용 | **거부** | OverlayAnimator.HandleHighlightTimer 는 `_onScaledSize(x,y,w,h,alpha)` 로 **윈도우 자체를 stretch**(다른 size 로 UpdateLayeredWindow)하는 전제. 커서는 `LayeredWindowBlit.Blit` 가 1:1, 셰이더 반지름에 배율을 곱해 또렷하게 확대 — 메커니즘이 본질적으로 다름. OverlayAnimator 는 fade/hold/slide/topmost 5트랙 + ImeState 무지 설계라 커서 폴링 모델과 결합 불가. dev-notes/2026-05-27 의 P4 재검토 조건 미충족 |
 | (b) Core 공유 이징 헬퍼 | **거부 (과설계)** | 공유 로직이 `ratio=clamp(elapsed/dur); scale=start+(1-start)*ratio` 2줄. Core 헬퍼 추출은 파일 신설 비용이 2줄 절약보다 큼. 커서 팝은 stretch 가 아니라 공유 분모 없음 |
-| (c) **커서 전용 경량 팝 상태머신** | **채택** | 커서는 이미 P4 예외 영역(별도 엔진 LayeredCursorBase, dev-notes/2026-05-27). 팝 상태는 CursorOverlay 정적 필드 ~4개 + 16ms 타이머 1개. **메인 인디 코드 변경 0** |
+| (c) **커서 전용 경량 팝 상태머신** | **채택** | 커서는 이미 P4 예외 영역(별도 엔진 LayeredCursorBase, dev-notes/2026-05-27). 팝 상태는 CursorOverlay 정적 필드 ~4개 + 16ms 타이머 1개. **플로팅 배지 코드 변경 0** |
 
 ### 매 프레임 처리 — `CursorOverlay.HandleCursorPopTimer()` (16ms WM_TIMER)
 
@@ -108,7 +108,7 @@ on/off 토글을 메인 ChangeHighlight 과 동형으로 노출하고, (4) Setti
   - `TriggerPop()`: `_popActive=true`, `_popStartTick=TickCount64`,
     `SetTimer(_hwndTimer, TIMER_ID_CURSOR_POP, AnimationFrameMs(16), IntPtr.Zero)`.
   - **타이머 hwnd**: CursorOverlay.Initialize 에 `IntPtr hwndTimer` 파라미터 추가(현재 hwnd 외).
-    EnableCursorOverlay 가 `_hwndMain` 전달. CursorOverlay 가 자체 SetTimer/KillTimer (메인 인디
+    EnableCursorOverlay 가 `_hwndMain` 전달. CursorOverlay 가 자체 SetTimer/KillTimer (플로팅 배지
     OverlayAnimator 가 hwndTimer 받는 패턴과 동형). Program WM_TIMER 분기는 `HandleCursorPopTimer()` 호출만 추가.
 - **완료 판정**: `HandleCursorPopTimer` 내 `ratio >= 1.0` → KillTimer + 복원.
 - **정리**:
@@ -126,14 +126,14 @@ else if ((nuint)(nint)wParam == AppMessages.TIMER_ID_CURSOR_POP)   // 신규
 
 ## 3. config 4축 매핑
 
-### 축1 — AppConfig init (App/Models/AppConfig.cs, [커서 인디케이터] 블록 끝)
+### 축1 — AppConfig init (App/Models/AppConfig.cs, [커서 헤일로] 블록 끝)
 ```csharp
 public bool   CursorChangeHighlight     { get; init; } = DefaultConfig.CursorChangeHighlight;
 public double CursorHighlightScale       { get; init; } = DefaultConfig.CursorHighlightScale;
 public int    CursorHighlightDurationMs  { get; init; } = DefaultConfig.CursorHighlightDurationMs;
 ```
 
-### 축2 — DefaultConfig const (App/Config/DefaultConfig.cs, 커서 인디케이터 블록)
+### 축2 — DefaultConfig const (App/Config/DefaultConfig.cs, 커서 헤일로 블록)
 ```csharp
 public const bool   CursorChangeHighlight        = true;   // D5: 메인 ChangeHighlight 와 평행 (기본 켜짐)
 public const double CursorHighlightScale          = 1.3;   // 메인 HighlightScale 과 평행 디폴트
@@ -163,7 +163,7 @@ CursorHighlightDurationMs = Math.Clamp(config.CursorHighlightDurationMs,
 ## 4. 트레이 토글
 
 ### 위치
-`Tray.Menu.cs` 의 `IDM_CURSOR_TOGGLE`(커서 인디 숨김) 다음에 커서 팝 토글 추가 — 커서 의미 그룹 유지.
+`Tray.Menu.cs` 의 `IDM_CURSOR_TOGGLE`(커서 헤일로 숨김) 다음에 커서 팝 토글 추가 — 커서 의미 그룹 유지.
 체크 의미 = ON (메인 ChangeHighlight 동일).
 
 ### const / 디스패치 (Tray.cs)
@@ -184,24 +184,24 @@ case IDM_CURSOR_HIGHLIGHT:
 
 ## 5. SettingsDialog 재배치 매핑
 
-현 13섹션을 **일반 / 메인 인디 / 커서 인디** 대분류로 재정렬. 단일 스크롤 구조 유지, 섹션명에 대분류
+현 13섹션을 **일반 / 플로팅 배지 / 커서 헤일로** 대분류로 재정렬. 단일 스크롤 구조 유지, 섹션명에 대분류
 prefix 반영.
 
 | 새 순서 | 대분류 | 기존 섹션 | 새 섹션명 ko / en |
 |--------|-------|----------|------------------|
 | 1 | 일반 | (10) 시스템 | 일반 / General |
 | 2 | 일반 | (9) 트레이 | 일반 — 트레이 / General — Tray |
-| 3 | 메인 인디 | (1) 표시 모드 | 메인 인디 — 표시 모드 / Main — Display Mode |
-| 4 | 메인 인디 | (2) 외관-크기·테두리 | 메인 인디 — 크기·테두리 / Main — Size & Border |
-| 5 | 메인 인디 | (3) 외관-색상·투명도 | 메인 인디 — 색상·투명도 / Main — Colors & Opacity |
-| 6 | 메인 인디 | (4) 외관-텍스트 | 메인 인디 — 텍스트 / Main — Text |
-| 7 | 메인 인디 | (5) 외관-테마 | 메인 인디 — 테마 / Main — Theme |
-| 8 | 메인 인디 | (6) 애니메이션 | 메인 인디 — 애니메이션 / Main — Animation |
-| 9 | 메인 인디 | (7) 감지 및 숨김 | 메인 인디 — 감지·숨김 / Main — Detection & Hiding |
-| 10 | 메인 인디 | (8) 앱별 프로필 | 메인 인디 — 앱별 프로필 / Main — App Profiles |
-| 11 | 메인 인디 | (11) 인디케이터 조작 | 메인 인디 — 조작 / Main — Interaction |
-| 12 | 커서 인디 | (12) 커서 인디케이터 | 커서 인디 — 동심원 / Cursor — Rings |
-| 13 | 커서 인디 | **신규** 커서 전환효과 | 커서 인디 — 전환 효과 / Cursor — Transition |
+| 3 | 플로팅 배지 | (1) 표시 모드 | 플로팅 배지 — 표시 모드 / Floating badge — Display Mode |
+| 4 | 플로팅 배지 | (2) 외관-크기·테두리 | 플로팅 배지 — 크기·테두리 / Floating badge — Size & Border |
+| 5 | 플로팅 배지 | (3) 외관-색상·투명도 | 플로팅 배지 — 색상·투명도 / Floating badge — Colors & Opacity |
+| 6 | 플로팅 배지 | (4) 외관-텍스트 | 플로팅 배지 — 텍스트 / Floating badge — Text |
+| 7 | 플로팅 배지 | (5) 외관-테마 | 플로팅 배지 — 테마 / Floating badge — Theme |
+| 8 | 플로팅 배지 | (6) 애니메이션 | 플로팅 배지 — 애니메이션 / Floating badge — Animation |
+| 9 | 플로팅 배지 | (7) 감지 및 숨김 | 플로팅 배지 — 감지·숨김 / Floating badge — Detection & Hiding |
+| 10 | 플로팅 배지 | (8) 앱별 프로필 | 플로팅 배지 — 앱별 프로필 / Floating badge — App Profiles |
+| 11 | 플로팅 배지 | (11) 인디케이터 조작 | 플로팅 배지 — 조작 / Floating badge — Interaction |
+| 12 | 커서 헤일로 | (12) 커서 헤일로 | 커서 헤일로 — 동심원 / Cursor halo — Rings |
+| 13 | 커서 헤일로 | **신규** 커서 전환효과 | 커서 헤일로 — 전환 효과 / Cursor halo — Transition |
 | 14 | 일반 | (13) 고급 | 고급 / Advanced |
 
 ### 재배치 근거
@@ -211,9 +211,9 @@ prefix 반영.
 - 단일 스크롤 y-증가 구조(BuildChildren)는 `BuildRowDefs` 의 Sec/Add 호출 순서만 바꾸면 자동 반영 —
   Scroll.cs / .cs 변경 0.
 
-### 신규 섹션 13 "커서 인디 — 전환 효과" 필드 (Fields.cs)
+### 신규 섹션 13 "커서 헤일로 — 전환 효과" 필드 (Fields.cs)
 ```csharp
-Sec("커서 인디 — 전환 효과", "Cursor — Transition");
+Sec("커서 헤일로 — 전환 효과", "Cursor halo — Transition");
 // CursorChangeHighlight on/off 는 트레이 메뉴 토글이라 여기서 제외 (메인 ChangeHighlight 패턴 동일).
 Add(Dbl("전환 강조 배율", "Highlight scale",
     DefaultConfig.MinCursorHighlightScale, DefaultConfig.MaxCursorHighlightScale,
@@ -236,7 +236,7 @@ SettingsDialog.cs "70개" → "72개" 갱신. Add 호출 순서가 `_fields`=`_f
 | P1 (zero NuGet) | 영향 없음 — BCL + 기존 Win32. SetTimer/KillTimer 기존 LibraryImport 재사용 | csproj Reference 변화 0 |
 | P2 (UI 한국어 / 로그 영어) | UI: "커서 변경 시 강조"/"전환 강조 배율" 한국어. 로그: 영어. 섹션명 ko/en 쌍 | grep |
 | P3 (const/enum) | 매직넘버 0 — scale/dur const, 타이머 ID const(=9), IDM const, 16ms=`AnimationFrameMs` 재사용 | grep |
-| P4 (단일 구현) | 커서 팝은 커서 전용 경량(§1 c). 메인 OverlayAnimator 미재사용 — dev-notes/2026-05-27 P4 예외 영역 | `git grep HandleCursorPopTimer` 1곳. 메인 인디 파일 변경 0 |
+| P4 (단일 구현) | 커서 팝은 커서 전용 경량(§1 c). 메인 OverlayAnimator 미재사용 — dev-notes/2026-05-27 P4 예외 영역 | `git grep HandleCursorPopTimer` 1곳. 플로팅 배지 파일 변경 0 |
 | P5 (manifest asInvoker) | 영향 없음 | manifest 무변경 |
 | P6 (App→Core 단방향) | `CursorStyle.HighlightScale` 는 Core record 필드(순수 double, ImeState/AppConfig 무지). App 이 BuildStyle 에서 주입 | `git grep "ImeState\|AppConfig" Core/Windowing/CursorStyle.cs` 0 |
 
@@ -257,7 +257,7 @@ git grep "DllImport" -- '*.cs'
 git grep "TIMER_ID_CURSOR_POP"          # AppMessages + Program + CursorOverlay
 git grep "CursorChangeHighlight"        # DefaultConfig + AppConfig + Tray + Tray.Menu + CursorOverlay
 git grep "ImeState\|AppConfig" Core/Windowing/CursorStyle.cs  # 0 (P6)
-# 메인 인디 무변경 보장:
+# 플로팅 배지 무변경 보장:
 git diff --stat Core/Animation/OverlayAnimator.cs App/UI/Overlay.cs App/UI/Animation.cs  # 0 lines
 git grep -c "Sec(" App/UI/Dialogs/SettingsDialog.Fields.cs  # 14
 ```
@@ -266,7 +266,7 @@ git grep -c "Sec(" App/UI/Dialogs/SettingsDialog.Fields.cs  # 14
 
 | 위험 | 심각도 | 완화 |
 |------|-------|------|
-| **메인 인디 회귀** (최우선 보장) | High | 메인 인디 파일(OverlayAnimator/Overlay/Animation/OverlayStyle) **변경 0** — `git diff --stat` 강제. 커서 팝은 별도 타이머 + 별도 상태머신 + CursorOverlay 정적 필드만 |
+| **플로팅 배지 회귀** (최우선 보장) | High | 플로팅 배지 파일(OverlayAnimator/Overlay/Animation/OverlayStyle) **변경 0** — `git diff --stat` 강제. 커서 팝은 별도 타이머 + 별도 상태머신 + CursorOverlay 정적 필드만 |
 | **DIB 재생성으로 팝 끊김** | Medium | bbox 를 MaxCursorHighlightScale 기준 고정 → 팝 중 DIB 재생성 0. EnsureDib `targetSize==_currentWidth` 스킵으로 검증 |
 | **커서 DIB race** (dev-notes 알파 race) | Medium | 팝은 `_isVisible` 일 때만 트리거 + Hide 진입 시 KillTimer. 팝은 alpha 무관(scale 만) → 알파 race 영역 미접촉 |
 | **팝 중 커서 이동** | Low | D3: 정지검출 모드는 이동 시 Hide → 팝 KillTimer 중단. 항상표시 모드는 모션 타이머=위치, 팝 타이머=scale 책임 분리 — 마지막 Render 가 최신 둘 다 반영 |

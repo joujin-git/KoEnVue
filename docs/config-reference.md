@@ -1,6 +1,6 @@
 # `config.json` 전체 키 레퍼런스
 
-KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — 101 항목 (커서 인디 16 키 = 동심원 10 + 표시모드·안개 3 + 전환 효과 3, PR-15 `admin_elevation` 포함). 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
+KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — 101 항목 (커서 헤일로 16 키 = 동심원 10 + 표시모드·안개 3 + 전환 효과 3, PR-15 `admin_elevation` 포함). 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
 
 `config.json` 의 위치: `%LOCALAPPDATA%\KoEnVue\config.json` (기본) 또는 exe 폴더 (writable 일 때). 자세한 결정 절차는 [README §다운로드](../README.md) 의 권장 설치 위치 절을 참고하세요. 저장 즉시 **핫 리로드** 됩니다 (메인 스레드 mtime 폴링, ~5초 간격).
 
@@ -161,17 +161,17 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — 101 
 | `snap_gap_px` | int | `10` | 0 ~ 10 | 창 엣지 스냅 시 간격 (논리 px). 0 = 밀착, 양수 = 경계선 겹침 방지 여백. 화면 엣지에는 적용 안 됨 |
 | `drag_modifier` | enum | `"none"` | `none` / `ctrl` / `alt` / `ctrl_alt` | 드래그 개시 게이트. 짧은 좌클릭은 항상 일시 숨김(포커스·IME 변경 시 재표시). `none` = 임계 초과 시 드래그 / 모디파이어 = 해당 키를 정확히 누른 채 임계 초과 시에만 드래그 |
 
-## 커서 추종 인디케이터 (Cursor Indicator)
+## 커서 헤일로 (Cursor Halo)
 
-마우스 커서 주변에 동심원 3개 (Inner / Middle / Outer) + 헤일로를 표시하는 보조 인디케이터. 메인 라벨 인디 (`한`/`En`/`EN`) 와는 **별개 윈도우** (`WS_EX_TRANSPARENT` 영구 ON — 클릭은 항상 아래 창으로 통과) 로 동작하며 트레이 메뉴 "커서 인디케이터 숨김" 체크박스로 즉시 토글 가능. 기본 ON + 항상 표시 모드 (`cursor_always_show = true`) 라 첫 부팅부터 가시. `cursor_indicator_enabled = false` 로 끈 동안에는 메모리 / CPU 비용 0 (lazy 해제 + 재활성화 시 lazy 생성).
+마우스 커서 주변에 동심원 3개 (Inner / Middle / Outer) + 헤일로를 표시하는 보조 인디케이터. 메인 라벨 인디 (`한`/`En`/`EN`) 와는 **별개 윈도우** (`WS_EX_TRANSPARENT` 영구 ON — 클릭은 항상 아래 창으로 통과) 로 동작하며 트레이 메뉴 "커서 헤일로 숨김" 체크박스로 즉시 토글 가능. 기본 ON + 항상 표시 모드 (`cursor_always_show = true`) 라 첫 부팅부터 가시. `cursor_indicator_enabled = false` 로 끈 동안에는 메모리 / CPU 비용 0 (lazy 해제 + 재활성화 시 lazy 생성).
 
 색상 정책: Inner/Middle 은 현재 IME 색상 (한글/영문/비한국어 중 하나). CAPS LOCK ON 시 보이는 Outer 원은 "영문 IME → 한글 색상, 한글/비한글 IME → 영문 색상" — CAPS 토글이 한 눈에 보이도록.
 
-아래 10 키는 트레이 메뉴 "상세 설정" 다이얼로그의 **"커서 인디 — 동심원"** 섹션 (PR-21 재배치 후 12 번째) 에서도 GUI 로 노출됩니다 — config.json 직접 편집 / GUI 편집 둘 다 가능. Min/Max 는 두 경로 모두 `DefaultConfig.MinCursor*` / `MaxCursor*` 상수 단일 진실원에서 클램프. IME 전환 스케일 팝 3 키는 아래 [전환 효과](#전환-효과-cursor-transition) 절 참조.
+아래 10 키는 트레이 메뉴 "상세 설정" 다이얼로그의 **"커서 헤일로 — 동심원"** 섹션 (PR-21 재배치 후 12 번째) 에서도 GUI 로 노출됩니다 — config.json 직접 편집 / GUI 편집 둘 다 가능. Min/Max 는 두 경로 모두 `DefaultConfig.MinCursor*` / `MaxCursor*` 상수 단일 진실원에서 클램프. IME 전환 스케일 팝 3 키는 아래 [전환 효과](#전환-효과-cursor-transition) 절 참조.
 
 | 키 | 타입 | 기본값 | 범위 | 설명 |
 |---|---|---|---|---|
-| `cursor_indicator_enabled` | bool | `true` | — | 커서 추종 인디 활성. 트레이 메뉴 "커서 인디케이터 숨김" 체크박스와 동일 — 기본 ON, 끄려면 메뉴 체크 또는 본 키를 `false` 로 |
+| `cursor_indicator_enabled` | bool | `true` | — | 커서 추종 인디 활성. 트레이 메뉴 "커서 헤일로 숨김" 체크박스와 동일 — 기본 ON, 끄려면 메뉴 체크 또는 본 키를 `false` 로 |
 | `cursor_always_show` | bool | `true` | — | `true` (기본) = 항상 표시 모드 (`CursorAlwaysPollMs=15` 폴링 위치 추종 — `SetTimer` ~15.625ms 격자 양자화로 실배달 ~15.6ms≈64fps; 이전 16은 실효 ~31ms≈32fps. [dev-notes](dev-notes/2026-07-22-settimer-tick-quantization.md)). 숨김 안 함. `false` = 정지 검출 모드 (마우스 정지 → `cursor_idle_delay_ms` 후 표시, 이동 시 즉시 숨김) |
 | `cursor_outer_radius` | int | `45` | 8 ~ 96 | 외측 동심원 반지름 (논리 px, DPI 미적용). CAPS LOCK ON 시에만 보임 |
 | `cursor_middle_radius` | int | `35` | 6 ~ 80 | 중간 동심원 반지름 (논리 px) |
@@ -184,7 +184,7 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — 101 
 
 ### 커서 표시 (Cursor Display, PR-31)
 
-항상 표시 모드(`cursor_always_show = true`)에서 동심원 선명도. **세 원 공통 가우시안 안개**(Soft/Motion): soft&gt;0 이면 하드 코어 없음·σ≈헤일로반폭×(1+soft×13)·색+흰색 혼합·알파≈0.55(배수 1.00/0.97/0.94). Motion만 딤 전용 저임계(`CursorMotionDimThresholdPx=1`) + Full 복귀 8틱. CAPS OFF면 Outer 미표시. DIB `MotionFogPadLogicalPx=28`. 창 알파는 Full. IME 팝 중에도 Soft/딤 안개 유지(스케일만 변경). 트레이「커서 인디케이터 표시」라디오 + Settings Combo.
+항상 표시 모드(`cursor_always_show = true`)에서 동심원 선명도. **세 원 공통 가우시안 안개**(Soft/Motion): soft&gt;0 이면 하드 코어 없음·σ≈헤일로반폭×(1+soft×13)·색+흰색 혼합·알파≈0.55(배수 1.00/0.97/0.94). Motion만 딤 전용 저임계(`CursorMotionDimThresholdPx=1`) + Full 복귀 8틱. CAPS OFF면 Outer 미표시. DIB `MotionFogPadLogicalPx=28`. 창 알파는 Full. IME 팝 중에도 Soft/딤 안개 유지(스케일만 변경). 트레이「커서 헤일로 표시」라디오 + Settings Combo.
 
 | 키 | 타입 | 기본값 | 범위 | 설명 |
 |---|---|---|---|---|
@@ -194,11 +194,11 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — 101 
 
 ### 전환 효과 (Cursor Transition)
 
-IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 스케일 팝 효과 (PR-21) — 메인 인디의 `change_highlight` / `highlight_scale` / `highlight_duration_ms` 와 평행. `cursor_change_highlight` on/off 는 **트레이 메뉴 "커서 변경 시 강조"** 토글 전용이라 SettingsDialog 에는 미노출 (메인 `change_highlight` 와 동일 정책). 나머지 2 키 (`cursor_highlight_scale` / `cursor_highlight_duration_ms`) 는 다이얼로그 **"커서 인디 — 전환 효과"** 섹션 (13 번째) 에서 GUI 노출. 팝 진행 중에도 DIB 는 `CursorStyle.MaxHighlightScale` (=`2.0`, `MaxCursorHighlightScale` 상한) 기준으로 고정 확대돼 재생성 0 — 그래서 `cursor_highlight_scale` 상한이 `2.0` 으로 잠긴다.
+IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 스케일 팝 효과 (PR-21) — 플로팅 배지의 `change_highlight` / `highlight_scale` / `highlight_duration_ms` 와 평행. `cursor_change_highlight` on/off 는 **트레이 메뉴 "커서 변경 시 강조"** 토글 전용이라 SettingsDialog 에는 미노출 (메인 `change_highlight` 와 동일 정책). 나머지 2 키 (`cursor_highlight_scale` / `cursor_highlight_duration_ms`) 는 다이얼로그 **"커서 헤일로 — 전환 효과"** 섹션 (13 번째) 에서 GUI 노출. 팝 진행 중에도 DIB 는 `CursorStyle.MaxHighlightScale` (=`2.0`, `MaxCursorHighlightScale` 상한) 기준으로 고정 확대돼 재생성 0 — 그래서 `cursor_highlight_scale` 상한이 `2.0` 으로 잠긴다.
 
 | 키 | 타입 | 기본값 | 범위 | 설명 |
 |---|---|---|---|---|
-| `cursor_change_highlight` | bool | `true` | — | IME 전환 시 스케일 팝 on/off. 트레이 메뉴 "커서 인디케이터 변경 강조" 체크박스와 동일 (체크 = ON). SettingsDialog 미노출 — 메뉴 또는 본 키 직접 편집. **트레이 "애니메이션 사용"(`animation_enabled`) 마스터에 종속** — 마스터 OFF 면 본 키가 ON 이어도 커서 팝 정지(색만 즉시 갱신), 메인 인디 `change_highlight` 와 동형 AND 게이팅 (PR-22 후속). 강조는 **IME 상태가 실제 바뀔 때만** 발생 — 앱 포커스 변경만으로는 트리거 안 됨 (동일 IME 앱 사이 전환은 강조 없음, 다른 IME 앱 전환은 강조 있음 — 메인 인디와 일관) |
+| `cursor_change_highlight` | bool | `true` | — | IME 전환 시 스케일 팝 on/off. 트레이 메뉴 "커서 헤일로 변경 강조" 체크박스와 동일 (체크 = ON). SettingsDialog 미노출 — 메뉴 또는 본 키 직접 편집. **트레이 "애니메이션 사용"(`animation_enabled`) 마스터에 종속** — 마스터 OFF 면 본 키가 ON 이어도 커서 팝 정지(색만 즉시 갱신), 플로팅 배지 `change_highlight` 와 동형 AND 게이팅 (PR-22 후속). 강조는 **IME 상태가 실제 바뀔 때만** 발생 — 앱 포커스 변경만으로는 트리거 안 됨 (동일 IME 앱 사이 전환은 강조 없음, 다른 IME 앱 전환은 강조 있음 — 플로팅 배지와 일관) |
 | `cursor_highlight_scale` | double | `1.3` | 1.0 ~ 2.0 | 팝 시작 배율 (확대 정점). `2.0` 상한은 DIB bbox 고정 기준 (`CursorStyle.MaxHighlightScale`) 과 일치 |
 | `cursor_highlight_duration_ms` | int | `300` | 0 ~ 2000 | 확대 정점 → 원래 크기 복귀 시간 (ms). 0 = 즉시 복귀 (팝 없음) |
 

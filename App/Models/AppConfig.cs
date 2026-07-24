@@ -159,7 +159,7 @@ internal sealed record AppConfig
     // Shift 는 드래그 중 축 고정에 선점되어 제외.
     public DragModifier DragModifier { get; init; } = DragModifier.None;
 
-    // [커서 인디케이터]
+    // [커서 헤일로]
     public bool CursorIndicatorEnabled { get; init; } = DefaultConfig.CursorIndicatorEnabled;
     public bool CursorAlwaysShow { get; init; } = DefaultConfig.CursorAlwaysShow;
     public int CursorOuterRadius { get; init; } = DefaultConfig.CursorOuterRadius;

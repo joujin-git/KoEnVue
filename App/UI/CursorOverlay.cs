@@ -51,7 +51,7 @@ internal static class CursorOverlay
     // 항상 표시 + 정지 검출(가시) 모드 양쪽의 주기 재적용 게이트 기준점.
     private static long _lastTopmostTick;
 
-    // IME 전환 스케일 팝 (메인 인디 ChangeHighlight 와 동형). 별도 엔진(P4 예외)이라 OverlayAnimator 미재사용 —
+    // IME 전환 스케일 팝 (플로팅 배지 ChangeHighlight 와 동형). 별도 엔진(P4 예외)이라 OverlayAnimator 미재사용 —
     // 경량 상태(_popActive + tick)로 구현. _hwndTimer 에 TIMER_ID_CURSOR_POP(16ms) 등록.
     private static IntPtr _hwndTimer;     // 팝 WM_TIMER 등록 대상 (= 메인 윈도우). Initialize 에서 주입.
     private static bool _popActive;       // 팝 진행 중 여부.
@@ -130,7 +130,7 @@ internal static class CursorOverlay
         {
             _engine.PrepareResources(_currentStyle);
         }
-        Logger.Debug($"Cursor indicator config applied (alwaysShow={config.CursorAlwaysShow}, displayMode={config.CursorDisplayMode}, visible={_isVisible})");
+        Logger.Debug($"Cursor halo config applied (alwaysShow={config.CursorAlwaysShow}, displayMode={config.CursorDisplayMode}, visible={_isVisible})");
     }
 
     /// <summary>
@@ -152,12 +152,12 @@ internal static class CursorOverlay
         _lastCursorX = cursor.X;
         _lastCursorY = cursor.Y;
 
-        // 셸·메뉴 (작업 표시줄 / 시작 / 검색 / #32768 등) 위에서는 커서 인디를 숨긴다. 셸은 시스템
-        // z-band (시작/검색은 immersive 밴드) 라 일반 topmost 인 커서 인디가 위로 못 올라가 가려지므로,
+        // 셸·메뉴 (작업 표시줄 / 시작 / 검색 / #32768 등) 위에서는 커서 헤일로를 숨긴다. 셸은 시스템
+        // z-band (시작/검색은 immersive 밴드) 라 일반 topmost 인 커서 헤일로가 위로 못 올라가 가려지므로,
         // 가려진 채 어색하게 두지 않고 해당 영역에서는 일관되게 숨긴다 (사용자 결정 2026-06-01 + PR-32).
         if (IsOverShellUi(cursor))
         {
-            HideCursor("Cursor indicator hidden (over shell UI)");
+            HideCursor("Cursor halo hidden (over shell UI)");
             _idleStartTick = 0;
             ResetMotionDim();
             return;
@@ -173,7 +173,7 @@ internal static class CursorOverlay
         if (movingForHide)
         {
             _idleStartTick = 0;
-            HideCursor("Cursor indicator hidden (cursor moving)");
+            HideCursor("Cursor halo hidden (cursor moving)");
             return;
         }
 
@@ -207,12 +207,12 @@ internal static class CursorOverlay
         if (_lastImeState == state) return;
         _lastImeState = state;
         _currentStyle = RebuildStylePreservingMotion(state, _capsLockOn);
-        Logger.Debug($"Cursor indicator IME state: {state} (visible={_isVisible})");
+        Logger.Debug($"Cursor halo IME state: {state} (visible={_isVisible})");
         if (_isVisible && _engine is not null)
         {
             // 가시 상태에서 IME 가 실제로 바뀜 — 마스터(AnimationEnabled) + CursorChangeHighlight 면 스케일 팝
             // (첫 프레임이 새 색 + 시작 배율로 렌더하므로 별도 색 갱신 Render 불요), 아니면 색만 즉시 갱신.
-            // 메인 인디 Animation.BuildAnimationConfig 의 `AnimationEnabled && ChangeHighlight` 마스터 게이팅과 동형 (PR-22 후속).
+            // 플로팅 배지 Animation.BuildAnimationConfig 의 `AnimationEnabled && ChangeHighlight` 마스터 게이팅과 동형 (PR-22 후속).
             if (_config.AnimationEnabled && _config.CursorChangeHighlight)
                 TriggerPop();
             else
@@ -228,7 +228,7 @@ internal static class CursorOverlay
         if (_capsLockOn == on) return;
         _capsLockOn = on;
         _currentStyle = RebuildStylePreservingMotion(_lastImeState, on);
-        Logger.Debug($"Cursor indicator CapsLock: {(on ? "ON" : "OFF")} (visible={_isVisible})");
+        Logger.Debug($"Cursor halo CapsLock: {(on ? "ON" : "OFF")} (visible={_isVisible})");
         if (_isVisible && _engine is not null)
             _engine.Render(_currentStyle);
     }
@@ -327,7 +327,7 @@ internal static class CursorOverlay
         {
             ApplyTopmost();
             _lastTopmostTick = Environment.TickCount64;  // 주기 재적용 카운터 첫 기준점
-            Logger.Debug($"Cursor indicator shown at ({cursor.X},{cursor.Y}); topmost set");
+            Logger.Debug($"Cursor halo shown at ({cursor.X},{cursor.Y}); topmost set");
         }
 
         _isVisible = true;
@@ -339,7 +339,7 @@ internal static class CursorOverlay
     /// <para>
     /// cursor 윈도우는 생성 시 <c>WS_EX_TOPMOST</c> 없이 일반 z-order 로 시작 (Program.Bootstrap —
     /// cursor 첫 UpdateLayeredWindow 가 DWM 합성에서 다른 topmost (Shell_TrayWnd) 재정렬 → foreground
-    /// 잠시 변경 → 메인 인디 SystemFilter hide 회귀 방지). <c>SWP_NOSENDCHANGING</c> 으로 다른 윈도우에
+    /// 잠시 변경 → 플로팅 배지 SystemFilter hide 회귀 방지). <c>SWP_NOSENDCHANGING</c> 으로 다른 윈도우에
     /// <c>WM_WINDOWPOSCHANGING</c> 알림 차단 — Shell_TrayWnd 등 z-order 재정렬 trigger 없음.
     /// </para>
     /// </summary>
@@ -367,11 +367,11 @@ internal static class CursorOverlay
         if (now - _lastTopmostTick < interval) return;
         ApplyTopmost();
         _lastTopmostTick = now;
-        Logger.Debug($"Cursor indicator topmost reasserted (interval={interval}ms)");
+        Logger.Debug($"Cursor halo topmost reasserted (interval={interval}ms)");
     }
 
     /// <summary>
-    /// IME 전환 스케일 팝 시작 — 메인 인디 <c>OverlayAnimator</c> Highlight 와 동형. 별도 엔진(P4 예외)
+    /// IME 전환 스케일 팝 시작 — 플로팅 배지 <c>OverlayAnimator</c> Highlight 와 동형. 별도 엔진(P4 예외)
     /// 이라 OverlayAnimator 를 재사용하지 않고 경량 상태(<see cref="_popActive"/> + tick)로 구현한다.
     /// 첫 프레임을 즉시 렌더해 16ms 지연 없이 시작 배율(<see cref="AppConfig.CursorHighlightScale"/>)로 팝.
     /// </summary>
@@ -381,7 +381,7 @@ internal static class CursorOverlay
         _popActive = true;
         _popStartTick = Environment.TickCount64;
         User32.SetTimer(_hwndTimer, AppMessages.TIMER_ID_CURSOR_POP, DefaultConfig.AnimationFrameMs, IntPtr.Zero);
-        Logger.Debug($"Cursor indicator pop started (scale={_config.CursorHighlightScale}, durationMs={_config.CursorHighlightDurationMs})");
+        Logger.Debug($"Cursor halo pop started (scale={_config.CursorHighlightScale}, durationMs={_config.CursorHighlightDurationMs})");
         HandleCursorPopTimer();  // 즉시 첫 프레임(시작 배율) 렌더 — 16ms 대기 없이 팝 개시.
     }
 
@@ -471,7 +471,7 @@ internal static class CursorOverlay
 
     /// <summary>
     /// 커서 바로 아래 창이 셸·메뉴 suppress 표면인지 (PR-32).
-    /// <see cref="User32.WindowFromPoint"/> 는 WS_EX_TRANSPARENT 커서 인디를 통과한다.
+    /// <see cref="User32.WindowFromPoint"/> 는 WS_EX_TRANSPARENT 커서 헤일로를 통과한다.
     /// <see cref="Win32Constants.GA_ROOT"/> 루트 캐시로 매 tick GetProcessName 을 피한다.
     /// 판정은 <see cref="OverlaySuppressProbe"/> 단일 진실원 (메인 Pointer 축과 공유, Start/Search 포함).
     /// </summary>

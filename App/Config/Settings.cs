@@ -138,7 +138,7 @@ internal static class Settings
             BorderWidth = Math.Clamp(config.BorderWidth, DefaultConfig.MinBorderWidth, DefaultConfig.MaxBorderWidth),
             IndicatorScale = Math.Round(Math.Clamp(config.IndicatorScale, DefaultConfig.MinIndicatorScale, DefaultConfig.MaxIndicatorScale), 1),
 
-            // 커서 인디케이터
+            // 커서 헤일로
             CursorOuterRadius = Math.Clamp(config.CursorOuterRadius, DefaultConfig.MinCursorOuterRadius, DefaultConfig.MaxCursorOuterRadius),
             CursorMiddleRadius = Math.Clamp(config.CursorMiddleRadius, DefaultConfig.MinCursorMiddleRadius, DefaultConfig.MaxCursorMiddleRadius),
             CursorInnerRadius = Math.Clamp(config.CursorInnerRadius, DefaultConfig.MinCursorInnerRadius, DefaultConfig.MaxCursorInnerRadius),

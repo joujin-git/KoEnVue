@@ -2,9 +2,9 @@ namespace KoEnVue.Core.Windowing;
 
 /// <summary>
 /// 커서 추종 인디케이터 (동심원 3개 + 헤일로) 의 렌더 입력. <see cref="LayeredCursorBase"/>
-/// 가 콜백에 전달하는 closed type — 메인 인디 <see cref="OverlayStyle"/> 와 형제 관계이며 별도 엔진 (LayeredCursorBase)
+/// 가 콜백에 전달하는 closed type — 플로팅 배지 <see cref="OverlayStyle"/> 와 형제 관계이며 별도 엔진 (LayeredCursorBase)
 /// 으로 처리된다. P4 ("하나의 구현만") 예외 정당화는 [docs/dev-notes/2026-05-27-cursor-indicator.md](../../docs/dev-notes/2026-05-27-cursor-indicator.md):
-/// 메인 인디 알파 race 미해결 영역에 변경면을 추가하지 않기 위해 엔진 분리.
+/// 플로팅 배지 알파 race 미해결 영역에 변경면을 추가하지 않기 위해 엔진 분리.
 /// <para>
 /// 모든 LogicalPx 필드는 사용자 설정 값 (DPI 미적용). 엔진이 <see cref="Core.Dpi.DpiHelper.Scale"/> 로 변환.
 /// </para>

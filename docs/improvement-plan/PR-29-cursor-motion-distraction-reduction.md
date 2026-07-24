@@ -4,7 +4,7 @@
 >
 > **후속**: 저속 이동 미감지·settle·α 디폴트 → [PR-30](PR-30-cursor-motion-dim-settle-tweak.md) (2026-07-24). 본 문서의 Threshold=5 / Settle=3 / α=0.22 수치는 **머지 당시**; 현행 디폴트는 PR-30.
 >
-> 목적: 커서 인디가 이동 중 **덜 거슬리게**(attention↓). **지연 가림이 아님** — 그 축은 [PR-28](PR-28-cursor-lag-perceptual-masking.md)에서 기각·박제.
+> 목적: 커서 헤일로가 이동 중 **덜 거슬리게**(attention↓). **지연 가림이 아님** — 그 축은 [PR-28](PR-28-cursor-lag-perceptual-masking.md)에서 기각·박제.
 >
 > 선행: [PR-28](PR-28-cursor-lag-perceptual-masking.md) 0안(`CursorAlwaysPollMs`/`AnimationFrameMs` 16→15) 적용·사용자 체감 “별 차이 없음·머뭇거림” → **뒤처짐 수용** 후 본 PR로 전환.
 

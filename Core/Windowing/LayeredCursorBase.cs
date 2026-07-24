@@ -7,17 +7,17 @@ namespace KoEnVue.Core.Windowing;
 
 /// <summary>
 /// 커서 추종 인디케이터 (동심원 3개 + 헤일로) 의 레이어드 오버레이 렌더 엔진.
-/// <see cref="LayeredOverlayBase"/> 와 형제 — 메인 인디는 GDI 텍스트/RoundRect/폰트/드래그/스냅
+/// <see cref="LayeredOverlayBase"/> 와 형제 — 플로팅 배지는 GDI 텍스트/RoundRect/폰트/드래그/스냅
 /// 책임이 있는 반면, 본 엔진은 분석적 AA 픽셀 셰이딩 (콜백에 ppvBits 직접 전달) 하나만 책임진다.
 /// <para>
 /// P4 ("하나의 구현만") 예외 정당화는 [docs/dev-notes/2026-05-27-cursor-indicator.md](../../docs/dev-notes/2026-05-27-cursor-indicator.md):
-/// 메인 인디 알파 race 미해결 영역에 변경면을 추가하지 않기 위한 의도적 분리. 공유 가능한
+/// 플로팅 배지 알파 race 미해결 영역에 변경면을 추가하지 않기 위한 의도적 분리. 공유 가능한
 /// ~120 LOC 중 PR-18 의 <see cref="DibSectionFactory"/> + <see cref="LayeredWindowBlit"/> 로
 /// ~50 LOC 가 공유되었고, 남은 ~40 LOC <see cref="ApplyPremultipliedAlpha"/> 는 의미 차이
 /// (overlay = AA 엣지 보존 / cursor = 외곽 잡티 제거) 로 의도적 분기 보존.
 /// </para>
 /// <para>
-/// 콜백 시그니처 — 메인 인디의 콜백 (hdc 받음) 과 다르게 ppvBits 를 직접 받는다. cursor 인디는
+/// 콜백 시그니처 — 플로팅 배지의 콜백 (hdc 받음) 과 다르게 ppvBits 를 직접 받는다. cursor 인디는
 /// GDI 그리기 (DrawTextW / RoundRect) 사용 없이 픽셀 셰이딩만 수행하므로 GetCurrentObject +
 /// GetObjectDibSection 호출이 불필요 → main 의 Gdi32.cs 변경 0.
 /// </para>
