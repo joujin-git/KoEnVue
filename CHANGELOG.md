@@ -7,7 +7,7 @@
 
 ### Changed
 
-- **트레이 메뉴·상세 설정 UI 블록 재정렬** — 메뉴를 공통(애니메이션) → 메인 → 커서 → 앱(시작·관리자) → 상세설정 → 종료 순으로 재배치. Settings 색상 섹션 제목만 `"인디케이터 — 색상 (메인/커서 인디케이터 공통)"` → `"공통 — 색상"` (`Shared — Colors`). 동작·config 키·필드 순서 변경 없음. 용어는 「메인/커서 인디케이터」유지.
+- **트레이 메뉴·상세 설정 UI 블록 재정렬** — 메뉴를 메인 → 커서 → 공통(애니메이션) → 앱(시작·관리자) → 상세설정 → 종료 순으로 재배치(애니메이션은 커서 블록 직후). Settings 색상 섹션 제목만 `"인디케이터 — 색상 (메인/커서 인디케이터 공통)"` → `"공통 — 색상"` (`Shared — Colors`). 동작·config 키·필드 순서 변경 없음. 용어는 「메인/커서 인디케이터」유지.
 - **로그 파일 최대 크기 디폴트 10MB → 1MB** — `log_max_size_mb` / `DefaultConfig.LogMaxSizeMb`. config 없을 때·신규 설치에만 영향.
 - **커서 표시 3모드 (PR-31, 디폴트 soft)** — `cursor_display_mode`: **soft**(흐릿하게) / **sharp**(선명하게) / **motion**(이동 중 흐릿하게). 트레이「커서 인디케이터 표시」라디오 + Settings Combo. IME 팝 중 Soft/딤 안개 유지. 구 `cursor_motion_dim_enabled` 는 true→motion / false→sharp 마이그. α/soft 키명 유지. [PR-31](docs/improvement-plan/PR-31-cursor-display-mode.md).
 - **커서 이동 안개 디폴트 — α 0.55 / soft 0.35** — publish `config.json` 체감값을 코드 디폴트에 맞춤 (`cursor_motion_alpha` 0.30→0.55, `cursor_motion_softness` 1.0→0.35). config 없을 때·신규 설치에만 영향.
