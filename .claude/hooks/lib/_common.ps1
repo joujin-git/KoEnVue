@@ -171,6 +171,46 @@ function Invoke-Push {
     }
 }
 
+# 변경된 코드/설정 파일 경로 목록 → 동기화가 필요한 docs 목록.
+# 구 post-edit-doc-sync.ps1(매 Edit/Write PostToolUse, 콜드스타트 ~245ms/편집)의 매핑을 여기로
+# 단일화(P4) — stop-record 가 턴 끝에 dirty 파일을 한 번에 통과시켜 리마인더를 만든다.
+# 더 구체적인 패턴(Core/Native/)이 일반형(Core/)보다 앞서야 한다 — 첫 매치 우선.
+# 반환: @( @{ Docs=[]; Reason=''; Sample='' } ) — Docs 조합별 1건(dedup).
+function Get-DocSyncReminders {
+    param([string[]]$Files)
+    if (-not $Files -or $Files.Count -eq 0) { return @() }
+    $rules = @(
+        @{ Pattern = '^Core/Native/'; Docs = @('docs/architecture.md', 'docs/conventions.md'); Reason = 'Core/Native/ 변경 (P/Invoke 시그니처·보안 민감). 새 P/Invoke 면 /security-review 권장.' }
+        @{ Pattern = '^App/'; Docs = @('docs/architecture.md', 'docs/implementation-notes.md'); Reason = 'App/ 변경 (애플리케이션 레이어)' }
+        @{ Pattern = '^Core/'; Docs = @('docs/architecture.md'); Reason = 'Core/ 변경 (재사용 인프라)' }
+        @{ Pattern = '^Program.*\.cs$'; Docs = @('docs/architecture.md', 'docs/implementation-notes.md'); Reason = '엔트리포인트/부트스트랩 변경' }
+        @{ Pattern = '^app\.manifest$'; Docs = @('CLAUDE.md', 'docs/conventions.md'); Reason = 'manifest 변경 (P5). UAC/권한 레벨 변경이면 /security-review 권장.' }
+        @{ Pattern = 'KoEnVue\.csproj$'; Docs = @('docs/architecture.md', 'docs/release-procedure.md'); Reason = 'csproj 변경 (빌드/버전). NuGet 추가/제거면 /security-review 필수 (P1).' }
+        @{ Pattern = '^Directory\.Build\.targets$'; Docs = @('docs/architecture.md', 'docs/conventions.md'); Reason = '빌드 타깃 변경' }
+        @{ Pattern = '^NuGet\.config$'; Docs = @('docs/conventions.md'); Reason = 'NuGet 소스 변경 (P1 정신). 외부 피드 추가면 /security-review 필수.' }
+        @{ Pattern = '^tests/'; Docs = @('docs/conventions.md'); Reason = '테스트 변경 (CONTRIBUTING)' }
+        @{ Pattern = '^\.github/'; Docs = @('CONTRIBUTING.md'); Reason = 'CI 변경' }
+        @{ Pattern = '^\.claude/'; Docs = @('docs/harness.md'); Reason = '하네스 설정 변경' }
+    )
+    $out = @()
+    $seen = @{}
+    foreach ($f in $Files) {
+        if ([string]::IsNullOrWhiteSpace($f)) { continue }
+        $norm = $f.Replace('\', '/').TrimStart('/')
+        foreach ($rule in $rules) {
+            if ($norm -match $rule.Pattern) {
+                $key = ($rule.Docs -join ',')
+                if (-not $seen.ContainsKey($key)) {
+                    $seen[$key] = $true
+                    $out += @{ Docs = $rule.Docs; Reason = $rule.Reason; Sample = $norm }
+                }
+                break
+            }
+        }
+    }
+    return $out
+}
+
 # Claude Code 기본 auto-memory 위치 (C:) — autoMemoryDirectory(${CLAUDE_PROJECT_DIR} 전개 실패)가
 # 무시될 때 실제 읽기/쓰기 위치. slug = 프로젝트 절대경로의 ':' '\' → '-' 치환.
 # 드라이브문자 대소문자는 Claude Code 버전에 따라 달랐다 — 2026-07 이전 소문자(e--dev-KoEnVue),

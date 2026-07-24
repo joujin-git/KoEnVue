@@ -5,9 +5,10 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: c492f502-5d0a-450d-853d-101a243df772
+  modified: 2026-07-24T09:57:47.305Z
 ---
 
-KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정).
+KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정 → **2026-07-24 균형 재구성**). ⚠️ 최신 실효 상태는 맨 아래 「2026-07-24 균형 재구성」 섹션 — 아래 초기 결정 중 effort=max·ultracode 항상 ON 은 그 섹션에서 갱신됨(effort=high·ultracode 큰 작업만 수동).
 
 ## 핵심 규칙
 
@@ -43,7 +44,23 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정).
 
 **Why**: 사용자 "비용 무제한, 깊이 최우선" 철학을 ultracode 에도 일관 적용 — 전면 도입 + 항상 자동 (2026-06-08 인터뷰).
 
-**How to apply**: ultracode 발동을 끄지 말 것. substantive 작업은 워크플로우 우선. effort=max 와 ultracode 둘 다 유지 — 어느 하나를 위해 다른 걸 끄는 변경 전 사용자 확인.
+**How to apply**: (⚠️ 2026-07-24 균형 재구성으로 갱신 — 아래 「2026-07-24 균형 재구성」 섹션이 최신. 이제 ultracode 는 큰 작업만 수동 호출, effort=high 기본.)
+
+## 2026-07-24 균형 재구성 (속도/정확성 균형으로 전환)
+
+**배경**: "작업 시간이 너무 오래 걸린다" — 프로젝트가 15K 라인(App+Core 90파일) 성숙 유지보수 단계(v0.9.9.x)인데 "비용 무제한·깊이 최우선" 하네스가 과했다. 사용자 명시 요청으로 AskUserQuestion 3택 중 "균형" 승인. 기술은 3자 검증(claude-code-guide + schemastore 공식 스키마 + 이 메모리).
+
+**변경**:
+- **effort max → high**: env `CLAUDE_CODE_EFFORT_LEVEL=max` 제거, 파일 `effortLevel: high`. (스키마 재확인: max/ultracode 는 session-only 라 파일 무효 — 기존 메모리와 일치)
+- **fastMode: true 추가**: Opus 4.8 유지 + 빠른 출력(스키마 boolean 키 실재 확인 — claude-code-guide 가 환각 아니었음). 모델 다운그레이드 아님.
+- **ultracode 항상 ON → 큰 작업만 수동**: `UserPromptSubmit` inject-turn-context.ps1 hook **삭제**. 매 턴 ultrathink/ultracode 주입 중단. 큰 작업(리뷰·감사·릴리즈·설계비교·버그헌트)은 워크플로우 `/<name>` 수동 호출로만.
+- **hook 통합 (핵심 속도)**: PostToolUse 2개(post-edit-doc-sync 매편집, auto-push 매셸) **삭제** → `Stop` hook(stop-record)으로 턴당 1회 통합. pwsh 콜드스타트(실측 ~245ms) 매 tool call → 0. doc-sync 매핑은 _common.ps1 `Get-DocSyncReminders` 로 단일화(P4).
+- **서브에이전트 모델 차등**: explorer=haiku, verifier=sonnet(agents frontmatter `model:`). planner/reviewer/docs-keeper/historian=inherit(opus) 유지.
+- **유지**: bypassPermissions, force-push 차단, main 직커밋, 세션 자동기록, Sync-Memory, SessionEnd(wip+push), alwaysThinkingEnabled.
+
+**Why**: 일상 작업 속도↑(멀티에이전트·max·매 hook 오버헤드 제거), 큰 작업 깊이는 워크플로우 수동 호출로 보존. 이 규모(1인·유지보수)에 "매 작업 6+ 에이전트 fan-out + 매 tool call 245ms hook"은 과잉이었다.
+
+**How to apply**: 기본은 solo + 필요 시 서브에이전트(탐색 explorer/haiku, 검증 verifier/sonnet). 큰 작업만 Workflow 수동. effort=high 기본 — 특정 작업에 더 깊이가 필요하면 그때 승격. 이 균형을 "항상 max·항상 멀티에이전트"로 되돌리려면 사용자 확인. [[verify-load-bearing-claims]] 적용 사례(서브에이전트 fastMode 주장을 schemastore 로 교차검증).
 
 ## 히스토리
 

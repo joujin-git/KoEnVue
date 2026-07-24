@@ -1,7 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "model": "opus",
-  "effortLevel": "xhigh",
+  "fastMode": true,
+  "effortLevel": "high",
   "alwaysThinkingEnabled": true,
   "showThinkingSummaries": true,
   "showTurnDuration": true,
@@ -27,7 +28,6 @@
   },
   "autoMemoryDirectory": "E:/dev/KoEnVue/.claude/memory",
   "env": {
-    "CLAUDE_CODE_EFFORT_LEVEL": "max",
     "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
   },
   "statusLine": {
@@ -60,40 +60,6 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File ${CLAUDE_PROJECT_DIR}/.claude/hooks/inject-turn-context.ps1",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File ${CLAUDE_PROJECT_DIR}/.claude/hooks/post-edit-doc-sync.ps1",
-            "timeout": 15
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|PowerShell",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File ${CLAUDE_PROJECT_DIR}/.claude/hooks/auto-push.ps1",
-            "timeout": 60
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "matcher": "*",
@@ -101,7 +67,7 @@
           {
             "type": "command",
             "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File ${CLAUDE_PROJECT_DIR}/.claude/hooks/stop-record.ps1",
-            "timeout": 30
+            "timeout": 60
           }
         ]
       }

@@ -7,7 +7,7 @@ $payload = Read-HookInput
 $model = 'opus'
 # effort 폴백: payload.effort.level 미수신 시 env(실효 경로)를 반영 — 하드코딩 'max' 보다 실제에 가까움.
 # payload 에 effort.level 이 오면 아래에서 덮어씀(우선). env 도 없으면 'max'.
-$effort = if ($env:CLAUDE_CODE_EFFORT_LEVEL) { [string]$env:CLAUDE_CODE_EFFORT_LEVEL } else { 'max' }
+$effort = if ($env:CLAUDE_CODE_EFFORT_LEVEL) { [string]$env:CLAUDE_CODE_EFFORT_LEVEL } else { 'high' }
 $branch = ''
 $dirty = ''
 
@@ -37,7 +37,7 @@ try {
 $parts = @()
 $parts += "[$model · $effort]"
 if ($branch) { $parts += "git:$branch$dirty" }
-$parts += 'ultracode · 한/En 하네스 ON'
+$parts += '한/En 하네스'
 
 [Console]::Out.Write(($parts -join ' | '))
 exit 0

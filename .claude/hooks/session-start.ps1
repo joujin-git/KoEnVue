@@ -1,14 +1,15 @@
 . (Join-Path $PSScriptRoot 'lib\_common.ps1')
 
-Invoke-HookSafely -EventName 'SessionStart' -FallbackContext '[harness] session-start 실패 — ultrathink + max effort + ultracode 적용, P1-P6 준수. 이전 세션 컨텍스트는 docs/sessions 최신 파일 참조.' {
+Invoke-HookSafely -EventName 'SessionStart' -FallbackContext '[harness] session-start 실패 — effort high + fast mode + thinking mode 적용, P1-P6 준수. 큰 작업만 워크플로우. 이전 세션 컨텍스트는 docs/sessions 최신 파일 참조.' {
 
 $payload = Read-HookInput
 $source = if ($payload) { [string]$payload.source } else { 'startup' }
 
 $root = Get-ProjectRoot
 $lines = New-Object System.Collections.Generic.List[string]
-$lines.Add("[harness] KoEnVue 하네스 활성화 — 모든 작업은 ultrathink + max effort + thinking mode 로 수행됩니다.")
-$lines.Add("기본 규칙: model=opus, effort=max, language=korean. P1–P6 규칙 준수가 필수입니다.")
+$lines.Add("[harness] KoEnVue 하네스 활성화 — 작업은 thinking mode + effort high(적응형)로 수행됩니다. 단순 작업은 가볍게, 복잡한 작업은 깊게.")
+$lines.Add("기본 규칙: model=opus(fast mode), effort=high, language=korean. P1–P6 규칙 준수가 필수입니다.")
+$lines.Add("멀티에이전트(Workflow)는 큰 작업에만 수동 호출 — 코드리뷰·감사·릴리즈·설계비교·버그헌트. 일상 작업은 단일 세션 + 필요 시 서브에이전트(explorer/verifier 등).")
 $lines.Add('')
 
 # 메모리 split-brain 동기화 (§12): E:(git truth, C: 복원 무관) ↔ C:(Claude 작업 사본).
@@ -145,7 +146,7 @@ $lines.Add('2. **코드 변경 → 문서 동기화**: App/, Core/, *.csproj, ap
 $lines.Add('3. **P1–P6 불변식**: docs/conventions.md 의 grep 명령이 모두 0건이어야 합니다.')
 $lines.Add('4. **세션 종료**: dirty tree면 자동 wip 커밋 + docs/sessions/ 요약이 추가됩니다. 의미 있게 종료하려면 `/wrap-up`.')
 $lines.Add('5. **빌드 = 항상 둘 다**: `dotnet build` (debug) + `dotnet publish -r win-x64 -c Release` (AOT). 한쪽만 하면 release exe outdated — verifier 서브에이전트 권장.')
-$lines.Add('6. **커밋 = 항상 푸시까지**: `git commit` 후 즉시 `git push`. PostToolUse hook 이 자동 처리하지만, 다른 장비에서 즉시 받을 수 있도록 확인하세요.')
+$lines.Add('6. **커밋 = 항상 푸시까지**: `git commit` 후 즉시 `git push`. Stop hook(턴 끝)이 자동 처리하지만, 다른 장비에서 즉시 받을 수 있도록 확인하세요.')
 
 $context = ($lines -join "`n")
 
