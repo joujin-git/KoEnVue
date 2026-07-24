@@ -184,12 +184,12 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — 101 
 
 ### 이동 중 시인성 (Motion Dim, PR-29)
 
-항상 표시 모드(`cursor_always_show = true`)에서 커서 이동 중 인디 distraction↓ — **세 원(Inner/Middle/Outer) 공통 가우시안 안개**: soft&gt;0 이면 하드 코어 없음·σ≈헤일로반폭×14·색+흰색 혼합·알파≈0.22 균일(배수 Inner/Middle/Outer = 1.00/0.97/0.94). CAPS OFF 면 Outer 미표시(기존). DIB `MotionFogPadLogicalPx=28`. 창 `SourceConstantAlpha` 는 Full. IME 팝 중 soft=0·원별 α=1. Settings「이동 중 옅게 / 안개 농도 / 안개 강도」+ 트레이.
+항상 표시 모드(`cursor_always_show = true`)에서 커서 이동 중 인디 distraction↓ — **세 원(Inner/Middle/Outer) 공통 가우시안 안개**: soft&gt;0 이면 하드 코어 없음·σ≈헤일로반폭×14·색+흰색 혼합·알파≈0.30 균일(배수 Inner/Middle/Outer = 1.00/0.97/0.94). 이동 판정은 딤 전용 저임계(내부 `CursorMotionDimThresholdPx=1`) + Full 복귀는 연속 정지 8틱(~125ms). CAPS OFF 면 Outer 미표시(기존). DIB `MotionFogPadLogicalPx=28`. 창 `SourceConstantAlpha` 는 Full. IME 팝 중 soft=0·원별 α=1. Settings「이동 중 옅게 / 안개 농도 / 안개 강도」+ 트레이.
 
 | 키 | 타입 | 기본값 | 범위 | 설명 |
 |---|---|---|---|---|
 | `cursor_motion_dim_enabled` | bool | `true` | — | 이동 중 딤 on/off. 트레이 메뉴 "커서 이동 중 옅게" 체크박스와 동일 (체크 = ON). Settings Bool 도 노출 |
-| `cursor_motion_alpha` | double | `0.22` | **0.04 ~ 1.0** | 이동 중 안개 알파 기준. Middle/Outer 배수 0.97 / 0.94 |
+| `cursor_motion_alpha` | double | `0.30` | **0.04 ~ 1.0** | 이동 중 안개 알파 기준. Middle/Outer 배수 0.97 / 0.94 |
 | `cursor_motion_softness` | double | `1.0` | 0.0 ~ 1.0 | 안개 강도. 1=가우시안 σ≈14×헤일로반폭(하드 코어 없음) |
 
 ### 전환 효과 (Cursor Transition)

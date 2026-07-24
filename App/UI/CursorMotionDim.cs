@@ -1,9 +1,10 @@
 namespace KoEnVue.App.UI;
 
 /// <summary>
-/// 커서 이동 중 시인성 저하(PR-29)의 순수 상태 전이 — Win32/엔진 무의존.
+/// 커서 이동 중 시인성 저하(PR-29/30)의 순수 상태 전이 — Win32/엔진 무의존.
 /// enter/exit 이 같은 이동량(δ)을 쓰고 exit 만 settle 틱 히스테리시스를 둔다
 /// (PR-28 B안 9Hz 리미트 사이클 회피).
+/// 딤 전용 δ 임계(<c>CursorMotionDimThresholdPx</c>)는 호출측(<c>CursorOverlay</c>)에서 분류한다.
 /// </summary>
 internal static class CursorMotionDim
 {

@@ -144,7 +144,10 @@ internal static class CursorOverlay
 
         int dx = Math.Abs(cursor.X - _lastCursorX);
         int dy = Math.Abs(cursor.Y - _lastCursorY);
-        bool moving = (dx + dy) > _config.CursorMotionThresholdPx;
+        int manhattan = dx + dy;
+        // AlwaysShow 딤(PR-30): 저임계 — 저속 이동도 딤. 숨김 모드: 기존 Threshold 유지(과민 방지).
+        bool movingForDim = manhattan > DefaultConfig.CursorMotionDimThresholdPx;
+        bool movingForHide = manhattan > _config.CursorMotionThresholdPx;
 
         _lastCursorX = cursor.X;
         _lastCursorY = cursor.Y;
@@ -162,12 +165,12 @@ internal static class CursorOverlay
 
         if (_config.CursorAlwaysShow)
         {
-            ApplyMotionDimAndRender(cursor, moving);
+            ApplyMotionDimAndRender(cursor, movingForDim);
             MaybeReassertTopmost();
             return;
         }
 
-        if (moving)
+        if (movingForHide)
         {
             _idleStartTick = 0;
             HideCursor("Cursor indicator hidden (cursor moving)");

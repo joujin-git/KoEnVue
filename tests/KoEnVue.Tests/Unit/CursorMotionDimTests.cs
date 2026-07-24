@@ -4,14 +4,15 @@ using Xunit;
 
 namespace KoEnVue.Tests.Unit;
 
-/// <summary>PR-29 이동 딤 — settle·균일 안개 알파 회귀 가드.</summary>
+/// <summary>PR-29/30 이동 딤 — settle·균일 안개 알파 회귀 가드.</summary>
 public class CursorMotionDimTests
 {
     [Fact]
     public void AdvanceDimActive_Moving_EntersImmediately()
     {
         int still = 5;
-        bool dim = CursorMotionDim.AdvanceDimActive(ref still, moving: true, wasDimActive: false, settlePolls: 3);
+        bool dim = CursorMotionDim.AdvanceDimActive(ref still, moving: true, wasDimActive: false,
+            settlePolls: DefaultConfig.CursorMotionDimSettlePolls);
         Assert.True(dim);
         Assert.Equal(0, still);
     }
@@ -19,17 +20,42 @@ public class CursorMotionDimTests
     [Fact]
     public void AdvanceDimActive_ExitRequiresSettlePolls()
     {
+        const int settle = DefaultConfig.CursorMotionDimSettlePolls;
         int still = 0;
         bool dim = true;
-        dim = CursorMotionDim.AdvanceDimActive(ref still, moving: false, wasDimActive: dim, settlePolls: 3);
-        Assert.True(dim);
-        Assert.Equal(1, still);
-        dim = CursorMotionDim.AdvanceDimActive(ref still, moving: false, wasDimActive: dim, settlePolls: 3);
-        Assert.True(dim);
-        Assert.Equal(2, still);
-        dim = CursorMotionDim.AdvanceDimActive(ref still, moving: false, wasDimActive: dim, settlePolls: 3);
+        for (int i = 1; i < settle; i++)
+        {
+            dim = CursorMotionDim.AdvanceDimActive(ref still, moving: false, wasDimActive: dim, settlePolls: settle);
+            Assert.True(dim);
+            Assert.Equal(i, still);
+        }
+
+        dim = CursorMotionDim.AdvanceDimActive(ref still, moving: false, wasDimActive: dim, settlePolls: settle);
         Assert.False(dim);
         Assert.Equal(0, still);
+    }
+
+    [Fact]
+    public void AdvanceDimActive_MovingResetsSettleCounter()
+    {
+        const int settle = DefaultConfig.CursorMotionDimSettlePolls;
+        int still = 0;
+        bool dim = true;
+        dim = CursorMotionDim.AdvanceDimActive(ref still, moving: false, wasDimActive: dim, settlePolls: settle);
+        Assert.True(dim);
+        Assert.Equal(1, still);
+
+        dim = CursorMotionDim.AdvanceDimActive(ref still, moving: true, wasDimActive: dim, settlePolls: settle);
+        Assert.True(dim);
+        Assert.Equal(0, still);
+    }
+
+    [Fact]
+    public void DimThreshold_IsLowerThanHideThreshold()
+    {
+        // AlwaysShow 딤은 저속에도 민감, 숨김 모드는 과민 방지용으로 더 큼 (PR-30).
+        Assert.True(DefaultConfig.CursorMotionDimThresholdPx < DefaultConfig.CursorMotionThresholdPx);
+        Assert.Equal(1, DefaultConfig.CursorMotionDimThresholdPx);
     }
 
     [Fact]

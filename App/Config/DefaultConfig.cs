@@ -327,17 +327,23 @@ internal static partial class DefaultConfig
     public const uint   CursorAlwaysPollMs         = 15;
 
     /// <summary>
-    /// 이동 중 시인성 저하(PR-29) — 정지 복귀까지 연속 정지 틱 수.
-    /// CursorAlwaysPollMs≈15ms 기준 3틱 ≈ 45ms.
+    /// 이동 딤(AlwaysShow) 전용 맨해튼 δ 임계 — 숨김 모드 <see cref="CursorMotionThresholdPx"/> 와 분리.
+    /// δ &gt; 이 값이면 즉시 딤. 1 → 틱당 ≥2px(~128 px/s @15ms)부터 저속 이동도 딤.
     /// </summary>
-    public const int    CursorMotionDimSettlePolls = 3;
+    public const int    CursorMotionDimThresholdPx = 1;
+
+    /// <summary>
+    /// 이동 중 시인성 저하(PR-29/30) — Full 복귀까지 연속 정지 틱 수.
+    /// CursorAlwaysPollMs≈15ms 기준 8틱 ≈ 125ms — 명확히 멈춘 뒤에만 또렷하게.
+    /// </summary>
+    public const int    CursorMotionDimSettlePolls = 8;
 
     public const bool   CursorMotionDimEnabled     = true;
     /// <summary>
     /// 이동 중 안개(포그) 알파 기준 — 세 원에 거의 동일 적용.
-    /// 창 SourceConstantAlpha 는 Full 유지.
+    /// 창 SourceConstantAlpha 는 Full 유지. PR-30: 0.22→0.30 (시인성↑).
     /// </summary>
-    public const double CursorMotionAlpha          = 0.22;
+    public const double CursorMotionAlpha          = 0.30;
     /// <summary>이동 중 안개 강도(0=선명, 1=최대 소프트).</summary>
     public const double CursorMotionSoftness       = 1.0;
 

@@ -7,6 +7,7 @@
 
 ### Changed
 
+- **커서 이동 딤 — 저속 감지·settle·α (PR-30)** — AlwaysShow 안개: 딤 전용 임계 `CursorMotionDimThresholdPx=1`(숨김용 `CursorMotionThresholdPx=5` 유지)로 저속 이동도 딤 유지. Full 복귀 settle 3→**8**틱(~125ms). `cursor_motion_alpha` 디폴트 **0.22→0.30**. config 키·셰이더 불변. [PR-30](docs/improvement-plan/PR-30-cursor-motion-dim-settle-tweak.md).
 - **위치 기록 정리 UX — 모드 태그 + 설명 보강** — 다이얼로그 설명: 「고정 위치 모드, 창 기준 모드의 위치 기록을 모두 보여 줍니다. / 삭제하면 … 초기화 됩니다.」 항목 라벨에 `(고정)`/`(창)`/`(고정·창)`(+ `, 실행 중`). `PositionCleanupService.FormatDisplayLabel` + 단위 테스트. 다이얼로그 폭 340→400, 설명 높이 48(2줄).
 - **고정 모드 기본 위치 — 작업 영역 우상단 → 정중앙** — `default_indicator_position` 이 `null` 일 때(앱별 저장 위치 없음) 포그라운드 모니터 작업 영역 정중앙에 인디 bbox 를 맞춘다. `DefaultConfig.DefaultIndicatorOffsetX/Y`(-200,+10) 제거. 트레이「기본 위치 → 현재 위치로 설정」으로 저장한 Corner+delta·앱별 `indicator_positions` 는 그대로 우선.
 - **메인 인디 좌클릭 = 일시 숨김, 드래그 = 위치 이동** — 짧은 좌클릭으로 인디를 숨기면 그 자리 마우스 클릭이 아래 창으로 통과한다. 포커스 변경 또는 한/영(IME) 변경 시 다시 표시 (`UserHidden`/트레이 「메인 인디케이터 숨김」과 별개). 드래그는 `SM_CXDRAG`/`SM_CYDRAG` 임계 초과 후 기존 `HTCAPTION` 경로로 승격. `drag_modifier` 는 승격 게이트로만 동작.
