@@ -758,7 +758,7 @@ All three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) share 
 - **`[UnmanagedCallersOnly]` WndProc function pointers** private to each file (no NativeAOT export name collision). DialogShell 의 `delegate* unmanaged<...>` 파라미터로 셸에 전달
 - **a11y baseline (PR-07 H4-b)**: 모든 입력 컨트롤에 `WS_TABSTOP`, 섹션/그룹 시작 컨트롤에 `WS_GROUP` (화살표 키 그룹 경계). STATIC 라벨이 입력 컨트롤 직전 z-order 에 배치되어 UIA `LabeledBy` 자동 연결
 - **Tab/Enter/ESC** routed through `IsDialogMessageW`
-- **Detection-thread gate**: `DetectionLoop` checks `ModalDialogLoop.IsActive` **and** `GetWindowThreadProcessId(hwndForeground) == Environment.ProcessId` together — suppresses polling side effects only when a modal is up **and** the foreground belongs to our own process. External-app focus while a dialog is open (Alt+Tab) falls through so the indicator renders on that app. See [Detection → Modal dialog gate](#modal-dialog-gate)
+- **Detection-thread gate**: `DetectionService` checks `ModalDialogLoop.IsActive` **and** `GetWindowThreadProcessId(hwndForeground) == Environment.ProcessId` together — suppresses polling side effects only when a modal is up **and** the foreground belongs to our own process. External-app focus while a dialog is open (Alt+Tab) falls through so the indicator renders on that app. See [Detection → Modal dialog gate](#modal-dialog-gate)
 
 ### CleanupDialog
 
