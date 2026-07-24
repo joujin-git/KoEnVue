@@ -194,7 +194,7 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — 101 
 
 ### 전환 효과 (Cursor Transition)
 
-IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 스케일 팝 효과 (PR-21) — 플로팅 배지의 `change_highlight` / `highlight_scale` / `highlight_duration_ms` 와 평행. `cursor_change_highlight` on/off 는 **트레이 메뉴 "커서 변경 시 강조"** 토글 전용이라 SettingsDialog 에는 미노출 (메인 `change_highlight` 와 동일 정책). 나머지 2 키 (`cursor_highlight_scale` / `cursor_highlight_duration_ms`) 는 다이얼로그 **"커서 헤일로 — 전환 효과"** 섹션 (13 번째) 에서 GUI 노출. 팝 진행 중에도 DIB 는 `CursorStyle.MaxHighlightScale` (=`2.0`, `MaxCursorHighlightScale` 상한) 기준으로 고정 확대돼 재생성 0 — 그래서 `cursor_highlight_scale` 상한이 `2.0` 으로 잠긴다.
+IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 스케일 팝 효과 (PR-21) — 플로팅 배지의 `change_highlight` / `highlight_scale` / `highlight_duration_ms` 와 평행. `cursor_change_highlight` on/off 는 **트레이 메뉴 "커서 헤일로 변경 강조"** 토글 전용이라 SettingsDialog 에는 미노출 (메인 `change_highlight` 와 동일 정책). 나머지 2 키 (`cursor_highlight_scale` / `cursor_highlight_duration_ms`) 는 다이얼로그 **"커서 헤일로 — 전환 효과"** 섹션 (13 번째) 에서 GUI 노출. 팝 진행 중에도 DIB 는 `CursorStyle.MaxHighlightScale` (=`2.0`, `MaxCursorHighlightScale` 상한) 기준으로 고정 확대돼 재생성 0 — 그래서 `cursor_highlight_scale` 상한이 `2.0` 으로 잠긴다.
 
 | 키 | 타입 | 기본값 | 범위 | 설명 |
 |---|---|---|---|---|
