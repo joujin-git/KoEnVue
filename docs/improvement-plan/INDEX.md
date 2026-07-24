@@ -34,7 +34,7 @@
 | 28 | 커서 지연 흐림 가림 기각 + `SetTimer` 틱 정렬(16→15) | ✅ | (main 직접) | Low | S | [PR-28-cursor-lag-perceptual-masking.md](PR-28-cursor-lag-perceptual-masking.md). 흐림 축 전면 기각. 부수 소득 `SetTimer` 양자화 실측 → **0안 적용**: `CursorAlwaysPollMs`/`AnimationFrameMs` 16→15. 근거 [dev-notes/2026-07-22-settimer-tick-quantization.md](../dev-notes/2026-07-22-settimer-tick-quantization.md) |
 | 29 | 커서 이동 중 시인성 저하(3원 가우시안 안개) | ✅ | (main 직접, `401be8e`) | Low | M | [PR-29-cursor-motion-distraction-reduction.md](PR-29-cursor-motion-distraction-reduction.md). soft&gt;0 → 하드코어 없음·σ≈halo×(1+soft×13)·색+흰색. config 3키(`dim` true / α **0.55** / soft **0.35**) + FogPad 28 + Settings/트레이 + `CursorMotionDim`. Commit0 `_displayAlpha`. 단위 `CursorMotionDimTests`. **후속 [PR-30](PR-30-cursor-motion-dim-settle-tweak.md)** |
 | 30 | 커서 이동 딤 — 저속 감지·settle·α 튜닝 | ✅ | (main 직접) | Low | S | [PR-30-cursor-motion-dim-settle-tweak.md](PR-30-cursor-motion-dim-settle-tweak.md). 딤 전용 `DimThresholdPx=1`(숨김 Threshold=5 유지) · Settle 3→8. α/soft 현행 디폴트는 publish 체감(0.55/0.35). 키/셰이더 불변 |
-| 31 | 커서 표시 3모드 (soft/sharp/motion) | 🚧 | (main 직접) | Low | M | [PR-31-cursor-display-mode.md](PR-31-cursor-display-mode.md). `cursor_display_mode` · 디폴트 soft · 구 bool 마이그 · 트레이「커서 인디케이터 표시」·Settings Combo · IME 팝 시 Soft 안개 유지 |
+| 31 | 커서 표시 3모드 (soft/sharp/motion) | ✅ | (main 직접) | Low | M | [PR-31-cursor-display-mode.md](PR-31-cursor-display-mode.md). `cursor_display_mode` · 디폴트 soft · 구 bool 마이그 · 트레이「커서 인디케이터 표시」·Settings Combo · IME 팝 시 Soft 안개 유지 |
 
 Legend: ⏳ pending · 🚧 in progress · ✅ merged · ⏸ blocked · ❌ aborted
 Size: S ≤30분 · M 1-2시간 · L 반나절+
