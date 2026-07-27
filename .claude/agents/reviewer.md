@@ -22,22 +22,24 @@ model: inherit
 
    **방법 A (1차, 자동 — 누락 0 보장)**: 본 파일에서 `git grep` 토큰이 포함된 **모든 라인**을 추출 — line 시작(코드 블록 안), 본문 인라인 백틱 안(` `git grep ...` `), 우측 주석/기대값 모두. `Grep` 도구 또는 `Select-String -Pattern 'git grep'` 로 한 번에. 각 라인의 우측 주석(`# ...`) 또는 행 끝의 기대값(`→ 0`, `→ 1`, `0 매치`, `must return 0` 등)을 함께 보존. 새 invariant 가 conventions.md 에 추가돼도 자동 흡수.
 
-   **방법 B (2차, 현재 알려진 5 위치 cross-check — drift 감지용)**:
-   - 헤더 **`### P6 verification invariants`** 아래 ` ```bash ` 블록 — P규칙 메인 grep 묶음 (라벨: "must return 0 matches"). 개수는 conventions.md 가 단일 진실원 — PR 확장(PR-15/PR-18/PR-21 등)으로 늘어나므로 여기 수치를 박지 않는다
+   **방법 B (2차, 현재 알려진 7 위치 cross-check — drift 감지용)**:
+   - 헤더 **`#### P4 sub-rule — 수치/색상 디폴트는 DefaultConfig 단일 진실원 (PR-05)`** 본문 bullet 의 인라인 `git grep` — PR-17 numeric init 가드 (`App/Models/AppConfig.cs` → 0 매치)
+   - 같은 P4 sub-rule 의 **형제 가드** bullet — 비-numeric(색상/폰트/클래스명/숨김배열) 리터럴 (`AppConfig.cs` + `App/Config/Settings.cs` → 0 매치)
+   - 헤더 **`### P6 verification invariants`** 아래 ` ```bash ` 블록 — P규칙 메인 grep 묶음. **기대값은 각 줄의 우측 `#` 주석이 단일 진실원** (주석 없으면 0 매치, 있으면 1+/≥1/3/4 등 — "전부 0" 아님). 개수도 conventions.md 가 단일 진실원 — PR 확장(PR-15/PR-18/PR-21 등)으로 늘어나므로 여기 수치를 박지 않는다
    - 같은 § 아래 본문 문단 **`Additional sub-rule — App/Config/ must not import App/Detector/`** 다음 ` ```bash ` 블록 — 1개 grep (`→ 0`)
    - 헤더 **`### 8. Core ↔ Logger 단방향 추상화 (PR-09)`** 본문의 **`검증:`** bullet — 인라인 `git grep` 2개 (`Logger.Debug|Info|Warning|Error` 0 매치 외 + `LogProvider.` 1+ 매치)
    - 헤더 **`### 9. Debug 레벨 로그의 "failed" 단어 회피`** 본문의 **`검증:`** bullet — 인라인 `git grep "Sink?.Debug.*failed" Core/` 1개 (0 매치)
    - 헤더 **`### AOT/Trim/SingleFile 분석기 정책`** 본문의 **`Verification:`** 문단 ` ```bash ` 블록 — 3개 grep (`EnableAotAnalyzer` / `EnableTrimAnalyzer` / `EnableSingleFileAnalyzer` 각 `→ 1`)
 
-   방법 A 결과 = 방법 B 5 위치 합계 (구체 grep 개수는 conventions.md 에서 추출 — 수치를 여기 박제하지 않는다). **방법 A 와 B 의 위치/개수가 어긋나면 conventions.md 에 새 invariant 블록이 추가됐다는 신호** — 본 §0 의 5 위치 리스트도 같이 갱신해야 함을 사용자에게 보고.
+   방법 A 결과 = 방법 B 7 위치 합계 (구체 grep 개수는 conventions.md 에서 추출 — 수치를 여기 박제하지 않는다). **셈 기준은 "고유 invariant 정의"** — 이미 위 7 위치에 정의된 grep 을 다른 절에서 다시 서술하는 자리는 별개 위치로 세지 않는다 (예: `### [LibraryImport] only` 절의 `DllImport` 재서술, `## Testing` 절의 "listed above" 역참조 — 둘 다 P6 블록 정의의 사본). **방법 A 와 B 의 위치/개수가 어긋나면 conventions.md 에 새 invariant 블록이 추가됐다는 신호** — 본 §0 의 7 위치 리스트도 같이 갱신해야 함을 사용자에게 보고.
 
 3. 본 파일(reviewer.md)에는 grep 사본을 절대 보관하지 않음 — drift 방지.
 
 이 단계를 건너뛰면 리뷰 결과는 무효. 매 호출마다 conventions.md 가 갱신됐을 수 있음을 전제로 시작합니다.
 
-### 1. P1–P6 invariant grep (모두 0건이여야 합니다)
+### 1. P1–P6 invariant grep (각 grep 이 자기 기대값과 일치해야 합니다)
 
-§0 에서 추출한 grep 명령들을 차례로 실행해 결과를 보고. 0건이 아닌 명령이 있으면 해당 줄을 보고하고 **차단**.
+§0 에서 추출한 grep 명령들을 차례로 실행해 결과를 보고. **기대값은 conventions.md 의 우측 `#` 주석 — 주석이 없으면 0 매치, 있으면 그 값**(1+ / ≥1 / 3 / 4 등). 기대값과 다른 결과가 나온 명령이 있으면 해당 줄을 보고하고 **차단**. 0 이 아닌 기대값을 가진 grep 을 "0건이 아니라서 위반" 으로 판정하는 것은 **오탐** — 릴리즈를 잘못 막으므로 금지.
 
 ### 2. 빌드 검증
 
@@ -68,7 +70,7 @@ dotnet build
 ## 결과: ✅ PASS / ❌ BLOCK / ⚠️ 경고
 
 ### P규칙 invariant grep
-- 모두 0건 ✓ / 위반: …
+- 전 항목 기대값 일치 ✓ / 위반: … (grep 명령 + 기대값 vs 실측)
 
 ### 빌드
 - 성공 ✓ / 실패: <첫 에러>

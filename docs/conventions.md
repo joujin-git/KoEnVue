@@ -60,7 +60,7 @@ Before adding a new helper: **grep Core/ first**.
 
 ### P6 verification invariants
 
-All must return **0 matches** at the repo root:
+Run at the repo root. **Each grep must match the expected count in its trailing `#` comment; a grep with no annotation must return 0 matches.** 기대값의 단일 진실원은 각 줄의 주석이다 — 아래 9개 grep 은 의도적으로 0 이 아닌 기대값(1+ / ≥1 / 3 / 4)을 가지므로, "전부 0" 으로 일괄 판정하면 정상 통과 중인 항목을 위반으로 오판한다.
 
 ```bash
 git grep "KoEnVue\.App"      Core/   # P6 namespace gate
@@ -88,7 +88,7 @@ git grep -n "Gdi32.CreateDIBSection"     Core/Windowing/LayeredCursorBase.cs    
 git grep -nE "private static volatile IntPtr (_hwndMain|_hwndOverlay|_hwndCursorOverlay)" Program.cs   # PR-18 5/5: 3
 ```
 
-> `RunLevel.*HighestAvailable` 의 기존 0-매치 가드는 PR-15 에서 무효화됨 — `BuildStartupTaskXml` 가 config 분기로 `HighestAvailable` 을 정당하게 emit. 위 4종 grep 이 새로운 invariant (각 1매치). PR-18 의 4 매치 가드는 overlay/cursor 두 엔진이 `UpdateLayeredWindow` / `CreateDIBSection` 을 직접 호출하지 않고 `LayeredWindowBlit` / `DibSectionFactory` helper 에 위임함을 검증 (호출 단일화) — `ApplyPremultipliedAlpha` 는 의미 차이로 의도적 분기 보존이라 동일 가드 미적용.
+> `RunLevel.*HighestAvailable` 의 기존 0-매치 가드는 PR-15 에서 무효화됨 — `BuildStartupTaskXml` 가 config 분기로 `HighestAvailable` 을 정당하게 emit. 대체 invariant 는 위 `PR-15` / `PR-15 후속 fix` 주석이 붙은 grep 묶음이고, **기대값은 각 grep 우측 주석이 단일 진실원** — 1+ / ≥1 / 3 / 4 로 서로 다르며 "각 1매치" 가 아니다. PR-18 의 가드 4개는 overlay/cursor 두 엔진이 `UpdateLayeredWindow` / `CreateDIBSection` 을 직접 호출하지 않고 `LayeredWindowBlit` / `DibSectionFactory` helper 에 위임함을 검증 (호출 단일화) — `ApplyPremultipliedAlpha` 는 의미 차이로 의도적 분기 보존이라 동일 가드 미적용.
 
 Additional sub-rule — `App/Config/` must not import `App/Detector/`:
 
@@ -323,7 +323,7 @@ The `SafeFontHandle` `using` pattern is critical — early release would crash `
   - **위치 정리**: `PositionCleanupServiceTests`
   - **PR-33**: `UpdateCheckerTests` / `SettingsProfileMergeTests` / `ThemePresetsBackupTests`
 - **Smoke gate matrix** exercised manually: boot → tray icon appears → indicator follows foreground → IME toggle changes color → drag works → drag with Shift locks axis → drag with snap sticks to edges → CAPS LOCK toggles bars → config hot-reload → corrupted config spam check → update check (both branches: no update / new version) → Start Menu ESC dismissal hides indicator → Search bar ESC dismissal hides indicator
-- **`git grep` invariants** (listed above) all return 0
+- **`git grep` invariants** (listed above) each match their annotated expected count — unannotated = 0 matches
 - **Byte-size tracking** against the previous stage's baseline
 
 자동화 가능한 표면 — XML 조립, 문자열 codec, 경로 정규화처럼 입출력이 명확하고 외부 의존성 0 — 은 단위 테스트로 박제 (PR-20 의 19 메서드 매트릭스 = 회귀 차단 baseline). 외부 의존성이 큰 표면 — `LayeredOverlayBase` 의 GDI 핫 패스, `OverlayAnimator` FSM 의 실 렌더/타이머 펌프 의존 부분(페이드 보간·hold 만료·idle dim), IME 스택과의 상호작용, schtasks.exe 실 호출 — 은 여전히 수동 smoke 가 정직한 검증 ([dev-notes/2026-05-28-pr-20-unit-tests.md](dev-notes/2026-05-28-pr-20-unit-tests.md)). 단 감사 ⑩ 의 `OverlayAnimatorTests` 처럼 콜백 spy 로 관측 가능한 좁은 분기 규칙(slide↔highlight 경합 회피)은 GDI 없이 단위로 떼어낼 수 있다 — FSM 이라고 통째로 수동 영역인 건 아니고, 외부 의존이 콜백 경계 밖에 있는 조각만 추려 박제한다.
