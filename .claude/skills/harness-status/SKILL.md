@@ -7,7 +7,7 @@ shell: powershell
 ## 모델 / 인텔리전스
 - 환경변수 effort: `!`echo "CLAUDE_CODE_EFFORT_LEVEL=$env:CLAUDE_CODE_EFFORT_LEVEL"``
 - settings.json: `!`Select-String -Path .claude/settings.json -Pattern 'model|effortLevel|alwaysThinkingEnabled' | ForEach-Object { $_.Line.Trim() }``
-- ultracode (멀티에이전트): 항상 ON — `inject-turn-context` hook 이 매 턴 키워드+지시 주입. effort=max 와 별개 축으로 둘 다 유지. statusLine 에 `ultracode` 표시.
+- ultracode (멀티에이전트): **큰 작업만 수동 호출** — 코드리뷰·감사·릴리즈·설계비교·버그헌트 때 `/release-review` 등 워크플로우 `/<name>` 으로 호출. 일상 작업은 단일 세션 + 필요 시 서브에이전트. (2026-07-24 재구성으로 매 턴 주입하던 `inject-turn-context` hook 삭제 — 없는 것이 정상.)
 
 ## 하네스 파일 존재
 - 서브에이전트: `!`(Get-ChildItem .claude/agents/*.md -ErrorAction SilentlyContinue).Name -join ', '``
@@ -37,6 +37,6 @@ shell: powershell
 
 ---
 
-위 정보를 받으면 사용자에게 한국어로 친절히 정리해주세요. 이상 신호 (hook error 누적, dirty tree 30건 이상, CLAUDE.md 줄 제한 초과, 서브에이전트 수가 6 미만, 스킬 수가 6 미만, 워크플로우 수가 5 미만, 워크플로우 phase drift, `inject-turn-context` hook 누락) 가 있으면 명시. 정상이면 한 줄로 요약 ("✅ 하네스 정상 — 6명 서브에이전트, 6개 스킬, 5개 워크플로우, ultracode ON, phase 정합, 오늘 N건 turn, 최근 wip 없음").
+위 정보를 받으면 사용자에게 한국어로 친절히 정리해주세요. 이상 신호 (hook error 누적, dirty tree 30건 이상, CLAUDE.md 줄 제한 초과, 서브에이전트 수가 6 미만, 스킬 수가 6 미만, 워크플로우 수가 5 미만, 워크플로우 phase drift) 가 있으면 명시. 정상이면 한 줄로 요약 ("✅ 하네스 정상 — 6명 서브에이전트, 6개 스킬, 5개 워크플로우(큰 작업 수동 호출), phase 정합, 오늘 N건 turn, 최근 wip 없음").
 
 추가 인자(있다면): $ARGUMENTS
