@@ -60,7 +60,7 @@ Before adding a new helper: **grep Core/ first**.
 
 ### P6 verification invariants
 
-Run at the repo root. **Each grep must match the expected count in its trailing `#` comment; a grep with no annotation must return 0 matches.** 기대값의 단일 진실원은 각 줄의 주석이다 — 아래 9개 grep 은 의도적으로 0 이 아닌 기대값(1+ / ≥1 / 3 / 4)을 가지므로, "전부 0" 으로 일괄 판정하면 정상 통과 중인 항목을 위반으로 오판한다.
+Run at the repo root. **Each grep must match the expected count in its trailing `#` comment; a grep with no annotation must return 0 matches.** 기대값의 단일 진실원은 각 줄의 주석이다 — 아래 9개 grep 은 의도적으로 0 이 아닌 기대값(1+ / ≥1 / 2 / 3 / 4)을 가지므로, "전부 0" 으로 일괄 판정하면 정상 통과 중인 항목을 위반으로 오판한다.
 
 ```bash
 git grep "KoEnVue\.App"      Core/   # P6 namespace gate

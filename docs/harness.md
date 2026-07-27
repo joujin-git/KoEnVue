@@ -31,7 +31,7 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 | **ultracode** | **큰 작업만 수동** — 매 턴 주입하던 `inject-turn-context` hook **삭제**, 큰 작업(리뷰·감사·릴리즈·설계비교·버그헌트)만 워크플로우 `/<name>` 수동 호출 | 매 작업 6+ 에이전트 fan-out 은 이 규모(1인·유지보수)에 과잉. 일상은 solo + 필요 시 서브에이전트 |
 | 서브에이전트 effort | 본문 첫 단락 문구 + **모델 차등**(agents `model:`) | explorer=haiku·verifier=sonnet 은 균형 문구, planner/reviewer/docs-keeper/historian 은 opus(inherit) 유지. 매 턴 주입 hook 이 없어져 본문 문구가 서브에이전트 깊이의 단일 보장 |
 | 병렬 | 단일 세션 + 서브에이전트 + **Workflow 도구**(ultracode). Agent Team(TeamCreate)만 미사용 | Workflow 는 결정론적·resume·budget 지원이라 도입. Agent Team 은 토큰 3–5배·resume 미지원·동시 1팀만이라 계속 제외 |
-| 권한 | `bypassPermissions` 전체 허용 | 사용자가 직접 git 으로 책임. 속도 우선 |
+| 권한 | `bypassPermissions` + **비가역 git 명령만 `permissions.deny`** — `push --force`/`-f`/`--force-with-lease`·`reset --hard`·`filter-branch` (Bash·PowerShell 양쪽 패턴) | 일상 명령은 무프롬프트로 속도 우선, **되돌릴 수 없는 것만** 차단. 그 외는 사용자가 직접 git 으로 책임 |
 | PR | main 직커밋, PR 없음 | 1인 프로젝트 기존 흐름 존중 |
 | **빌드** | **debug + release publish 항상 둘 다** | 한쪽만 하면 release exe outdated — verifier 가 강제 |
 | **커밋** | **`git commit` 후 즉시 `git push` 자동** | Stop hook(턴 끝 1회) + SessionEnd 양쪽에서. 다른 장비 즉시 받기 |
@@ -70,7 +70,8 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 │   └── harness-optimize.js    하네스 자체 최적화
 ├── scratch/                   ❌ ignored (디버깅 임시 ps1 — 현재 비었음, PR-15 권한상승 프로브 잔재 정리됨)
 ├── hooks/                     ✅ committed
-│   ├── lib/_common.ps1        공통 함수 + 공유 상수 ($ClaudeMdLineLimit, Hide-Secrets, Invoke-HookSafely, Write-HookError, Add-SessionBlock, Invoke-Push, Invoke-WipCommit, Sync-Memory, Get-AutoMemoryDir, Get-DocSyncReminders, Test-WorkflowPhaseDrift, Test-WorkflowSyntax, Get-PorcelainStatus)
+│   ├── lib/_common.ps1        공통 함수 + 공유 상수 (주요 — 전체 목록은 파일의 function 정의가 정본: $ClaudeMdLineLimit, Hide-Secrets, Invoke-HookSafely, Write-HookError, Add-SessionBlock, Invoke-Push, Invoke-WipCommit, Sync-Memory, Get-AutoMemoryDir, Get-DocSyncReminders, Test-WorkflowPhaseDrift, Test-WorkflowSyntax, Get-PorcelainStatus)
+│   ├── lib/check-workflow-syntax.cjs  워크플로우 .js 순수 문법 정적검사 (node AsyncFunction 파싱 — §3)
 │   ├── session-start.ps1      SessionStart — 이전 요약 주입 + push 안 한 commit 알림 + Sync-Memory
 │   ├── pre-compact.ps1        PreCompact — 압축 마커 append + git 스냅샷 additionalContext
 │   ├── stop-record.ps1        Stop — 턴 끝 1회: 발췌 append + doc-sync 리마인더 + auto-push + 워크플로우 정합검사 (구 post-edit-doc-sync·auto-push 통합)
@@ -134,7 +135,7 @@ docs/
 
 **leaf vs 오케스트레이터**: 서브에이전트의 `tools:` 에는 위임 도구가 없습니다(leaf). 오케스트레이션은 메인 세션 또는 워크플로우 스크립트가 담당합니다.
 
-**호출 경로 — 역할분담**: 저장된 워크플로우가 `agentType` 으로 실제 노드 호출하는 서브에이전트는 **explorer / planner / reviewer / verifier**(explorer=harness-optimize Inspect·codebase-audit Scope, planner=design-compare Propose, reviewer=release-review Review·codebase-audit Gate, **verifier=release-review Build**). bug-hunt 의 `agent()` 는 `agentType` 미지정(기본 워크플로우 에이전트). **docs-keeper / historian 만 워크플로우 노드가 아닌 메인 세션 위임 전용**(Stop hook doc-sync 리마인더·`/sync-docs` / `/wrap-up` 등)입니다 — `README.md` 의 `agentType` enum 에 전 서브에이전트가 열거돼 있어도 노드로 쓰이는 건 위 4개. "서브에이전트는 워크플로우 노드로 호출"을 전체로 일반화하지 마세요. (1차에선 verifier 도 메인세션 위임 전용으로 적었으나, release-review 에 Build 게이트가 추가되며 노드로 승격.)
+**호출 경로 — 역할분담**: 저장된 워크플로우가 `agentType` 으로 실제 노드 호출하는 서브에이전트는 **explorer / planner / reviewer / verifier**(explorer=harness-optimize Inspect·codebase-audit Scope, planner=design-compare Propose, reviewer=release-review Review·codebase-audit Gate, **verifier=release-review Build**). bug-hunt 의 `agent()` 는 `agentType` 미지정(기본 워크플로우 에이전트). **docs-keeper / historian 만 워크플로우 노드가 아닌 메인 세션 위임 전용**(Stop hook doc-sync 리마인더·`/sync-docs` / `/wrap-up` 등)입니다 — [.claude/workflows/README.md](../.claude/workflows/README.md) 의 `agentType` enum 도 2026-07-27 정정으로 `explorer`/`planner`/`reviewer`/`verifier`/`claude` 만 열거하고 docs-keeper·historian 은 "노드로 쓰지 않는다"를 명시합니다(이전엔 6명 전부 열거해 노드로 오인 가능). "서브에이전트는 워크플로우 노드로 호출"을 전체로 일반화하지 마세요. (1차에선 verifier 도 메인세션 위임 전용으로 적었으나, release-review 에 Build 게이트가 추가되며 노드로 승격.)
 
 **meta↔phase 자동 가드**: `.claude/workflows/README.md` 의 "meta.phases 의 title ↔ 본문 `phase('X')` 1:1" 규약을 `_common.ps1` 의 `Test-WorkflowPhaseDrift` 가 정규식 휴리스틱으로 기계 검증합니다. `/harness-status` 의 `## 워크플로우 무결성` 섹션이 매 진단 시 호출 — 불일치 워크플로우(meta-only / body-only phase)를 보고하고, 전부 일치면 "✅ 정합"(현재 drift 0).
 
@@ -149,7 +150,7 @@ docs/
 hook 이벤트 5개 (SessionStart · PreCompact · Stop · SessionEnd · InstructionsLoaded) + statusLine 렌더 = pwsh 스크립트 6개. 2026-07-24 재구성으로 `UserPromptSubmit`(inject-turn-context)·`PostToolUse×2`(post-edit-doc-sync·auto-push) 세 hook 을 제거하고 Stop 하나로 통합. 각 hook 의 역할:
 
 ### `SessionStart` → `session-start.ps1`
-- 가장 최근 `docs/sessions/YYYY-MM-DD.md` 에서 **`## [HH:MM] 세션 정리` 블록만 추출**해 `additionalContext` 로 주입 (정리 블록 없으면 마지막 turn 헤더 3개만 표시 — 잡음 최소화)
+- 가장 최근 `docs/sessions/YYYY-MM-DD.md` 에서 **`## [HH:MM] 세션 정리` 블록만 추출**해 `additionalContext` 로 주입 (잡음 최소화). 정리 블록이 없으면 **마지막 `## [...]` 블록 헤더 3개**만 표시 — turn·session-end·compaction 을 모두 포함한다(헤더 정규식이 스탬프 폭을 안 가림: turn/정리는 `[HH:MM]`, session-end/compaction 은 `[yyyy-MM-dd HH:mm]`. 2026-07-27 이전엔 `\d{2}:\d{2}` 로 좁혀 **파일 마지막의 session-end 블록이 영구 누락**되던 버그). 최신 파일에 정리가 없고 더 옛 파일에 있으면 **옛 정리 발췌 + 최신 파일 헤더**를 같이 주입
 - 최근 3일 내 wip 커밋 알림 (5건까지)
 - dirty tree 면 알림 (30건 클램프) — `Get-PorcelainStatus`(git status --porcelain **1회**)로 가드+클램프+count 를 한 번에 처리 (이전엔 git 3회 호출)
 - 최근 hook 에러 3건 (있으면)
@@ -176,7 +177,7 @@ hook 이벤트 5개 (SessionStart · PreCompact · Stop · SessionEnd · Instruc
 
 ### `SessionEnd` → `session-end.ps1`
 - dirty tree 가 있으면:
-  1. **먼저** 오늘 세션 파일에 `## [HH:MM] session-end (reason)` 블록 append (`Add-SessionBlock` mutex 로 직렬화; 이 세션의 최근 10분 커밋 목록 + "방금 wip — 이 마무리 블록 포함" 한 줄)
+  1. **먼저** 오늘 세션 파일에 `## [YYYY-MM-DD HH:MM] session-end (reason)` 블록 append (turn/정리 블록과 달리 **날짜까지** 찍는다 — `session-end.ps1` 의 `yyyy-MM-dd HH:mm` 스탬프) (`Add-SessionBlock` mutex 로 직렬화; 이 세션의 최근 10분 커밋 목록 + "방금 wip — 이 마무리 블록 포함" 한 줄)
   2. **그 다음** `wip: session YYYY-MM-DD HH:MM — session end (reason)` 커밋 — block 변경분 + 기존 dirty 가 같은 wip 커밋에 묶임 (다음 세션 시작 시 dirty 잔여물 0 보장)
 - dirty tree 가 없으면 nothing — 마무리 블록도 안 적고 wip 커밋도 만들지 않음 (잡음 0)
 - 위 처리 후 unpushed commit 이 있으면 `git push` 자동 시도 ("커밋 = 푸시 항상 같이" fallback)
@@ -327,7 +328,7 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
   pwsh --version   # 7.x 이상 확인
   ```
   Windows PowerShell 5.x (기본 내장) 만으로는 hook 전부 fail. 단 KoEnVue 는 `net10.0-windows` 타깃이라 빌드/실행은 Windows 전용 — Mac/Linux 는 documentation·planning 작업에만 한정.
-- **`/wrap-up` 의 race condition**: `docs/sessions/YYYY-MM-DD.md` 의 쓰기는 hook(stop-record / session-end) 과 historian subagent 만 수행 — 메인 세션이 직접 같은 파일을 Edit/Write 하면 충돌 가능. [skills/wrap-up/SKILL.md](../.claude/skills/wrap-up/SKILL.md) 의 "쓰기 단일 진실원" 규약 참조.
+- **`/wrap-up` 의 race condition**: `docs/sessions/YYYY-MM-DD.md` 의 쓰기는 hook(stop-record / pre-compact / session-end) 과 historian subagent 만 수행 — 메인 세션이 직접 같은 파일을 Edit/Write 하면 충돌 가능. [skills/wrap-up/SKILL.md](../.claude/skills/wrap-up/SKILL.md) 의 "쓰기 단일 진실원" 규약 참조.
 - **`.claude/worktrees/` 의 빌드 산출물 누적**: 서브에이전트가 publish 를 돌리면 worktree 안에 ~150 MB 산출물이 남고 정리 안 함. 주기적으로 `/cleanup-worktrees` SKILL 로 일주일 이상 미사용 worktree 제거 권장.
 - **ultracode 런타임 활성화 미검증 (큰 작업 수동 호출 시에만 해당)**: 워크플로우 `/<name>` 자동 노출과 `Workflow({name})` 다중 에이전트 fan-out 은 **확인됨**(2026-06-08 각 6 에이전트). ultracode "런타임 플래그" 자체를 켜는지는 미확인이나, 재구성으로 매 턴 자동 발동을 제거하고 큰 작업에서 **수동 호출**하므로 이 미검증에 의존하지 않음. (memory `feedback-harness-design` 참조)
 - **워크플로우 비용 (수동 호출 시에만)**: 큰 작업에서 워크플로우를 호출하면 fan-out 으로 토큰이 급증. 재구성 후엔 매 턴 자동이 아니라 **수동 호출 때만** 발생하므로, 비용이 부담되면 워크플로우 대신 solo 또는 단일 서브에이전트(`/plan`·`/sync-docs`)로 처리.
@@ -371,15 +372,17 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 이 컴퓨터의 **C: 드라이브는 보안 정책상 수시로 14일 전 시점으로 복원**됩니다. 기본 Claude Code memory 위치 (`C:\Users\<user>\.claude\projects\<project>\memory\`) 는 복원될 때마다 사라지므로, 본 하네스는 메모리를 프로젝트 트리(E:)로 옮기려 `autoMemoryDirectory` 를 설정했습니다.
 
-**현 실태(2026-07-22 갱신)**: `autoMemoryDirectory` 는 `${CLAUDE_PROJECT_DIR}` 전개 실패로 무효였고, Claude Code 는 기본 위치 C: 를 읽기/쓰기해 왔습니다. 2026-07-22 에 이 키를 **절대경로로 교체**해 런타임이 E: 를 직접 쓰도록 시도했습니다 — 다만 **효력 확인은 다음 세션 시작 시** 시스템 컨텍스트가 안내하는 memory 경로로만 가능합니다(무효로 판명돼도 `Sync-Memory` hook 이 C:↔E: 를 보전하므로 실제 영향은 0, 즉 실패 모드가 안전).
+**현 실태(2026-07-22 갱신)**: `autoMemoryDirectory` 는 `${CLAUDE_PROJECT_DIR}` 전개 실패로 무효였고, Claude Code 는 기본 위치 C: 를 읽기/쓰기해 왔습니다. 2026-07-22 에 이 키를 **절대경로로 교체**해 런타임이 E: 를 직접 쓰도록 시도했습니다 — **2026-07-27 확인: 효력 있음.** 이 날 세션의 시스템 컨텍스트가 memory 위치를 `E:\dev\KoEnVue\.claude\memory\` 로 안내했고(설정값과 일치), 서브에이전트 컨텍스트도 같은 E: 경로를 받았습니다. 즉 절대경로 교체가 먹혀 런타임이 E: 를 메모리 디렉토리로 인식합니다. **잔여 미확인 1건** — Claude 의 *자동* 저장이 그 경로로 떨어지는지는 아직 직접 못 봤습니다(2026-07-27 의 메모리 편집은 전부 Write/Edit 도구를 쓴 수동 저장). 어느 쪽이든 `Sync-Memory` 가 C:↔E: 를 보전하므로 실제 영향은 0 — 실패 모드가 안전합니다.
 
 > ⚠ **2026-06-09 세션 기록의 판단은 오류**입니다 — "C: 0파일이니 실제 활성 store 는 E:, system-reminder 경로 안내는 오안내" 라고 결론냈으나, E: 에 파일이 쌓인 건 `Sync-Memory` 가 **백업**한 결과지 런타임이 직접 쓴 증거가 아닙니다. 2026-07-22 세션 컨텍스트가 다시 C: 경로를 memory 위치로 안내해 06-08 판단(설정 무효 → C: 사용)이 옳음이 확인됐습니다. 즉 06-09 시점에도 이미 recall 이 깨져 있었습니다.
 
-| 항목 | 실태 (2026-07-22) |
+| 항목 | 실태 (2026-07-27 갱신) |
 |------|------|
-| 실제 auto-memory 위치 | **C:** `C:\Users\<user>\.claude\projects\E--dev-KoEnVue\memory\` — 드라이브문자 대소문자는 Claude Code 버전에 따라 변동(2026-07 이전 `e--`, 이후 `E--`). Windows 는 대소문자 무시라 접근엔 무영향 |
+| 런타임이 안내하는 memory 위치 | **E:** `E:\dev\KoEnVue\.claude\memory\` (2026-07-27 확인 — `autoMemoryDirectory` 가 먹음). 2026-07-22 까지는 C: 였음 |
+| C: 기본 경로 (레거시) | `C:\Users\<user>\.claude\projects\E--dev-KoEnVue\memory\` — 이제 `Sync-Memory` 의 흡수/미러 대상일 뿐. 드라이브문자 대소문자는 Claude Code 버전에 따라 변동(2026-07 이전 `e--`, 이후 `E--`). Windows 는 대소문자 무시라 접근엔 무영향. **`Get-AutoMemoryDir` 는 설정값이 아니라 이 기본 경로를 계산한다** — 의도된 설계(흡수 대상 지정) |
 | E: `.claude/memory/` | git 추적 **truth** — 10파일(메모리 9 + `MEMORY.md` 인덱스, 2026-07-27 기준), C: 복원과 무관하게 보존 |
-| `autoMemoryDirectory` 설정 | `E:/dev/KoEnVue/.claude/memory` (절대경로, 2026-07-22 변경 — AUDIT-2 #51 처리) — **효력 미검증**, 다음 세션에서 확인 |
+| `autoMemoryDirectory` 설정 | `E:/dev/KoEnVue/.claude/memory` (절대경로, 2026-07-22 변경 — AUDIT-2 #51 처리) — **2026-07-27 효력 확인**: 세션·서브에이전트 컨텍스트가 이 E: 경로를 memory 위치로 안내. 자동 저장 경로만 미확인 |
+| `Sync-Memory` 실제 발화 | ✅ **2026-07-27 검증** — 직접 호출해 `absorbed=0 / restored=3`, C: 9→10 파일, 오늘 수정한 3파일 해시 일치. 신규 메모리가 C: 미러에 정상 전파됨 |
 | 복원 영향 | ✅ `Sync-Memory` hook — 디렉토리째 소실돼도 생성 후 E:→C: 복구 (2026-07-22 수정) |
 
 **임시 구제 (적용됨)**: C: 에만 있던 `os-dependent-accept.md` 를 E: 로 복사 + MEMORY.md 갱신 + commit (소실 방지). 새 메모리 저장 시 수동으로 E: 에도 반영 권장.
