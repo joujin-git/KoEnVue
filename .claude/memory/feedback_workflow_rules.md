@@ -22,12 +22,12 @@ KoEnVue 의 워크플로우 규칙 2건 (2026-05-22 사용자 지시).
 
 ## 규칙 2 — 커밋은 푸시 항상 같이
 
-`git commit` 후 즉시 `git push`. Claude 가 `git commit` 호출하면 PostToolUse hook (`auto-push.ps1`) 가 자동 push. SessionEnd hook 도 fallback 으로 push.
+`git commit` 후 즉시 `git push`. 턴이 끝나면 Stop hook (`stop-record.ps1`) 이 미푸시 커밋을 자동 push (2026-07-24 재구성으로 구 PostToolUse `auto-push.ps1` 을 턴당 1회로 통합). SessionEnd hook 도 fallback 으로 push.
 
 **Why**: 사용자 명시 — "커밋, 푸시 항상 같이 해야 해". 다른 장비에서 즉시 받을 수 있게 보장.
 
 **How to apply**:
-- `git commit` 호출하면 자동 push 가 일어남 — 별도 호출 불필요
+- `git commit` 하면 턴 끝에 자동 push 가 일어남 — 별도 호출 불필요 (즉시 필요하면 직접 `git push`)
 - 사용자가 직접 commit 한 경우엔 자동 push 안 일어남 — `/harness-status` 또는 SessionStart 의 "push 안 한 commit" 알림으로 확인
 - upstream 미설정 시 (`-u origin <branch>` 없이 첫 push) 한 번은 수동 필요
 - push 실패 시 (원격 거부) 충돌 해결 후 수동 push
