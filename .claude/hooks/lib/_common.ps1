@@ -398,9 +398,10 @@ function Invoke-HookSafely {
         # scriptblock 이 정의된 파일(=호출 hook)을 Ast 로 얻어 'session-start.ps1' 처럼 표기.
         $hookName = try { if ($Body.Ast.Extent.File) { Split-Path -Leaf $Body.Ast.Extent.File } else { 'unknown-hook' } } catch { 'unknown-hook' }
         Write-HookError -HookName $hookName -Message $_.Exception.Message
-        # 안전망의 안전망 — context-injecting hook(inject-turn-context 등)이 Write-HookOutput
-        # 직전에 죽으면 그 턴의 주입(ultrathink/ultracode/effort)이 통째 증발한다. FallbackContext 가
-        # 주어지면 최소 한 줄이라도 내보내 ultracode 항상-ON 의 단일 실패점을 방어.
+        # 안전망의 안전망 — context-injecting hook(session-start·pre-compact)이 Write-HookOutput
+        # 직전에 죽으면 그 턴의 주입(effort/연속성 컨텍스트)이 통째 증발한다. FallbackContext 가
+        # 주어지면 최소 한 줄이라도 내보내 단일 실패점을 방어. (2026-07-24 재구성 전엔 삭제된
+        # inject-turn-context 도 이 경로를 썼다 — 지금 사용자는 위 2곳.)
         if ($FallbackContext -and $EventName) {
             try {
                 $fb = @{ hookSpecificOutput = @{ hookEventName = $EventName; additionalContext = $FallbackContext } } | ConvertTo-Json -Compress -Depth 12

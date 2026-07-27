@@ -237,7 +237,7 @@ hook 이벤트 5개 (SessionStart · PreCompact · Stop · SessionEnd · Instruc
 | `/design-compare` | 기능 설계 3 angle 제안 → judge panel 점수화 → 합성 (`args.feature` 필수) |
 | `/harness-optimize` | 하네스 구성요소 점검 → completeness critic |
 
-워크플로우 카탈로그의 추가/삭제는 `.claude/workflows/*.js` 파일시스템이 단일 진실원 — 위 표는 발견성 편의이고, 매 턴 주입(§3)과 `/harness-status` 점검은 디렉토리를 동적으로 읽습니다.
+워크플로우 카탈로그의 추가/삭제는 `.claude/workflows/*.js` 파일시스템이 단일 진실원 — 위 표는 발견성 편의이고, `/harness-status` 점검이 디렉토리를 동적으로 읽습니다. (재구성 전엔 매 턴 주입 hook 도 같이 읽었으나 삭제됨 — 이제 자동 광고 경로는 없으므로 이 표의 최신성이 유일한 발견성 보증입니다.)
 
 ### Claude Code built-in 명령 — 함께 활용
 

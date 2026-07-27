@@ -53,7 +53,10 @@ function Add-HeadersOnly {
     try {
         $content = Get-Content -Path $path -Raw -Encoding UTF8
         $name = Split-Path $path -Leaf
-        $headerMatches = [regex]::Matches($content, '(?m)^## \[\d{2}:\d{2}\][^\n]*')
+        # 스탬프 폭을 가리지 않는다 — turn/세션정리 는 `[HH:MM]`, session-end/compaction 은
+        # `[yyyy-MM-dd HH:mm]` (session-end.ps1·pre-compact.ps1 이 날짜까지 찍음). \d{2}:\d{2}
+        # 로 좁히면 파일 마지막 블록인 session-end 가 매번 누락된다.
+        $headerMatches = [regex]::Matches($content, '(?m)^## \[[^\]]+\][^\n]*')
         $lastHeaders = @($headerMatches | Select-Object -Last 3 | ForEach-Object { $_.Value })
         $lines.Add("## $heading ($name)")
         $lines.Add('')

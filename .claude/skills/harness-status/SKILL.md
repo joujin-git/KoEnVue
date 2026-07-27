@@ -5,8 +5,8 @@ shell: powershell
 ---
 
 ## 모델 / 인텔리전스
-- 환경변수 effort: `!`echo "CLAUDE_CODE_EFFORT_LEVEL=$env:CLAUDE_CODE_EFFORT_LEVEL"``
-- settings.json: `!`Select-String -Path .claude/settings.json -Pattern 'model|effortLevel|alwaysThinkingEnabled' | ForEach-Object { $_.Line.Trim() }``
+- settings.json (effort 정본): `!`Select-String -Path .claude/settings.json -Pattern 'model|fastMode|effortLevel|alwaysThinkingEnabled' | ForEach-Object { $_.Line.Trim() }``
+- 환경변수 effort override: `!`$v = $env:CLAUDE_CODE_EFFORT_LEVEL; if ([string]::IsNullOrEmpty($v)) { '(미설정 — 2026-07-24 재구성으로 제거됨. 비어 있는 게 정상이며 위 settings 값이 실효)' } else { "CLAUDE_CODE_EFFORT_LEVEL=$v (override 중 — settings 보다 우선)" }``
 - ultracode (멀티에이전트): **큰 작업만 수동 호출** — 코드리뷰·감사·릴리즈·설계비교·버그헌트 때 `/release-review` 등 워크플로우 `/<name>` 으로 호출. 일상 작업은 단일 세션 + 필요 시 서브에이전트. (2026-07-24 재구성으로 매 턴 주입하던 `inject-turn-context` hook 삭제 — 없는 것이 정상.)
 
 ## 하네스 파일 존재

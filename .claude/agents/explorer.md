@@ -25,7 +25,7 @@ model: haiku
 탐색 중 눈에 띄면 보고 마지막에 명시. 아래는 **대표 예시** — 정본 invariant 와 전수 grep 게이트는 docs/conventions.md, 정식 검증은 reviewer 담당(이 목록은 stale 가능, 권위 아님):
 - `[DllImport]` 사용 (P1 위반 의심)
 - Core/ 에 `KoEnVue.App`, `ImeState`, `맑은 고딕` 등 누출 (P6 위반 의심)
-- `requireAdministrator`/`RunLevel.*HighestAvailable` (P5 위반 의심)
+- `app.manifest` 에 `requireAdministrator` (P5 위반 의심 — asInvoker 만 허용). **`RunLevel.*HighestAvailable` 은 위반 아님** — PR-15 에서 `BuildStartupTaskXml` 이 config 분기로 정당하게 emit 하며 `App/Startup/` 정상 사용 3곳이 기대값이다(conventions.md 참조). 이걸 위반으로 보고하면 확정 오탐.
 
 전수 P규칙 게이트가 필요하면 **reviewer 위임 권장**.
 

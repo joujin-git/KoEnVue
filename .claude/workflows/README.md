@@ -5,7 +5,7 @@ ultracode 멀티에이전트 워크플로우(`Workflow` 도구로 실행). 각 `
 ## 파일 형식
 
 - 첫 줄은 `export const meta = {...}` — **pure literal** (변수/함수호출/스프레드/보간 금지). 필수: `name`, `description`. 선택: `phases` (각 `{ title, detail }`).
-- meta 다음이 스크립트 본문 — async 컨텍스트, `await` 직접 사용. (이 `export` + top-level `return`/`await` 혼용은 워크플로우 런타임 전용 포맷이라 `node --check` 로는 오탐 — 단 **순수 문법**은 `Test-WorkflowSyntax`(`check-workflow-syntax.cjs`)가 본문을 AsyncFunction 으로 파싱해 정적 검사 가능하고, post-edit hook 이 편집 즉시 SyntaxError 를 조기 경고한다. phase 실제 실행·`agent()` 호출 등 **런타임 의미검증은 여전히 런타임 전용**.)
+- meta 다음이 스크립트 본문 — async 컨텍스트, `await` 직접 사용. (이 `export` + top-level `return`/`await` 혼용은 워크플로우 런타임 전용 포맷이라 `node --check` 로는 오탐 — 단 **순수 문법**은 `Test-WorkflowSyntax`(`check-workflow-syntax.cjs`)가 본문을 AsyncFunction 으로 파싱해 정적 검사 가능하고, **Stop hook(턴 끝 1회)**이 변경된 `.js` 의 SyntaxError 를 경고한다 (구 post-edit hook 이 하던 "편집 즉시" 경고는 재구성으로 턴당 1회로 통합 — 편집 직후에는 안 온다). phase 실제 실행·`agent()` 호출 등 **런타임 의미검증은 여전히 런타임 전용**.)
 - meta.phases 의 title 과 본문 `phase('X')` 호출은 1:1 로 맞출 것 (drift 시 진행 표시 어긋남).
 
 ## 주입 심볼 계약
@@ -19,7 +19,7 @@ ultracode 멀티에이전트 워크플로우(`Workflow` 도구로 실행). 각 `
 | `log(msg)` | — | 진행 메시지 1줄 |
 | `args` | — | `Workflow({ args })` 로 넘긴 값 (undefined 가능 → 가드) |
 | `budget` | `{ total, spent(), remaining() }` | total 은 null 가능. `!budget.total` 단락이 "예산 모르면 무제한"이 되지 않도록 round/개수 hard cap 병행 |
-| `agentType` | `explorer`/`planner`/`reviewer`/`docs-keeper`/`historian`/`verifier`/`claude` | KoEnVue 서브에이전트 재사용. `claude` = catch-all 범용. 미지정 = 기본 워크플로우 에이전트 |
+| `agentType` | `explorer`/`planner`/`reviewer`/`verifier`/`claude` | KoEnVue 서브에이전트 재사용. `claude` = catch-all 범용. 미지정 = 기본 워크플로우 에이전트. **`docs-keeper`·`historian` 은 노드로 쓰지 않는다** — Edit/Write 권한 보유라 워크플로우 in-flight 중 파일을 고치면 위험하므로 메인 세션 위임 전용 (각 정의 파일에 명시) |
 
 ## 작성 주의 (실측 함정)
 
@@ -32,6 +32,6 @@ ultracode 멀티에이전트 워크플로우(`Workflow` 도구로 실행). 각 `
 
 ## 워크플로우 카탈로그
 
-카탈로그 단일 진실원은 이 디렉토리(`.claude/workflows/*.js`) — `inject-turn-context.ps1` 이 매 턴 동적으로 광고하고 `/harness-status` 가 수를 점검. 새 `.js` 추가/삭제가 자동 반영되므로 개수를 여기 박지 않는다. 상세는 [docs/harness.md §3](../../docs/harness.md).
+카탈로그 단일 진실원은 이 디렉토리(`.claude/workflows/*.js`) — `/harness-status` 가 수를 점검. 새 `.js` 추가/삭제가 자동 반영되므로 개수를 여기 박지 않는다. 상세는 [docs/harness.md §3](../../docs/harness.md).
 
-**라우팅 — 워크플로우를 새로 만들기 전에**: 모든 substantive 작업이 워크플로우감은 아니다. **단일 관점이면 충분하면 스킬 슬래시(저비용)** 로 충분 — 설계 한 건은 `/plan`(planner 1명), 문서 동기화는 `/sync-docs`(docs-keeper 1명). **여러 관점 교차검증이 실익일 때만 Workflow**(fan-out 토큰 수 배~수십 배). 예: `/plan`(planner 단독, 저비용) vs `design-compare`(**3 angle 고정** 제안 + judge panel 점수화 + 합성, 고비용)는 한 기능을 여러 설계안으로 **경쟁시킬 때만** 후자. inject 가 매 턴 광고하는 건 워크플로우 카탈로그뿐이라 이 저비용 경로(스킬)를 놓치기 쉬움 — 발견성 정본은 [harness.md §6](../../docs/harness.md)(skills + workflows 두 종류 한 표). 라우팅 상세는 [§3](../../docs/harness.md).
+**라우팅 — 워크플로우를 새로 만들기 전에**: 모든 substantive 작업이 워크플로우감은 아니다. **단일 관점이면 충분하면 스킬 슬래시(저비용)** 로 충분 — 설계 한 건은 `/plan`(planner 1명), 문서 동기화는 `/sync-docs`(docs-keeper 1명). **여러 관점 교차검증이 실익일 때만 Workflow**(fan-out 토큰 수 배~수십 배). 예: `/plan`(planner 단독, 저비용) vs `design-compare`(**3 angle 고정** 제안 + judge panel 점수화 + 합성, 고비용)는 한 기능을 여러 설계안으로 **경쟁시킬 때만** 후자. 재구성으로 매 턴 자동 광고가 없어져 **스킬·워크플로우 어느 쪽도 자동 노출되지 않으므로** 이 저비용 경로(스킬)를 놓치기 쉬움 — 발견성 정본은 [harness.md §6](../../docs/harness.md)(skills + workflows 두 종류 한 표). 라우팅 상세는 [§3](../../docs/harness.md).
