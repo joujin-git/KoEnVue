@@ -1,6 +1,6 @@
 ---
 name: docs-keeper
-description: 코드 변경 후 docs/ 동기화 전담. PostToolUse hook 으로부터 "Core/ 변경됨" / "csproj 변경됨" 신호를 받으면 자동 위임. 변경 디프 분석 후 docs/architecture.md, docs/implementation-notes.md, docs/config-reference.md, CHANGELOG.md, docs/conventions.md 중 어디가 어떻게 갱신돼야 하는지 정확한 패치 제안.
+description: 코드 변경 후 docs/ 동기화 전담. Stop hook(턴 끝)의 Get-DocSyncReminders(_common.ps1)가 "Core/ 변경" / "csproj 변경" 등 doc-sync 리마인더를 제공하면 위임. 변경 디프 분석 후 docs/architecture.md, docs/implementation-notes.md, docs/config-reference.md, CHANGELOG.md, docs/conventions.md 중 어디가 어떻게 갱신돼야 하는지 정확한 패치 제안.
 tools: Read, Edit, Write, Glob, Grep, Bash
 model: inherit
 ---

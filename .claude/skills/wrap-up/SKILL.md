@@ -15,7 +15,7 @@ allowed-tools: Bash, Read, Edit, Write
 2. **historian** 호출 — 오늘의 세션 파일에 정리 블록 append
 3. dirty tree 가 남아있으면 사용자에게 묻기:
    - "남은 변경: …. wip 커밋할까요, 아니면 의미 있는 커밋 메시지로 묶을까요?"
-4. 사용자 확정 후 `git commit` 실행 — **PostToolUse hook 이 자동으로 push 까지 실행**합니다 ("커밋 = 푸시 항상 같이" 규칙)
+4. 사용자 확정 후 `git commit` 실행 — **Stop hook(턴 끝)이 자동으로 push 까지 실행**합니다 ("커밋 = 푸시 항상 같이" 규칙)
 5. push 결과를 사용자에게 확인:
    - 성공: "✅ push 완료 — 다른 장비에서 즉시 받을 수 있습니다"
    - 실패: 메시지에 따라 대응 (upstream 미설정 → `git push -u origin <branch>`, 거부 → 충돌 해결)

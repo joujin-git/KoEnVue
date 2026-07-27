@@ -28,7 +28,7 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정 →
 - **explorer**: 탐색/검색 (Read/Glob/Grep/Bash)
 - **planner**: 설계 (구현 안 함). 다중 파일/새 기능/P규칙 변경 자동 위임
 - **reviewer**: 코드 변경 후 P규칙 invariant + 빌드 + 품질
-- **docs-keeper**: docs/ 동기화 (PostToolUse hook 신호 받음)
+- **docs-keeper**: docs/ 동기화 (Stop hook 의 doc-sync 리마인더 — `Get-DocSyncReminders` — 받으면 위임)
 - **historian**: 세션 요약 → `docs/sessions/YYYY-MM-DD.md`
 - **verifier**: build/publish/test (UI 동작은 검증 불가)
 
