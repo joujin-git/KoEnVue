@@ -151,6 +151,8 @@ hook 이벤트 5개 (SessionStart · PreCompact · Stop · SessionEnd · Instruc
 
 ### `SessionStart` → `session-start.ps1`
 - 가장 최근 `docs/sessions/YYYY-MM-DD.md` 에서 **`## [HH:MM] 세션 정리` 블록만 추출**해 `additionalContext` 로 주입 (잡음 최소화). 정리 블록이 없으면 **마지막 `## [...]` 블록 헤더 3개**만 표시 — turn·session-end·compaction 을 모두 포함한다(헤더 정규식이 스탬프 폭을 안 가림: turn/정리는 `[HH:MM]`, session-end/compaction 은 `[yyyy-MM-dd HH:mm]`. 2026-07-27 이전엔 `\d{2}:\d{2}` 로 좁혀 **파일 마지막의 session-end 블록이 영구 누락**되던 버그). 최신 파일에 정리가 없고 더 옛 파일에 있으면 **옛 정리 발췌 + 최신 파일 헤더**를 같이 주입
+
+  > **2026-07-27 실전 검증 완료**: 이 fix 는 `Add-HeadersOnly` 경로에만 있고, 그 경로는 **최신 세션 파일에 정리 블록이 없을 때만** 실행된다(있으면 `Add-WrapupExcerpt` 분기). 따라서 `/wrap-up` 직후 재시작으로는 검증되지 않는다 — 실제로 조건(정리 블록 0개인 최신 파일)을 만들어 hook 을 발화시켜 확인했다. 주입 결과에 `- ## [2026-07-28 09:41] session-end (other)` 가 정상 포함(수정 전 정규식은 같은 파일에서 turn 2개만 매치). **검증 시 주의** — 주입 문구에 "session-end" 라는 낱말이 우연히 들어 있을 수 있으므로(정리 본문이 이 버그를 언급하면 그렇다) 문자열 grep 이 아니라 **어느 분기가 돌았는지 + 헤더 목록 실물**로 판정해야 한다.
 - 최근 3일 내 wip 커밋 알림 (5건까지)
 - dirty tree 면 알림 (30건 클램프) — `Get-PorcelainStatus`(git status --porcelain **1회**)로 가드+클램프+count 를 한 번에 처리 (이전엔 git 3회 호출)
 - 최근 hook 에러 3건 (있으면)
