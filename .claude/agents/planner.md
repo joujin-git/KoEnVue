@@ -18,7 +18,7 @@ model: inherit
 - [docs/architecture.md](../../docs/architecture.md)에서 모듈 경계 확인
 - [docs/improvement-plan/INDEX.md](../../docs/improvement-plan/INDEX.md)에서 진행 중/완료된 PR 확인 — 중복 회피
 - [docs/dev-notes/](../../docs/dev-notes/) 에 같은 영역 실패 사례 있는지 확인
-- open PR 충돌 사전 점검 (`gh pr list --state open`) — 코드 변경이 인접 영역의 열린 PR 과 겹치면 docs-keeper §0 과 동일 절차로 3안(분리/조정/대기) 판단
+- open PR 충돌 사전 점검 (`gh pr list --state open`) — 코드 변경이 인접 영역의 열린 PR 과 겹치면 [docs/harness.md §11](../../docs/harness.md) 의 3안((a) 한 PR 로 묶기 / (b) base 를 해당 PR head 로 재기준 / (c) 멀리 떨어진 다른 위치 선택) 으로 판단 — docs-keeper §0 과 동일 절차
 
 ### 2. P1–P6 영향 분석
 

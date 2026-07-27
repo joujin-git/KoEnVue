@@ -35,8 +35,8 @@ const SUGGESTIONS_SCHEMA = {
 const COMPONENTS = [
   { key: 'settings', prompt: `.claude/settings.json 을 점검하라. model/effort/thinking/permissions/env/hook 배선이 **2026-07-24 균형 재구성 정책**과 일치하는지 — 기준: model=opus + fastMode:true, effortLevel=high(env CLAUDE_CODE_EFFORT_LEVEL 은 제거된 상태가 정상), alwaysThinkingEnabled=true 적응형, ultracode/워크플로우는 큰 작업만 수동 호출(매 턴 주입 hook 없음이 정상), hook 은 턴당 1회(Stop 통합). **구 정책("비용 무제한·상시 최대 깊이·ultracode 항상 ON")으로의 회귀를 제안하지 마라** — 폐기됐다. 모순·미사용·위험 설정이 있는지.` },
   { key: 'hooks', prompt: `.claude/hooks/*.ps1 전체를 점검하라. 각 hook 의 역할·견고성(Invoke-HookSafely 래핑), 오버헤드, 누락된 라이프사이클 이벤트, ultracode 와의 정합성.` },
-  { key: 'agents', prompt: `.claude/agents/*.md 6개를 점검하라. effort 정책 명시 일관성, 도구 범위, 책임 중복/누락, ultracode 워크플로우와의 역할 분담(leaf vs 오케스트레이터).` },
-  { key: 'skills-workflows', prompt: `.claude/skills/ 와 .claude/workflows/ 를 점검하라. 슬래시 커맨드·워크플로우 카탈로그의 발견성, 중복, ultracode 발동 경로의 명확성, 5개 워크플로우 스크립트의 meta/문법 유효성.` },
+  { key: 'agents', prompt: `.claude/agents/*.md 전체를 점검하라(개수는 디렉토리를 읽어 파악 — 여기 박지 않는다). effort 정책 명시 일관성, 도구 범위, 책임 중복/누락, 워크플로우와의 역할 분담(leaf vs 오케스트레이터).` },
+  { key: 'skills-workflows', prompt: `.claude/skills/ 와 .claude/workflows/ 를 점검하라(개수는 디렉토리를 읽어 파악). 슬래시 커맨드·워크플로우 카탈로그의 발견성, 중복, 워크플로우 수동 호출 경로의 명확성, 각 워크플로우 스크립트의 meta/문법 유효성.` },
   { key: 'docs', prompt: `docs/harness.md 와 CLAUDE.md, .claude/memory/ 를 점검하라. 실제 하네스 구성과 문서의 drift, CLAUDE.md 30줄 제한, 메모리 정합성.` },
 ]
 

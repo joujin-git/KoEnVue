@@ -19,7 +19,7 @@ Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관�
 
 | 원칙 | 설명 |
 |------|------|
-| **외부 패키지 제로** | .NET 10 BCL + Windows API 만 사용. NativeAOT 단일 exe (~4.7 MB) |
+| **외부 패키지 제로** | .NET 10 BCL + Windows API 만 사용. NativeAOT 단일 exe (~4.9 MB) |
 | **한글 우선 표시** | UI 텍스트는 한글 기본, 영어 시스템에서는 영어 fallback. 로그/config 키는 영문 |
 | **최소 기능 집합** | 필요한 기능만 구현. 인디케이터 스타일/도형 선택 없음 |
 | **완전 포터블** | exe 한 개로 동작. 첫 실행 시 같은 폴더에 `config.json` 과 `koenvue.log` 자동 생성. 지울 때는 폴더 통째로 삭제 |
@@ -404,7 +404,7 @@ dotnet build                          # 디버그 빌드
 dotnet publish -r win-x64 -c Release  # NativeAOT 릴리스 퍼블리시
 ```
 
-- NativeAOT 단일 exe (~4.7 MB)
+- NativeAOT 단일 exe (~4.9 MB)
 - .NET 런타임 설치 불필요
 - `app.manifest` : UAC `asInvoker` (P5, v0.9.3.0~). Program Files 등 user-non-writable 위치 설치 시 `%LOCALAPPDATA%\KoEnVue\` 로 config/log 자동 fallback. v0.9.4.0~ `config.admin_elevation: true` 시 런타임 self-elevation + schtasks `HighestAvailable` 분담 — 매니페스트는 그대로 (PR-15)
 - **디버그·릴리스 둘 다 빌드 필수** — 디버그만 돌리면 릴리스 exe 가 낡은 상태로 남음

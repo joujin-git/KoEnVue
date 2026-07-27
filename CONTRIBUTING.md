@@ -27,7 +27,7 @@ dotnet build
 # 단위 테스트
 dotnet test tests/KoEnVue.Tests/
 
-# NativeAOT 단일 exe (~4.7 MB) — release exe 산출
+# NativeAOT 단일 exe (~4.9 MB) — release exe 산출
 dotnet publish -r win-x64 -c Release
 ```
 

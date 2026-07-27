@@ -25,7 +25,7 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 
 | 결정 | 내용 | 이유 |
 |------|------|------|
-| 모델 | `opus` (Opus 4.8) + `fastMode: true` | 최고 성능 모델을 유지하되 **fast mode 로 빠른 출력**(모델 다운그레이드 아님 — schemastore 스키마의 boolean 키로 확인). model/effort 는 statusLine payload(`payload.effort.level`)로 전달됨 — 미수신 시 statusline.ps1 이 env→`high` 폴백 |
+| 모델 | `opus` alias (최신 Opus 자동 추종 — 버전 숫자를 박지 않는다) + `fastMode: true` | 최고 성능 모델을 유지하되 **fast mode 로 빠른 출력**(모델 다운그레이드 아님 — schemastore 스키마의 boolean 키로 확인). model/effort 는 statusLine payload(`payload.effort.level`)로 전달됨 — 미수신 시 statusline.ps1 이 env→`high` 폴백 |
 | Effort | `effortLevel: high` (settings) | 2026-07-24 재구성으로 **`max`→`high`**, env `CLAUDE_CODE_EFFORT_LEVEL=max` **제거**. 스키마 재확인: `max`/`ultracode` 값은 **session-only 라 settings 파일에선 무효**(파일 최대 유효값 `xhigh`) — 파일로는 영속 불가라 종전엔 env 로 max 를 강제했으나, 15K 라인 유지보수 단계엔 상시 최대가 과해 `high` 기본으로 낮춤. 특정 작업에 더 깊이가 필요하면 그때 승격 |
 | Thinking | `alwaysThinkingEnabled: true`, `showThinkingSummaries: true` | thinking 은 유지하되 **매 턴 ultrathink 강제 주입은 제거** — effort high 에 맞춘 **적응형**(단순 작업은 가볍게, 복잡한 작업은 깊게) |
 | **ultracode** | **큰 작업만 수동** — 매 턴 주입하던 `inject-turn-context` hook **삭제**, 큰 작업(리뷰·감사·릴리즈·설계비교·버그헌트)만 워크플로우 `/<name>` 수동 호출 | 매 작업 6+ 에이전트 fan-out 은 이 규모(1인·유지보수)에 과잉. 일상은 solo + 필요 시 서브에이전트 |
@@ -37,7 +37,7 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 | **커밋** | **`git commit` 후 즉시 `git push` 자동** | Stop hook(턴 끝 1회) + SessionEnd 양쪽에서. 다른 장비 즉시 받기 |
 | 언어 | UI/대화 한국어, 코드/커밋 메시지/PR 영어 | P2 + 외부 협업 친화 |
 | 히스토리 | 세션 요약 + 핵심 결정을 `docs/sessions/YYYY-MM-DD.md` | 다른 장비에서 사람·Claude 모두 읽기 쉬움 |
-| .claude/ git | 일부 추적 (settings·agents·skills·hooks 만) | 장비 간 하네스 공유 |
+| .claude/ git | 일부 추적 (settings·agents·skills·workflows·hooks·memory) | 장비 간 하네스 공유 |
 | CLAUDE.md | ≤30 줄 하드 제한 | InstructionsLoaded hook 경고. 줄 제한 상수는 `_common.ps1` 의 `$ClaudeMdLineLimit` 단일 진실원 (size-check hook + harness-status 공유) |
 
 > **2026-07-24 균형 재구성**: 프로젝트가 15K 라인 성숙 유지보수 단계(v0.9.9.x)에 들어서며 "작업 시간이 너무 오래 걸린다"는 사용자 요청 → AskUserQuestion 으로 "균형" 방향 승인. effort max→high, fast mode 추가, ultracode 상시→큰 작업 수동, 매 tool call hook→턴당 1회(Stop) 통합, 서브에이전트 모델 차등(explorer=haiku·verifier=sonnet). 기술은 3자 검증(claude-code-guide + schemastore 공식 스키마 + 기존 메모리).
@@ -77,6 +77,7 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 │   ├── session-end.ps1        SessionEnd — wip 커밋 + auto push + 요약 파이널
 │   ├── claude-md-size-check.ps1  InstructionsLoaded — CLAUDE.md 줄 제한 검사 ($ClaudeMdLineLimit)
 │   └── statusline.ps1         status line 렌더
+├── memory/                    ✅ committed (자동 메모리 + MEMORY.md 인덱스 — §12)
 ├── state/                     ❌ ignored (런타임 상태, hook-errors.log 등)
 └── worktrees/                 ❌ ignored
 
@@ -100,7 +101,7 @@ docs/
 | **planner** | 다중 파일 / 새 기능 / P규칙 영향 변경 전 (구현 안 함) | Read, Glob, Grep, Bash |
 | **reviewer** | 코드 변경 후 commit 직전 — P규칙 invariant + 빌드 + 품질 | Read, Glob, Grep, Bash |
 | **docs-keeper** | 코드/설정 변경 후 docs/ 동기화 — Stop hook(턴 끝)의 doc-sync 리마인더 또는 `/sync-docs` 가 신호 | Read, Edit, Write, Glob, Grep, Bash |
-| **historian** | 세션 정리 — `/wrap-up` 또는 SessionEnd 후속 | Read, Write, Edit, Bash |
+| **historian** | 세션 정리 — `/wrap-up` 또는 SessionEnd 후속 | Read, Write, Edit, Glob, Bash |
 | **verifier** | release 전 / 큰 변경 후 — `dotnet build`/`publish`/`test` (release-review 의 Build phase 노드로도 호출) | Bash, Read, Glob, Grep |
 
 전체 정의는 [.claude/agents/*.md](../.claude/agents/) 참조. **invariant grep 단일 진실원**: reviewer 는 grep 명령을 자체 보유하지 않고 [docs/conventions.md](conventions.md) 를 매 호출마다 새로 Read 해 전수 추출 (방법 A) — 현재 알려진 7 위치 (§P4 sub-rule 의 PR-17 numeric init 가드, 그 형제 비-numeric 리터럴 가드, §P6 verification invariants, §P6 Additional sub-rule, §Silent catch §8 Core↔Logger, §Silent catch §9 Debug "failed", §AOT Verification). **기대값은 각 grep 우측 `#` 주석이 단일 진실원** — 주석이 없으면 0 매치, 있으면 그 값(1+/3/4 등)이며 "전부 0" 이 아니다. 자세한 추출 규칙은 [.claude/agents/reviewer.md §0](../.claude/agents/reviewer.md) 참조 — drift 방지.
@@ -241,15 +242,14 @@ hook 이벤트 5개 (SessionStart · PreCompact · Stop · SessionEnd · Instruc
 
 ### Claude Code built-in 명령 — 함께 활용
 
-위 슬래시 커맨드(6개) 외에 Claude Code 표준 명령도 사용 가능:
+위 슬래시 커맨드(skills 6 + 워크플로우 5 = 11개) 외에 Claude Code 표준 명령도 사용 가능:
 
 | 명령 | 용도 |
 |------|------|
 | `/security-review` | 현재 branch 의 보안 점검 — Windows P/Invoke, asInvoker 변경, NuGet 추가 같은 변경 시 |
-| `/verify` | 변경이 실제로 동작하는지 앱을 실행해 확인 (verifier subagent 보다 더 일반) |
 | `/simplify` | 변경 코드의 중복·품질·효율 검토 후 자동 정리 |
-| `/run` | 앱을 실행해 변경 결과를 사람 손으로 확인 |
-| `/loop <interval> <command>` | 정기 실행 — 예: `/loop 5m /verify` 로 5분마다 검증 |
+| `/run` | 앱을 실행해 변경 결과를 사람 손으로 확인 (UI 동작은 이 경로만 검증 가능 — verifier 는 빌드/테스트까지) |
+| `/loop <interval> <command>` | 정기 실행 — 예: `/loop 5m /run` 으로 5분마다 재실행 |
 | `/status` | 누적 토큰/비용, 계정 정보 |
 | `/init` | CLAUDE.md 자동 생성 — KoEnVue 는 이미 있어 불필요 |
 | `/review` | PR 리뷰 — KoEnVue 는 main 직커밋이라 무관 |
@@ -334,7 +334,7 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 - **statusLine 하드코딩 폴백**: `model`/`effort` 는 statusLine payload(`payload.effort.level`)가 오면 그 값을 쓰되, **payload 미수신 시 하드코딩 폴백이라 런타임 진실이 아님** — model 은 `'opus'` 고정, effort 는 `$env:CLAUDE_CODE_EFFORT_LEVEL` 반영 후 없으면 `'high'`(재구성 후 env 는 미설정이 정상이라 실질 폴백은 `high`; model 은 항상 하드코딩 폴백). statusLine 은 화면 갱신마다 호출돼 가장 빈번하므로 **git 호출을 축소**: branch 는 `.git/HEAD` 를 직접 Read(rev-parse 프로세스 제거 — `ref: refs/heads/X` 파싱, detached 면 짧은 SHA), dirty `*` 는 `git status --porcelain --untracked-files=no` 1회(untracked 제외로 체감 비용 절감, 변경 신호는 보존). settings.json 의 statusLine 에 `timeout: 5` 추가로 렌더 지연 시 조기 차단.
 - **PreCompact ↔ Stop 세션파일 동시 append 경합**: 두 hook 모두 `docs/sessions/YYYY-MM-DD.md` 끝에 `Add-Content` 로 블록을 붙임. 컴팩션과 턴 종료가 거의 동시에 발생하면 같은 파일 동시 쓰기로 블록이 섞이거나 누락될 가능성(append-only·저빈도라 실측 피해 미관측, OS 파일락 의존이라 §OS 감수 정책 대상).
 - **transcript JSONL 스키마 의존**: stop-record 의 세션 발췌는 transcript 내부 스키마(`type`/`message`/`content`)에 의존 — Claude Code 버전업 시 깨질 수 있음(§4 Stop 의 빈 발췌 마커가 조기 신호).
-- **verify 공통 환각 (적대적 검증의 사각)**: release-review·bug-hunt 의 적대적 검증은 **동일 model·동일 코드 재독** 기반이라, finder 가 코드를 잘못 읽어 생긴 **공통 환각**(예: 실제로 없는 레이스를 양쪽 다 "있다"고 봄)은 못 거른다 — 검증자도 같은 오독을 반복하기 때문. **빌드 게이트 같은 객관 신호**(컴파일/테스트 통과)가 이 사각을 일부 보완하지만, 동작 차원의 공통 환각은 사람 손(`/run`·`/verify`)이 최종 방어선.
+- **verify 공통 환각 (적대적 검증의 사각)**: release-review·bug-hunt 의 적대적 검증은 **동일 model·동일 코드 재독** 기반이라, finder 가 코드를 잘못 읽어 생긴 **공통 환각**(예: 실제로 없는 레이스를 양쪽 다 "있다"고 봄)은 못 거른다 — 검증자도 같은 오독을 반복하기 때문. **빌드 게이트 같은 객관 신호**(컴파일/테스트 통과)가 이 사각을 일부 보완하지만, 동작 차원의 공통 환각은 사람 손(`/run` + 실제 exe 실행)이 최종 방어선.
 - **워크플로우 결과 박제는 순수 메인세션 규율 — hook 안전망 없음**: §3 의 "결과 반환 즉시 git-tracked 파일로 박제"는 메인 세션의 규율일 뿐 hook 으로 강제·백업되지 않는다. 박제 **전에 컴팩션**이 일어나면 fan-out 으로 생성한 고비용 워크플로우 결과가 통째 휘발(전손) 가능 — PreCompact 의 연속성 컨텍스트는 git 스냅샷·세션 포인터만 담고 in-flight 워크플로우 산출은 못 살린다. 고비용 결과는 **받는 즉시** 박제(컴팩션 기다리지 말 것).
 - **메모리 slug 장비간 가정**: `Sync-Memory` 의 `Get-AutoMemoryDir` slug(`e--dev-KoEnVue`)는 **리포 절대경로 기반**이라, C: 미러가 E: 와 정합하려면 **모든 장비에서 리포 경로가 같아야** 한다(예: 어디서나 `E:\dev\KoEnVue`). 경로가 다르면 slug 가 달라져 각 장비의 C: auto-memory 는 서로 독립되고 — E:(git)만 공유 truth로 남는다(C:↔E: 미러는 장비별 로컬). 다른 경로의 새 장비를 쓸 땐 메모리는 git pull 로만 받고 C: 미러는 그 장비 로컬임을 인지.
 
@@ -378,7 +378,7 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 | 항목 | 실태 (2026-07-22) |
 |------|------|
 | 실제 auto-memory 위치 | **C:** `C:\Users\<user>\.claude\projects\E--dev-KoEnVue\memory\` — 드라이브문자 대소문자는 Claude Code 버전에 따라 변동(2026-07 이전 `e--`, 이후 `E--`). Windows 는 대소문자 무시라 접근엔 무영향 |
-| E: `.claude/memory/` | git 추적 **truth** — 9파일(메모리 8 + `MEMORY.md` 인덱스, 2026-07-22 기준), C: 복원과 무관하게 보존 |
+| E: `.claude/memory/` | git 추적 **truth** — 10파일(메모리 9 + `MEMORY.md` 인덱스, 2026-07-27 기준), C: 복원과 무관하게 보존 |
 | `autoMemoryDirectory` 설정 | `E:/dev/KoEnVue/.claude/memory` (절대경로, 2026-07-22 변경 — AUDIT-2 #51 처리) — **효력 미검증**, 다음 세션에서 확인 |
 | 복원 영향 | ✅ `Sync-Memory` hook — 디렉토리째 소실돼도 생성 후 E:→C: 복구 (2026-07-22 수정) |
 
@@ -401,6 +401,7 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 - **`os-dependent-accept`** — 제어 불가 OS(Win32/셸) 동작 의존 버그는 무리한 수정보다 감수
 - **`tool-limit-verify-first`** — 제어 **가능한** 제약은 "못 한다" 단정 전 저비용 실험으로 재확인
 - **`safety-net-verify-in-failure-state`** — hook·복구 로직은 발동 조건(실패 상태)을 만들어 end-to-end 검증
+- **`normative-doc-blanket-claims`** — 규범 문서의 "전부/모두 X" 일괄 서술은 자기 예외와 모순되기 쉽고 hook·에이전트 사본으로 전파 → 고칠 때 사본 전수 grep
 - **`verify-load-bearing-claims`** — 권고를 떠받치는 정량 주장(서브에이전트 실측·코드 주석)은 메인이 조건 바꿔 재현 (2026-07-22 추가)
 - **추가 메모리** — 새 결정/규칙을 Claude 가 자동 또는 사용자가 명시적으로 저장
 

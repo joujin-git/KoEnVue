@@ -4,6 +4,8 @@ argument-hint: [작업 설명]
 allowed-tools: Bash, Read, Glob, Grep
 ---
 
+> **주의** — 아래 `!` 백틱 셸 명령이 실행 결과가 아니라 명령 문자열 그대로 보이면 자동 실행되지 않은 것입니다(Skill 도구 호출 경로에서 관측). 그때는 **직접 실행한 뒤** 답하세요 — 추측으로 상태를 보고하지 말 것.
+
 다음 작업의 설계를 **planner 서브에이전트**에게 위임하세요:
 
 > $ARGUMENTS
@@ -12,7 +14,7 @@ allowed-tools: Bash, Read, Glob, Grep
 - 위 작업 설명
 - 현재 git 상태 (`!`git status --short``)
 - 현재 브랜치 (`!`git rev-parse --abbrev-ref HEAD``)
-- 이미 진행 중인 PR-XX 가 있다면 [docs/improvement-plan/INDEX.md](docs/improvement-plan/INDEX.md) 참조
+- 이미 진행 중인 PR-XX 가 있다면 [docs/improvement-plan/INDEX.md](../../../docs/improvement-plan/INDEX.md) 참조
 
 planner 가 반환한 계획을 받으면:
 1. 사용자에게 그대로 제시

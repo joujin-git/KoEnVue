@@ -3,6 +3,8 @@ description: 세션 마무리 — historian 서브에이전트로 docs/sessions/
 allowed-tools: Bash, Read, Edit, Write
 ---
 
+> **주의** — 아래 `!` 백틱 셸 명령이 실행 결과가 아니라 명령 문자열 그대로 보이면 자동 실행되지 않은 것입니다(Skill 도구 호출 경로에서 관측). 그때는 **직접 실행한 뒤** 답하세요 — 추측으로 상태를 보고하지 말 것.
+
 ## 현재 상태
 - 변경 요약: `!`git diff HEAD --stat``
 - 상태: `!`git status --short``
@@ -27,12 +29,13 @@ allowed-tools: Bash, Read, Edit, Write
 
 ## `docs/sessions/YYYY-MM-DD.md` 쓰기 단일 진실원 규약
 
-같은 파일을 hook + subagent + 메인 세션이 동시에 건드리면 race condition (`Add-Content` 가 file lock 비보장) 으로 데이터 손실 가능. 따라서:
+같은 파일을 hook + subagent + 메인 세션이 동시에 건드리면 race condition 으로 데이터 손실 가능. hook·subagent 경로는 `_common.ps1` 의 `Add-SessionBlock` 이 named mutex(`KoEnVue-session-md`)로 직렬화하므로, **남은 실질 위험은 mutex 밖에서 쓰는 메인 세션의 직접 Edit/Write 뿐**. 따라서:
 
 | 주체 | 허용된 작업 |
 |------|------------|
 | `stop-record.ps1` hook | `## [HH:MM] turn` 블록 append (이번 턴 transcript 발췌) |
-| `session-end.ps1` hook | `## [HH:MM] session-end` 블록 append (마무리) |
+| `pre-compact.ps1` hook | `## [YYYY-MM-DD HH:MM] compaction (trigger=…)` 블록 append |
+| `session-end.ps1` hook | `## [YYYY-MM-DD HH:MM] session-end (reason)` 블록 append (마무리) |
 | `historian` subagent | `## [HH:MM] 세션 정리` 블록 append |
 | **메인 세션** | **Read 만**. 직접 Edit/Write 금지 — 필요하면 historian 에 위임. |
 

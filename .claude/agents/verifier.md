@@ -28,15 +28,15 @@ dotnet publish -r win-x64 -c Release
 - 시간이 오래 걸림 (~1~3분) — 완료 대기
 - 실패 시 첫 3개 에러 캡처
 - 성공 시 산출물 위치 확인: `bin/Release/net10.0-windows/win-x64/publish/KoEnVue.exe`
-- 크기 보고: `(Get-Item ...exe).Length` 또는 `ls -la`
+- 크기 보고: `stat -c%s <exe>` 또는 `ls -la` (이 에이전트의 셸은 Bash 뿐 — PowerShell 도구 없음. 경로는 항상 슬래시로, 백슬래시는 Bash 가 이스케이프로 먹는다)
 - **이 단계는 절대 생략 금지** — 메인 세션이 "debug 빌드만 됐어요" 라고 해도 release publish 까지 실행
 
 ### 3. 단위 테스트 (있으면)
 ```bash
-dotnet test tests\KoEnVue.Tests\KoEnVue.Tests.csproj
+dotnet test tests/KoEnVue.Tests/KoEnVue.Tests.csproj
 ```
 - **csproj 명시 필수** — 루트에서 bare `dotnet test` 는 메인 csproj 를 잡아 "0개 실행·exit 0" false-pass (CLAUDE.md 규칙). 절대 bare `dotnet test` 쓰지 말 것
-- `tests\KoEnVue.Tests\KoEnVue.Tests.csproj` 가 있을 때만
+- `tests/KoEnVue.Tests/KoEnVue.Tests.csproj` 가 있을 때만
 - xUnit 사용 (P1 예외 — dev-only)
 - 실패 시 첫 3개 케이스 보고
 
@@ -53,7 +53,7 @@ sha256sum bin/Release/net10.0-windows/win-x64/publish/KoEnVue.exe
 | 단계 | 결과 |
 |------|------|
 | dotnet build | ✅ / ❌ |
-| dotnet publish (Release) | ✅ / ❌ — 4.7 MB |
+| dotnet publish (Release) | ✅ / ❌ — `<실측 크기>` (고정값 쓰지 말고 실제 측정값 보고) |
 | dotnet test | ✅ N/N 통과 / ❌ X/N 실패 / (해당없음) |
 
 ### 산출물

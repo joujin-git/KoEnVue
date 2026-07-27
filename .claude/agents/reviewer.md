@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: KoEnVue 코드 변경 후 품질 게이트. P1–P6 invariant grep 자동 실행, [DllImport] 금지 확인, 중복 구현/매직넘버/문단어 철자 검사, silent catch 정책 점검. 코드 수정 후 commit 전, 또는 PR 생성 전 호출.
+description: KoEnVue 코드 변경 후 품질 게이트. P1–P6 invariant grep 자동 실행, [DllImport] 금지 확인, 중복 구현/매직넘버/문자열 비교 검사, silent catch 정책 점검. 코드 수정 후 commit 전, 또는 PR 생성 전 호출.
 tools: Read, Glob, Grep, Bash
 model: inherit
 ---
@@ -20,7 +20,7 @@ model: inherit
 1. `Read` 도구로 [docs/conventions.md](../../docs/conventions.md) 를 새로 읽기 — 기억/캐시 의존 금지.
 2. **검증 명령 전수 추출** — 두 방법 병행:
 
-   **방법 A (1차, 자동 — 누락 0 보장)**: 본 파일에서 `git grep` 토큰이 포함된 **모든 라인**을 추출 — line 시작(코드 블록 안), 본문 인라인 백틱 안(` `git grep ...` `), 우측 주석/기대값 모두. `Grep` 도구 또는 `Select-String -Pattern 'git grep'` 로 한 번에. 각 라인의 우측 주석(`# ...`) 또는 행 끝의 기대값(`→ 0`, `→ 1`, `0 매치`, `must return 0` 등)을 함께 보존. 새 invariant 가 conventions.md 에 추가돼도 자동 흡수.
+   **방법 A (1차, 자동 — 누락 0 보장)**: 본 파일에서 `git grep` 토큰이 포함된 **모든 라인**을 추출 — line 시작(코드 블록 안), 본문 인라인 백틱 안(` `git grep ...` `), 우측 주석/기대값 모두. `Grep` 도구로 한 번에 (이 에이전트의 셸은 Bash 뿐 — PowerShell 도구·`Select-String` 없음). 각 라인의 우측 주석(`# ...`) 또는 행 끝의 기대값(`→ 0`, `→ 1`, `0 매치`, `must return 0` 등)을 함께 보존. 새 invariant 가 conventions.md 에 추가돼도 자동 흡수.
 
    **방법 B (2차, 현재 알려진 7 위치 cross-check — drift 감지용)**:
    - 헤더 **`#### P4 sub-rule — 수치/색상 디폴트는 DefaultConfig 단일 진실원 (PR-05)`** 본문 bullet 의 인라인 `git grep` — PR-17 numeric init 가드 (`App/Models/AppConfig.cs` → 0 매치)

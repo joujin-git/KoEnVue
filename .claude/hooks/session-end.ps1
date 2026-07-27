@@ -14,7 +14,8 @@ $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm'
 $dirtyBefore = Test-DirtyTree
 
 if ($dirtyBefore) {
-    # 이번 세션의 실 커밋들 (wip 전 시점) 수집
+    # 최근 10분 커밋 (wip 전 시점) — 세션 길이를 알 수 없어 고정 창을 쓰는 근사치다.
+    # 10분 넘게 이어진 세션은 그 앞 커밋이 목록에서 빠지므로 아래 제목도 '최근 10분'으로 표기.
     $recentCommits = @()
     Push-Location $root
     try {
@@ -28,7 +29,7 @@ if ($dirtyBefore) {
     $block += "## [$stamp] session-end ($reason)"
     $block += ''
     if ($recentCommits.Count -gt 0) {
-        $block += '**이 세션의 커밋:**'
+        $block += '**최근 10분 커밋 (이 세션 추정 — 더 긴 세션은 앞 커밋이 빠질 수 있음):**'
         foreach ($c in $recentCommits) { $block += "- $c" }
         $block += "- (방금 자동 wip 커밋 — 이 마무리 블록 포함)"
         $block += ''

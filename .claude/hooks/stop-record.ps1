@@ -1,5 +1,7 @@
 . (Join-Path $PSScriptRoot 'lib\_common.ps1')
 
+# FallbackContext '' = 폴백 의도적 비활성 (빈 문자열은 falsy 라 _common.ps1 의 폴백 분기를
+# 타지 않는다). Stop 은 복구할 연속성 컨텍스트가 없어 실패 시 조용히 넘기는 게 맞다.
 Invoke-HookSafely -EventName 'Stop' -FallbackContext '' {
 
 # Stop hook — 턴 끝 1회. 구조: (1) 마지막 응답 발췌 (2) git status 1회 (3) doc-sync 리마인더
