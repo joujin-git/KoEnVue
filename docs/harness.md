@@ -103,7 +103,7 @@ docs/
 | **historian** | 세션 정리 — `/wrap-up` 또는 SessionEnd 후속 | Read, Write, Edit, Bash |
 | **verifier** | release 전 / 큰 변경 후 — `dotnet build`/`publish`/`test` (release-review 의 Build phase 노드로도 호출) | Bash, Read, Glob, Grep |
 
-전체 정의는 [.claude/agents/*.md](../.claude/agents/) 참조. **invariant grep 단일 진실원**: reviewer 는 grep 명령을 자체 보유하지 않고 [docs/conventions.md](conventions.md) 를 매 호출마다 새로 Read 해 전수 추출 (방법 A) — 현재 알려진 5 위치 (§P6 verification invariants, §P6 Additional sub-rule, §Silent catch §8 Core↔Logger, §Silent catch §9 Debug "failed", §AOT Verification). 자세한 추출 규칙은 [.claude/agents/reviewer.md §0](../.claude/agents/reviewer.md) 참조 — drift 방지.
+전체 정의는 [.claude/agents/*.md](../.claude/agents/) 참조. **invariant grep 단일 진실원**: reviewer 는 grep 명령을 자체 보유하지 않고 [docs/conventions.md](conventions.md) 를 매 호출마다 새로 Read 해 전수 추출 (방법 A) — 현재 알려진 7 위치 (§P4 sub-rule 의 PR-17 numeric init 가드, 그 형제 비-numeric 리터럴 가드, §P6 verification invariants, §P6 Additional sub-rule, §Silent catch §8 Core↔Logger, §Silent catch §9 Debug "failed", §AOT Verification). **기대값은 각 grep 우측 `#` 주석이 단일 진실원** — 주석이 없으면 0 매치, 있으면 그 값(1+/3/4 등)이며 "전부 0" 이 아니다. 자세한 추출 규칙은 [.claude/agents/reviewer.md §0](../.claude/agents/reviewer.md) 참조 — drift 방지.
 
 ### ultracode — 멀티에이전트 워크플로우 (큰 작업만 수동)
 
