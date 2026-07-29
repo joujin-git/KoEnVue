@@ -276,6 +276,14 @@ internal static partial class DefaultConfig
     public const int    MinForceTopmostMs        = 0;
     public const int    MaxForceTopmostMs        = 60000;
 
+    // === 트레이 좌클릭 일괄 숨김 — 복원 스냅샷 ===
+    // 좌클릭으로 "보이는 것 모두 숨김" 에 들어갈 때 그 시점의 가시 상태를 기록해 두고, 다음
+    // 좌클릭에서 이 스냅샷대로만 되살린다(원래 꺼둬 있던 것은 계속 꺼둔 채로). 디폴트가 둘 다
+    // true 인 이유 — 스냅샷이 아직 없는 상태(최초 실행·사용자가 config 를 직접 편집)에서 복원
+    // 좌클릭이 아무것도 안 하는 먹통이 되지 않도록, 기록이 없으면 둘 다 되살리는 쪽을 택한다.
+    public const bool   TrayHideRestoreBadge       = true;
+    public const bool   TrayHideRestoreCursor      = true;
+
     // === 커서 헤일로 (D7 — Settings.Validate clamp + SettingsDialog field range 단일 진실원) ===
     // AppConfig 의 init 디폴트가 이 const 를 참조하므로 한 곳에서 값을 변경하면 양쪽이 자동 동기화.
 
