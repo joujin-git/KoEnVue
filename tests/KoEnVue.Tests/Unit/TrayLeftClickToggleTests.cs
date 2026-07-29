@@ -101,36 +101,50 @@ public class TrayLeftClickToggleTests
     }
 
     // ================================================================
-    // 취소선 — 윗줄/아랫줄 중 무엇을 채우는가 (네 단계가 모두 달라야 한다)
+    // 아이콘 도형 — 배지/헤일로 중 무엇을 그리는가 (네 단계가 모두 달라야 한다)
     // ================================================================
 
     [Theory]
-    [InlineData(0, false, false)]  // Both       → 선 없음
-    [InlineData(1, true, false)]   // BadgeOnly  → 윗줄
-    [InlineData(2, false, true)]   // CursorOnly → 아랫줄
-    [InlineData(3, true, true)]    // None       → 둘 다
-    public void GetStrikeLines_MatchesStage(int stage, bool expectedUpper, bool expectedLower)
+    [InlineData(0, true, true)]     // Both       → 링 + 배지
+    [InlineData(1, true, false)]    // BadgeOnly  → 배지만
+    [InlineData(2, false, true)]    // CursorOnly → 링만
+    [InlineData(3, false, false)]   // None       → 배경색만
+    public void GetShapes_MatchesStage(int stage, bool expectedBadge, bool expectedHalo)
     {
-        (bool upper, bool lower) = Tray.GetStrikeLines((IndicatorVisibility)stage);
+        (bool badge, bool halo) = Tray.GetShapes((IndicatorVisibility)stage);
 
-        Assert.Equal(expectedUpper, upper);
-        Assert.Equal(expectedLower, lower);
+        Assert.Equal(expectedBadge, badge);
+        Assert.Equal(expectedHalo, halo);
     }
 
-    /// <summary>순환하는 동안 취소선 모양이 네 단계 모두 서로 다르다.</summary>
+    /// <summary>그리는 도형이 곧 지금 보이는 요소다 — 아이콘과 실제 표시가 어긋나지 않는다.</summary>
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public void GetShapes_MirrorsActualVisibility(bool badgeVisible, bool cursorVisible)
+    {
+        (bool badge, bool halo) = Tray.GetShapes(Tray.GetVisibility(Make(badgeVisible, cursorVisible)));
+
+        Assert.Equal(badgeVisible, badge);
+        Assert.Equal(cursorVisible, halo);
+    }
+
+    /// <summary>순환하는 동안 아이콘 모양이 네 단계 모두 서로 다르다.</summary>
     [Fact]
-    public void GetStrikeLines_EveryStageLooksDifferent()
+    public void GetShapes_EveryStageLooksDifferent()
     {
         AppConfig current = Make(badgeVisible: true, cursorVisible: true);
-        var shapes = new List<(bool Upper, bool Lower)>();
+        var shapes = new List<(bool Badge, bool Halo)>();
 
         for (int i = 0; i < 4; i++)
         {
-            shapes.Add(Tray.GetStrikeLines(Tray.GetVisibility(current)));
+            shapes.Add(Tray.GetShapes(Tray.GetVisibility(current)));
             current = Tray.ComputeLeftClickCycle(current);
         }
 
-        Assert.Equal([(false, false), (true, false), (false, true), (true, true)], shapes);
+        Assert.Equal([(true, true), (true, false), (false, true), (false, false)], shapes);
         Assert.Equal(4, shapes.Distinct().Count());
     }
 }

@@ -59,13 +59,13 @@ internal static partial class Tray
     }
 
     /// <summary>
-    /// 각 단계에서 트레이 아이콘에 그릴 취소선 — 윗줄/아랫줄 중 무엇을 채울지.
-    /// 두 줄 자리는 고정이고 단계에 따라 채우는 줄만 달라지므로, 네 단계가 모두 시각적으로
-    /// 구별된다: 선 없음 → 윗줄 → 아랫줄 → 둘 다.
+    /// 각 단계에서 트레이 아이콘에 그릴 도형 — 배지(안쪽 사각형)와 헤일로(바깥 링) 중 무엇을
+    /// 그릴지. 숨긴 요소는 아예 그리지 않으므로 네 단계가 모양으로 구별된다:
+    /// 링+배지 → 배지 → 링 → (아무것도 없음, 배경색만).
     /// </summary>
-    internal static (bool Upper, bool Lower) GetStrikeLines(IndicatorVisibility visibility) =>
+    internal static (bool Badge, bool Halo) GetShapes(IndicatorVisibility visibility) =>
     (
-        Upper: visibility is IndicatorVisibility.BadgeOnly or IndicatorVisibility.None,
-        Lower: visibility is IndicatorVisibility.CursorOnly or IndicatorVisibility.None
+        Badge: visibility is IndicatorVisibility.Both or IndicatorVisibility.BadgeOnly,
+        Halo: visibility is IndicatorVisibility.Both or IndicatorVisibility.CursorOnly
     );
 }

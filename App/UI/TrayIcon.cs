@@ -11,37 +11,25 @@ namespace KoEnVue.App.UI;
 
 /// <summary>
 /// GDI 기반 트레이 아이콘 동적 생성.
-/// 캐럿+점(caret_dot) 디자인 — 텍스트 미표시, 배경색으로 IME 상태 구분.
+/// 헤일로 링 + 배지 디자인 — 텍스트 미표시, 배경색으로 IME 상태 구분.
 /// </summary>
 internal static class TrayIcon
 {
-    // 캐럿+점 도형 비율/최소크기 (P3: 매직 넘버 금지)
-    private const int CaretWidthRatio = 8;     // 캐럿 너비 = iconW / 8
-    private const int CaretMinWidth = 2;       // 캐럿 최소 너비 (px)
-    private const int CaretHeightNum = 5;      // 캐럿 높이 = iconH * 5/8
-    private const int CaretHeightDen = 8;
-    private const int CaretOffsetRatio = 8;    // 캐럿 X 오프셋 = iconW / 8
-    private const int DotSizeRatio = 4;        // 점 크기 = iconW / 4
-    private const int DotMinSize = 3;          // 점 최소 크기 (px)
-    private const int DotGapMinPx = 1;         // 점-캐럿 최소 간격 (px)
-    private const int CaretYOffsetPx = 1;      // 시각 보정: 캐럿+점이 위로 떠 보이는 현상을 1px 아래로 보정
-
-    // 취소선 — 좌클릭 순환 4단계를 **선의 개수 + 위치**로 표현한다 (캐럿+점 위에 Fg 색 중첩).
-    //   둘 다 보임   → 선 없음
-    //   배지만 보임  → 윗줄 1개
-    //   헤일로만 보임 → 아랫줄 1개
-    //   모두 숨김    → 윗줄 + 아랫줄
-    // 단일선을 위/아래로 갈라 놓으면 네 단계가 전부 시각적으로 구별된다. 16px 에서 선 길이
-    // (짧은 선/긴 선)로 구분하는 방식은 판별이 어려워 개수·위치 축을 택했다.
-    //
-    // 두께는 단일/이중 구분 없이 **동일**하고, 단일선도 이중선 블록의 윗줄·아랫줄 좌표를
-    // 그대로 쓴다 — 단계가 바뀌어도 선이 같은 자리에 머물러 위치 비교가 쉬워진다.
-    // 16px → 두께 3px·간격 2px·블록 8px, 20px → 4px·2px·10px (상하 여백 확보).
-    private const int StrikeThicknessRatio = 5;  // 두께 = iconH / 5
-    private const int StrikeThicknessMinPx = 3;
-    private const int StrikeGapRatio = 8;        // 두 줄 사이 간격 = iconH / 8
-    private const int StrikeGapMinPx = 2;
-    private const int StrikeEdgeInsetPx = 1;     // 좌우 엣지 1px 여백
+    // 도형 = 커서 헤일로(바깥 링) + 플로팅 배지(안쪽 가로 사각형) — 제품의 두 표시 요소를 그대로
+    // 은유한다. 좌클릭 순환 4단계는 **보이는 요소만 그리는 것**으로 표현한다:
+    //   둘 다 보임 → 링 + 배지 / 배지만 → 배지 / 헤일로만 → 링 / 모두 숨김 → 배경색만
+    // 취소선으로 덧그리지 않는 이유 — 도형이 넓어 같은 Fg 색 줄은 묻히고, 배경색으로 파내면
+    // 도형이 조각나 읽기 어렵다. "있고 없음" 이 16px 에서 가장 빨리 읽힌다.
+    // (P3: 매직 넘버 금지 — 모든 치수는 아이콘 크기 대비 비율 + 최소 픽셀)
+    // 치수는 16px 실측으로 정했다 — 링을 아이콘 가장자리까지 키우면(inset 0) 사각형 모서리에서
+    // 원이 평평하게 잘리고, 배지가 iconW*3/8 이면 링 안쪽에 닿아 답답해진다. 아래 비율이 링을
+    // 온전히 유지하면서 배지 둘레에 여백이 남는 조합.
+    private const int HaloEdgeInsetPx = 1;      // 링 바깥 반지름 = min(W,H)/2 - 1
+    private const int HaloThicknessRatio = 8;   // 링 두께 = min(W,H) / 8
+    private const int HaloThicknessMinPx = 2;
+    private const int BadgeWidthRatio = 3;      // 배지 폭 = iconW / 3
+    private const int BadgeHeightRatio = 5;     // 배지 높이 = iconH / 5
+    private const int BadgeMinHeightPx = 3;
 
     /// <summary>
     /// ImeState별 배경색으로 캐럿+점 아이콘을 생성한다.
@@ -107,12 +95,9 @@ internal static class TrayIcon
             var rect = new RECT { Left = 0, Top = 0, Right = iconW, Bottom = iconH };
             User32.FillRect(memDC, ref rect, hBrush);
 
-            // 6. 캐럿+점 도형 (Fg 색상)
-            DrawCaretDot(memDC, iconW, iconH, fgColor);
-
-            // 6a. 좌클릭 순환 단계를 취소선으로 표현 (Fg 색상, 볼드) — 단계 판독은
-            //     Tray.GetVisibility 단일 진실원. Both 단계면 DrawStrikeThrough 가 즉시 반환.
-            DrawStrikeThrough(memDC, iconW, iconH, fgColor, Tray.GetVisibility(config));
+            // 6. 헤일로 링 + 배지 도형 — 좌클릭 순환 단계에서 **보이는 요소만** 그린다.
+            //    단계 판독은 Tray.GetVisibility, 요소 선택은 Tray.GetShapes 단일 진실원.
+            DrawBadgeHalo(memDC, iconW, iconH, fgColor, bgColor, Tray.GetVisibility(config));
 
             // 이전 비트맵 복원 (SelectObject 전 필수)
             Gdi32.SelectObject(memDC, hOldBitmap);
@@ -187,54 +172,40 @@ internal static class TrayIcon
     }
 
     /// <summary>
-    /// 캐럿(세로바) + 점 도형을 Fg 색으로 그린다.
-    /// 아이콘 중앙 부근에 배치.
+    /// 커서 헤일로(바깥 링) + 플로팅 배지(안쪽 가로 사각형)를 그린다 — 좌클릭 순환 단계에서
+    /// <b>보이는 요소만</b> 그리므로 네 단계가 도형 모양으로 구별된다.
+    /// 링은 Fg 원을 채운 뒤 안쪽을 <paramref name="bgColor"/> 원으로 파내 만든다.
+    /// 모두 숨김 단계에서는 아무 도형도 그리지 않아 배경색만 남는다 — IME 상태는 그 배경색으로
+    /// 계속 읽히므로 "앱은 살아 있고 표시만 전부 껐다" 가 드러난다.
     /// </summary>
-    private static void DrawCaretDot(IntPtr hdc, int iconW, int iconH, uint fgColor)
+    private static void DrawBadgeHalo(IntPtr hdc, int iconW, int iconH, uint fgColor, uint bgColor,
+                                      IndicatorVisibility visibility)
     {
-        using var _ = new SolidFillScope(hdc, fgColor);
+        (bool drawBadge, bool drawHalo) = Tray.GetShapes(visibility);
 
-        // 캐럿 (세로바): 아이콘 중앙 왼쪽에 배치
-        int caretW = Math.Max(iconW / CaretWidthRatio, CaretMinWidth);
-        int caretH = iconH * CaretHeightNum / CaretHeightDen;
-        int caretX = (iconW - caretW) / 2 - iconW / CaretOffsetRatio;
-        int caretY = (iconH - caretH + 1) / 2 + CaretYOffsetPx;
-        Gdi32.Rectangle(hdc, caretX, caretY, caretX + caretW, caretY + caretH);
-
-        // 점 (dot): 캐럿 오른쪽 하단에 작은 원
-        int dotSize = Math.Max(iconW / DotSizeRatio, DotMinSize);
-        int dotX = caretX + caretW + Math.Max(iconW / CaretOffsetRatio, DotGapMinPx);
-        int dotY = caretY + caretH - dotSize;
-        Gdi32.Ellipse(hdc, dotX, dotY, dotX + dotSize, dotY + dotSize);
-    }
-
-    /// <summary>
-    /// 좌클릭 순환 단계에 맞춰 캐럿+점 위에 Fg 색 수평 취소선을 중첩한다.
-    /// 윗줄·아랫줄 두 자리를 먼저 잡고(두 줄 + 간격 블록을 세로 중앙 정렬), 단계에 따라 그중
-    /// 필요한 줄만 그린다 — 배지만 보이면 윗줄, 헤일로만 보이면 아랫줄, 모두 숨김이면 둘 다.
-    /// 둘 다 보이는 단계에서는 아무것도 그리지 않는다.
-    /// </summary>
-    private static void DrawStrikeThrough(IntPtr hdc, int iconW, int iconH, uint fgColor,
-                                          IndicatorVisibility visibility)
-    {
-        (bool drawUpper, bool drawLower) = Tray.GetStrikeLines(visibility);
-        if (!drawUpper && !drawLower) return;
-
-        using var _ = new SolidFillScope(hdc, fgColor);
-
-        int left = StrikeEdgeInsetPx;
-        int right = iconW - StrikeEdgeInsetPx;
-        int thick = Math.Max(iconH / StrikeThicknessRatio, StrikeThicknessMinPx);
-        int gap = Math.Max(iconH / StrikeGapRatio, StrikeGapMinPx);
-        int blockH = thick * 2 + gap;
-        int top = iconH / 2 - blockH / 2;
-
-        if (drawUpper)
-            Gdi32.Rectangle(hdc, left, top, right, top + thick);
-        if (drawLower)
+        if (drawHalo)
         {
-            int lowerY = top + thick + gap;
-            Gdi32.Rectangle(hdc, left, lowerY, right, lowerY + thick);
+            int side = Math.Min(iconW, iconH);
+            int cx = iconW / 2, cy = iconH / 2;
+            int rOuter = side / 2 - HaloEdgeInsetPx;
+            int thick = Math.Max(side / HaloThicknessRatio, HaloThicknessMinPx);
+            int rInner = Math.Max(rOuter - thick, 1);
+
+            using (var outer = new SolidFillScope(hdc, fgColor))
+                Gdi32.Ellipse(hdc, cx - rOuter, cy - rOuter, cx + rOuter, cy + rOuter);
+            using (var inner = new SolidFillScope(hdc, bgColor))
+                Gdi32.Ellipse(hdc, cx - rInner, cy - rInner, cx + rInner, cy + rInner);
+        }
+
+        if (drawBadge)
+        {
+            int w = iconW / BadgeWidthRatio;
+            int h = Math.Max(iconH / BadgeHeightRatio, BadgeMinHeightPx);
+            int x = (iconW - w) / 2;
+            int y = (iconH - h) / 2;
+
+            using var _ = new SolidFillScope(hdc, fgColor);
+            Gdi32.Rectangle(hdc, x, y, x + w, y + h);
         }
     }
 }

@@ -943,7 +943,7 @@ internal static partial class Program
         if (wasCursorEnabled != _config.CursorIndicatorEnabled)
             ApplyCursorConfigChange();
 
-        // 트레이 아이콘 재생성 — 취소선 표시/제거 반영
+        // 트레이 아이콘 재생성 — 현재 단계의 도형(링/배지) 반영
         if (_config.TrayEnabled)
             Tray.UpdateState(_lastImeState, _config);
 
