@@ -118,7 +118,7 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — **10
 | `tray_tooltip` | bool | `true` | — | 트레이 아이콘 호버 시 툴팁 표시 |
 | `tray_click_action` | enum | `"toggle"` | `toggle` / `settings` | 트레이 좌클릭 동작. `toggle` = **플로팅 배지 + 커서 헤일로 일괄 숨김/복원**(보이는 것을 함께 숨기고, 다음 클릭에서 숨기기 직전에 보이던 것만 되살림), `settings` = 설정 파일 열기 |
 | `tray_quick_opacity_presets` | double[] | `[0.95, 0.85, 0.6]` | 0.1 ~ 1.0 | 트레이 메뉴 "빠른 투명도" 서브메뉴에 노출할 프리셋 3개. 기본값은 `DefaultConfig.TrayQuickOpacity1/2/3` const + `TrayQuickOpacityPresets` property 단일 진실원에서 derive (감사 High ④, 2026-06-01 — 값 불변) |
-| `user_hidden` | bool | `false` | — | 사용자가 명시 숨긴 상태. `true` 면 트레이 아이콘에 취소선 + 감지 이벤트로 인디 복원 차단. 재기동에도 유지 |
+| `user_hidden` | bool | `false` | — | 사용자가 명시 숨긴 상태. `true` 면 트레이 아이콘에 취소선(커서 헤일로도 숨김이면 이중선) + 감지 이벤트로 인디 복원 차단. 재기동에도 유지 |
 | `tray_hide_restore_badge` | bool | `true` | — | **내부 상태(직접 편집 불필요)**. 좌클릭 일괄 숨김에 들어갈 때 "배지가 보이고 있었는가" 를 기록해 두는 복원 스냅샷. 다음 좌클릭이 이 값을 보고 배지를 되살릴지 정한다. 설정 창에는 노출하지 않음 |
 | `tray_hide_restore_cursor` | bool | `true` | — | **내부 상태(직접 편집 불필요)**. 위와 같으며 커서 헤일로용. 원래 헤일로를 꺼둔 사용자가 좌클릭을 왕복해도 헤일로가 멋대로 켜지지 않게 한다. 둘 다 `false` 로 직접 편집하면 복원 좌클릭이 먹통이 되므로, 그 경우엔 안전하게 둘 다 되살린다 |
 

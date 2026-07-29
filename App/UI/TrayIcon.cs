@@ -26,11 +26,21 @@ internal static class TrayIcon
     private const int DotGapMinPx = 1;         // 점-캐럿 최소 간격 (px)
     private const int CaretYOffsetPx = 1;      // 시각 보정: 캐럿+점이 위로 떠 보이는 현상을 1px 아래로 보정
 
-    // 단일 취소선 (UserHidden=true 시 캐럿+점 위에 중첩). 아이콘 세로 중앙 수평 1줄, 굵게.
-    // 16px 에서 4px, 20px 에서 5px — 캐럿+점 도형을 가로지르면서도 형체는 읽히는 두께.
+    // 취소선 — 숨김 "범위" 를 선 개수로 표현한다 (캐럿+점 위에 Fg 색으로 중첩).
+    //   단일선 = 플로팅 배지와 커서 헤일로 중 **하나만** 숨김
+    //   이중선 = **둘 다** 숨김 (트레이 좌클릭 일괄 숨김의 결과)
+    // 16px 에서 길이(짧은 선/긴 선)로 구분하면 판별이 어려워 개수 축을 택했다.
+    // 단일선: 16px 에서 4px, 20px 에서 5px — 도형을 가로지르면서도 형체는 읽히는 두께.
     private const int StrikeThicknessRatio = 4;  // 두께 = iconH / 4
     private const int StrikeThicknessMinPx = 3;
     private const int StrikeEdgeInsetPx = 1;     // 좌우 엣지 1px 여백
+
+    // 이중선: 두 선 + 간격이 아이콘 높이에 들어가야 하므로 단일선보다 얇게 잡는다.
+    // 16px → 3px·간격 2px·총 8px, 20px → 3px·간격 2px·총 8px (상하 여백 확보).
+    private const int DoubleStrikeThicknessRatio = 6;  // 각 선 두께 = iconH / 6
+    private const int DoubleStrikeThicknessMinPx = 2;
+    private const int DoubleStrikeGapRatio = 8;        // 두 선 사이 간격 = iconH / 8
+    private const int DoubleStrikeGapMinPx = 2;
 
     /// <summary>
     /// ImeState별 배경색으로 캐럿+점 아이콘을 생성한다.
@@ -99,9 +109,12 @@ internal static class TrayIcon
             // 6. 캐럿+점 도형 (Fg 색상)
             DrawCaretDot(memDC, iconW, iconH, fgColor);
 
-            // 6a. 사용자 숨김 상태면 단일 취소선 중첩 (Fg 색상, 볼드)
-            if (config.UserHidden)
-                DrawStrikeThrough(memDC, iconW, iconH, fgColor);
+            // 6a. 숨김 상태면 취소선 중첩 (Fg 색상, 볼드) — 선 개수로 숨김 범위를 표현.
+            //     하나만 숨김 = 단일선, 배지·헤일로 둘 다 숨김 = 이중선.
+            bool badgeHidden = config.UserHidden;
+            bool cursorHidden = !config.CursorIndicatorEnabled;
+            if (badgeHidden || cursorHidden)
+                DrawStrikeThrough(memDC, iconW, iconH, fgColor, doubleLine: badgeHidden && cursorHidden);
 
             // 이전 비트맵 복원 (SelectObject 전 필수)
             Gdi32.SelectObject(memDC, hOldBitmap);
@@ -198,20 +211,33 @@ internal static class TrayIcon
     }
 
     /// <summary>
-    /// UserHidden=true 시 캐럿+점 위에 Fg 색 단일 수평 취소선을 중첩한다.
-    /// 아이콘 세로 중앙에 두껍게 1줄 — "숨김" 상태 시인성 확보.
+    /// 숨김 상태일 때 캐럿+점 위에 Fg 색 수평 취소선을 중첩한다 — 아이콘 세로 중앙 정렬.
+    /// <paramref name="doubleLine"/> 이면 두 줄(배지·헤일로 **둘 다** 숨김), 아니면 한 줄
+    /// (**하나만** 숨김). 선 개수가 곧 숨김 범위다.
     /// </summary>
-    private static void DrawStrikeThrough(IntPtr hdc, int iconW, int iconH, uint fgColor)
+    private static void DrawStrikeThrough(IntPtr hdc, int iconW, int iconH, uint fgColor, bool doubleLine)
     {
         using var _ = new SolidFillScope(hdc, fgColor);
 
-        int thick = Math.Max(iconH / StrikeThicknessRatio, StrikeThicknessMinPx);
         int left = StrikeEdgeInsetPx;
         int right = iconW - StrikeEdgeInsetPx;
-
-        // 단일선 — Y 중심 = iconH / 2
         int centerY = iconH / 2;
-        int y = centerY - thick / 2;
-        Gdi32.Rectangle(hdc, left, y, right, y + thick);
+
+        if (!doubleLine)
+        {
+            int thick = Math.Max(iconH / StrikeThicknessRatio, StrikeThicknessMinPx);
+            int y = centerY - thick / 2;
+            Gdi32.Rectangle(hdc, left, y, right, y + thick);
+            return;
+        }
+
+        // 이중선 — 두 줄 + 간격을 하나의 블록으로 보고 그 블록을 세로 중앙에 맞춘다.
+        int lineThick = Math.Max(iconH / DoubleStrikeThicknessRatio, DoubleStrikeThicknessMinPx);
+        int gap = Math.Max(iconH / DoubleStrikeGapRatio, DoubleStrikeGapMinPx);
+        int blockH = lineThick * 2 + gap;
+        int top = centerY - blockH / 2;
+
+        Gdi32.Rectangle(hdc, left, top, right, top + lineThick);
+        Gdi32.Rectangle(hdc, left, top + lineThick + gap, right, top + blockH);
     }
 }
