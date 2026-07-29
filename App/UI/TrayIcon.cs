@@ -31,6 +31,23 @@ internal static class TrayIcon
     private const int BadgeHeightRatio = 5;     // 배지 높이 = iconH / 5
     private const int BadgeMinHeightPx = 3;
 
+    // 배경은 둥근 모서리 정사각형 — 앱 아이콘(koenvue.ico)과 같은 인상. 모서리 바깥은 투명.
+    private const double BackgroundCornerRatio = 0.22;  // 모서리 반지름 = min(W,H) * 0.22
+    private const double BadgeCornerRatio = 0.25;       // 배지 모서리 반지름 = 배지 높이 * 0.25 (살짝만)
+
+    // 링 바깥으로 번지는 후광 — "헤일로" 느낌을 내는 요소. 링에 붙은 쪽이 가장 진하고
+    // 바깥으로 갈수록 빠르게 옅어진다(거듭제곱 감쇠).
+    // **작은 아이콘에서는 생략한다** — 16px 에서 후광은 링 경계를 뿌옇게 흐려 오히려 선명도를
+    // 떨어뜨린다(실측). 해상도별로 디테일을 달리하는 것은 아이콘 디자인의 통상 관행이며,
+    // 앱 아이콘(koenvue.ico)도 같은 기준으로 32px 이상에만 후광을 넣는다.
+    private const int GlowMinIconSize = 32;             // 이 크기 미만이면 후광 생략
+    private const int GlowWidthRatio = 9;               // 후광 폭 = min(W,H) / 9
+    private const double GlowMaxAlpha = 0.65;
+    private const double GlowFalloff = 2.2;
+
+    private const int BytesPerPixel = 4;        // 32bpp BGRA
+    private const int AntiAliasSamples = 4;     // 경계 픽셀당 4x4 서브샘플
+
     /// <summary>
     /// ImeState별 배경색으로 캐럿+점 아이콘을 생성한다.
     /// 호출자가 반환된 SafeIconHandle의 수명을 관리한다.
@@ -67,7 +84,6 @@ internal static class TrayIcon
         IntPtr hBitmap = IntPtr.Zero;
         IntPtr hMask = IntPtr.Zero;
         IntPtr hOldBitmap = IntPtr.Zero;
-        IntPtr hBrush = IntPtr.Zero;
 
         try
         {
@@ -85,19 +101,21 @@ internal static class TrayIcon
                 biCompression = Win32Constants.BI_RGB,
             };
             hBitmap = Gdi32.CreateDIBSection(memDC, ref bmi, Win32Constants.DIB_RGB_COLORS,
-                out _, IntPtr.Zero, 0);
+                out IntPtr ppvBits, IntPtr.Zero, 0);
+            if (hBitmap == IntPtr.Zero || ppvBits == IntPtr.Zero)
+            {
+                Logger.Warning("Failed to create tray icon DIB section");
+                return new SafeIconHandle(IntPtr.Zero, ownsHandle: false);
+            }
 
             // 4. DIB를 DC에 선택
             hOldBitmap = Gdi32.SelectObject(memDC, hBitmap);
 
-            // 5. 배경색으로 전체 영역 채움
-            hBrush = Gdi32.CreateSolidBrush(bgColor);
-            var rect = new RECT { Left = 0, Top = 0, Right = iconW, Bottom = iconH };
-            User32.FillRect(memDC, ref rect, hBrush);
-
-            // 6. 헤일로 링 + 배지 도형 — 좌클릭 순환 단계에서 **보이는 요소만** 그린다.
-            //    단계 판독은 Tray.GetVisibility, 요소 선택은 Tray.GetShapes 단일 진실원.
-            DrawBadgeHalo(memDC, iconW, iconH, fgColor, bgColor, Tray.GetVisibility(config));
+            // 5~6. 배경 + 도형을 DIB 픽셀에 **직접** 쓴다. GDI 의 Ellipse 는 안티앨리어싱이
+            //      없어 16px 원 둘레가 계단처럼 거칠어진다 — 링 경계 픽셀만 서브샘플링으로
+            //      커버리지를 구해 배경↔전경을 보간한다.
+            //      단계 판독은 Tray.GetVisibility, 요소 선택은 Tray.GetShapes 단일 진실원.
+            PaintIcon(ppvBits, iconW, iconH, fgColor, bgColor, Tray.GetVisibility(config));
 
             // 이전 비트맵 복원 (SelectObject 전 필수)
             Gdi32.SelectObject(memDC, hOldBitmap);
@@ -129,8 +147,6 @@ internal static class TrayIcon
             // 9. 임시 GDI 리소스 정리
             if (hOldBitmap != IntPtr.Zero)
                 Gdi32.SelectObject(memDC, hOldBitmap);
-            if (hBrush != IntPtr.Zero)
-                Gdi32.DeleteObject(hBrush);
             if (hMask != IntPtr.Zero)
                 Gdi32.DeleteObject(hMask);
             if (hBitmap != IntPtr.Zero)
@@ -141,71 +157,165 @@ internal static class TrayIcon
     }
 
     /// <summary>
-    /// 단색 채우기 GDI 컨텍스트 — solid brush + NULL_PEN 을 선택하고, using 종료 시 원래
-    /// brush/pen 을 복원하고 brush 핸들을 해제한다. DrawCaretDot/DrawStrikeThrough 가 동일한
-    /// prologue/finally 보일러를 공유한다 (AUDIT DUP-12). NULL_PEN 은 stock object 라 복원만 하고
-    /// DeleteObject 하지 않으며, 정리 대상은 CreateSolidBrush 핸들뿐이다.
-    /// readonly ref struct — 스택 전용, 힙 할당 0 (NativeAOT 린 앱 부합 · 람다 클로저 회피).
+    /// 커서 헤일로(바깥 링) + 플로팅 배지(안쪽 가로 사각형)를 32bpp DIB 픽셀에 직접 그린다 —
+    /// 좌클릭 순환 단계에서 <b>보이는 요소만</b> 그리므로 네 단계가 도형 모양으로 구별된다.
+    /// 모두 숨김 단계에서는 배경색만 남고, IME 상태는 그 배경색으로 계속 읽힌다.
+    /// <para>
+    /// GDI 의 <c>Ellipse</c> 를 쓰지 않는 이유 — GDI 는 안티앨리어싱을 하지 않아 16px 원 둘레가
+    /// 계단처럼 거칠어진다. 링 경계에 걸친 픽셀만 <see cref="AntiAliasSamples"/>² 서브샘플로
+    /// 커버리지를 재어 배경↔전경을 보간하면 같은 크기에서도 둘레가 매끄럽다. 배지는 정수 좌표
+    /// 직사각형이라 경계가 픽셀에 딱 맞으므로 보간이 필요 없다.
+    /// </para>
     /// </summary>
-    private readonly ref struct SolidFillScope
+    /// <param name="bits">DIB 픽셀 버퍼 (32bpp BGRA, bottom-up).</param>
+    private static unsafe void PaintIcon(IntPtr bits, int iconW, int iconH, uint fgColor, uint bgColor,
+                                         IndicatorVisibility visibility)
     {
-        private readonly IntPtr _hdc;
-        private readonly IntPtr _hBrush;
-        private readonly IntPtr _hOldBrush;
-        private readonly IntPtr _hOldPen;
+        (bool drawBadge, bool drawHalo) = Tray.GetShapes(visibility);
 
-        public SolidFillScope(IntPtr hdc, uint fgColor)
-        {
-            _hdc = hdc;
-            _hBrush = Gdi32.CreateSolidBrush(fgColor);
-            IntPtr hNullPen = Gdi32.GetStockObject(Win32Constants.NULL_PEN);
-            _hOldBrush = Gdi32.SelectObject(hdc, _hBrush);
-            _hOldPen = Gdi32.SelectObject(hdc, hNullPen);
-        }
+        // COLORREF 는 0x00BBGGRR
+        byte bgR = (byte)(bgColor & 0xFF), bgG = (byte)((bgColor >> 8) & 0xFF), bgB = (byte)((bgColor >> 16) & 0xFF);
+        byte fgR = (byte)(fgColor & 0xFF), fgG = (byte)((fgColor >> 8) & 0xFF), fgB = (byte)((fgColor >> 16) & 0xFF);
 
-        public void Dispose()
+        int side = Math.Min(iconW, iconH);
+        double cx = iconW / 2.0, cy = iconH / 2.0;
+        double rOuter = side / 2.0 - HaloEdgeInsetPx;
+        double thick = Math.Max(side / (double)HaloThicknessRatio, HaloThicknessMinPx);
+        double rInner = Math.Max(rOuter - thick, 1.0);
+        double glowWidth = side / (double)GlowWidthRatio;
+        double corner = side * BackgroundCornerRatio;
+
+        double badgeW = iconW / (double)BadgeWidthRatio;
+        double badgeH = Math.Max(iconH / (double)BadgeHeightRatio, BadgeMinHeightPx);
+        double badgeX = (iconW - badgeW) / 2.0, badgeY = (iconH - badgeH) / 2.0;
+        double badgeRadius = badgeH * BadgeCornerRatio;
+
+        byte* buf = (byte*)bits;
+        int stride = iconW * BytesPerPixel;
+
+        for (int y = 0; y < iconH; y++)
         {
-            Gdi32.SelectObject(_hdc, _hOldPen);
-            Gdi32.SelectObject(_hdc, _hOldBrush);
-            Gdi32.DeleteObject(_hBrush);
+            byte* row = buf + (iconH - 1 - y) * stride;  // bottom-up DIB
+            for (int x = 0; x < iconW; x++)
+            {
+                byte* px = row + x * BytesPerPixel;
+
+                // 둥근 모서리 배경 — 바깥은 완전 투명
+                double bgCoverage = RoundedRectCoverage(x, y, 0, 0, iconW, iconH, corner);
+                if (bgCoverage <= 0.0)
+                {
+                    px[0] = px[1] = px[2] = px[3] = 0;
+                    continue;
+                }
+
+                double coverage = 0.0;
+                if (drawHalo)
+                {
+                    coverage = RingCoverage(x, y, cx, cy, rInner, rOuter);
+                    if (coverage < 1.0 && side >= GlowMinIconSize)
+                    {
+                        double glow = GlowIntensity(x, y, cx, cy, rOuter, glowWidth);
+                        if (glow > coverage) coverage = glow;
+                    }
+                }
+                if (drawBadge)
+                {
+                    double badge = RoundedRectCoverage(x, y, badgeX, badgeY,
+                                                       badgeX + badgeW, badgeY + badgeH, badgeRadius);
+                    if (badge > coverage) coverage = badge;
+                }
+
+                px[0] = Blend(bgB, fgB, coverage);
+                px[1] = Blend(bgG, fgG, coverage);
+                px[2] = Blend(bgR, fgR, coverage);
+                px[3] = (byte)(0xFF * bgCoverage + 0.5);
+            }
         }
     }
 
     /// <summary>
-    /// 커서 헤일로(바깥 링) + 플로팅 배지(안쪽 가로 사각형)를 그린다 — 좌클릭 순환 단계에서
-    /// <b>보이는 요소만</b> 그리므로 네 단계가 도형 모양으로 구별된다.
-    /// 링은 Fg 원을 채운 뒤 안쪽을 <paramref name="bgColor"/> 원으로 파내 만든다.
-    /// 모두 숨김 단계에서는 아무 도형도 그리지 않아 배경색만 남는다 — IME 상태는 그 배경색으로
-    /// 계속 읽히므로 "앱은 살아 있고 표시만 전부 껐다" 가 드러난다.
+    /// 링 바깥으로 번지는 후광의 세기(0~1). 링에 접한 쪽이 가장 진하고 바깥으로 갈수록
+    /// <see cref="GlowFalloff"/> 거듭제곱으로 옅어진다.
     /// </summary>
-    private static void DrawBadgeHalo(IntPtr hdc, int iconW, int iconH, uint fgColor, uint bgColor,
-                                      IndicatorVisibility visibility)
+    private static double GlowIntensity(int px, int py, double cx, double cy, double rOuter, double width)
     {
-        (bool drawBadge, bool drawHalo) = Tray.GetShapes(visibility);
+        double dx = px + 0.5 - cx, dy = py + 0.5 - cy;
+        double d = Math.Sqrt(dx * dx + dy * dy);
+        if (d <= rOuter || d >= rOuter + width) return 0.0;
 
-        if (drawHalo)
-        {
-            int side = Math.Min(iconW, iconH);
-            int cx = iconW / 2, cy = iconH / 2;
-            int rOuter = side / 2 - HaloEdgeInsetPx;
-            int thick = Math.Max(side / HaloThicknessRatio, HaloThicknessMinPx);
-            int rInner = Math.Max(rOuter - thick, 1);
-
-            using (var outer = new SolidFillScope(hdc, fgColor))
-                Gdi32.Ellipse(hdc, cx - rOuter, cy - rOuter, cx + rOuter, cy + rOuter);
-            using (var inner = new SolidFillScope(hdc, bgColor))
-                Gdi32.Ellipse(hdc, cx - rInner, cy - rInner, cx + rInner, cy + rInner);
-        }
-
-        if (drawBadge)
-        {
-            int w = iconW / BadgeWidthRatio;
-            int h = Math.Max(iconH / BadgeHeightRatio, BadgeMinHeightPx);
-            int x = (iconW - w) / 2;
-            int y = (iconH - h) / 2;
-
-            using var _ = new SolidFillScope(hdc, fgColor);
-            Gdi32.Rectangle(hdc, x, y, x + w, y + h);
-        }
+        double t = (d - rOuter) / width;
+        return GlowMaxAlpha * Math.Pow(1.0 - t, GlowFalloff);
     }
+
+    /// <summary>
+    /// 픽셀 하나가 둥근 모서리 사각형에 덮인 비율(0~1). 네 꼭지점이 모두 안/밖이면 서브샘플링
+    /// 없이 즉시 판정하고, 경계에 걸친 픽셀만 <see cref="AntiAliasSamples"/>² 로 재어 보간한다.
+    /// </summary>
+    private static double RoundedRectCoverage(int px, int py,
+                                              double x0, double y0, double x1, double y1, double radius)
+    {
+        bool c00 = InRoundedRect(px, py, x0, y0, x1, y1, radius);
+        bool c10 = InRoundedRect(px + 1, py, x0, y0, x1, y1, radius);
+        bool c01 = InRoundedRect(px, py + 1, x0, y0, x1, y1, radius);
+        bool c11 = InRoundedRect(px + 1, py + 1, x0, y0, x1, y1, radius);
+        if (c00 && c10 && c01 && c11) return 1.0;
+        if (!c00 && !c10 && !c01 && !c11)
+        {
+            // 네 꼭지점이 모두 밖이어도 픽셀 중심이 안이면 경계에 걸친 것 — 서브샘플로 넘어간다
+            if (!InRoundedRect(px + 0.5, py + 0.5, x0, y0, x1, y1, radius)) return 0.0;
+        }
+
+        int hit = 0;
+        for (int sy = 0; sy < AntiAliasSamples; sy++)
+        {
+            for (int sx = 0; sx < AntiAliasSamples; sx++)
+            {
+                double fx = px + (sx + 0.5) / AntiAliasSamples;
+                double fy = py + (sy + 0.5) / AntiAliasSamples;
+                if (InRoundedRect(fx, fy, x0, y0, x1, y1, radius)) hit++;
+            }
+        }
+        return hit / (double)(AntiAliasSamples * AntiAliasSamples);
+    }
+
+    private static bool InRoundedRect(double x, double y,
+                                      double x0, double y0, double x1, double y1, double radius)
+    {
+        if (x < x0 || x > x1 || y < y0 || y > y1) return false;
+        if (radius <= 0.0) return true;
+
+        double cxL = x0 + radius, cxR = x1 - radius;
+        double cyT = y0 + radius, cyB = y1 - radius;
+        double dx = x < cxL ? cxL - x : (x > cxR ? x - cxR : 0.0);
+        double dy = y < cyT ? cyT - y : (y > cyB ? y - cyB : 0.0);
+        return dx * dx + dy * dy <= radius * radius;
+    }
+
+    /// <summary>
+    /// 픽셀 하나가 링([<paramref name="rInner"/>, <paramref name="rOuter"/>])에 덮인 비율(0~1).
+    /// 경계에서 충분히 떨어진 픽셀은 서브샘플링 없이 0/1 로 즉시 판정한다.
+    /// </summary>
+    private static double RingCoverage(int px, int py, double cx, double cy, double rInner, double rOuter)
+    {
+        double dx = px + 0.5 - cx, dy = py + 0.5 - cy;
+        double d = Math.Sqrt(dx * dx + dy * dy);
+
+        if (d > rOuter + 1.0 || d < rInner - 1.0) return 0.0;
+        if (d > rInner + 1.0 && d < rOuter - 1.0) return 1.0;
+
+        int hit = 0;
+        for (int sy = 0; sy < AntiAliasSamples; sy++)
+        {
+            for (int sx = 0; sx < AntiAliasSamples; sx++)
+            {
+                double fx = px + (sx + 0.5) / AntiAliasSamples - cx;
+                double fy = py + (sy + 0.5) / AntiAliasSamples - cy;
+                double sd = Math.Sqrt(fx * fx + fy * fy);
+                if (sd >= rInner && sd <= rOuter) hit++;
+            }
+        }
+        return hit / (double)(AntiAliasSamples * AntiAliasSamples);
+    }
+
+    private static byte Blend(byte from, byte to, double t) => (byte)(from + (to - from) * t + 0.5);
 }
