@@ -142,7 +142,7 @@ A. exe와 같은 폴더의 `config.json`을 텍스트 에디터로 열어 수정
 | 키 | 설명 | 예시 |
 |----|------|------|
 | `tray_enabled` | 트레이 아이콘 자체 켜고 끔. **OFF 로 두면 우클릭 메뉴가 사라지므로 이후 설정 변경은 `config.json` 재편집 또는 앱 재시작으로만 가능** | `false` |
-| `user_hidden` | 사용자가 명시 숨김한 상태. 보통은 트레이 좌클릭(좌클릭 동작이 `toggle` 일 때 — 커서 헤일로도 함께 숨겨집니다) 또는 우클릭 메뉴 "플로팅 배지 숨김"(배지만) 으로 토글하며, 파일을 직접 편집해서 `true` → `false` 로 바꿔도 해제 (hot reload + 다음 IME/포커스 이벤트 시 복원) | `false` |
+| `user_hidden` | 사용자가 명시 숨김한 상태. 보통은 트레이 좌클릭(좌클릭 동작이 `toggle` 일 때 — 네 단계 순환 중 이 값이 함께 바뀝니다) 또는 우클릭 메뉴 "플로팅 배지 숨김"(이 값만) 으로 토글하며, 파일을 직접 편집해서 `true` → `false` 로 바꿔도 해제 (hot reload + 다음 IME/포커스 이벤트 시 복원) | `false` |
 | `system_hide_classes_user` | 기본 숨김 목록(바탕화면, 트레이 등) 외에 인디케이터를 숨기고 싶은 **윈도우 클래스명** 추가 목록 | `["MyAppWindow"]` |
 | `system_hide_processes_user` | 같은 용도의 **프로세스명** 추가 목록 (확장자 제외, 대소문자 무관) | `["MyTool"]` |
 | `app_filter_mode` + `app_filter_list` | 특정 앱에서만 인디케이터 표시/숨김. `"blacklist"` 는 목록 앱에서 숨김, `"whitelist"` 는 목록 앱에서만 표시 | `"blacklist"` + `["notepad"]` |

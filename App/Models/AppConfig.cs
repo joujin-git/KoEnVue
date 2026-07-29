@@ -97,8 +97,8 @@ internal sealed record AppConfig
     public TrayClickAction TrayClickAction { get; init; } = TrayClickAction.Toggle;
     public double[] TrayQuickOpacityPresets { get; init; } = DefaultConfig.TrayQuickOpacityPresets;
 
-    // 트레이 좌클릭 토글로 사용자가 명시 숨김한 상태. 재기동·포그라운드 전환 시에도 유지.
-    // 트레이 아이콘에는 취소선으로 시각 표시된다 (TrayIcon.DrawStrikeThrough).
+    // 플로팅 배지를 숨긴 상태. 재기동·포그라운드 전환 시에도 유지.
+    // 트레이 아이콘에서는 안쪽 배지 도형이 사라지는 것으로 표시된다 (TrayIcon.PaintIcon).
     public bool UserHidden { get; init; } = false;
 
     // 좌클릭은 표시 상태 4단계(둘 다 → 배지만 → 헤일로만 → 모두 숨김)를 순환한다

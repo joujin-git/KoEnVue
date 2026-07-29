@@ -1,6 +1,6 @@
 # `config.json` 전체 키 레퍼런스
 
-KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — **99 항목** (top-level 89 + `app_profiles` nested 10). 실측 invariant: `grep -cE '^\| \`[a-z_0-9.]+\`' docs/config-reference.md` → **99**. (2026-07-29 정정: 종전 서술은 "101" 이었으나 실제는 줄곧 99 로 2 과다 표기였다.) 내역: 커서 헤일로 16 키 = 동심원 10 + 표시모드·안개 3 + 전환 효과 3, PR-15 `admin_elevation` 포함. 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
+KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — **99 항목** (top-level 89 + 중첩 10). 중첩 10 은 `event_triggers.*` 2 + `advanced.*` 2 + `default_indicator_position.*` 3 + `default_indicator_position_relative.*` 3 이다 (`app_profiles` 는 값이 자유형 override 객체라 그 자체가 top-level 1행). 실측 invariant: `grep -cE '^\| \`[a-z_0-9.]+\`' docs/config-reference.md` → **99**. (2026-07-29 정정: 종전 서술은 "101" 이었으나 실제는 줄곧 99 로 2 과다 표기였다.) 내역: 커서 헤일로 16 키 = 동심원 10 + 표시모드·안개 3 + 전환 효과 3, PR-15 `admin_elevation` 포함. 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
 
 `config.json` 의 위치: `%LOCALAPPDATA%\KoEnVue\config.json` (기본) 또는 exe 폴더 (writable 일 때). 자세한 결정 절차는 [README §다운로드](../README.md) 의 권장 설치 위치 절을 참고하세요. 저장 즉시 **핫 리로드** 됩니다 (메인 스레드 mtime 폴링, ~5초 간격).
 
@@ -116,9 +116,9 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — **99
 |---|---|---|---|---|
 | `tray_enabled` | bool | `true` | — | 트레이 아이콘 표시. `false` 면 메뉴 접근 불가 — config.json 직접 편집 + 재기동만 가능 |
 | `tray_tooltip` | bool | `true` | — | 트레이 아이콘 호버 시 툴팁 표시 |
-| `tray_click_action` | enum | `"toggle"` | `toggle` / `settings` | 트레이 좌클릭 동작. `toggle` = **표시 상태 4단계 순환** — 둘 다 보임 → 배지만 → 헤일로만 → 모두 숨김 → (다시) 둘 다 보임. `user_hidden` + `cursor_indicator_enabled` 조합이 곧 현재 단계다. `settings` = 설정 파일 열기 |
+| `tray_click_action` | enum | `"toggle"` | `toggle` / `settings` / `none` | 트레이 좌클릭 동작. `toggle` = **표시 상태 4단계 순환** — 둘 다 보임 → 배지만 → 헤일로만 → 모두 숨김 → (다시) 둘 다 보임. `user_hidden` + `cursor_indicator_enabled` 조합이 곧 현재 단계다. `settings` = 설정 파일 열기, `none` = 좌클릭 무시 |
 | `tray_quick_opacity_presets` | double[] | `[0.95, 0.85, 0.6]` | 0.1 ~ 1.0 | 트레이 메뉴 "빠른 투명도" 서브메뉴에 노출할 프리셋 3개. 기본값은 `DefaultConfig.TrayQuickOpacity1/2/3` const + `TrayQuickOpacityPresets` property 단일 진실원에서 derive (감사 High ④, 2026-06-01 — 값 불변) |
-| `user_hidden` | bool | `false` | — | 플로팅 배지를 숨긴 상태. `true` 면 감지 이벤트로 인디 복원 차단 + 트레이 아이콘에 취소선. 취소선은 **지금 숨겨진 개수**를 나타낸다 — 하나 숨김(배지만 또는 헤일로만)=단일선, 둘 다 숨김=이중선, 없으면 선 없음. 재기동에도 유지 |
+| `user_hidden` | bool | `false` | — | 플로팅 배지를 숨긴 상태. `true` 면 감지 이벤트로 인디 복원 차단 + 트레이 아이콘에서 **배지(안쪽 사각형) 도형이 사라진다**. 재기동에도 유지 |
 
 ## 시스템 — 권한 (Privileges)
 

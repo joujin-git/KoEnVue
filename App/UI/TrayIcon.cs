@@ -49,7 +49,7 @@ internal static class TrayIcon
     private const int AntiAliasSamples = 4;     // 경계 픽셀당 4x4 서브샘플
 
     /// <summary>
-    /// ImeState별 배경색으로 캐럿+점 아이콘을 생성한다.
+    /// ImeState별 배경색으로 헤일로 링 + 배지 아이콘을 생성한다.
     /// 호출자가 반환된 SafeIconHandle의 수명을 관리한다.
     /// </summary>
     internal static unsafe SafeIconHandle CreateIcon(ImeState state, AppConfig config)
@@ -68,7 +68,7 @@ internal static class TrayIcon
         };
         uint bgColor = ColorHelper.HexToColorRef(bgHex);
 
-        // 상태별 전경색 — 캐럿+점과 취소선이 공유. 테마 프리셋이 배경 대비 가독성을 보장하는
+        // 상태별 전경색 — 링·배지·후광이 공유. 테마 프리셋이 배경 대비 가독성을 보장하는
         // Fg 쌍을 세팅하므로 아이콘 내부 도형 색을 여기에 위임 (pastel 테마의 저대비 방지).
         string fgHex = state switch
         {
