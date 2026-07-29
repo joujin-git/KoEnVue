@@ -1,4 +1,3 @@
-using KoEnVue.App.Config;
 using KoEnVue.App.Models;
 using KoEnVue.App.UI;
 using Xunit;
@@ -6,168 +5,128 @@ using Xunit;
 namespace KoEnVue.Tests.Unit;
 
 /// <summary>
-/// 트레이 좌클릭 일괄 숨김/복원 — 보이는 것을 함께 숨기고, 숨기기 직전에 보이던 것만 되살린다.
+/// 트레이 좌클릭 표시 상태 순환 — 둘 다 보임 → 배지만 → 헤일로만 → 모두 숨김 → (다시) 둘 다.
 /// </summary>
 public class TrayLeftClickToggleTests
 {
     /// <param name="badgeVisible">배지가 보이는 중인가 (= !UserHidden).</param>
     /// <param name="cursorVisible">커서 헤일로가 보이는 중인가 (= CursorIndicatorEnabled).</param>
-    private static AppConfig Make(bool badgeVisible, bool cursorVisible,
-                                  bool restoreBadge = DefaultConfig.TrayHideRestoreBadge,
-                                  bool restoreCursor = DefaultConfig.TrayHideRestoreCursor) =>
-        new()
+    private static AppConfig Make(bool badgeVisible, bool cursorVisible) =>
+        new() { UserHidden = !badgeVisible, CursorIndicatorEnabled = cursorVisible };
+
+    // ================================================================
+    // 현재 단계 판독
+    // ================================================================
+
+    // xUnit 테스트 시그니처는 public 이어야 하므로 internal enum 을 직접 못 받는다 — 단계는
+    // 순서값(int)으로 넘기고 본문에서 캐스팅한다. 0=Both / 1=BadgeOnly / 2=CursorOnly / 3=None.
+    [Theory]
+    [InlineData(true, true, 0)]
+    [InlineData(true, false, 1)]
+    [InlineData(false, true, 2)]
+    [InlineData(false, false, 3)]
+    public void GetVisibility_MapsConfigToStage(bool badgeVisible, bool cursorVisible, int expectedStage)
+    {
+        Assert.Equal((IndicatorVisibility)expectedStage, Tray.GetVisibility(Make(badgeVisible, cursorVisible)));
+    }
+
+    // ================================================================
+    // 순환
+    // ================================================================
+
+    [Theory]
+    [InlineData(0, 1)]  // Both      → BadgeOnly
+    [InlineData(1, 2)]  // BadgeOnly → CursorOnly
+    [InlineData(2, 3)]  // CursorOnly→ None
+    [InlineData(3, 0)]  // None      → Both
+    public void Cycle_AdvancesToNextStage(int fromStage, int expectedStage)
+    {
+        var from = (IndicatorVisibility)fromStage;
+        AppConfig start = Make(
+            badgeVisible: from is IndicatorVisibility.Both or IndicatorVisibility.BadgeOnly,
+            cursorVisible: from is IndicatorVisibility.Both or IndicatorVisibility.CursorOnly);
+
+        Assert.Equal((IndicatorVisibility)expectedStage, Tray.GetVisibility(Tray.ComputeLeftClickCycle(start)));
+    }
+
+    /// <summary>네 번 누르면 제자리 — 어느 단계에서 시작해도 마찬가지.</summary>
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public void Cycle_FourClicksReturnToStart(bool badgeVisible, bool cursorVisible)
+    {
+        AppConfig start = Make(badgeVisible, cursorVisible);
+        AppConfig current = start;
+
+        for (int i = 0; i < 4; i++)
+            current = Tray.ComputeLeftClickCycle(current);
+
+        Assert.Equal(Tray.GetVisibility(start), Tray.GetVisibility(current));
+        Assert.Equal(start.UserHidden, current.UserHidden);
+        Assert.Equal(start.CursorIndicatorEnabled, current.CursorIndicatorEnabled);
+    }
+
+    /// <summary>한 바퀴 도는 동안 네 단계를 모두 정확히 한 번씩 거친다.</summary>
+    [Fact]
+    public void Cycle_VisitsEveryStageOnce()
+    {
+        AppConfig current = Make(badgeVisible: true, cursorVisible: true);
+        var seen = new List<IndicatorVisibility>();
+
+        for (int i = 0; i < 4; i++)
         {
-            UserHidden = !badgeVisible,
-            CursorIndicatorEnabled = cursorVisible,
-            TrayHideRestoreBadge = restoreBadge,
-            TrayHideRestoreCursor = restoreCursor,
-        };
+            seen.Add(Tray.GetVisibility(current));
+            current = Tray.ComputeLeftClickCycle(current);
+        }
 
-    [Theory]
-    [InlineData(true, true)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    public void HidesEverythingVisible_AndRecordsSnapshot(bool badgeVisible, bool cursorVisible)
-    {
-        AppConfig hidden = Tray.ComputeLeftClickToggle(Make(badgeVisible, cursorVisible));
-
-        Assert.True(hidden.UserHidden);
-        Assert.False(hidden.CursorIndicatorEnabled);
-        Assert.Equal(badgeVisible, hidden.TrayHideRestoreBadge);
-        Assert.Equal(cursorVisible, hidden.TrayHideRestoreCursor);
-    }
-
-    /// <summary>핵심 요구: 원래 꺼둔 쪽은 복원 좌클릭에서도 계속 꺼진 채로 남는다.</summary>
-    [Theory]
-    [InlineData(true, true)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    public void RoundTrip_RestoresOnlyWhatWasVisible(bool badgeVisible, bool cursorVisible)
-    {
-        AppConfig hidden = Tray.ComputeLeftClickToggle(Make(badgeVisible, cursorVisible));
-        AppConfig restored = Tray.ComputeLeftClickToggle(hidden);
-
-        Assert.Equal(badgeVisible, !restored.UserHidden);
-        Assert.Equal(cursorVisible, restored.CursorIndicatorEnabled);
-    }
-
-    /// <summary>배지만 쓰던 사용자가 좌클릭을 왕복해도 헤일로가 멋대로 켜지지 않는다.</summary>
-    [Fact]
-    public void CursorStaysOff_WhenItWasOffBeforeHiding()
-    {
-        AppConfig hidden = Tray.ComputeLeftClickToggle(Make(badgeVisible: true, cursorVisible: false));
-        AppConfig restored = Tray.ComputeLeftClickToggle(hidden);
-
-        Assert.False(restored.UserHidden);              // 배지는 되살아나고
-        Assert.False(restored.CursorIndicatorEnabled);  // 헤일로는 계속 꺼진 채
-    }
-
-    /// <summary>메뉴로 배지만 숨겨둔 상태에서 좌클릭하면 헤일로만 숨었다가 헤일로만 돌아온다.</summary>
-    [Fact]
-    public void BadgeStaysHidden_WhenItWasHiddenBeforeHiding()
-    {
-        AppConfig hidden = Tray.ComputeLeftClickToggle(Make(badgeVisible: false, cursorVisible: true));
-        AppConfig restored = Tray.ComputeLeftClickToggle(hidden);
-
-        Assert.True(restored.UserHidden);
-        Assert.True(restored.CursorIndicatorEnabled);
-    }
-
-    /// <summary>스냅샷이 비어 있으면(직접 편집 등) 좌클릭이 먹통이 되지 않도록 둘 다 되살린다.</summary>
-    [Fact]
-    public void RestoresBoth_WhenSnapshotIsEmpty()
-    {
-        AppConfig restored = Tray.ComputeLeftClickToggle(
-            Make(badgeVisible: false, cursorVisible: false, restoreBadge: false, restoreCursor: false));
-
-        Assert.False(restored.UserHidden);
-        Assert.True(restored.CursorIndicatorEnabled);
-    }
-
-    /// <summary>숨김 진입 때만 스냅샷을 갱신한다 — 복원 전이는 기록을 덮어쓰지 않는다.</summary>
-    [Fact]
-    public void RestoreDoesNotOverwriteSnapshot()
-    {
-        AppConfig hidden = Tray.ComputeLeftClickToggle(Make(badgeVisible: true, cursorVisible: false));
-        AppConfig restored = Tray.ComputeLeftClickToggle(hidden);
-
-        Assert.True(restored.TrayHideRestoreBadge);
-        Assert.False(restored.TrayHideRestoreCursor);
+        Assert.Equal(
+        [
+            IndicatorVisibility.Both,
+            IndicatorVisibility.BadgeOnly,
+            IndicatorVisibility.CursorOnly,
+            IndicatorVisibility.None,
+        ], seen);
     }
 
     [Fact]
-    public void DoesNotMutateInputInstance()
+    public void Cycle_DoesNotMutateInputInstance()
     {
         AppConfig original = Make(badgeVisible: true, cursorVisible: true);
-        Tray.ComputeLeftClickToggle(original);
+        Tray.ComputeLeftClickCycle(original);
 
         Assert.False(original.UserHidden);
         Assert.True(original.CursorIndicatorEnabled);
     }
 
     // ================================================================
-    // 취소선 개수 — 설정상 비활성은 세지 않는다
+    // 취소선 개수 — 0 = 없음 / 1 = 단일선 / 2 = 이중선
     // ================================================================
 
-    [Fact]
-    public void HiddenCount_Zero_WhenNothingHidden()
+    [Theory]
+    [InlineData(true, true, 0)]    // 둘 다 보임
+    [InlineData(true, false, 1)]   // 배지만 보임 → 헤일로 숨김
+    [InlineData(false, true, 1)]   // 헤일로만 보임 → 배지 숨김
+    [InlineData(false, false, 2)]  // 모두 숨김
+    public void CountHiddenIndicators_MatchesStage(bool badgeVisible, bool cursorVisible, int expected)
     {
-        Assert.Equal(0, Tray.CountHiddenIndicators(Make(badgeVisible: true, cursorVisible: true)));
+        Assert.Equal(expected, Tray.CountHiddenIndicators(Make(badgeVisible, cursorVisible)));
     }
 
+    /// <summary>순환하는 동안 취소선 개수는 0 → 1 → 1 → 2 순서를 따른다.</summary>
     [Fact]
-    public void HiddenCount_One_WhenOnlyBadgeHidden()
+    public void CountHiddenIndicators_FollowsCycle()
     {
-        Assert.Equal(1, Tray.CountHiddenIndicators(Make(badgeVisible: false, cursorVisible: true)));
-    }
+        AppConfig current = Make(badgeVisible: true, cursorVisible: true);
+        var counts = new List<int>();
 
-    /// <summary>헤일로를 평소 꺼두고 쓰는 사용자 — 취소선이 상시 뜨면 안 된다.</summary>
-    [Fact]
-    public void HiddenCount_Zero_WhenCursorIsDisabledBySetting()
-    {
-        AppConfig config = Make(badgeVisible: true, cursorVisible: false, restoreCursor: false);
+        for (int i = 0; i < 4; i++)
+        {
+            counts.Add(Tray.CountHiddenIndicators(current));
+            current = Tray.ComputeLeftClickCycle(current);
+        }
 
-        Assert.Equal(0, Tray.CountHiddenIndicators(config));
-    }
-
-    /// <summary>같은 `cursor_indicator_enabled = false` 라도 좌클릭이 숨긴 것이면 센다.</summary>
-    [Fact]
-    public void HiddenCount_One_WhenCursorHiddenByLeftClick()
-    {
-        AppConfig config = Make(badgeVisible: true, cursorVisible: false, restoreCursor: true);
-
-        Assert.Equal(1, Tray.CountHiddenIndicators(config));
-    }
-
-    [Fact]
-    public void HiddenCount_Two_WhenBothHiddenByLeftClick()
-    {
-        AppConfig hidden = Tray.ComputeLeftClickToggle(Make(badgeVisible: true, cursorVisible: true));
-
-        Assert.Equal(2, Tray.CountHiddenIndicators(hidden));
-    }
-
-    /// <summary>헤일로를 안 쓰는 사용자의 좌클릭 왕복 — 0 → 1(배지만) → 0.</summary>
-    [Fact]
-    public void HiddenCount_CursorDisabledUser_RoundTripStaysSingleLine()
-    {
-        AppConfig start = Make(badgeVisible: true, cursorVisible: false, restoreCursor: false);
-        Assert.Equal(0, Tray.CountHiddenIndicators(start));
-
-        AppConfig hidden = Tray.ComputeLeftClickToggle(start);
-        Assert.Equal(1, Tray.CountHiddenIndicators(hidden));
-
-        AppConfig restored = Tray.ComputeLeftClickToggle(hidden);
-        Assert.Equal(0, Tray.CountHiddenIndicators(restored));
-    }
-
-    /// <summary>메뉴로 헤일로를 다시 켜면 배지 숨김만 남아 단일선으로 줄어든다.</summary>
-    [Fact]
-    public void HiddenCount_DropsToOne_WhenCursorReenabledFromMenu()
-    {
-        AppConfig hidden = Tray.ComputeLeftClickToggle(Make(badgeVisible: true, cursorVisible: true));
-        AppConfig cursorBackOn = hidden with { CursorIndicatorEnabled = true };
-
-        Assert.Equal(1, Tray.CountHiddenIndicators(cursorBackOn));
+        Assert.Equal([0, 1, 1, 2], counts);
     }
 }

@@ -1,6 +1,6 @@
 # `config.json` 전체 키 레퍼런스
 
-KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — **101 항목** (top-level 91 + `app_profiles` nested 10). 실측 invariant: `grep -cE '^\| \`[a-z_0-9.]+\`' docs/config-reference.md` → **101**. (2026-07-29 정정: 종전 서술도 "101" 이었으나 당시 실제는 99 로 2 과다였다 — 좌클릭 복원 스냅샷 2키가 추가되며 수치가 실제와 맞게 됐다.) 내역: 트레이 좌클릭 복원 스냅샷 2 (`tray_hide_restore_*`), 커서 헤일로 16 키 = 동심원 10 + 표시모드·안개 3 + 전환 효과 3, PR-15 `admin_elevation` 포함. 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
+KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — **99 항목** (top-level 89 + `app_profiles` nested 10). 실측 invariant: `grep -cE '^\| \`[a-z_0-9.]+\`' docs/config-reference.md` → **99**. (2026-07-29 정정: 종전 서술은 "101" 이었으나 실제는 줄곧 99 로 2 과다 표기였다.) 내역: 커서 헤일로 16 키 = 동심원 10 + 표시모드·안개 3 + 전환 효과 3, PR-15 `admin_elevation` 포함. 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
 
 `config.json` 의 위치: `%LOCALAPPDATA%\KoEnVue\config.json` (기본) 또는 exe 폴더 (writable 일 때). 자세한 결정 절차는 [README §다운로드](../README.md) 의 권장 설치 위치 절을 참고하세요. 저장 즉시 **핫 리로드** 됩니다 (메인 스레드 mtime 폴링, ~5초 간격).
 
@@ -116,11 +116,9 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — **10
 |---|---|---|---|---|
 | `tray_enabled` | bool | `true` | — | 트레이 아이콘 표시. `false` 면 메뉴 접근 불가 — config.json 직접 편집 + 재기동만 가능 |
 | `tray_tooltip` | bool | `true` | — | 트레이 아이콘 호버 시 툴팁 표시 |
-| `tray_click_action` | enum | `"toggle"` | `toggle` / `settings` | 트레이 좌클릭 동작. `toggle` = **플로팅 배지 + 커서 헤일로 일괄 숨김/복원**(보이는 것을 함께 숨기고, 다음 클릭에서 숨기기 직전에 보이던 것만 되살림), `settings` = 설정 파일 열기 |
+| `tray_click_action` | enum | `"toggle"` | `toggle` / `settings` | 트레이 좌클릭 동작. `toggle` = **표시 상태 4단계 순환** — 둘 다 보임 → 배지만 → 헤일로만 → 모두 숨김 → (다시) 둘 다 보임. `user_hidden` + `cursor_indicator_enabled` 조합이 곧 현재 단계다. `settings` = 설정 파일 열기 |
 | `tray_quick_opacity_presets` | double[] | `[0.95, 0.85, 0.6]` | 0.1 ~ 1.0 | 트레이 메뉴 "빠른 투명도" 서브메뉴에 노출할 프리셋 3개. 기본값은 `DefaultConfig.TrayQuickOpacity1/2/3` const + `TrayQuickOpacityPresets` property 단일 진실원에서 derive (감사 High ④, 2026-06-01 — 값 불변) |
-| `user_hidden` | bool | `false` | — | 사용자가 명시 숨긴 상태. `true` 면 트레이 아이콘에 취소선(커서 헤일로도 숨김이면 이중선) + 감지 이벤트로 인디 복원 차단. 재기동에도 유지 |
-| `tray_hide_restore_badge` | bool | `true` | — | **내부 상태(직접 편집 불필요)**. 좌클릭 일괄 숨김에 들어갈 때 "배지가 보이고 있었는가" 를 기록해 두는 복원 스냅샷. 다음 좌클릭이 이 값을 보고 배지를 되살릴지 정한다. 설정 창에는 노출하지 않음 |
-| `tray_hide_restore_cursor` | bool | `false` | — | **내부 상태(직접 편집 불필요)**. 위와 같으며 커서 헤일로용. 원래 헤일로를 꺼둔 사용자가 좌클릭을 왕복해도 헤일로가 멋대로 켜지지 않게 한다. **트레이 아이콘 취소선 판정에도 쓰인다** — `cursor_indicator_enabled` 가 `false` 여도 이 기록이 `true` 일 때만 "숨겨진 것" 으로 세므로, 헤일로를 평소 꺼두고 쓰면 취소선이 뜨지 않는다. 기본값이 `false` 인 이유도 이것(좌클릭 기록이 없으면 복원은 배지만). 배지·헤일로 기록이 둘 다 `false` 인 채로 직접 편집하면 복원 좌클릭이 먹통이 되므로, 그 경우엔 안전하게 둘 다 되살린다 |
+| `user_hidden` | bool | `false` | — | 플로팅 배지를 숨긴 상태. `true` 면 감지 이벤트로 인디 복원 차단 + 트레이 아이콘에 취소선. 취소선은 **지금 숨겨진 개수**를 나타낸다 — 하나 숨김(배지만 또는 헤일로만)=단일선, 둘 다 숨김=이중선, 없으면 선 없음. 재기동에도 유지 |
 
 ## 시스템 — 권한 (Privileges)
 

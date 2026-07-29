@@ -101,12 +101,9 @@ internal sealed record AppConfig
     // 트레이 아이콘에는 취소선으로 시각 표시된다 (TrayIcon.DrawStrikeThrough).
     public bool UserHidden { get; init; } = false;
 
-    // 좌클릭 일괄 숨김의 복원 스냅샷 (Tray.ComputeLeftClickToggle 단일 진실원).
-    // 숨김 진입 시점에 "배지가 보였는가 / 헤일로가 보였는가" 를 각각 기록하고, 다음 좌클릭에서
-    // 기록된 것만 되살린다 — 원래 꺼둔 쪽은 계속 꺼둔 채로 둔다. 사용자가 직접 만지는 값이
-    // 아니라 내부 상태라 SettingsDialog 에는 노출하지 않는다 (UserHidden 과 동일한 성격).
-    public bool TrayHideRestoreBadge { get; init; } = DefaultConfig.TrayHideRestoreBadge;
-    public bool TrayHideRestoreCursor { get; init; } = DefaultConfig.TrayHideRestoreCursor;
+    // 좌클릭은 표시 상태 4단계(둘 다 → 배지만 → 헤일로만 → 모두 숨김)를 순환한다
+    // (Tray.ComputeLeftClickCycle). 현재 단계는 UserHidden + CursorIndicatorEnabled 조합에서
+    // 그대로 읽히므로 별도의 복원 기록을 저장하지 않는다.
 
     // [시스템]
     [JsonConverter(typeof(LogLevelJsonConverter))]

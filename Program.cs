@@ -914,9 +914,9 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// 트레이 좌클릭 토글: 플로팅 배지와 커서 헤일로를 <b>함께</b> 숨기고, 다음 좌클릭에서는
-    /// 숨기기 직전에 보이던 것만 되살린다(원래 꺼둔 쪽은 계속 꺼둔 채로).
-    /// 전이 계산의 단일 진실원은 <see cref="Tray.ComputeLeftClickToggle"/> 이고, 여기서는 그
+    /// 트레이 좌클릭: 표시 상태 4단계를 순환한다 —
+    /// <b>둘 다 보임 → 배지만 → 헤일로만 → 모두 숨김 → (다시) 둘 다 보임</b>.
+    /// 전이 계산의 단일 진실원은 <see cref="Tray.ComputeLeftClickCycle"/> 이고, 여기서는 그
     /// 결과를 오버레이·트레이 아이콘·config.json 에 반영하는 부수효과만 담당한다.
     /// <para>
     /// 커서 헤일로 윈도우 lifecycle 은 <see cref="ApplyCursorConfigChange"/> 가 담당하며, 메뉴
@@ -927,17 +927,17 @@ internal static partial class Program
     /// 트레이 메뉴의 체크 상태는 <see cref="Tray.ShowMenu"/> 가 열릴 때마다 현재 <c>_config</c> 로
     /// 새로 구성하므로(Tray.Menu.cs 의 MF_CHECKED 분기), config 갱신만으로 즉시 반영된다.
     /// </para>
-    /// config.json 에 즉시 저장 — 재기동/포그라운드 전환에도 상태(복원 스냅샷 포함)가 유지된다.
+    /// config.json 에 즉시 저장 — 재기동/포그라운드 전환에도 현재 단계가 유지된다.
     /// </summary>
     private static void HandleTrayToggle()
     {
         bool wasHidden = _config.UserHidden;
         bool wasCursorEnabled = _config.CursorIndicatorEnabled;
 
-        _config = Tray.ComputeLeftClickToggle(_config);
+        _config = Tray.ComputeLeftClickCycle(_config);
         Settings.Save(_config);
-        Logger.Info($"Tray toggle: UserHidden={_config.UserHidden}, CursorIndicatorEnabled={_config.CursorIndicatorEnabled}, " +
-                    $"restore snapshot badge={_config.TrayHideRestoreBadge} cursor={_config.TrayHideRestoreCursor}");
+        Logger.Info($"Tray click cycle: {Tray.GetVisibility(_config)} " +
+                    $"(UserHidden={_config.UserHidden}, CursorIndicatorEnabled={_config.CursorIndicatorEnabled})");
 
         // 커서 헤일로 윈도우 생성/파괴 — 실제로 바뀐 경우에만 (불필요한 타이머 재설정 방지)
         if (wasCursorEnabled != _config.CursorIndicatorEnabled)
