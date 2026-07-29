@@ -9,7 +9,7 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 **왜 필요해요?** 매번 같은 설명을 다시 안 해도 되고, 다른 장비로 옮겨도 작업이 이어집니다. 잊을 만한 안전망(자동 wip 커밋, 비밀번호 마스킹) 도 자동으로 잡습니다.
 
 **처음 써보기 — 5단계**:
-1. **터미널에서 `claude` 실행** → 화면 아래 statusLine 에 `[opus · high] | git:main* | 한/En 하네스` 같은 표시가 보이면 하네스 활성
+1. **Claude Code 실행** — 터미널은 `claude`, 데스크탑 앱은 이 프로젝트 폴더를 열면 됩니다. 활성 판별은 **표면 무관한 기준**으로: 세션 시작 컨텍스트에 `[harness] KoEnVue 하네스 활성화` 문구가 주입됐는지(SessionStart hook 산출물). 터미널에서는 화면 아래 statusLine 에 `[opus · high] | git:main* | 한/En 하네스` 도 함께 보입니다 — **데스크탑 앱에서의 statusLine 표시 여부는 2026-07-29 기준 미확인**이며, 공식 문서도 표면별 지원을 명시하지 않습니다
 2. **`/harness-status` 입력** → 모델/effort, 서브에이전트 6명, 오늘 세션 파일, dirty tree, hook 에러 정상 여부를 한눈에 확인
 3. **자연어로 작업 요청** — 예: "한 레이블 색을 빨강으로 바꿔줘". 하네스가 effort high 로 처리하고, 필요하면 서브에이전트(explorer, planner 등)에 위임. 코드리뷰·감사·릴리즈 같은 큰 작업은 `/release-review` 처럼 워크플로우를 수동 호출
 4. **작업 마무리할 때 `/wrap-up`** → 문서 동기화 + 세션 요약을 `docs/sessions/YYYY-MM-DD.md` 에 자동 기록
@@ -143,7 +143,7 @@ docs/
 
 **결과 반환 즉시 고정**: 워크플로우 산출(release-review/codebase-audit/harness-optimize 등)은 여러 에이전트 fan-out 으로 생성한 고비용 결과이므로, 메인 세션은 반환 즉시 git-tracked 파일(예: `docs/improvement-plan/AUDIT-YYYY-MM-DD-*.md`)로 박제해 컨텍스트 휘발을 막습니다. [AUDIT-2026-06-08-harness.md](improvement-plan/AUDIT-2026-06-08-harness.md) 가 첫 적용 사례.
 
-**⚠️ 검증 상태**: 워크플로우의 `/<name>` 자동 노출과 `Workflow({name})` 실제 다중 에이전트 fan-out 은 확인됨(2026-06-08 release-review/harness-optimize 실행 시 각 6 에이전트). ultracode "런타임 플래그" 자체를 켜는지는 여전히 미검증이나, 재구성 후엔 큰 작업에서 워크플로우를 **명시적으로 수동 호출**하므로 매 턴 자동 발동에 의존하지 않습니다 — 행동은 수동 호출 + 명시 지시로 보장.
+**검증 상태 (2026-07-29 해소)**: 워크플로우의 `/<name>` 자동 노출과 `Workflow({name})` 실제 다중 에이전트 fan-out 은 확인됨(2026-06-08 release-review/harness-optimize 실행 시 각 6 에이전트). 5주간 남아 있던 "ultracode 런타임 플래그를 켜는지 미검증" 항목은 **질문이 잘못 놓여 있었습니다** — ultracode 는 하네스가 settings 로 켜는 값이 아니라 **세션 플래그**이고, ⑴ 사용자가 프롬프트에 `ultracode` 낱말을 넣거나 ⑵ 세션 설정으로 켜지며, 상태는 런타임이 **system-reminder 로 Claude 에게 통지**합니다(켜지면 "on", 꺼지면 "off"). 2026-07-29 세션에서 **통지 부재 = off 로 관측**. 그리고 `/<name>` 수동 호출은 이 플래그와 무관하게 별도 opt-in 사유("사용자가 Workflow 를 호출하라는 스킬/슬래시를 실행")로 인정되므로, 재구성 후의 수동 호출 운영은 계약상 정상입니다.
 
 ## 4. Hook 라이프사이클
 
@@ -277,7 +277,7 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 2026-07-24 균형 재구성으로 **일상 작업 비용이 대폭 낮아졌습니다** — `bypassPermissions` + Opus(fast mode) + effort **high** + thinking 은 solo 로 도는 보통 작업 기준 완만한 배수이고, 매 턴 ultrathink/ultracode 자동 주입과 매 tool call hook 오버헤드가 사라졌습니다. **비용이 튀는 건 큰 작업에서 워크플로우를 수동 호출할 때뿐** — 그 substantive 작업은 fan-out 으로 수 배~수십 배(워크플로우당 최대 16 동시 / 1,000 누적 에이전트). 일상은 solo·high 로 가볍게, 깊이가 필요한 큰 작업만 의식적으로 워크플로우로.
 
-**상한의 실제 — `budget` 가드는 거의 무실효**: `budget`(total/spent/remaining) 을 실제 읽는 워크플로우는 **bug-hunt 1개뿐**이고, 그조차 `budget.total` 미주입 시(현재 호출은 total 안 넘김) round hard cap(`round < 8`)만 실효 상한입니다. 나머지 4개(release-review·codebase-audit·design-compare·harness-optimize)는 budget 을 안 읽으며 **per-parallel-item cap** 이 유일 상한 — `MAX_VERIFY=25`(release-review)·`MAX_MODULES=24`(codebase-audit)·동시 16(전역). 즉 토큰 총량 가드가 아니라 fan-out 폭주 방지일 뿐. **⚠️ 미검증 단서**: 재구성으로 env `CLAUDE_CODE_EFFORT_LEVEL` 은 제거됐고 effort 는 settings `high` 뿐 — 워크플로우 노드(`agent()`)가 이 effort 를 어느 레벨로 상속하는지는 미검증. 노드 effort 가 낮으면 위 "수 배~수십 배" 추정이 과대일 수 있음. 비용 추정 시 이 단서를 감안.
+**상한의 실제 — `budget` 가드는 거의 무실효**: `budget`(total/spent/remaining) 을 실제 읽는 워크플로우는 **bug-hunt 1개뿐**이고, 그조차 `budget.total` 미주입 시(현재 호출은 total 안 넘김) round hard cap(`round < 8`)만 실효 상한입니다. 나머지 4개(release-review·codebase-audit·design-compare·harness-optimize)는 budget 을 안 읽으며 **per-parallel-item cap** 이 유일 상한 — `MAX_VERIFY=25`(release-review)·`MAX_MODULES=24`(codebase-audit)·동시 16(전역). 즉 토큰 총량 가드가 아니라 fan-out 폭주 방지일 뿐. **노드 effort (2026-07-29 확인)**: 재구성으로 env `CLAUDE_CODE_EFFORT_LEVEL` 은 제거됐고 effort 는 settings `high` 뿐인데, 워크플로우 노드(`agent()`)는 **`opts.effort` 를 생략하면 세션 effort 를 상속**합니다(Workflow 도구 계약에 명시). 즉 노드도 `high` 로 돌므로 위 "수 배~수십 배" 추정은 과대평가가 아닙니다. 특정 스테이지만 싸게 돌리려면 `opts.effort: 'low'` 를 **명시**해야 합니다 — 생략은 절약이 아니라 상속입니다.
 
 가시화 수단:
 - **`statusLine`**: 매 턴 `[opus · high] | git:main* | 한/En 하네스` 표시
@@ -332,7 +332,8 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
   Windows PowerShell 5.x (기본 내장) 만으로는 hook 전부 fail. 단 KoEnVue 는 `net10.0-windows` 타깃이라 빌드/실행은 Windows 전용 — Mac/Linux 는 documentation·planning 작업에만 한정.
 - **`/wrap-up` 의 race condition**: `docs/sessions/YYYY-MM-DD.md` 의 쓰기는 hook(stop-record / pre-compact / session-end) 과 historian subagent 만 수행 — 메인 세션이 직접 같은 파일을 Edit/Write 하면 충돌 가능. [skills/wrap-up/SKILL.md](../.claude/skills/wrap-up/SKILL.md) 의 "쓰기 단일 진실원" 규약 참조.
 - **`.claude/worktrees/` 의 빌드 산출물 누적**: 서브에이전트가 publish 를 돌리면 worktree 안에 ~150 MB 산출물이 남고 정리 안 함. 주기적으로 `/cleanup-worktrees` SKILL 로 일주일 이상 미사용 worktree 제거 권장.
-- **ultracode 런타임 활성화 미검증 (큰 작업 수동 호출 시에만 해당)**: 워크플로우 `/<name>` 자동 노출과 `Workflow({name})` 다중 에이전트 fan-out 은 **확인됨**(2026-06-08 각 6 에이전트). ultracode "런타임 플래그" 자체를 켜는지는 미확인이나, 재구성으로 매 턴 자동 발동을 제거하고 큰 작업에서 **수동 호출**하므로 이 미검증에 의존하지 않음. (memory `feedback-harness-design` 참조)
+- ~~ultracode 런타임 활성화 미검증~~ → **2026-07-29 해소**: ultracode 는 하네스가 켜는 설정이 아니라 사용자 프롬프트 키워드/세션 설정으로 켜지는 **세션 플래그**이며, 상태는 런타임이 system-reminder 로 통지합니다(07-29 세션 = off 관측). `/<name>` 수동 호출은 이 플래그와 무관한 별도 opt-in 사유이므로 현행 운영에 영향 없음. 상세는 §3 「ultracode」 절.
+- **데스크탑 앱에서의 statusLine 표시 미확인**: 하네스 hook 5종은 표면 무관하게 런타임이 실행하므로 데스크탑 앱에서도 동작합니다(07-29 SessionStart 주입 실측). 다만 `statusLine` 설정이 데스크탑 앱 화면에 렌더되는지는 미확인이고 공식 문서도 표면별 지원을 명시하지 않습니다 — 활성 판별은 statusLine 대신 **주입 컨텍스트의 `[harness]` 문구**를 쓰세요(§1).
 - **워크플로우 비용 (수동 호출 시에만)**: 큰 작업에서 워크플로우를 호출하면 fan-out 으로 토큰이 급증. 재구성 후엔 매 턴 자동이 아니라 **수동 호출 때만** 발생하므로, 비용이 부담되면 워크플로우 대신 solo 또는 단일 서브에이전트(`/plan`·`/sync-docs`)로 처리.
 - **statusLine 하드코딩 폴백**: `model`/`effort` 는 statusLine payload(`payload.effort.level`)가 오면 그 값을 쓰되, **payload 미수신 시 하드코딩 폴백이라 런타임 진실이 아님** — model 은 `'opus'` 고정, effort 는 `$env:CLAUDE_CODE_EFFORT_LEVEL` 반영 후 없으면 `'high'`(재구성 후 env 는 미설정이 정상이라 실질 폴백은 `high`; model 은 항상 하드코딩 폴백). statusLine 은 화면 갱신마다 호출돼 가장 빈번하므로 **git 호출을 축소**: branch 는 `.git/HEAD` 를 직접 Read(rev-parse 프로세스 제거 — `ref: refs/heads/X` 파싱, detached 면 짧은 SHA), dirty `*` 는 `git status --porcelain --untracked-files=no` 1회(untracked 제외로 체감 비용 절감, 변경 신호는 보존). settings.json 의 statusLine 에 `timeout: 5` 추가로 렌더 지연 시 조기 차단.
 - **PreCompact ↔ Stop 세션파일 동시 append 경합**: 두 hook 모두 `docs/sessions/YYYY-MM-DD.md` 끝에 `Add-Content` 로 블록을 붙임. 컴팩션과 턴 종료가 거의 동시에 발생하면 같은 파일 동시 쓰기로 블록이 섞이거나 누락될 가능성(append-only·저빈도라 실측 피해 미관측, OS 파일락 의존이라 §OS 감수 정책 대상).
@@ -374,26 +375,35 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 이 컴퓨터의 **C: 드라이브는 보안 정책상 수시로 14일 전 시점으로 복원**됩니다. 기본 Claude Code memory 위치 (`C:\Users\<user>\.claude\projects\<project>\memory\`) 는 복원될 때마다 사라지므로, 본 하네스는 메모리를 프로젝트 트리(E:)로 옮기려 `autoMemoryDirectory` 를 설정했습니다.
 
-**현 실태(2026-07-22 갱신)**: `autoMemoryDirectory` 는 `${CLAUDE_PROJECT_DIR}` 전개 실패로 무효였고, Claude Code 는 기본 위치 C: 를 읽기/쓰기해 왔습니다. 2026-07-22 에 이 키를 **절대경로로 교체**해 런타임이 E: 를 직접 쓰도록 시도했습니다 — **2026-07-27 확인: 효력 있음.** 이 날 세션의 시스템 컨텍스트가 memory 위치를 `E:\dev\KoEnVue\.claude\memory\` 로 안내했고(설정값과 일치), 서브에이전트 컨텍스트도 같은 E: 경로를 받았습니다. 즉 절대경로 교체가 먹혀 런타임이 E: 를 메모리 디렉토리로 인식합니다. **잔여 미확인 1건** — Claude 의 *자동* 저장이 그 경로로 떨어지는지는 아직 직접 못 봤습니다(2026-07-27 의 메모리 편집은 전부 Write/Edit 도구를 쓴 수동 저장). 어느 쪽이든 `Sync-Memory` 가 C:↔E: 를 보전하므로 실제 영향은 0 — 실패 모드가 안전합니다.
+**현 실태(2026-07-29 확정)**: `autoMemoryDirectory` 는 `${CLAUDE_PROJECT_DIR}` 전개 실패로 한동안 무효였고(그 시기엔 런타임이 기본 위치 C: 를 읽기/쓰기), 2026-07-22 에 **절대경로로 교체**한 뒤로 런타임이 **E: 를 실제 메모리 경로로 사용**합니다. 2026-07-29 에 **직접 증거**를 확보했습니다 — E: 메모리 파일의 frontmatter 에 `modified: 2026-07-27T05:36:54.030Z` 와 `originSessionId: <uuid>` 가 들어 있는데, 이 두 필드는 하네스도 Claude 도 쓴 적이 없는 **런타임이 새긴 값**입니다(공식 문서: v2.1.214+ 는 메모리 파일을 쓸 때 `modified` 타임스탬프를 기록. 현재 2.1.220). 런타임이 E: 의 파일을 auto memory 로 인식하고 후처리했다는 뜻이므로 **"자동 저장이 E: 로 떨어지는가"는 확정**입니다. `modified` 값(UTC)은 해당 파일의 KST 수정 시각과 정확히 일치합니다.
+
+> **종전 유보는 성립하지 않는 구분이었습니다.** 2026-07-27 은 "메모리 편집이 전부 Write/Edit 도구를 쓴 *수동* 저장이라 자동 저장은 미확인"으로 남겼으나, 공식 문서상 auto memory 에는 **전용 도구가 없고 Claude 가 표준 파일 도구로 직접 읽고 씁니다**. 그 쓰기가 곧 자동 저장입니다. 또한 `autoMemoryDirectory` 는 **user·project·local·policy 어느 scope 에서든 읽히며**(프로젝트 settings 에서 무효라는 통념은 오해), 프로젝트 scope 일 때는 워크스페이스 신뢰 수락이 조건입니다 — 본 저장소는 통과 상태.
+
+**전제 역전 — C: 는 이제 죽은 사본입니다**: 이로써 §12 가 오래 전제해 온 **"C: = Claude 가 실제 읽는 작업 사본 / E: = 백업"은 뒤집혔습니다.** E: 가 실경로이자 truth 이고, C: 사본은 `autoMemoryDirectory` 가 어떤 이유로 무효화될 때만 쓰이는 **보험**입니다. 2026-07-29 세션이 이를 실증했습니다 — C: 사본이 **통째로 없는 상태**로 세션이 시작됐는데도 메모리 회상(`MEMORY.md` 주입)은 정상이었습니다.
 
 > ⚠ **2026-06-09 세션 기록의 판단은 오류**입니다 — "C: 0파일이니 실제 활성 store 는 E:, system-reminder 경로 안내는 오안내" 라고 결론냈으나, E: 에 파일이 쌓인 건 `Sync-Memory` 가 **백업**한 결과지 런타임이 직접 쓴 증거가 아닙니다. 2026-07-22 세션 컨텍스트가 다시 C: 경로를 memory 위치로 안내해 06-08 판단(설정 무효 → C: 사용)이 옳음이 확인됐습니다. 즉 06-09 시점에도 이미 recall 이 깨져 있었습니다.
 
-| 항목 | 실태 (2026-07-27 갱신) |
+| 항목 | 실태 (2026-07-29 갱신) |
 |------|------|
-| 런타임이 안내하는 memory 위치 | **E:** `E:\dev\KoEnVue\.claude\memory\` (2026-07-27 확인 — `autoMemoryDirectory` 가 먹음). 2026-07-22 까지는 C: 였음 |
+| 런타임의 **실제** memory 경로 | **E:** `E:\dev\KoEnVue\.claude\memory\` — 안내만이 아니라 **읽기·쓰기 실경로**(2026-07-29 확정: 런타임이 파일에 `modified`/`originSessionId` 를 새김). 2026-07-22 까지는 C: 였음 |
 | C: 기본 경로 (레거시) | `C:\Users\<user>\.claude\projects\E--dev-KoEnVue\memory\` — 이제 `Sync-Memory` 의 흡수/미러 대상일 뿐. 드라이브문자 대소문자는 Claude Code 버전에 따라 변동(2026-07 이전 `e--`, 이후 `E--`). Windows 는 대소문자 무시라 접근엔 무영향. **`Get-AutoMemoryDir` 는 설정값이 아니라 이 기본 경로를 계산한다** — 의도된 설계(흡수 대상 지정) |
 | E: `.claude/memory/` | git 추적 **truth** — 10파일(메모리 9 + `MEMORY.md` 인덱스, 2026-07-27 기준), C: 복원과 무관하게 보존 |
-| `autoMemoryDirectory` 설정 | `E:/dev/KoEnVue/.claude/memory` (절대경로, 2026-07-22 변경 — AUDIT-2 #51 처리) — **2026-07-27 효력 확인**: 세션·서브에이전트 컨텍스트가 이 E: 경로를 memory 위치로 안내. 자동 저장 경로만 미확인 |
-| `Sync-Memory` 실제 발화 | ✅ **2026-07-27 검증** — 직접 호출해 `absorbed=0 / restored=3`, C: 9→10 파일, 오늘 수정한 3파일 해시 일치. 신규 메모리가 C: 미러에 정상 전파됨 |
-| 복원 영향 | ✅ `Sync-Memory` hook — 디렉토리째 소실돼도 생성 후 E:→C: 복구 (2026-07-22 수정) |
+| `autoMemoryDirectory` 설정 | `E:/dev/KoEnVue/.claude/memory` (절대경로, 2026-07-22 변경 — AUDIT-2 #51 처리) — **2026-07-29 완전 확정**: 안내·자동 저장 **모두** E:. 값은 절대경로 또는 `~/` 시작이어야 하고, 프로젝트 scope 에서는 워크스페이스 신뢰 수락이 조건(통과 상태) |
+| `Sync-Memory` 실제 발화 | ✅ 발동 조건 재현 검증 (2026-07-29) — 실패/복구/정상 3상태 전부: 실패 시 `❌ 동기화 실패 N건` + `hook-errors.log` 기록, 부재 시 `created` 경고 + `restored=10`, 정상 시 침묵. E:↔C: 해시 불일치 0 |
+| 복원 영향 | ⚠ **보험일 뿐** — C: 가 통째로 사라져도 메모리 회상은 정상(E: 가 실경로). 2026-07-29 실측: C: 사본 0인 채로 세션 시작 → `MEMORY.md` 정상 주입. `Sync-Memory` 는 `autoMemoryDirectory` 무효화 대비용 |
+| 실제 C: 복원 발생 | ✅ 2026-07-27→29 사이 발생 확인 — C: 프로젝트 디렉토리 생성시각이 07-29 세션 시작 시각과 동일하고 07-27 이전 흔적 전멸. 설정 없는 다른 프로젝트(7/8 생성)는 생존 → 복원 기준선은 대략 2주 전 |
 
-**임시 구제 (적용됨)**: C: 에만 있던 `os-dependent-accept.md` 를 E: 로 복사 + MEMORY.md 갱신 + commit (소실 방지). 새 메모리 저장 시 수동으로 E: 에도 반영 권장.
+**임시 구제 (2026-06-08 당시)**: C: 에만 있던 `os-dependent-accept.md` 를 E: 로 복사 + MEMORY.md 갱신 + commit (소실 방지). ~~새 메모리 저장 시 수동으로 E: 에도 반영 권장~~ → **2026-07-29 불필요**: 런타임이 E: 에 직접 쓰므로 새 메모리는 처음부터 git 추적 트리에 저장됩니다. 남는 일은 **커밋**뿐입니다.
 
 **근본 해결 (적용됨 2026-06-08)**: SessionStart hook 의 `Sync-Memory`(`_common.ps1`)가 매 세션 C:↔E: 동기화 — **E: 가 truth**(복원 무관), C: 의 더 새 파일만 E: 로 흡수(복원된 옛 C: 가 최신 E: 를 못 덮게 mtime UTC 비교), 그 뒤 E:→C: 미러로 복원된 C: 를 최신 복구. slug=`e--dev-KoEnVue`·`Copy-Item` mtime 보존 검증 완료, 최초 실행 시 `restored=5` 로 현재 split-brain 해소(C:=E: 해시 일치). `absorbed>0`(C: 에 새 메모리) 시 SessionStart 가 커밋 권장 알림 → 다음 commit 에 E: 백업 포함. 각 파일 복사는 **per-file try/catch** 로 감싸 TOCTOU(`Test-Path` 후 복사 직전 파일 삭제·잠금)나 단일 파일 I/O 오류가 나머지 동기화를 중단시키지 않게 함.
 
 **2026-07-22 재발과 수정 — 디렉토리째 부재 케이스**: 6주 공백 뒤 첫 세션에서 C: 프로젝트 디렉토리가 통째로 새로 생성돼 있었고(`memory` 서브디렉토리 **자체가 부재**), hook 이 복구를 전혀 하지 않았습니다. 원인은 `Get-AutoMemoryDir` 이 `Test-Path` 실패 시 `$null` 을 반환하고 `Sync-Memory` 가 즉시 `return` 하던 **비대칭** — E: 쪽은 없으면 `New-Item` 으로 만들면서 C: 쪽은 포기했습니다. 06-08 검증(`restored=5`)은 C: 디렉토리가 살아있는 *부분* 복원 상태여서 이 경로를 못 봤고, 결과적으로 **복구가 가장 필요한 순간(완전 소실)에 정확히 무동작**했습니다. 그동안 메모리 recall 은 0건이었습니다.
 
 수정 3점: ① `Get-AutoMemoryDir` 은 부재 시에도 **원형 slug 경로를 반환**(존재하는 대소문자 변형이 있으면 그쪽 우선) — `$null` 을 주지 않는 것이 핵심. ② `Sync-Memory` 는 C: 부재 시 **생성**하고(E: 와 대칭) 결과에 `created` 를 포함. ③ `session-start.ps1` 은 `created` 일 때 "C: 복원/초기화 감지" 경고를 띄움(이전엔 `absorbed`/`restored` 가 둘 다 0 이면 **침묵**해서, 무동작과 정상 무변화가 구분되지 않았음). 실측: `created=True`·`restored=7`·`absorbed=0`, E:↔C: **7/7 SHA256 MATCH**, `Copy-Item` mtime 보존 재확인.
+
+**2026-07-29 재발 — 07-22 의 경고가 정작 발동 순간에 침묵**: C: 복원이 실제로 일어나 사본 10파일이 통째로 사라진 채 세션이 시작됐는데, 위 ③ 의 `created` 경고가 **주입되지 않았고** `hook-errors.log` 도 0건이었습니다. 조사하다 우연히 발견했습니다. 같은 hook 을 발동 조건에서 재현하면 정상 작동(`created=True`·`restored=10`)하므로 **코드 결함이 아니라 그 세션에서만 무동작**한 것인데, 왜 그랬는지는 `Sync-Memory` 의 `catch` 3곳이 **실패 정보를 통째로 버려서** 규명이 불가능했습니다 — 반환값은 `absorbed=0/restored=0/created=$false` 로 "할 일 없음"과 완전히 같은 모습이었습니다.
+
+수정 4점: ① `catch` 마다 사유를 `errors` 배열에 담아 반환하고 `Write-HookError` 로 `hook-errors.log` 에도 기록 — **실패와 정상 무변화가 이제 구분됩니다**. ② `session-start.ps1` 이 `errors` 를 세션 시작 컨텍스트에 노출(최대 3건 + 나머지 개수). ③ `New-Item` 에 `-ErrorAction Stop` — non-terminating error 는 `catch` 를 그냥 지나쳐 "생성 성공"으로 오판되던 구멍. ④ `Test-Path` 에 `-PathType Container` + **생성 후 재확인** — 맨 `Test-Path` 는 동명 *파일*에도 true 이고 `New-Item -ItemType Directory -Force` 는 그 파일이 점유한 경로에서 **에러 없이 통과**해서(둘 다 07-29 실측), 그 뒤 `Get-ChildItem` 이 `-Filter` 를 무시하고 그 파일을 반환 → **확장자 무관 잡파일이 E: 정본으로 흡수**됐습니다. 검증은 실패(경로를 파일로 점유)·복구(디렉토리 부재)·정상 3상태를 인위적으로 만들어 각각 확인했고, E:↔C: 해시 불일치 0 · E: 오염 0 입니다. **미규명으로 남은 것**: 07-29 그 세션에서 최초에 왜 무동작했는지. 이제 같은 일이 재발하면 사유가 두 곳(세션 컨텍스트·에러 로그)에 남습니다.
 
 ### 영구 보존되는 메모리
 
