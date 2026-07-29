@@ -229,44 +229,76 @@ function Get-AutoMemoryDir {
     return (Join-Path (Join-Path $base $slug) 'memory')
 }
 
-# Memory split-brain 동기화 (docs/harness.md §12). E:(.claude/memory, git-tracked, C: 복원 대상 아님)
-# = truth, C:(auto-memory) = Claude 가 실제 읽는 작업 사본.
+# Memory 동기화 (docs/harness.md §12). E:(.claude/memory, git-tracked, C: 복원 대상 아님)
+# = **실경로이자 truth** — 2026-07-29 확정: `autoMemoryDirectory` 가 실제로 먹어 런타임이 E: 를
+# 직접 읽고 쓴다(런타임이 파일 frontmatter 에 남긴 modified/originSessionId 가 증거).
+# C:(기본 auto-memory 경로) 사본은 **아무도 읽지 않는 보험** — 설정이 무효화돼 런타임이 기본
+# 경로로 되돌아갈 때에만 쓰인다. (2026-07-27 까지의 "C: = Claude 가 읽는 작업 사본" 전제는 폐기.)
 #   (1) C: 의 '더 새로운' 파일만 E: 로 흡수 — 복원된 옛 C: 가 최신 E: 를 못 덮게 mtime(UTC) 비교.
 #   (2) E: → C: 미러 — 복원된 C: 를 최신으로 복구, E: 에만 있는 것도 C: 로.
 # 삭제는 동기화 안 함(추가/수정만). Copy-Item 은 mtime 보존 → 정상 세션엔 (2)가 무동작.
 # C: 디렉토리 부재는 skip 사유가 아니라 **복구 대상** — C: 복원/초기화 직후의 정상 상태이므로
 # E: 쪽과 대칭으로 생성한다(2026-07-22: 부재 시 skip 하던 탓에 복원 후 복구가 통째로 불발).
-# 반환: @{ absorbed; restored; created }. absorbed>0 이면 E: 변경됨 → 호출부가 commit 판단.
+# 반환: @{ absorbed; restored; created; errors }. absorbed>0 이면 E: 변경됨 → 호출부가 commit 판단.
 # created=$true 면 C: 가 복원/초기화된 것 → 호출부가 사용자에게 알린다.
+# `errors` 는 **침묵 금지 장치**(2026-07-29 추가) — 종전 catch 3곳이 실패를 통째로 삼켜 "실패"와
+# "할 일 없음"이 구분되지 않았다. 실제로 07-29 세션 시작 때 C: 가 복원으로 소실됐는데 경고도
+# 에러 로그도 없이 지나갔고(hook-errors.log 0건), 재현 실행에서만 정상 동작해 원인 규명이 막혔다.
+# 이제 실패는 반환값 + hook-errors.log 양쪽에 남는다. 실패해도 나머지 동기화는 계속한다.
 function Sync-Memory {
+    $errs = New-Object System.Collections.Generic.List[string]
     $cDir = Get-AutoMemoryDir
     $eDir = Join-Path (Get-ProjectRoot) '.claude\memory'
-    if (-not (Test-Path $eDir)) { New-Item -ItemType Directory -Path $eDir -Force | Out-Null }
+    # -PathType Container: 맨 Test-Path 는 **같은 이름의 파일에도 true** 라 생성 분기를 건너뛰고,
+    # 그 뒤 Get-ChildItem 이 파일 경로를 받으면 -Filter 를 무시하고 그 파일 자체를 반환한다
+    # → 확장자 무관 잡파일이 E: 정본으로 흡수됐다(2026-07-29 검증 중 실측). 디렉토리만 인정.
+    if (-not (Test-Path $eDir -PathType Container)) { New-Item -ItemType Directory -Path $eDir -Force | Out-Null }
     $created = $false
-    if (-not (Test-Path $cDir)) {
-        try { New-Item -ItemType Directory -Path $cDir -Force | Out-Null; $created = $true }
-        catch { return @{ absorbed = 0; restored = 0; created = $false } }
+    if (-not (Test-Path $cDir -PathType Container)) {
+        # -ErrorAction Stop: New-Item 의 non-terminating error 는 catch 를 그냥 지나쳐
+        # "생성 성공"으로 오판되므로 반드시 terminating 으로 승격시킨다.
+        # 생성 후 재확인이 필수 — `New-Item -ItemType Directory -Force` 는 **동명 파일이 점유한
+        # 경로에서도 에러 없이 통과**한다(2026-07-29 실측). 반환값만 믿으면 디렉토리가 아닌
+        # 경로를 정상으로 오판해 그 파일을 E: 정본으로 흡수한다.
+        try {
+            New-Item -ItemType Directory -Path $cDir -Force -ErrorAction Stop | Out-Null
+            if (-not (Test-Path $cDir -PathType Container)) { throw '동명 파일이 경로를 점유하고 있어 디렉토리가 아닙니다' }
+            $created = $true
+        }
+        catch {
+            $msg = "C: 디렉토리 생성 실패 ($cDir): $($_.Exception.Message)"
+            $errs.Add($msg)
+            Write-HookError -HookName 'Sync-Memory' -Message $msg
+            return @{ absorbed = 0; restored = 0; created = $false; errors = $errs.ToArray() }
+        }
     }
     $absorbed = 0; $restored = 0
-    Get-ChildItem -Path $cDir -Filter '*.md' -File -ErrorAction SilentlyContinue | ForEach-Object {
+    $cFiles = @(Get-ChildItem -Path $cDir -Filter '*.md' -File -ErrorAction SilentlyContinue -ErrorVariable gciC)
+    if ($gciC) { $errs.Add("C: 목록 조회 실패 ($cDir): $($gciC[0].Exception.Message)") }
+    foreach ($f in $cFiles) {
         try {
-            $eFile = Join-Path $eDir $_.Name
+            $eFile = Join-Path $eDir $f.Name
             $eItem = Get-Item $eFile -ErrorAction SilentlyContinue
-            if (-not $eItem -or $_.LastWriteTimeUtc -gt $eItem.LastWriteTimeUtc) {
-                Copy-Item $_.FullName $eFile -Force; $absorbed++
+            if (-not $eItem -or $f.LastWriteTimeUtc -gt $eItem.LastWriteTimeUtc) {
+                Copy-Item $f.FullName $eFile -Force -ErrorAction Stop; $absorbed++
             }
-        } catch { }
+        } catch { $errs.Add("C:->E: 흡수 실패 $($f.Name): $($_.Exception.Message)") }
     }
-    Get-ChildItem -Path $eDir -Filter '*.md' -File -ErrorAction SilentlyContinue | ForEach-Object {
+    $eFiles = @(Get-ChildItem -Path $eDir -Filter '*.md' -File -ErrorAction SilentlyContinue -ErrorVariable gciE)
+    if ($gciE) { $errs.Add("E: 목록 조회 실패 ($eDir): $($gciE[0].Exception.Message)") }
+    foreach ($f in $eFiles) {
         try {
-            $cFile = Join-Path $cDir $_.Name
+            $cFile = Join-Path $cDir $f.Name
             $cItem = Get-Item $cFile -ErrorAction SilentlyContinue
-            if (-not $cItem -or $_.LastWriteTimeUtc -gt $cItem.LastWriteTimeUtc) {
-                Copy-Item $_.FullName $cFile -Force; $restored++
+            if (-not $cItem -or $f.LastWriteTimeUtc -gt $cItem.LastWriteTimeUtc) {
+                Copy-Item $f.FullName $cFile -Force -ErrorAction Stop; $restored++
             }
-        } catch { }
+        } catch { $errs.Add("E:->C: 복구 실패 $($f.Name): $($_.Exception.Message)") }
     }
-    return @{ absorbed = $absorbed; restored = $restored; created = $created }
+    if ($errs.Count -gt 0) {
+        Write-HookError -HookName 'Sync-Memory' -Message ("$($errs.Count)건 — " + ($errs -join ' | '))
+    }
+    return @{ absorbed = $absorbed; restored = $restored; created = $created; errors = $errs.ToArray() }
 }
 
 # Mask common secret patterns before persisting transcript text to git-tracked files

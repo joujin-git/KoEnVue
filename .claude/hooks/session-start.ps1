@@ -12,13 +12,21 @@ $lines.Add("기본 규칙: model=opus(fast mode), effort=high, language=korean. 
 $lines.Add("멀티에이전트(Workflow)는 큰 작업에만 수동 호출 — 코드리뷰·감사·릴리즈·설계비교·버그헌트. 일상 작업은 단일 세션 + 필요 시 서브에이전트(explorer/verifier 등).")
 $lines.Add('')
 
-# 메모리 split-brain 동기화 (§12): E:(git truth, C: 복원 무관) ↔ C:(Claude 작업 사본).
-# 복원된 옛 C: 는 흡수 안 되고 최신 E: 로 복구됨. absorbed>0 = 새 메모리가 E: 로 백업됨(커밋 대상).
+# 메모리 동기화 (§12): E: 가 **실경로이자 truth**(런타임이 autoMemoryDirectory 로 E: 를 직접
+# 읽고 씀 — 2026-07-29 확정), C: 는 설정 무효화 대비 보험 사본. 복원된 옛 C: 는 흡수 안 되고
+# 최신 E: 로 복구됨. absorbed>0 = 새 메모리가 E: 로 백업됨(커밋 대상).
+# errors: 종전엔 실패를 삼켜 "실패"와 "할 일 없음"이 구분되지 않았다(2026-07-29 침묵 사례) — 반드시 노출.
 $memSync = Sync-Memory
-if ($memSync.absorbed -gt 0 -or $memSync.restored -gt 0 -or $memSync.created) {
+$memErrs = @($memSync.errors)
+if ($memSync.absorbed -gt 0 -or $memSync.restored -gt 0 -or $memSync.created -or $memErrs.Count -gt 0) {
     $lines.Add("## 메모리 동기화 (C:↔E:)")
     if ($memSync.created) {
         $lines.Add("⚠ C: auto-memory 디렉토리가 없어 새로 생성했습니다 — **C: 복원/초기화 감지**. 아래 복구 건수를 확인하세요.")
+    }
+    if ($memErrs.Count -gt 0) {
+        $lines.Add("❌ **동기화 실패 $($memErrs.Count)건** — 아래 사유. 상세는 ``.claude/state/hook-errors.log``. E: 가 실경로이므로 메모리 회상 자체는 정상이나, 보험 사본이 깨진 상태입니다.")
+        foreach ($e in ($memErrs | Select-Object -First 3)) { $lines.Add("  - $e") }
+        if ($memErrs.Count -gt 3) { $lines.Add("  - (외 $($memErrs.Count - 3)건)") }
     }
     $lines.Add("C:→E: $($memSync.absorbed)건 흡수, E:→C: $($memSync.restored)건 복구. absorbed>0 이면 git 백업 위해 커밋 필요.")
     $lines.Add('')
