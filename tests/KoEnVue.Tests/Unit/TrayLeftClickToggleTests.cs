@@ -101,32 +101,36 @@ public class TrayLeftClickToggleTests
     }
 
     // ================================================================
-    // 취소선 개수 — 0 = 없음 / 1 = 단일선 / 2 = 이중선
+    // 취소선 — 윗줄/아랫줄 중 무엇을 채우는가 (네 단계가 모두 달라야 한다)
     // ================================================================
 
     [Theory]
-    [InlineData(true, true, 0)]    // 둘 다 보임
-    [InlineData(true, false, 1)]   // 배지만 보임 → 헤일로 숨김
-    [InlineData(false, true, 1)]   // 헤일로만 보임 → 배지 숨김
-    [InlineData(false, false, 2)]  // 모두 숨김
-    public void CountHiddenIndicators_MatchesStage(bool badgeVisible, bool cursorVisible, int expected)
+    [InlineData(0, false, false)]  // Both       → 선 없음
+    [InlineData(1, true, false)]   // BadgeOnly  → 윗줄
+    [InlineData(2, false, true)]   // CursorOnly → 아랫줄
+    [InlineData(3, true, true)]    // None       → 둘 다
+    public void GetStrikeLines_MatchesStage(int stage, bool expectedUpper, bool expectedLower)
     {
-        Assert.Equal(expected, Tray.CountHiddenIndicators(Make(badgeVisible, cursorVisible)));
+        (bool upper, bool lower) = Tray.GetStrikeLines((IndicatorVisibility)stage);
+
+        Assert.Equal(expectedUpper, upper);
+        Assert.Equal(expectedLower, lower);
     }
 
-    /// <summary>순환하는 동안 취소선 개수는 0 → 1 → 1 → 2 순서를 따른다.</summary>
+    /// <summary>순환하는 동안 취소선 모양이 네 단계 모두 서로 다르다.</summary>
     [Fact]
-    public void CountHiddenIndicators_FollowsCycle()
+    public void GetStrikeLines_EveryStageLooksDifferent()
     {
         AppConfig current = Make(badgeVisible: true, cursorVisible: true);
-        var counts = new List<int>();
+        var shapes = new List<(bool Upper, bool Lower)>();
 
         for (int i = 0; i < 4; i++)
         {
-            counts.Add(Tray.CountHiddenIndicators(current));
+            shapes.Add(Tray.GetStrikeLines(Tray.GetVisibility(current)));
             current = Tray.ComputeLeftClickCycle(current);
         }
 
-        Assert.Equal([0, 1, 1, 2], counts);
+        Assert.Equal([(false, false), (true, false), (false, true), (true, true)], shapes);
+        Assert.Equal(4, shapes.Distinct().Count());
     }
 }
