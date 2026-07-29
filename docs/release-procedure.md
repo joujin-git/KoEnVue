@@ -7,7 +7,7 @@
 ## 1. 사전 조건
 
 - **메인 브랜치 클린 상태.** 모든 PR 머지 + working tree 깨끗.
-- **로컬 [dotnet build](../KoEnVue.csproj) 통과** + **[dotnet test](../tests/KoEnVue.Tests/) 전부 통과 (현재 90개)** + **[GitHub Actions](../.github/workflows/build.yml) 녹색** (이전 main 푸시 기준).
+- **로컬 [dotnet build](../KoEnVue.csproj) 통과** + **[dotnet test](../tests/KoEnVue.Tests/) 전부 통과 (현재 165개)** + **[GitHub Actions](../.github/workflows/build.yml) 녹색** (이전 main 푸시 기준).
 - **CHANGELOG.md** 의 `[Unreleased]` 섹션이 비어 있지 않은지 확인. 릴리스 직전에 `[Unreleased]` → `[X.Y.Z] — YYYY-MM-DD` 로 승격하고 새 빈 `[Unreleased]` 헤더를 추가.
 
 ## 2. 버전 bump
@@ -51,14 +51,14 @@ cat bin/Release/net10.0-windows/win-x64/publish/KoEnVue.exe.sha256.txt
 **중요 — 3단계 publish 결과물 그대로 첨부**. NativeAOT 비결정성 때문에 재빌드하면 SHA256 이 바뀌어 사용자 검증이 실패합니다.
 
 ```bash
-git tag vX.Y.Z.W          # 예: git tag v0.9.3.0.0 (4-part)
+git tag vX.Y.Z.W          # 예: git tag v1.0.0.0 (4-part — 숫자 4개, 점 3개)
 git push origin main      # main 푸시 → GitHub Actions 트리거
 git push origin vX.Y.Z.W  # 태그 푸시
 ```
 
 **GitHub 웹 UI** — `Releases → Draft a new release`:
 
-- **Choose a tag**: `vX.Y.Z.W` (방금 푸시한 태그). 접두 `v` 필수 — [UpdateChecker.NormalizeVersion](../App/Update/UpdateChecker.cs) 가 벗겨냅니다. 4-part 컨벤션 (`v0.9.3.0.0` 등).
+- **Choose a tag**: `vX.Y.Z.W` (방금 푸시한 태그). 접두 `v` 필수 — [UpdateChecker.NormalizeVersion](../App/Update/UpdateChecker.cs) 가 벗겨냅니다. 4-part 컨벤션 (`v1.0.0.0` 등 — 숫자 4개).
 - **Release title**: `KoEnVue vX.Y.Z.W` 또는 자유 텍스트.
 - **Describe**: CHANGELOG 의 해당 버전 섹션을 그대로 복붙. 본문 마지막에 SHA256 hash 인용:
   ```

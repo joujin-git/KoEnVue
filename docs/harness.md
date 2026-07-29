@@ -129,6 +129,10 @@ docs/
 
 각 워크플로우는 KoEnVue 서브에이전트(explorer/planner/reviewer/verifier)를 `agentType` 으로 재사용하고 `schema` 로 구조화 출력을 강제합니다. 예: `Workflow({ name: 'release-review', args: { scope: 'PR-26 변경' } })`.
 
+> ⚠️ **`args` 가 스크립트에 도달하지 않을 수 있다 (2026-07-29 v1.0.0.0 검증에서 2회 연속 관측)**. `Workflow({ name, args: { scope: ... } })` 로 넘긴 값이 스크립트의 `args.scope` 에 잡히지 않고 **기본 SCOPE 로 조용히 되돌아갔다** — 두 번 다 결과 JSON 의 `scope` 필드가 기본 문구 그대로였고, `dismissed` 가 전부 "scope 비어있음"이라 4차원 중 3차원이 공회전했다(빌드 게이트는 통과하므로 겉보기엔 정상 완료).
+>
+> **대응 2가지**: (1) 범위·대상이 결과를 좌우하는 워크플로우는 **결과의 `scope`/`target` 필드가 의도한 값인지 반드시 확인한다** — 확인 없이 "확정 0건"을 신뢰하면 안 된다. (2) 어긋나면 반환된 **스크립트 파일의 상수를 직접 고쳐 `Workflow({ scriptPath })` 로 재실행**한다(이 경로는 정상 동작 확인). 실제로 스코프를 바로잡은 3차 실행에서만 동작 결함 3종이 나왔고, 잘못된 스코프의 1·2차는 규칙 위반만 보고했다.
+
 **라우팅 — 저비용 단일 위임 vs 고비용 워크플로우**: 모든 substantive 작업을 Workflow 로 보내지 마세요. **단일 관점이면 충분한 작업은 스킬 슬래시(저비용)** — 설계 한 건은 `/plan`(planner 1명), 문서 동기화는 `/sync-docs`(docs-keeper 1명). **여러 관점의 교차검증이 실익일 때만 Workflow**(fan-out 토큰 수 배~수십 배, §8). 특히 `/plan`(planner 단독, 저비용) vs `design-compare`(3 angle 제안 + judge panel 점수화 + 합성, 고비용)는 한 기능을 **여러 설계안으로 경쟁시켜 비교**할 때만 후자 — 단일 합리안이면 `/plan` 으로 충분.
 
 **선택 기준 — release-review vs bug-hunt** (동시성 점검 시 모호함 해소): `release-review` 는 릴리즈 직전 diff 를 1-pass 로 4차원(correctness·보안·P규칙·**동시성**)+빌드게이트로 훑어 동시성을 이미 커버한다. `bug-hunt` 는 레이스 의심이 깊을 때 전체 범위를 안 나올 때까지(loop-until-dry) 반복 탐색하는 더 무거운 도구 — release-review 가 1차로 동시성을 보고, 그래도 레이스 의심이 잔존하면 bug-hunt 를 추가로 돌린다.

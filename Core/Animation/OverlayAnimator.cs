@@ -533,7 +533,7 @@ public sealed class OverlayAnimator : IDisposable
         if (_dimmed)
             raw *= _config.DimOpacityFactor;
 
-        return (byte)(raw * 255);
+        return (byte)(raw * byte.MaxValue);
     }
 
     private void StartFade(byte from, byte to, int durationMs)

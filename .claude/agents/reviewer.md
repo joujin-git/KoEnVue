@@ -28,7 +28,7 @@ model: inherit
    - 헤더 **`### P6 verification invariants`** 아래 ` ```bash ` 블록 — P규칙 메인 grep 묶음. **기대값은 각 줄의 우측 `#` 주석이 단일 진실원** (주석 없으면 0 매치, 있으면 1+/≥1/3/4 등 — "전부 0" 아님). 개수도 conventions.md 가 단일 진실원 — PR 확장(PR-15/PR-18/PR-21 등)으로 늘어나므로 여기 수치를 박지 않는다
    - 같은 § 아래 본문 문단 **`Additional sub-rule — App/Config/ must not import App/Detector/`** 다음 ` ```bash ` 블록 — 1개 grep (`→ 0`)
    - 헤더 **`### 8. Core ↔ Logger 단방향 추상화 (PR-09)`** 본문의 **`검증:`** bullet — 인라인 `git grep` 2개 (`Logger.Debug|Info|Warning|Error` 0 매치 외 + `LogProvider.` 1+ 매치)
-   - 헤더 **`### 9. Debug 레벨 로그의 "failed" 단어 회피`** 본문의 **`검증:`** bullet — 인라인 `git grep "Sink?.Debug.*failed" Core/` 1개 (0 매치)
+   - 헤더 **`### 9. Debug 레벨 로그의 "failed" 단어 회피`** 본문의 **`검증:`** bullet — 인라인 `git grep` 2개 (`Sink?.Debug.*failed` Core/ 0 매치 + `Logger.Debug.*failed` App/ 0 매치 baseline — 후자는 PR-16 이 추가한 App/ 축)
    - 헤더 **`### AOT/Trim/SingleFile 분석기 정책`** 본문의 **`Verification:`** 문단 ` ```bash ` 블록 — 3개 grep (`EnableAotAnalyzer` / `EnableTrimAnalyzer` / `EnableSingleFileAnalyzer` 각 `→ 1`)
 
    방법 A 결과 = 방법 B 7 위치 합계 (구체 grep 개수는 conventions.md 에서 추출 — 수치를 여기 박제하지 않는다). **셈 기준은 "고유 invariant 정의"** — 이미 위 7 위치에 정의된 grep 을 다른 절에서 다시 서술하는 자리는 별개 위치로 세지 않는다 (예: `### [LibraryImport] only` 절의 `DllImport` 재서술, `## Testing` 절의 "listed above" 역참조 — 둘 다 P6 블록 정의의 사본). **방법 A 와 B 의 위치/개수가 어긋나면 conventions.md 에 새 invariant 블록이 추가됐다는 신호** — 본 §0 의 7 위치 리스트도 같이 갱신해야 함을 사용자에게 보고.

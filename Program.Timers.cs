@@ -24,7 +24,21 @@ internal static partial class Program
             Logger.Warning("Cursor overlay window creation failed; cursor halo disabled");
             return;
         }
-        CursorOverlay.Initialize(_hwndCursorOverlay, _hwndMain, _config, _lastImeState, _lastCapsLockState);
+        try
+        {
+            CursorOverlay.Initialize(_hwndCursorOverlay, _hwndMain, _config, _lastImeState, _lastCapsLockState);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // 엔진 초기화는 GDI 자원 고갈 시 throw 한다 (LayeredCursorBase 의 CreateCompatibleDC 실패).
+            // 여기서 흡수하지 않으면 예외가 WndProc 최상위 catch 까지 올라가 호출자의 남은 부수효과
+            // (트레이 아이콘 갱신·배지 전이)를 통째로 건너뛴다 — 좌클릭 경로는 config 를 이미 저장한
+            // 뒤라 화면과 config 가 영구 불일치로 남는다. 창을 되돌려 두면 다음 호출이 재시도한다.
+            Logger.Warning($"Cursor overlay init failed; cursor halo disabled this round: {ex.Message}");
+            User32.DestroyWindow(_hwndCursorOverlay);
+            _hwndCursorOverlay = IntPtr.Zero;
+            return;
+        }
         User32.SetTimer(_hwndMain, AppMessages.TIMER_ID_CURSOR_MOTION,
             _config.CursorAlwaysShow ? DefaultConfig.CursorAlwaysPollMs : DefaultConfig.CursorMotionPollMs,
             IntPtr.Zero);

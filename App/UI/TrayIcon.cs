@@ -45,7 +45,6 @@ internal static class TrayIcon
     private const double GlowMaxAlpha = 0.65;
     private const double GlowFalloff = 2.2;
 
-    private const int BytesPerPixel = 4;        // 32bpp BGRA
     private const int AntiAliasSamples = 4;     // 경계 픽셀당 4x4 서브샘플
 
     /// <summary>
@@ -173,9 +172,9 @@ internal static class TrayIcon
     {
         (bool drawBadge, bool drawHalo) = Tray.GetShapes(visibility);
 
-        // COLORREF 는 0x00BBGGRR
-        byte bgR = (byte)(bgColor & 0xFF), bgG = (byte)((bgColor >> 8) & 0xFF), bgB = (byte)((bgColor >> 16) & 0xFF);
-        byte fgR = (byte)(fgColor & 0xFF), fgG = (byte)((fgColor >> 8) & 0xFF), fgB = (byte)((fgColor >> 16) & 0xFF);
+        // COLORREF(0x00BBGGRR) 채널 분해는 ColorHelper 단일 진실원 (P4)
+        var (bgR, bgG, bgB) = ColorHelper.ColorRefToRgb(bgColor);
+        var (fgR, fgG, fgB) = ColorHelper.ColorRefToRgb(fgColor);
 
         int side = Math.Min(iconW, iconH);
         double cx = iconW / 2.0, cy = iconH / 2.0;
@@ -191,14 +190,14 @@ internal static class TrayIcon
         double badgeRadius = badgeH * BadgeCornerRatio;
 
         byte* buf = (byte*)bits;
-        int stride = iconW * BytesPerPixel;
+        int stride = iconW * DibSectionFactory.BytesPerPixel;
 
         for (int y = 0; y < iconH; y++)
         {
             byte* row = buf + (iconH - 1 - y) * stride;  // bottom-up DIB
             for (int x = 0; x < iconW; x++)
             {
-                byte* px = row + x * BytesPerPixel;
+                byte* px = row + x * DibSectionFactory.BytesPerPixel;
 
                 // 둥근 모서리 배경 — 바깥은 완전 투명
                 double bgCoverage = RoundedRectCoverage(x, y, 0, 0, iconW, iconH, corner);
@@ -228,7 +227,7 @@ internal static class TrayIcon
                 px[0] = Blend(bgB, fgB, coverage);
                 px[1] = Blend(bgG, fgG, coverage);
                 px[2] = Blend(bgR, fgR, coverage);
-                px[3] = (byte)(0xFF * bgCoverage + 0.5);
+                px[3] = (byte)(byte.MaxValue * bgCoverage + 0.5);
             }
         }
     }

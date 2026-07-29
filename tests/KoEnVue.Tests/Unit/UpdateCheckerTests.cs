@@ -23,6 +23,10 @@ public class UpdateCheckerTests
 
     [Theory]
     [InlineData("0.9.4.0", "v0.9.5.0", true)]
+    // 0.9.x → 1.0 정식 승격. major 가 오르며 자릿수가 줄어드는 구간이라 문자열 비교였다면
+    // "0.9.9.7" > "1.0.0.0" 으로 뒤집혀 업데이트 알림이 조용히 사라진다 (Version 숫자 비교로 방어).
+    [InlineData("0.9.9.7", "v1.0.0.0", true)]
+    [InlineData("1.0.0.0", "v0.9.9.7", false)]
     [InlineData("1.0.0", "1.0.0", false)]
     [InlineData("1.0.1", "1.0.0", false)]
     [InlineData("1.0.0-beta", "1.0.0", false)] // prerelease strip → 동일

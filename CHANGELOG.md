@@ -15,6 +15,16 @@
 
   `koenvue.ico` 는 16/20/24/32/48/64/128/256 px 8종 PNG 임베드이며 트레이와 같은 비율·같은 후광 기준을 쓴다.
 
+### Fixed
+
+- **시스템 테마·강조색 변경 시 트레이 아이콘 색이 갱신되지 않던 문제** — Windows 다크/라이트 전환이나 강조색 변경 시 플로팅 배지와 커서 헤일로는 새 색으로 다시 그려졌지만 **트레이 아이콘만 옛 색으로 남아** 다음 한/영 전환 때까지 유지됐다. `HandleSettingChange` 가 `Tray.UpdateState` 를 호출하지 않아 셸이 이전 HICON 을 계속 들고 있던 것(`Program.SystemEvents.cs`, `HandleConfigChanged` 의 동일 갱신과 비대칭). 선재 결함이지만 이번 아이콘 재디자인으로 Fg 색이 링·배지·후광 전체를 칠하게 되면서 눈에 띄는 면적이 커졌다.
+
+- **커서 헤일로 초기화 실패가 표시 상태를 config 와 영구 불일치로 만들던 문제** — GDI 자원이 고갈돼 `CreateCompatibleDC` 가 실패하면 `EnableCursorOverlay` 가 던진 예외가 `WndProc` 최상위 catch 까지 올라갔다. 좌클릭 순환 경로는 `Settings.Save` 를 이미 끝낸 뒤라 **config 에는 새 단계가 기록됐는데 트레이 아이콘 도형과 배지 전이는 통째로 건너뛴 채** 어긋난 상태로 남았다. 이제 초기화 실패를 그 자리에서 흡수하고 오버레이 창을 되돌려, 나머지 부수효과가 정상 실행되고 다음 호출이 재시도한다(`Program.Timers.cs`).
+
+- **아이콘 생성 실패 시 트레이가 빈 칸으로 고착되던 문제** — DIB/아이콘 생성이 실패하면 NULL 핸들이 `NIF_ICON` 으로 셸에 전달되고, **유효했던 이전 아이콘까지 그 무효 핸들로 교체**돼 다음 성공까지 복구되지 않았다(NIM_ADD 재시도 경로는 같은 NULL 을 최대 30회 재제출). 이제 실패를 감지해 직전 유효 아이콘을 유지하고 툴팁만 갱신한다 — 렌더 엔진의 "이전 DIB 유지"(`LayeredOverlayBase`)와 같은 열화 방식(`App/UI/Tray.cs`).
+
+- **내부 정리 (동작 변화 없음)** — P4 단일 진실원 위반 2건(`BytesPerPixel` 재선언 → `DibSectionFactory.BytesPerPixel`, COLORREF 채널 분해 인라인 재구현 → `ColorHelper.ColorRefToRgb`)과 알파 최대값 리터럴 2건(`TrayIcon`·`OverlayAnimator` → `byte.MaxValue`)을 규약에 맞췄다. `UpdateChecker` 회귀 테스트에 `0.9.9.7 → 1.0.0.0` 케이스 추가 — major 가 오르며 자릿수가 줄어드는 구간이라 문자열 비교였다면 업데이트 알림이 조용히 사라질 자리다.
+
 ## [0.9.9.7] — 2026-07-24 — 플로팅 배지·커서 헤일로·PR-32/33·오딧 후속
 
 ### Changed

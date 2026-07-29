@@ -60,6 +60,12 @@ internal static partial class Program
         // PR-13: 글로벌 재적용 후 per-app resolved 로 렌더 — 프로필이 theme=system 상속 시
         //         프로필 색상 6쌍이 새 시스템 색으로 재계산된 인스턴스로 갱신된다.
         RefreshVisibleIndicator();
+
+        // 트레이 아이콘도 같은 색 6쌍(Bg/Fg)을 읽어 그리므로 함께 갱신 — 누락 시 셸이 이전
+        // HICON 을 계속 들고 있어 다크/라이트 전환 후 트레이만 옛 색으로 남는다 (다음 IME
+        // 전환까지). HandleConfigChanged 의 동일 갱신과 대칭.
+        if (_config.TrayEnabled)
+            Tray.UpdateState(_lastImeState, _config);
     }
 
     private static void HandleDpiChanged()

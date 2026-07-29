@@ -1181,7 +1181,9 @@ Enabled in [KoEnVue.csproj](../KoEnVue.csproj) — strips ICU from the NativeAOT
 
 **ARGB byte 순서 주의**: DWM 의 0xAARRGGBB (R 이 high byte) 와 `GetSysColor` 의 COLORREF 0x00BBGGRR (B 가 high byte) 는 R/B 순서가 반대다. 두 경로가 같은 `ColorHelper` 헬퍼를 공유하지 않고 각자 분리한다 — `ColorHelper.ColorRefToRgb` 는 COLORREF 전용이라 ARGB 에 그대로 쓰면 색이 뒤집힌다.
 
-**메시지 시그널** (모두 같은 `HandleSettingChange` 핸들러로 라우팅 — `Settings.ClearProfileCache` + `ThemePresets.Apply` + `Animation.TriggerShow` 를 순서대로 트리거):
+**메시지 시그널** (모두 같은 `HandleSettingChange` 핸들러로 라우팅 — `Settings.ClearProfileCache` → `ThemePresets.Apply`(theme=system 일 때) → `Overlay.HandleConfigChanged` → `RefreshVisibleIndicator`(→ `Animation.TriggerShow`) → `Tray.UpdateState` 를 순서대로 트리거):
+
+> **트레이 아이콘도 같이 갱신해야 한다** — `TrayIcon.CreateIcon` 이 배경/도형에 쓰는 색은 `ThemePresets.Apply` 가 재계산하는 Bg/Fg 6쌍과 같은 값이고, 셸은 `NIM_MODIFY` 를 받기 전까지 이전 HICON 을 계속 들고 있다. 마지막 `Tray.UpdateState` 가 빠지면 배지·헤일로만 새 색으로 바뀌고 **트레이 아이콘만 옛 색으로 남아** 다음 IME 전환까지 유지된다(v1.0.0.0 에서 수정). `HandleConfigChanged` 의 동일 갱신과 대칭을 맞춰야 하는 자리다.
 
 - `WM_SETTINGCHANGE` (0x001A) — 시스템 색 / 시각 설정 전반의 광역 브로드캐스트
 - `WM_THEMECHANGED` (0x031A) — 비주얼 스타일 / 다크 모드 토글 시 별도 브로드캐스트 (PR-01 에서 추가)

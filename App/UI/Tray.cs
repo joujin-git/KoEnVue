@@ -192,6 +192,25 @@ internal static partial class Tray
         if (!_initialized) return;
 
         var newIcon = TrayIcon.CreateIcon(state, config);
+
+        // 생성 실패(NULL 핸들)면 직전 유효 아이콘을 유지한다 — NULL 을 NIM_MODIFY 로 넘기면 셸이
+        // 빈 칸을 그리고, _currentIcon 까지 무효 핸들로 덮이면 다음 성공까지 복구되지 않는다.
+        // 툴팁은 이전 핸들로 갱신해 IME 상태 텍스트만은 최신을 유지. 렌더 엔진의 "이전 DIB 유지"
+        // (LayeredOverlayBase) 와 같은 우아한 열화 패턴.
+        if (newIcon.IsInvalid)
+        {
+            Logger.Warning("Tray icon creation failed; keeping previous icon");
+            newIcon.Dispose();
+            if (_currentIcon is { IsInvalid: false })
+                _notifyIcon?.UpdateIconAndTooltip(_currentIcon.DangerousGetHandle(), BuildTooltip(state, config));
+            if (_addPending)
+            {
+                _pendingInitialState = state;
+                _pendingConfig = config;
+            }
+            return;
+        }
+
         _notifyIcon?.UpdateIconAndTooltip(newIcon.DangerousGetHandle(), BuildTooltip(state, config));
 
         // 이전 아이콘 해제 후 교체 — 소유권은 Tray 측에 남는다 (NotifyIconManager 는 해제 금지).
