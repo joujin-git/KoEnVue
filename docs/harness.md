@@ -4,14 +4,14 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 
 ## 0. 첫 사용 가이드 (비개발자 시각)
 
-**이게 뭐예요?** Claude Code 는 명령줄에서 도는 AI 보조 도구입니다. "하네스" 는 그 도구가 KoEnVue 프로젝트에서 일관되게 동작하도록 잡아주는 설정 묶음 — 모델은 Opus(빠른 출력 모드), 작업 깊이는 상황에 맞춰 조정(기본 effort high), 코드 바꾸면 문서 동기화 안내, 큰 작업만 여러 AI 가 나눠서 교차검증(ultracode 수동 호출), 세션 끝나면 자동 저장 등.
+**이게 뭐예요?** Claude Code 는 명령줄에서 도는 AI 보조 도구입니다. "하네스" 는 그 도구가 KoEnVue 프로젝트에서 일관되게 동작하도록 잡아주는 설정 묶음 — 모델은 Opus(빠른 출력 모드), 작업 깊이는 상황에 맞춰 조정(데스크탑 앱 실효 effort `xhigh`), 코드 바꾸면 문서 동기화 안내, 큰 작업만 여러 AI 가 나눠서 교차검증(ultracode 수동 호출), 세션 끝나면 자동 저장 등.
 
 **왜 필요해요?** 매번 같은 설명을 다시 안 해도 되고, 다른 장비로 옮겨도 작업이 이어집니다. 잊을 만한 안전망(자동 wip 커밋, 비밀번호 마스킹) 도 자동으로 잡습니다.
 
 **처음 써보기 — 5단계**:
-1. **Claude Code 실행** — 터미널은 `claude`, 데스크탑 앱은 이 프로젝트 폴더를 열면 됩니다. 활성 판별은 **표면 무관한 기준**으로: 세션 시작 컨텍스트에 `[harness] KoEnVue 하네스 활성화` 문구가 주입됐는지(SessionStart hook 산출물). 터미널에서는 화면 아래 statusLine 에 `[opus · high] | git:main* | 한/En 하네스` 도 함께 보입니다 — **데스크탑 앱에서의 statusLine 표시 여부는 2026-07-29 기준 미확인**이며, 공식 문서도 표면별 지원을 명시하지 않습니다
+1. **Claude Code 실행** — 터미널은 `claude`, 데스크탑 앱은 이 프로젝트 폴더를 열면 됩니다. 활성 판별은 **표면 무관한 기준**으로: 세션 시작 컨텍스트에 `[harness] KoEnVue 하네스 활성화` 문구가 주입됐는지(SessionStart hook 산출물). 터미널에서는 화면 아래 statusLine 에 `[opus · high] | git:main* | 한/En 하네스` 도 함께 보이지만, **데스크탑 앱에서는 이 커스텀 statusLine 이 표시되지 않습니다**(2026-07-29 화면 확인). 앱은 대신 자체 배지(`권한 무시` / `Opus 5 · 빠름` / `엑스트라`)를 보여주며, 그중 앞 둘은 우리 설정과 일치하고 **`엑스트라`(=`xhigh`)만 설정값 `high` 와 어긋납니다**(§1 Effort 행)
 2. **`/harness-status` 입력** → 모델/effort, 서브에이전트 6명, 오늘 세션 파일, dirty tree, hook 에러 정상 여부를 한눈에 확인
-3. **자연어로 작업 요청** — 예: "한 레이블 색을 빨강으로 바꿔줘". 하네스가 effort high 로 처리하고, 필요하면 서브에이전트(explorer, planner 등)에 위임. 코드리뷰·감사·릴리즈 같은 큰 작업은 `/release-review` 처럼 워크플로우를 수동 호출
+3. **자연어로 작업 요청** — 예: "한 레이블 색을 빨강으로 바꿔줘". 하네스가 적응형 effort 로 처리하고, 필요하면 서브에이전트(explorer, planner 등)에 위임. 코드리뷰·감사·릴리즈 같은 큰 작업은 `/release-review` 처럼 워크플로우를 수동 호출
 4. **작업 마무리할 때 `/wrap-up`** → 문서 동기화 + 세션 요약을 `docs/sessions/YYYY-MM-DD.md` 에 자동 기록
 5. **다른 장비로 옮기기** → `git push` 후 다른 장비에서 `git pull` → `claude` 실행 → SessionStart 가 자동으로 어제 작업을 컨텍스트에 주입
 
@@ -25,9 +25,9 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 
 | 결정 | 내용 | 이유 |
 |------|------|------|
-| 모델 | `opus` alias (최신 Opus 자동 추종 — 버전 숫자를 박지 않는다) + `fastMode: true` | 최고 성능 모델을 유지하되 **fast mode 로 빠른 출력**(모델 다운그레이드 아님 — schemastore 스키마의 boolean 키로 확인). model/effort 는 statusLine payload(`payload.effort.level`)로 전달됨 — 미수신 시 statusline.ps1 이 env→`high` 폴백 |
-| Effort | `effortLevel: high` (settings) | 2026-07-24 재구성으로 **`max`→`high`**, env `CLAUDE_CODE_EFFORT_LEVEL=max` **제거**. 스키마 재확인: `max`/`ultracode` 값은 **session-only 라 settings 파일에선 무효**(파일 최대 유효값 `xhigh`) — 파일로는 영속 불가라 종전엔 env 로 max 를 강제했으나, 15K 라인 유지보수 단계엔 상시 최대가 과해 `high` 기본으로 낮춤. 특정 작업에 더 깊이가 필요하면 그때 승격 |
-| Thinking | `alwaysThinkingEnabled: true`, `showThinkingSummaries: true` | thinking 은 유지하되 **매 턴 ultrathink 강제 주입은 제거** — effort high 에 맞춘 **적응형**(단순 작업은 가볍게, 복잡한 작업은 깊게) |
+| 모델 | `opus` alias (최신 Opus 자동 추종 — 버전 숫자를 박지 않는다) + `fastMode: true` | 최고 성능 모델을 유지하되 **fast mode 로 빠른 출력**(모델 다운그레이드 아님 — schemastore 스키마의 boolean 키로 확인). model/effort 는 statusLine payload(`payload.effort.level`)로 전달됨 — 미수신 시 statusline.ps1 이 env→`high` 폴백. **데스크탑 앱에선 statusLine 자체가 렌더되지 않아 이 경로가 무실효**(§13) |
+| Effort | 설정은 `effortLevel: high` — **데스크탑 앱 실효는 `xhigh`** | ⚠️ **2026-07-29 발견**: 데스크탑 앱은 이 설정을 **무시하고** 기본값 `xhigh` 로 세션을 돌립니다. 근거는 transcript 메타 `"effort":"xhigh","entrypoint":"claude-desktop"`(모든 응답에 기록) + 앱 하단 배지 「엑스트라」(= Extra = `xhigh`). 알려진 앱 버그 — effort 선택이 디스크에 저장되지 않아 매 채팅 기본값으로 폴백하고, `/effort` 명령도 앱 세션에선 쓸 수 없습니다([#66266](https://github.com/anthropics/claude-code/issues/66266)·[#66083](https://github.com/anthropics/claude-code/issues/66083)). **사용자 결정(07-29): `xhigh` 를 그대로 두고 문서를 실제에 맞춘다.** 터미널에서 실행할 때 `high` 가 먹는지는 미검증. 이력: 2026-07-24 재구성으로 `max`→`high` + env `CLAUDE_CODE_EFFORT_LEVEL=max` 제거(`max`/`ultracode` 는 session-only 라 파일 스코프 무효, 파일 최대 유효값이 `xhigh`) |
+| Thinking | `alwaysThinkingEnabled: true`, `showThinkingSummaries: true` | thinking 은 유지하되 **매 턴 ultrathink 강제 주입은 제거** — 세션 effort 에 맞춘 **적응형**(단순 작업은 가볍게, 복잡한 작업은 깊게) |
 | **ultracode** | **큰 작업만 수동** — 매 턴 주입하던 `inject-turn-context` hook **삭제**, 큰 작업(리뷰·감사·릴리즈·설계비교·버그헌트)만 워크플로우 `/<name>` 수동 호출 | 매 작업 6+ 에이전트 fan-out 은 이 규모(1인·유지보수)에 과잉. 일상은 solo + 필요 시 서브에이전트 |
 | 서브에이전트 effort | 본문 첫 단락 문구 + **모델 차등**(agents `model:`) | explorer=haiku·verifier=sonnet 은 균형 문구, planner/reviewer/docs-keeper/historian 은 opus(inherit) 유지. 매 턴 주입 hook 이 없어져 본문 문구가 서브에이전트 깊이의 단일 보장 |
 | 병렬 | 단일 세션 + 서브에이전트 + **Workflow 도구**(ultracode). Agent Team(TeamCreate)만 미사용 | Workflow 는 결정론적·resume·budget 지원이라 도입. Agent Team 은 토큰 3–5배·resume 미지원·동시 1팀만이라 계속 제외 |
@@ -111,7 +111,7 @@ docs/
 
 서브에이전트가 "단일 작업 위임"이라면, **ultracode 는 한 작업을 여러 에이전트로 쪼개 병렬·교차검증하는 오케스트레이션**입니다. 2026-06-08 전면 도입 (인터뷰: "비용 무제한·깊이 최우선" 을 멀티에이전트로 확장).
 
-**effort 와 별개 축**: ultracode 는 effort 레벨(low/…/high/xhigh)이 아니라 그 위의 Workflow 오케스트레이션입니다. 기본 effort 는 `high`(settings) — 워크플로우를 돌려도 이 축은 그대로입니다. (재구성 전엔 env `CLAUDE_CODE_EFFORT_LEVEL=max` + 매 턴 키워드 주입으로 둘 다 상시 유지했으나, 지금은 effort=high 기본 + 워크플로우 수동 호출로 분리.)
+**effort 와 별개 축**: ultracode 는 effort 레벨(low/…/high/xhigh)이 아니라 그 위의 Workflow 오케스트레이션입니다. 세션 effort 는 데스크탑 앱 기준 `xhigh`(§1 표) — 워크플로우를 돌려도 이 축은 그대로입니다. (재구성 전엔 env `CLAUDE_CODE_EFFORT_LEVEL=max` + 매 턴 키워드 주입으로 둘 다 상시 유지했으나, 지금은 세션 effort(앱 실효 `xhigh`) + 워크플로우 수동 호출로 분리.)
 
 **발동 — 큰 작업만 수동**: 재구성으로 매 턴 주입하던 `inject-turn-context.ps1` hook 이 삭제돼, 워크플로우는 이제 **메인 세션(또는 사용자)이 판단해 수동 호출**합니다 — 코드 리뷰·전체 감사·릴리즈 점검·버그/레이스 헌트·설계 비교처럼 여러 관점의 교차검증이 실익인 큰 작업만. 일상의 편집·대화·단일 조회는 solo(필요 시 단일 서브에이전트). 워크플로우 카탈로그는 여전히 `.claude/workflows/*.js` 파일시스템이 **단일 진실원** — 저장 즉시 `/<name>` 슬래시로 노출됩니다(§6).
 
@@ -158,13 +158,13 @@ hook 이벤트 5개 (SessionStart · PreCompact · Stop · SessionEnd · Instruc
 - 최근 hook 에러 3건 (있으면)
 - `Sync-Memory` 로 C:↔E: 메모리 동기화 (§12 참조)
 - P1–P6 규칙과 서브에이전트 활용 권장사항 reminder
-- **`-FallbackContext`/`-EventName` 안전망**: `Write-HookOutput` 직전에 죽어도 catch 경로가 최소 fallback 컨텍스트("effort high + fast mode + thinking, 큰 작업만 워크플로우" + 이전 세션 포인터) 1줄을 주입 — SessionStart·PreCompact 2곳이 사용(재구성 전엔 삭제된 inject-turn-context 포함 3곳)
+- **`-FallbackContext`/`-EventName` 안전망**: `Write-HookOutput` 직전에 죽어도 catch 경로가 최소 fallback 컨텍스트("effort(데스크탑 앱 실측 xhigh) + fast mode + thinking, 큰 작업만 워크플로우" + 이전 세션 포인터) 1줄을 주입 — SessionStart·PreCompact 2곳이 사용(재구성 전엔 삭제된 inject-turn-context 포함 3곳)
 
 ### `PreCompact` → `pre-compact.ps1`
 - 대화 압축(컴팩션, 자동 컨텍스트 한도 / 수동 `/compact`) **직전** 실행. 긴 작업·큰 워크플로우로 컨텍스트가 빠르게 찰 때 작업 연속성을 보강. matcher `*` 라 auto·manual 둘 다 트리거, `payload.trigger` 로 구분 기록
 - **(1) 압축 마커 박제**: 오늘 세션 파일에 `## [HH:MM] compaction (trigger=auto|manual)` 블록 append (`Add-SessionBlock` mutex 로 직렬화) → 압축 지점을 영구 기록 (압축 전 turn 기록이 상세 컨텍스트 원본임을 명시)
 - **(2) 연속성 컨텍스트**: `additionalContext` 로 git 스냅샷(미커밋 변경 30건 클램프 + 최근 커밋 5개) + 세션파일 복원 포인터를 주입 → 압축 직후 새 컨텍스트에서 진행 중이던 미커밋 작업의 연속성 즉시 복원 (SessionStart 와 동일 메커니즘). 미커밋 변경은 `Get-PorcelainStatus`(git **1회**)로 축소
-- **`-FallbackContext`/`-EventName` 안전망**: SessionStart 와 동형 — `Write-HookOutput` 직전 사망 시 catch 경로가 "압축됨 — 연속성 확인, effort high 유지, 큰 작업만 워크플로우" 1줄 주입 (SessionStart·PreCompact 2곳)
+- **`-FallbackContext`/`-EventName` 안전망**: SessionStart 와 동형 — `Write-HookOutput` 직전 사망 시 catch 경로가 "압축됨 — 연속성 확인, effort 유지, 큰 작업만 워크플로우" 1줄 주입 (SessionStart·PreCompact 2곳)
 
 ### `Stop` → `stop-record.ps1` (턴 끝 1회 — 재구성 2026-07-24 통합)
 턴이 끝날 때 **1회** 실행. 재구성 전 매 편집마다 돌던 `post-edit-doc-sync`(PostToolUse)와 매 셸 호출마다 돌던 `auto-push`(PostToolUse) 두 hook 을 이 Stop 하나로 흡수 — pwsh 콜드스타트(실측 ~245 ms)를 **매 tool call → 턴당 1회**로 줄이는 게 재구성의 핵심 속도 개선. 순서:
@@ -275,9 +275,9 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 ## 8. 비용 모니터링
 
-2026-07-24 균형 재구성으로 **일상 작업 비용이 대폭 낮아졌습니다** — `bypassPermissions` + Opus(fast mode) + effort **high** + thinking 은 solo 로 도는 보통 작업 기준 완만한 배수이고, 매 턴 ultrathink/ultracode 자동 주입과 매 tool call hook 오버헤드가 사라졌습니다. **비용이 튀는 건 큰 작업에서 워크플로우를 수동 호출할 때뿐** — 그 substantive 작업은 fan-out 으로 수 배~수십 배(워크플로우당 최대 16 동시 / 1,000 누적 에이전트). 일상은 solo·high 로 가볍게, 깊이가 필요한 큰 작업만 의식적으로 워크플로우로.
+2026-07-24 균형 재구성으로 **일상 작업 비용이 대폭 낮아졌습니다** — `bypassPermissions` + Opus(fast mode) + thinking 은 solo 로 도는 보통 작업 기준 완만한 배수이고, 매 턴 ultrathink/ultracode 자동 주입과 매 tool call hook 오버헤드가 사라졌습니다. **다만 effort 는 의도한 `high` 가 아니라 `xhigh` 로 돌고 있습니다**(2026-07-29 발견, §1 표) — 재구성 전 `max` 보다는 낮지만 의도보다 한 단계 깊어 그만큼 느리고 비쌉니다. 재구성의 속도 개선이 기대만큼 체감되지 않았다면 이 항목이 원인입니다. **비용이 튀는 건 큰 작업에서 워크플로우를 수동 호출할 때뿐** — 그 substantive 작업은 fan-out 으로 수 배~수십 배(워크플로우당 최대 16 동시 / 1,000 누적 에이전트). 일상은 solo·high 로 가볍게, 깊이가 필요한 큰 작업만 의식적으로 워크플로우로.
 
-**상한의 실제 — `budget` 가드는 거의 무실효**: `budget`(total/spent/remaining) 을 실제 읽는 워크플로우는 **bug-hunt 1개뿐**이고, 그조차 `budget.total` 미주입 시(현재 호출은 total 안 넘김) round hard cap(`round < 8`)만 실효 상한입니다. 나머지 4개(release-review·codebase-audit·design-compare·harness-optimize)는 budget 을 안 읽으며 **per-parallel-item cap** 이 유일 상한 — `MAX_VERIFY=25`(release-review)·`MAX_MODULES=24`(codebase-audit)·동시 16(전역). 즉 토큰 총량 가드가 아니라 fan-out 폭주 방지일 뿐. **노드 effort (2026-07-29 확인)**: 재구성으로 env `CLAUDE_CODE_EFFORT_LEVEL` 은 제거됐고 effort 는 settings `high` 뿐인데, 워크플로우 노드(`agent()`)는 **`opts.effort` 를 생략하면 세션 effort 를 상속**합니다(Workflow 도구 계약에 명시). 즉 노드도 `high` 로 돌므로 위 "수 배~수십 배" 추정은 과대평가가 아닙니다. 특정 스테이지만 싸게 돌리려면 `opts.effort: 'low'` 를 **명시**해야 합니다 — 생략은 절약이 아니라 상속입니다.
+**상한의 실제 — `budget` 가드는 거의 무실효**: `budget`(total/spent/remaining) 을 실제 읽는 워크플로우는 **bug-hunt 1개뿐**이고, 그조차 `budget.total` 미주입 시(현재 호출은 total 안 넘김) round hard cap(`round < 8`)만 실효 상한입니다. 나머지 4개(release-review·codebase-audit·design-compare·harness-optimize)는 budget 을 안 읽으며 **per-parallel-item cap** 이 유일 상한 — `MAX_VERIFY=25`(release-review)·`MAX_MODULES=24`(codebase-audit)·동시 16(전역). 즉 토큰 총량 가드가 아니라 fan-out 폭주 방지일 뿐. **노드 effort (2026-07-29 확인)**: 워크플로우 노드(`agent()`)는 **`opts.effort` 를 생략하면 세션 effort 를 상속**합니다(Workflow 도구 계약에 명시). 그리고 그 세션 effort 는 데스크탑 앱에서 `high` 가 아니라 **`xhigh`** 이므로(§1 표), 노드도 `xhigh` 로 돕니다 — 위 "수 배~수십 배" 추정은 과대평가가 아니라 오히려 **하한**입니다. 특정 스테이지만 싸게 돌리려면 `opts.effort: 'low'` 를 **명시**해야 합니다 — 생략은 절약이 아니라 상속입니다.
 
 가시화 수단:
 - **`statusLine`**: 매 턴 `[opus · high] | git:main* | 한/En 하네스` 표시
@@ -333,9 +333,10 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 - **`/wrap-up` 의 race condition**: `docs/sessions/YYYY-MM-DD.md` 의 쓰기는 hook(stop-record / pre-compact / session-end) 과 historian subagent 만 수행 — 메인 세션이 직접 같은 파일을 Edit/Write 하면 충돌 가능. [skills/wrap-up/SKILL.md](../.claude/skills/wrap-up/SKILL.md) 의 "쓰기 단일 진실원" 규약 참조.
 - **`.claude/worktrees/` 의 빌드 산출물 누적**: 서브에이전트가 publish 를 돌리면 worktree 안에 ~150 MB 산출물이 남고 정리 안 함. 주기적으로 `/cleanup-worktrees` SKILL 로 일주일 이상 미사용 worktree 제거 권장.
 - ~~ultracode 런타임 활성화 미검증~~ → **2026-07-29 해소**: ultracode 는 하네스가 켜는 설정이 아니라 사용자 프롬프트 키워드/세션 설정으로 켜지는 **세션 플래그**이며, 상태는 런타임이 system-reminder 로 통지합니다(07-29 세션 = off 관측). `/<name>` 수동 호출은 이 플래그와 무관한 별도 opt-in 사유이므로 현행 운영에 영향 없음. 상세는 §3 「ultracode」 절.
-- **데스크탑 앱에서의 statusLine 표시 미확인**: 하네스 hook 5종은 표면 무관하게 런타임이 실행하므로 데스크탑 앱에서도 동작합니다(07-29 SessionStart 주입 실측). 다만 `statusLine` 설정이 데스크탑 앱 화면에 렌더되는지는 미확인이고 공식 문서도 표면별 지원을 명시하지 않습니다 — 활성 판별은 statusLine 대신 **주입 컨텍스트의 `[harness]` 문구**를 쓰세요(§1).
+- **데스크탑 앱에서 statusLine 은 표시되지 않음 (07-29 확정)**: `statusline.ps1` 은 데스크탑 앱에서 **한 번도 화면에 나오지 않는 사실상 죽은 코드**입니다(화면 확인). 터미널 실행용으로 남겨두되, 활성 판별은 statusLine 대신 **주입 컨텍스트의 `[harness]` 문구**를 쓰세요(§1). 반면 hook 5종은 표면 무관하게 런타임이 실행하므로 데스크탑 앱에서도 정상 동작합니다 — 07-29 에 SessionStart(컨텍스트 주입)·Stop(`docs/sessions/2026-07-29.md` 기록) 둘 다 실측 확인.
+- **데스크탑 앱은 `effortLevel` 설정을 무시함 (07-29 확정)**: settings 의 `high` 대신 `xhigh` 로 돕니다. 상세·근거·결정은 §1 Effort 행. 비용/시간 추정 시 반드시 감안하세요.
 - **워크플로우 비용 (수동 호출 시에만)**: 큰 작업에서 워크플로우를 호출하면 fan-out 으로 토큰이 급증. 재구성 후엔 매 턴 자동이 아니라 **수동 호출 때만** 발생하므로, 비용이 부담되면 워크플로우 대신 solo 또는 단일 서브에이전트(`/plan`·`/sync-docs`)로 처리.
-- **statusLine 하드코딩 폴백**: `model`/`effort` 는 statusLine payload(`payload.effort.level`)가 오면 그 값을 쓰되, **payload 미수신 시 하드코딩 폴백이라 런타임 진실이 아님** — model 은 `'opus'` 고정, effort 는 `$env:CLAUDE_CODE_EFFORT_LEVEL` 반영 후 없으면 `'high'`(재구성 후 env 는 미설정이 정상이라 실질 폴백은 `high`; model 은 항상 하드코딩 폴백). statusLine 은 화면 갱신마다 호출돼 가장 빈번하므로 **git 호출을 축소**: branch 는 `.git/HEAD` 를 직접 Read(rev-parse 프로세스 제거 — `ref: refs/heads/X` 파싱, detached 면 짧은 SHA), dirty `*` 는 `git status --porcelain --untracked-files=no` 1회(untracked 제외로 체감 비용 절감, 변경 신호는 보존). settings.json 의 statusLine 에 `timeout: 5` 추가로 렌더 지연 시 조기 차단.
+- **statusLine 하드코딩 폴백** (터미널에서만 의미 있음 — 데스크탑 앱은 statusLine 미표시): `model`/`effort` 는 statusLine payload(`payload.effort.level`)가 오면 그 값을 쓰되, **payload 미수신 시 하드코딩 폴백이라 런타임 진실이 아님** — model 은 `'opus'` 고정, effort 는 `$env:CLAUDE_CODE_EFFORT_LEVEL` 반영 후 없으면 `'high'`(재구성 후 env 는 미설정이 정상이라 실질 폴백은 `high`; model 은 항상 하드코딩 폴백). **주의**: 이 폴백값 `high` 는 데스크탑 앱 실효값 `xhigh` 와 다릅니다 — 터미널에서 이 줄을 보고 effort 를 판단하지 마세요. statusLine 은 화면 갱신마다 호출돼 가장 빈번하므로 **git 호출을 축소**: branch 는 `.git/HEAD` 를 직접 Read(rev-parse 프로세스 제거 — `ref: refs/heads/X` 파싱, detached 면 짧은 SHA), dirty `*` 는 `git status --porcelain --untracked-files=no` 1회(untracked 제외로 체감 비용 절감, 변경 신호는 보존). settings.json 의 statusLine 에 `timeout: 5` 추가로 렌더 지연 시 조기 차단.
 - **PreCompact ↔ Stop 세션파일 동시 append 경합**: 두 hook 모두 `docs/sessions/YYYY-MM-DD.md` 끝에 `Add-Content` 로 블록을 붙임. 컴팩션과 턴 종료가 거의 동시에 발생하면 같은 파일 동시 쓰기로 블록이 섞이거나 누락될 가능성(append-only·저빈도라 실측 피해 미관측, OS 파일락 의존이라 §OS 감수 정책 대상).
 - **transcript JSONL 스키마 의존**: stop-record 의 세션 발췌는 transcript 내부 스키마(`type`/`message`/`content`)에 의존 — Claude Code 버전업 시 깨질 수 있음(§4 Stop 의 빈 발췌 마커가 조기 신호).
 - **verify 공통 환각 (적대적 검증의 사각)**: release-review·bug-hunt 의 적대적 검증은 **동일 model·동일 코드 재독** 기반이라, finder 가 코드를 잘못 읽어 생긴 **공통 환각**(예: 실제로 없는 레이스를 양쪽 다 "있다"고 봄)은 못 거른다 — 검증자도 같은 오독을 반복하기 때문. **빌드 게이트 같은 객관 신호**(컴파일/테스트 통과)가 이 사각을 일부 보완하지만, 동작 차원의 공통 환각은 사람 손(`/run` + 실제 exe 실행)이 최종 방어선.

@@ -7,8 +7,9 @@ shell: powershell
 > **주의** — 아래 `!` 백틱 셸 명령이 실행 결과가 아니라 명령 문자열 그대로 보이면 자동 실행되지 않은 것입니다(Skill 도구 호출 경로에서 관측). 그때는 **직접 실행한 뒤** 답하세요 — 추측으로 상태를 보고하지 말 것.
 
 ## 모델 / 인텔리전스
-- settings.json (effort 정본): `!`Select-String -Path .claude/settings.json -Pattern 'model|fastMode|effortLevel|alwaysThinkingEnabled' | ForEach-Object { $_.Line.Trim() }``
-- 환경변수 effort override: `!`$v = $env:CLAUDE_CODE_EFFORT_LEVEL; if ([string]::IsNullOrEmpty($v)) { '(미설정 — 2026-07-24 재구성으로 제거됨. 비어 있는 게 정상이며 위 settings 값이 실효)' } else { "CLAUDE_CODE_EFFORT_LEVEL=$v (override 중 — settings 보다 우선)" }``
+- settings.json (**설정값** — 데스크탑 앱에선 effortLevel 이 무시되니 정본 아님): `!`Select-String -Path .claude/settings.json -Pattern 'model|fastMode|effortLevel|alwaysThinkingEnabled' | ForEach-Object { $_.Line.Trim() }``
+- **실효 effort (정본 — transcript 실측)**: `!`$p = Get-ChildItem "$env:USERPROFILE\.claude\projects\E--dev-KoEnVue\*.jsonl" -EA SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if (-not $p) { '(transcript 없음)' } else { $m = @(Select-String -Path $p.FullName -Pattern '"effort":"(\w+)"'); $e = if ($m) { $m[-1].Matches[0].Groups[1].Value } else { '미기록' }; $t = @(Select-String -Path $p.FullName -Pattern '"entrypoint":"([\w-]+)"'); $n = if ($t) { $t[-1].Matches[0].Groups[1].Value } else { '?' }; "실효 effort=$e / entrypoint=$n — 설정값과 다르면 앱이 무시한 것(2026-07-29 xhigh 확인)" }``
+- 환경변수 effort override: `!`$v = $env:CLAUDE_CODE_EFFORT_LEVEL; if ([string]::IsNullOrEmpty($v)) { '(미설정 — 2026-07-24 재구성으로 제거됨. 비어 있는 게 정상. 단 settings 값이 곧 실효는 아님 — 위 transcript 실측이 정본)' } else { "CLAUDE_CODE_EFFORT_LEVEL=$v (override 중 — settings 보다 우선)" }``
 - ultracode (멀티에이전트): **큰 작업만 수동 호출** — 코드리뷰·감사·릴리즈·설계비교·버그헌트 때 `/release-review` 등 워크플로우 `/<name>` 으로 호출. 일상 작업은 단일 세션 + 필요 시 서브에이전트. (2026-07-24 재구성으로 매 턴 주입하던 `inject-turn-context` hook 삭제 — 없는 것이 정상.)
 
 ## 하네스 파일 존재

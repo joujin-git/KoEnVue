@@ -1,6 +1,6 @@
 . (Join-Path $PSScriptRoot 'lib\_common.ps1')
 
-Invoke-HookSafely -EventName 'PreCompact' -FallbackContext '[harness] 대화 압축됨 — 진행 작업 연속성 확인(git status·docs/sessions 최신). effort high 유지, 큰 작업만 워크플로우.' {
+Invoke-HookSafely -EventName 'PreCompact' -FallbackContext '[harness] 대화 압축됨 — 진행 작업 연속성 확인(git status·docs/sessions 최신). effort 유지, 큰 작업만 워크플로우.' {
 
 # PreCompact — 대화가 압축(컴팩션)되기 직전 실행. 긴 작업에서 컨텍스트가 찼을 때
 # 작업 연속성을 보강한다. 두 축으로 동작:

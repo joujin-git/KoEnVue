@@ -1,14 +1,14 @@
 . (Join-Path $PSScriptRoot 'lib\_common.ps1')
 
-Invoke-HookSafely -EventName 'SessionStart' -FallbackContext '[harness] session-start 실패 — effort high + fast mode + thinking mode 적용, P1-P6 준수. 큰 작업만 워크플로우. 이전 세션 컨텍스트는 docs/sessions 최신 파일 참조.' {
+Invoke-HookSafely -EventName 'SessionStart' -FallbackContext '[harness] session-start 실패 — effort(데스크탑 앱 실측 xhigh) + fast mode + thinking mode 적용, P1-P6 준수. 큰 작업만 워크플로우. 이전 세션 컨텍스트는 docs/sessions 최신 파일 참조.' {
 
 $payload = Read-HookInput
 $source = if ($payload) { [string]$payload.source } else { 'startup' }
 
 $root = Get-ProjectRoot
 $lines = New-Object System.Collections.Generic.List[string]
-$lines.Add("[harness] KoEnVue 하네스 활성화 — 작업은 thinking mode + effort high(적응형)로 수행됩니다. 단순 작업은 가볍게, 복잡한 작업은 깊게.")
-$lines.Add("기본 규칙: model=opus(fast mode), effort=high, language=korean. P1–P6 규칙 준수가 필수입니다.")
+$lines.Add("[harness] KoEnVue 하네스 활성화 — 작업은 thinking mode + effort(적응형)로 수행됩니다. 단순 작업은 가볍게, 복잡한 작업은 깊게.")
+$lines.Add("기본 규칙: model=opus(fast mode), effort=xhigh(데스크탑 앱 실측 — settings 의 high 는 앱에서 미반영), language=korean. P1–P6 규칙 준수가 필수입니다.")
 $lines.Add("멀티에이전트(Workflow)는 큰 작업에만 수동 호출 — 코드리뷰·감사·릴리즈·설계비교·버그헌트. 일상 작업은 단일 세션 + 필요 시 서브에이전트(explorer/verifier 등).")
 $lines.Add('')
 

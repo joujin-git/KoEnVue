@@ -5,15 +5,15 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: c492f502-5d0a-450d-853d-101a243df772
-  modified: 2026-07-27T05:52:08.021Z
+  modified: 2026-07-29T07:10:53.673Z
 ---
 
-KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정 → **2026-07-24 균형 재구성**). ⚠️ 최신 실효 상태는 맨 아래 「2026-07-24 균형 재구성」 섹션 — 아래 초기 결정 중 effort=max·ultracode 항상 ON 은 그 섹션에서 갱신됨(effort=high·ultracode 큰 작업만 수동).
+KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정 → **2026-07-24 균형 재구성**). ⚠️ 최신 실효 상태는 맨 아래 「2026-07-24 균형 재구성」 섹션 — 아래 초기 결정 중 effort=max·ultracode 항상 ON 은 그 섹션에서 갱신됨(effort 설정 high·ultracode 큰 작업만 수동). **2026-07-29 정정: 데스크탑 앱은 `effortLevel` 설정을 무시하고 `xhigh` 로 돈다**(transcript `"effort":"xhigh","entrypoint":"claude-desktop"` 실측). 사용자 결정 — 그대로 두고 문서를 실제에 맞춤.
 
 ## 핵심 규칙
 
-- **모델**: `opus` alias (최신 Opus 를 자동 추종 — 버전 숫자를 박지 않는다) + `fastMode: true`. **현재 `effortLevel: "high"`** 이고 `CLAUDE_CODE_EFFORT_LEVEL` env 는 **제거된 상태가 정상**. (이력: 재구성 전엔 파일 `xhigh` + env `max` 로 실효 max 를 강제했다. `max`/`ultracode` 는 session-only 라 파일 스코프 무효 — 2026-06-08 AUDIT-2 검증. schema enum 엔 `max` 가 있지만 JSON 작성 허용일 뿐 persistent 적용과 별개.)
-- **Thinking 항상**: `alwaysThinkingEnabled: true`. **매 턴 ultrathink 주입은 2026-07-24 제거** — `UserPromptSubmit` hook(inject-turn-context.ps1)이 삭제돼 지금은 effort high 에 맞춘 적응형이다.
+- **모델**: `opus` alias (최신 Opus 를 자동 추종 — 버전 숫자를 박지 않는다) + `fastMode: true`. **설정은 `effortLevel: "high"` 이나 데스크탑 앱 실효는 `xhigh`**(앱이 설정을 무시 — 2026-07-29 transcript 실측), `CLAUDE_CODE_EFFORT_LEVEL` env 는 **제거된 상태가 정상**. (이력: 재구성 전엔 파일 `xhigh` + env `max` 로 실효 max 를 강제했다. `max`/`ultracode` 는 session-only 라 파일 스코프 무효 — 2026-06-08 AUDIT-2 검증. schema enum 엔 `max` 가 있지만 JSON 작성 허용일 뿐 persistent 적용과 별개.)
+- **Thinking 항상**: `alwaysThinkingEnabled: true`. **매 턴 ultrathink 주입은 2026-07-24 제거** — `UserPromptSubmit` hook(inject-turn-context.ps1)이 삭제돼 지금은 세션 effort 에 맞춘 적응형이다.
 - **단일 세션 + 항상 서브에이전트**: Agent Team 안 씀 (토큰 3–5배, resume 미지원, 동시 1팀만)
 - **권한**: `bypassPermissions` 전체 — 사용자가 git 으로 책임짐. 속도 우선
 - **PR 없음**: main 직커밋 (1인 프로젝트 흐름 유지)
@@ -37,14 +37,14 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정 →
 ## ultracode — 멀티에이전트 워크플로우 (2026-06-08 전면 도입 확정)
 
 - **발동(2026-06-08 당시 — 현재는 폐기)**: 항상 ON. `inject-turn-context.ps1` hook 이 매 턴 "ultracode" 키워드 + 행동 지시 주입. **지금은 hook 삭제 + 큰 작업만 수동 호출.** substantive 작업(다중 파일 변경·리뷰·감사·버그헌트·설계비교·하네스변경)은 Workflow 도구로 오케스트레이션, trivial 은 solo.
-- **effort 와 별개 축**: ultracode 는 effort 레벨이 아니다. (당시엔 `CLAUDE_CODE_EFFORT_LEVEL=max` 를 함께 유지했다 — **그 env 는 2026-07-24 제거됐고 지금은 settings 의 `effortLevel: high` 가 실효**) — ultracode 가 effort 를 대체하지 않음(env 를 ultracode 로 바꾸면 max 손실 위험). 이번 세션이 env=max + 키워드 ultracode 조합으로 동작한 게 증거.
+- **effort 와 별개 축**: ultracode 는 effort 레벨이 아니다. (당시엔 `CLAUDE_CODE_EFFORT_LEVEL=max` 를 함께 유지했다 — **그 env 는 2026-07-24 제거됐고, 데스크탑 앱 실효는 `xhigh` — settings 의 `high` 는 앱이 무시한다(2026-07-29)**) — ultracode 가 effort 를 대체하지 않음(env 를 ultracode 로 바꾸면 max 손실 위험). 이번 세션이 env=max + 키워드 ultracode 조합으로 동작한 게 증거.
 - **Agent Team 은 여전히 거부**: Workflow 도구는 Agent Team(TeamCreate)과 다른 메커니즘 — 결정론적·resume(resumeFromRunId)·budget 지원. "단일 세션 + 서브에이전트" 철학과 충돌 없음.
 - **저장 워크플로우 5개**: `.claude/workflows/*.js` — release-review, bug-hunt, codebase-audit, design-compare, harness-optimize. `Workflow({name})` 호출 또는 `/<name>`.
 - **검증 상태(2026-06-08 갱신)**: 워크플로우 `/<name>` 자동 노출 + `Workflow({name})` 다중 에이전트 fan-out 확인됨(release-review/harness-optimize 각 6 에이전트 실행). hook 키워드가 ultracode "런타임 플래그"를 켜는지만 미확인이나 명시적 지시 + 워크플로우 실행으로 행동 보장. (statusLine 은 재구성 후 `[model · effort] | git:branch | 한/En 하네스` 만 렌더 — ultracode 표시는 없어졌다.)
 
 **Why**: 사용자 "비용 무제한, 깊이 최우선" 철학을 ultracode 에도 일관 적용 — 전면 도입 + 항상 자동 (2026-06-08 인터뷰).
 
-**How to apply**: (⚠️ 2026-07-24 균형 재구성으로 갱신 — 아래 「2026-07-24 균형 재구성」 섹션이 최신. 이제 ultracode 는 큰 작업만 수동 호출, effort=high 기본.)
+**How to apply**: (⚠️ 2026-07-24 균형 재구성으로 갱신 — 아래 「2026-07-24 균형 재구성」 섹션이 최신. 이제 ultracode 는 큰 작업만 수동 호출, effort 설정은 high — 단 데스크탑 앱 실효는 xhigh.)
 
 ## 2026-07-24 균형 재구성 (속도/정확성 균형으로 전환)
 
@@ -60,7 +60,7 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정 →
 
 **Why**: 일상 작업 속도↑(멀티에이전트·max·매 hook 오버헤드 제거), 큰 작업 깊이는 워크플로우 수동 호출로 보존. 이 규모(1인·유지보수)에 "매 작업 6+ 에이전트 fan-out + 매 tool call 245ms hook"은 과잉이었다.
 
-**How to apply**: 기본은 solo + 필요 시 서브에이전트(탐색 explorer/haiku, 검증 verifier/sonnet). 큰 작업만 Workflow 수동. effort=high 기본 — 특정 작업에 더 깊이가 필요하면 그때 승격. 이 균형을 "항상 max·항상 멀티에이전트"로 되돌리려면 사용자 확인. [[verify-load-bearing-claims]] 적용 사례(서브에이전트 fastMode 주장을 schemastore 로 교차검증).
+**How to apply**: 기본은 solo + 필요 시 서브에이전트(탐색 explorer/haiku, 검증 verifier/sonnet). 큰 작업만 Workflow 수동. effort 는 설정 high / 데스크탑 앱 실효 xhigh — 더 깊이가 필요하면 그때 승격. 이 균형을 "항상 max·항상 멀티에이전트"로 되돌리려면 사용자 확인. [[verify-load-bearing-claims]] 적용 사례(서브에이전트 fastMode 주장을 schemastore 로 교차검증).
 
 ## 히스토리
 
