@@ -41,6 +41,7 @@ internal static class TrayIcon
     private const int DoubleStrikeThicknessMinPx = 2;
     private const int DoubleStrikeGapRatio = 8;        // 두 선 사이 간격 = iconH / 8
     private const int DoubleStrikeGapMinPx = 2;
+    private const int DoubleStrikeHiddenCount = 2;     // 이 개수 이상 숨겨져 있으면 이중선
 
     /// <summary>
     /// ImeState별 배경색으로 캐럿+점 아이콘을 생성한다.
@@ -110,11 +111,10 @@ internal static class TrayIcon
             DrawCaretDot(memDC, iconW, iconH, fgColor);
 
             // 6a. 숨김 상태면 취소선 중첩 (Fg 색상, 볼드) — 선 개수로 숨김 범위를 표현.
-            //     하나만 숨김 = 단일선, 배지·헤일로 둘 다 숨김 = 이중선.
-            bool badgeHidden = config.UserHidden;
-            bool cursorHidden = !config.CursorIndicatorEnabled;
-            if (badgeHidden || cursorHidden)
-                DrawStrikeThrough(memDC, iconW, iconH, fgColor, doubleLine: badgeHidden && cursorHidden);
+            //     판정은 Tray.CountHiddenIndicators 단일 진실원 (설정상 비활성은 세지 않는다).
+            int hiddenCount = Tray.CountHiddenIndicators(config);
+            if (hiddenCount > 0)
+                DrawStrikeThrough(memDC, iconW, iconH, fgColor, doubleLine: hiddenCount >= DoubleStrikeHiddenCount);
 
             // 이전 비트맵 복원 (SelectObject 전 필수)
             Gdi32.SelectObject(memDC, hOldBitmap);

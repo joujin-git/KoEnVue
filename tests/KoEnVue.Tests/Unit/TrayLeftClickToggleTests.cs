@@ -1,3 +1,4 @@
+using KoEnVue.App.Config;
 using KoEnVue.App.Models;
 using KoEnVue.App.UI;
 using Xunit;
@@ -12,7 +13,8 @@ public class TrayLeftClickToggleTests
     /// <param name="badgeVisible">배지가 보이는 중인가 (= !UserHidden).</param>
     /// <param name="cursorVisible">커서 헤일로가 보이는 중인가 (= CursorIndicatorEnabled).</param>
     private static AppConfig Make(bool badgeVisible, bool cursorVisible,
-                                  bool restoreBadge = true, bool restoreCursor = true) =>
+                                  bool restoreBadge = DefaultConfig.TrayHideRestoreBadge,
+                                  bool restoreCursor = DefaultConfig.TrayHideRestoreCursor) =>
         new()
         {
             UserHidden = !badgeVisible,
@@ -101,5 +103,71 @@ public class TrayLeftClickToggleTests
 
         Assert.False(original.UserHidden);
         Assert.True(original.CursorIndicatorEnabled);
+    }
+
+    // ================================================================
+    // 취소선 개수 — 설정상 비활성은 세지 않는다
+    // ================================================================
+
+    [Fact]
+    public void HiddenCount_Zero_WhenNothingHidden()
+    {
+        Assert.Equal(0, Tray.CountHiddenIndicators(Make(badgeVisible: true, cursorVisible: true)));
+    }
+
+    [Fact]
+    public void HiddenCount_One_WhenOnlyBadgeHidden()
+    {
+        Assert.Equal(1, Tray.CountHiddenIndicators(Make(badgeVisible: false, cursorVisible: true)));
+    }
+
+    /// <summary>헤일로를 평소 꺼두고 쓰는 사용자 — 취소선이 상시 뜨면 안 된다.</summary>
+    [Fact]
+    public void HiddenCount_Zero_WhenCursorIsDisabledBySetting()
+    {
+        AppConfig config = Make(badgeVisible: true, cursorVisible: false, restoreCursor: false);
+
+        Assert.Equal(0, Tray.CountHiddenIndicators(config));
+    }
+
+    /// <summary>같은 `cursor_indicator_enabled = false` 라도 좌클릭이 숨긴 것이면 센다.</summary>
+    [Fact]
+    public void HiddenCount_One_WhenCursorHiddenByLeftClick()
+    {
+        AppConfig config = Make(badgeVisible: true, cursorVisible: false, restoreCursor: true);
+
+        Assert.Equal(1, Tray.CountHiddenIndicators(config));
+    }
+
+    [Fact]
+    public void HiddenCount_Two_WhenBothHiddenByLeftClick()
+    {
+        AppConfig hidden = Tray.ComputeLeftClickToggle(Make(badgeVisible: true, cursorVisible: true));
+
+        Assert.Equal(2, Tray.CountHiddenIndicators(hidden));
+    }
+
+    /// <summary>헤일로를 안 쓰는 사용자의 좌클릭 왕복 — 0 → 1(배지만) → 0.</summary>
+    [Fact]
+    public void HiddenCount_CursorDisabledUser_RoundTripStaysSingleLine()
+    {
+        AppConfig start = Make(badgeVisible: true, cursorVisible: false, restoreCursor: false);
+        Assert.Equal(0, Tray.CountHiddenIndicators(start));
+
+        AppConfig hidden = Tray.ComputeLeftClickToggle(start);
+        Assert.Equal(1, Tray.CountHiddenIndicators(hidden));
+
+        AppConfig restored = Tray.ComputeLeftClickToggle(hidden);
+        Assert.Equal(0, Tray.CountHiddenIndicators(restored));
+    }
+
+    /// <summary>메뉴로 헤일로를 다시 켜면 배지 숨김만 남아 단일선으로 줄어든다.</summary>
+    [Fact]
+    public void HiddenCount_DropsToOne_WhenCursorReenabledFromMenu()
+    {
+        AppConfig hidden = Tray.ComputeLeftClickToggle(Make(badgeVisible: true, cursorVisible: true));
+        AppConfig cursorBackOn = hidden with { CursorIndicatorEnabled = true };
+
+        Assert.Equal(1, Tray.CountHiddenIndicators(cursorBackOn));
     }
 }
