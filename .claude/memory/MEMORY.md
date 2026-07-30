@@ -1,6 +1,6 @@
 - [Version format — always 4-part](feedback_version_format.md) — csproj, git 태그, CHANGELOG 모두 `major.minor.build.revision` 4-part 필수.
 - [User role — 비개발자 + 바이브 코딩](user_role.md) — 1인 개발자, 용어 풀이 곁들이기, 결정 효과 구체적으로.
-- [Harness design](feedback_harness_design.md) — **2026-07-24 균형 재구성**: Opus+fastMode·effort 설정 high(**데스크탑 앱 실효 xhigh — 앱이 설정 무시, 07-29 확인**)·ultracode 큰 작업만 수동·매 tool call hook을 Stop 턴당1회로 통합·explorer=haiku/verifier=sonnet. (이전: max·ultracode 항상 ON). 단일 세션+서브에이전트, bypass, main 직커밋, Agent Team 거부 유지.
+- [Harness design](feedback_harness_design.md) — **2026-07-24 균형 재구성 + 07-30 fast mode 해제**: Opus(**fastMode:false — 품질 우선, 복원 제안 금지**)·effort 설정 high(**데스크탑 앱 실효 xhigh — 앱이 설정 무시, 07-29 확인**)·ultracode 큰 작업만 수동·매 tool call hook을 Stop 턴당1회로 통합·explorer=haiku/verifier=sonnet. (이전: max·ultracode 항상 ON). 단일 세션+서브에이전트, bypass, main 직커밋, Agent Team 거부 유지.
 - [Workflow rules](feedback_workflow_rules.md) — 빌드 = debug + release publish 항상 둘 다, 커밋 = `git push` 까지 항상 같이 (Stop hook 이 턴 끝 1회 자동 push).
 - [OS 의존 버그 감수](os-dependent-accept.md) — 제어 불가 OS(Win32/셸) 동작에 의존하는 버그는 무리한 수정보다 감수 선호.
 - [도구 제약 — 감수 전 실험](tool-limit-verify-first.md) — 제어 가능한 제약(도구/SDK/설정)은 "못 한다" 단정 전 저비용 실험으로 재확인. permissions.deny·정적게이트·PostToolUse 자동기록 사례.

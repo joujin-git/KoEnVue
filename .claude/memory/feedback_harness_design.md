@@ -5,14 +5,14 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: c492f502-5d0a-450d-853d-101a243df772
-  modified: 2026-07-29T07:10:53.673Z
+  modified: 2026-07-30T00:09:16.281Z
 ---
 
 KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정 → **2026-07-24 균형 재구성**). ⚠️ 최신 실효 상태는 맨 아래 「2026-07-24 균형 재구성」 섹션 — 아래 초기 결정 중 effort=max·ultracode 항상 ON 은 그 섹션에서 갱신됨(effort 설정 high·ultracode 큰 작업만 수동). **2026-07-29 정정: 데스크탑 앱은 `effortLevel` 설정을 무시하고 `xhigh` 로 돈다**(transcript `"effort":"xhigh","entrypoint":"claude-desktop"` 실측). 사용자 결정 — 그대로 두고 문서를 실제에 맞춤.
 
 ## 핵심 규칙
 
-- **모델**: `opus` alias (최신 Opus 를 자동 추종 — 버전 숫자를 박지 않는다) + `fastMode: true`. **설정은 `effortLevel: "high"` 이나 데스크탑 앱 실효는 `xhigh`**(앱이 설정을 무시 — 2026-07-29 transcript 실측), `CLAUDE_CODE_EFFORT_LEVEL` env 는 **제거된 상태가 정상**. (이력: 재구성 전엔 파일 `xhigh` + env `max` 로 실효 max 를 강제했다. `max`/`ultracode` 는 session-only 라 파일 스코프 무효 — 2026-06-08 AUDIT-2 검증. schema enum 엔 `max` 가 있지만 JSON 작성 허용일 뿐 persistent 적용과 별개.)
+- **모델**: `opus` alias (최신 Opus 를 자동 추종 — 버전 숫자를 박지 않는다) + **`fastMode: false`**(2026-07-30 사용자 요청으로 해제 — 아래 섹션. 키는 남겨 명시적 false 로 둔다). **설정은 `effortLevel: "high"` 이나 데스크탑 앱 실효는 `xhigh`**(앱이 설정을 무시 — 2026-07-29 transcript 실측), `CLAUDE_CODE_EFFORT_LEVEL` env 는 **제거된 상태가 정상**. (이력: 재구성 전엔 파일 `xhigh` + env `max` 로 실효 max 를 강제했다. `max`/`ultracode` 는 session-only 라 파일 스코프 무효 — 2026-06-08 AUDIT-2 검증. schema enum 엔 `max` 가 있지만 JSON 작성 허용일 뿐 persistent 적용과 별개.)
 - **Thinking 항상**: `alwaysThinkingEnabled: true`. **매 턴 ultrathink 주입은 2026-07-24 제거** — `UserPromptSubmit` hook(inject-turn-context.ps1)이 삭제돼 지금은 세션 effort 에 맞춘 적응형이다.
 - **단일 세션 + 항상 서브에이전트**: Agent Team 안 씀 (토큰 3–5배, resume 미지원, 동시 1팀만)
 - **권한**: `bypassPermissions` 전체 — 사용자가 git 으로 책임짐. 속도 우선
@@ -52,7 +52,7 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정 →
 
 **변경**:
 - **effort max → high**: env `CLAUDE_CODE_EFFORT_LEVEL=max` 제거, 파일 `effortLevel: high`. (스키마 재확인: max/ultracode 는 session-only 라 파일 무효 — 기존 메모리와 일치)
-- **fastMode: true 추가**: Opus 4.8 유지 + 빠른 출력(스키마 boolean 키 실재 확인 — claude-code-guide 가 환각 아니었음). 모델 다운그레이드 아님.
+- **fastMode: true 추가**: Opus 4.8 유지 + 빠른 출력(스키마 boolean 키 실재 확인 — claude-code-guide 가 환각 아니었음). 모델 다운그레이드 아님. ⚠️ **2026-07-30 해제됨(`false`) — 아래 섹션 참조. 이 줄은 이력이다.**
 - **ultracode 항상 ON → 큰 작업만 수동**: `UserPromptSubmit` inject-turn-context.ps1 hook **삭제**. 매 턴 ultrathink/ultracode 주입 중단. 큰 작업(리뷰·감사·릴리즈·설계비교·버그헌트)은 워크플로우 `/<name>` 수동 호출로만.
 - **hook 통합 (핵심 속도)**: PostToolUse 2개(post-edit-doc-sync 매편집, auto-push 매셸) **삭제** → `Stop` hook(stop-record)으로 턴당 1회 통합. pwsh 콜드스타트(실측 ~245ms) 매 tool call → 0. doc-sync 매핑은 _common.ps1 `Get-DocSyncReminders` 로 단일화(P4).
 - **서브에이전트 모델 차등**: explorer=haiku, verifier=sonnet(agents frontmatter `model:`). planner/reviewer/docs-keeper/historian=inherit(opus) 유지.
@@ -61,6 +61,14 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정 →
 **Why**: 일상 작업 속도↑(멀티에이전트·max·매 hook 오버헤드 제거), 큰 작업 깊이는 워크플로우 수동 호출로 보존. 이 규모(1인·유지보수)에 "매 작업 6+ 에이전트 fan-out + 매 tool call 245ms hook"은 과잉이었다.
 
 **How to apply**: 기본은 solo + 필요 시 서브에이전트(탐색 explorer/haiku, 검증 verifier/sonnet). 큰 작업만 Workflow 수동. effort 는 설정 high / 데스크탑 앱 실효 xhigh — 더 깊이가 필요하면 그때 승격. 이 균형을 "항상 max·항상 멀티에이전트"로 되돌리려면 사용자 확인. [[verify-load-bearing-claims]] 적용 사례(서브에이전트 fastMode 주장을 schemastore 로 교차검증).
+
+## 2026-07-30 fast mode 해제
+
+**변경**: `.claude/settings.json` `fastMode: true` → **`false`**. 07-24 재구성 항목 중 **이것 하나만** 되돌림 — effort·ultracode 수동화·hook 통합(Stop 턴당 1회)·서브에이전트 모델 차등은 **전부 유지**.
+
+**Why**: 사용자 요청. fast mode 는 출력 속도를 위해 응답 품질을 절충하는 옵션이라, 07-24 재구성의 나머지 축(불필요한 fan-out·매 tool call hook 오버헤드 제거 — 품질을 깎지 않고 비용만 줄인 항목)과 성격이 다르다. 속도-품질 트레이드오프에서 품질 쪽을 택한 것.
+
+**How to apply**: 키를 **삭제하지 말고 `false` 로 명시** — 삭제하면 "끄기로 결정함"과 "검토한 적 없음"이 구분되지 않고, `/harness-status` 의 settings grep 패턴도 이 키를 읽는다. 하네스 점검·최적화(`/harness-optimize`) 때 **`fastMode: true` 복원을 개선안으로 제안하지 말 것** — 사용자 결정으로 폐기된 설정이다. 되돌리려면 사용자 확인 필요. 같은 취지의 선례: [[normative-doc-blanket-claims]] 처럼 이 결정도 hook fallback 문구·docs/harness.md·워크플로우 기준값 등 **사본으로 전파돼 있으니** 변경 시 전수 grep(`fastmode|fast mode`).
 
 ## 히스토리
 

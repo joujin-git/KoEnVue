@@ -25,7 +25,7 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 
 | 결정 | 내용 | 이유 |
 |------|------|------|
-| 모델 | `opus` alias (최신 Opus 자동 추종 — 버전 숫자를 박지 않는다) + `fastMode: true` | 최고 성능 모델을 유지하되 **fast mode 로 빠른 출력**(모델 다운그레이드 아님 — schemastore 스키마의 boolean 키로 확인). model/effort 는 statusLine payload(`payload.effort.level`)로 전달됨 — 미수신 시 statusline.ps1 이 env→`high` 폴백. **데스크탑 앱에선 statusLine 자체가 렌더되지 않아 이 경로가 무실효**(§13) |
+| 모델 | `opus` alias (최신 Opus 자동 추종 — 버전 숫자를 박지 않는다) + **`fastMode: false`** | 최고 성능 모델을 **기본 출력 경로로** 사용. ⚠️ **2026-07-30 사용자 결정으로 fast mode 해제** — 2026-07-24 재구성 때 속도를 위해 켰으나(모델 다운그레이드는 아니었음), 응답 품질을 우선해 끔. 키 자체는 남겨 `false` 로 **명시**한다(삭제하면 "검토한 적 없음"과 구분되지 않음 — `/harness-status` grep 도 이 키를 읽는다). model/effort 는 statusLine payload(`payload.effort.level`)로 전달됨 — 미수신 시 statusline.ps1 이 env→`high` 폴백. **데스크탑 앱에선 statusLine 자체가 렌더되지 않아 이 경로가 무실효**(§13) |
 | Effort | 설정은 `effortLevel: high` — **데스크탑 앱 실효는 `xhigh`** | ⚠️ **2026-07-29 발견**: 데스크탑 앱은 이 설정을 **무시하고** 기본값 `xhigh` 로 세션을 돌립니다. 근거는 transcript 메타 `"effort":"xhigh","entrypoint":"claude-desktop"`(모든 응답에 기록) + 앱 하단 배지 「엑스트라」(= Extra = `xhigh`). 알려진 앱 버그 — effort 선택이 디스크에 저장되지 않아 매 채팅 기본값으로 폴백하고, `/effort` 명령도 앱 세션에선 쓸 수 없습니다([#66266](https://github.com/anthropics/claude-code/issues/66266)·[#66083](https://github.com/anthropics/claude-code/issues/66083)). **사용자 결정(07-29): `xhigh` 를 그대로 두고 문서를 실제에 맞춘다.** 터미널에서 실행할 때 `high` 가 먹는지는 미검증. 이력: 2026-07-24 재구성으로 `max`→`high` + env `CLAUDE_CODE_EFFORT_LEVEL=max` 제거(`max`/`ultracode` 는 session-only 라 파일 스코프 무효, 파일 최대 유효값이 `xhigh`) |
 | Thinking | `alwaysThinkingEnabled: true`, `showThinkingSummaries: true` | thinking 은 유지하되 **매 턴 ultrathink 강제 주입은 제거** — 세션 effort 에 맞춘 **적응형**(단순 작업은 가볍게, 복잡한 작업은 깊게) |
 | **ultracode** | **큰 작업만 수동** — 매 턴 주입하던 `inject-turn-context` hook **삭제**, 큰 작업(리뷰·감사·릴리즈·설계비교·버그헌트)만 워크플로우 `/<name>` 수동 호출 | 매 작업 6+ 에이전트 fan-out 은 이 규모(1인·유지보수)에 과잉. 일상은 solo + 필요 시 서브에이전트 |
@@ -41,6 +41,8 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 | CLAUDE.md | ≤30 줄 하드 제한 | InstructionsLoaded hook 경고. 줄 제한 상수는 `_common.ps1` 의 `$ClaudeMdLineLimit` 단일 진실원 (size-check hook + harness-status 공유) |
 
 > **2026-07-24 균형 재구성**: 프로젝트가 15K 라인 성숙 유지보수 단계(v0.9.9.x)에 들어서며 "작업 시간이 너무 오래 걸린다"는 사용자 요청 → AskUserQuestion 으로 "균형" 방향 승인. effort max→high, fast mode 추가, ultracode 상시→큰 작업 수동, 매 tool call hook→턴당 1회(Stop) 통합, 서브에이전트 모델 차등(explorer=haiku·verifier=sonnet). 기술은 3자 검증(claude-code-guide + schemastore 공식 스키마 + 기존 메모리).
+
+> **2026-07-30 fast mode 해제**: 사용자 요청으로 `fastMode: true` → `false`. 07-24 재구성에서 속도를 위해 도입한 항목 중 **이것 하나만** 되돌린다 — effort·ultracode 수동화·hook 통합·서브에이전트 모델 차등은 그대로. 되돌리는 이유는 fast mode 가 출력 속도를 위해 응답 품질을 절충하기 때문이며, 07-24 재구성의 나머지 축(불필요한 fan-out·hook 오버헤드 제거)은 품질을 깎지 않고 비용을 줄인 항목이라 유지 대상이다. 체감: 일상 작업 응답이 느려지는 대신 깊이가 올라간다.
 
 ## 2. 파일 구조
 
@@ -133,6 +135,8 @@ docs/
 >
 > **대응 2가지**: (1) 범위·대상이 결과를 좌우하는 워크플로우는 **결과의 `scope`/`target` 필드가 의도한 값인지 반드시 확인한다** — 확인 없이 "확정 0건"을 신뢰하면 안 된다. (2) 어긋나면 반환된 **스크립트 파일의 상수를 직접 고쳐 `Workflow({ scriptPath })` 로 재실행**한다(이 경로는 정상 동작 확인). 실제로 스코프를 바로잡은 3차 실행에서만 동작 결함 3종이 나왔고, 잘못된 스코프의 1·2차는 규칙 위반만 보고했다.
 
+> ⚠️ **워크플로우 프롬프트 편집 시 백틱 금지 (2026-07-30 실수)**. `.claude/workflows/*.js` 의 `prompt:` 는 **템플릿 리터럴(백틱)** 이라, 마크다운 습관으로 안쪽에 `` ` `` 를 넣으면 문자열이 그 자리에서 끊겨 `SyntaxError: Unexpected token` 이 됩니다. 강조는 `**볼드**` 나 따옴표로. 검증은 사본을 `.mjs` 로 복사해 `node --check` — 단, **`Illegal return statement` 는 5개 워크플로우 모두에 나오는 정상 결과**(Workflow 도구가 async 컨텍스트로 감싸 실행하므로 top-level `return` 이 합법)이므로 그 줄은 무시하고 **다른** SyntaxError 만 봅니다.
+
 **라우팅 — 저비용 단일 위임 vs 고비용 워크플로우**: 모든 substantive 작업을 Workflow 로 보내지 마세요. **단일 관점이면 충분한 작업은 스킬 슬래시(저비용)** — 설계 한 건은 `/plan`(planner 1명), 문서 동기화는 `/sync-docs`(docs-keeper 1명). **여러 관점의 교차검증이 실익일 때만 Workflow**(fan-out 토큰 수 배~수십 배, §8). 특히 `/plan`(planner 단독, 저비용) vs `design-compare`(3 angle 제안 + judge panel 점수화 + 합성, 고비용)는 한 기능을 **여러 설계안으로 경쟁시켜 비교**할 때만 후자 — 단일 합리안이면 `/plan` 으로 충분.
 
 **선택 기준 — release-review vs bug-hunt** (동시성 점검 시 모호함 해소): `release-review` 는 릴리즈 직전 diff 를 1-pass 로 4차원(correctness·보안·P규칙·**동시성**)+빌드게이트로 훑어 동시성을 이미 커버한다. `bug-hunt` 는 레이스 의심이 깊을 때 전체 범위를 안 나올 때까지(loop-until-dry) 반복 탐색하는 더 무거운 도구 — release-review 가 1차로 동시성을 보고, 그래도 레이스 의심이 잔존하면 bug-hunt 를 추가로 돌린다.
@@ -162,7 +166,7 @@ hook 이벤트 5개 (SessionStart · PreCompact · Stop · SessionEnd · Instruc
 - 최근 hook 에러 3건 (있으면)
 - `Sync-Memory` 로 C:↔E: 메모리 동기화 (§12 참조)
 - P1–P6 규칙과 서브에이전트 활용 권장사항 reminder
-- **`-FallbackContext`/`-EventName` 안전망**: `Write-HookOutput` 직전에 죽어도 catch 경로가 최소 fallback 컨텍스트("effort(데스크탑 앱 실측 xhigh) + fast mode + thinking, 큰 작업만 워크플로우" + 이전 세션 포인터) 1줄을 주입 — SessionStart·PreCompact 2곳이 사용(재구성 전엔 삭제된 inject-turn-context 포함 3곳)
+- **`-FallbackContext`/`-EventName` 안전망**: `Write-HookOutput` 직전에 죽어도 catch 경로가 최소 fallback 컨텍스트("effort(데스크탑 앱 실측 xhigh) + thinking(fast mode 미사용), 큰 작업만 워크플로우" + 이전 세션 포인터) 1줄을 주입 — SessionStart·PreCompact 2곳이 사용(재구성 전엔 삭제된 inject-turn-context 포함 3곳)
 
 ### `PreCompact` → `pre-compact.ps1`
 - 대화 압축(컴팩션, 자동 컨텍스트 한도 / 수동 `/compact`) **직전** 실행. 긴 작업·큰 워크플로우로 컨텍스트가 빠르게 찰 때 작업 연속성을 보강. matcher `*` 라 auto·manual 둘 다 트리거, `payload.trigger` 로 구분 기록
@@ -279,7 +283,7 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 ## 8. 비용 모니터링
 
-2026-07-24 균형 재구성으로 **일상 작업 비용이 대폭 낮아졌습니다** — `bypassPermissions` + Opus(fast mode) + thinking 은 solo 로 도는 보통 작업 기준 완만한 배수이고, 매 턴 ultrathink/ultracode 자동 주입과 매 tool call hook 오버헤드가 사라졌습니다. **다만 effort 는 의도한 `high` 가 아니라 `xhigh` 로 돌고 있습니다**(2026-07-29 발견, §1 표) — 재구성 전 `max` 보다는 낮지만 의도보다 한 단계 깊어 그만큼 느리고 비쌉니다. 재구성의 속도 개선이 기대만큼 체감되지 않았다면 이 항목이 원인입니다. **비용이 튀는 건 큰 작업에서 워크플로우를 수동 호출할 때뿐** — 그 substantive 작업은 fan-out 으로 수 배~수십 배(워크플로우당 최대 16 동시 / 1,000 누적 에이전트). 일상은 solo·high 로 가볍게, 깊이가 필요한 큰 작업만 의식적으로 워크플로우로.
+2026-07-24 균형 재구성으로 **일상 작업 비용이 대폭 낮아졌습니다** — `bypassPermissions` + Opus + thinking 은 solo 로 도는 보통 작업 기준 완만한 배수이고, 매 턴 ultrathink/ultracode 자동 주입과 매 tool call hook 오버헤드가 사라졌습니다. **2026-07-30 fast mode 해제 후에도 이 구조는 그대로입니다** — fast mode 는 출력 속도 옵션이지 fan-out 규모가 아니므로 해제는 **체감 속도**를 되돌릴 뿐 토큰 비용 구조를 바꾸지 않습니다. **다만 effort 는 의도한 `high` 가 아니라 `xhigh` 로 돌고 있습니다**(2026-07-29 발견, §1 표) — 재구성 전 `max` 보다는 낮지만 의도보다 한 단계 깊어 그만큼 느리고 비쌉니다. 재구성의 속도 개선이 기대만큼 체감되지 않았다면 이 항목이 원인입니다. **비용이 튀는 건 큰 작업에서 워크플로우를 수동 호출할 때뿐** — 그 substantive 작업은 fan-out 으로 수 배~수십 배(워크플로우당 최대 16 동시 / 1,000 누적 에이전트). 일상은 solo·high 로 가볍게, 깊이가 필요한 큰 작업만 의식적으로 워크플로우로.
 
 **상한의 실제 — `budget` 가드는 거의 무실효**: `budget`(total/spent/remaining) 을 실제 읽는 워크플로우는 **bug-hunt 1개뿐**이고, 그조차 `budget.total` 미주입 시(현재 호출은 total 안 넘김) round hard cap(`round < 8`)만 실효 상한입니다. 나머지 4개(release-review·codebase-audit·design-compare·harness-optimize)는 budget 을 안 읽으며 **per-parallel-item cap** 이 유일 상한 — `MAX_VERIFY=25`(release-review)·`MAX_MODULES=24`(codebase-audit)·동시 16(전역). 즉 토큰 총량 가드가 아니라 fan-out 폭주 방지일 뿐. **노드 effort (2026-07-29 확인)**: 워크플로우 노드(`agent()`)는 **`opts.effort` 를 생략하면 세션 effort 를 상속**합니다(Workflow 도구 계약에 명시). 그리고 그 세션 effort 는 데스크탑 앱에서 `high` 가 아니라 **`xhigh`** 이므로(§1 표), 노드도 `xhigh` 로 돕니다 — 위 "수 배~수십 배" 추정은 과대평가가 아니라 오히려 **하한**입니다. 특정 스테이지만 싸게 돌리려면 `opts.effort: 'low'` 를 **명시**해야 합니다 — 생략은 절약이 아니라 상속입니다.
 
