@@ -599,6 +599,17 @@ Locking the file to forbid deletion was rejected because atomic-replace editors 
 
 Catch intentionally does NOT `Save()` — the user's broken file stays on disk so they can inspect and recover manually.
 
+### 파싱 실패는 `TryLoad` 로 호출자에게 전달한다 (AUDIT-2026-07-30 §G, 2026-08-01)
+
+`Load()` 는 성공이든 실패든 `T` 하나만 돌려주므로, 호출자는 받은 값이 **정상 로드분인지 실패분 디폴트인지 구분할 수 없었다.** 핫리로드 경로(`HandleConfigChanged`)가 그 디폴트를 `_config` 에 대입하면 이후 **어떤** 저장 경로(트레이 토글·드래그 종료)든 그것을 디스크에 확정해 사용자 설정이 전멸한다. 위 "Corrupted config spam prevention" 이 파일을 지켜도 **메모리 쪽에서 무너지는** 구멍이었다 — config.json 은 편집 중 한순간만 파싱 불가여도 이 경로를 탄다.
+
+- `JsonSettingsManager<T>.TryLoad(out T)` 가 성공 여부를 반환하고, `Load()` 는 그 위임이 되었다(부팅처럼 유지할 기존 인스턴스가 없는 경로는 계속 `Load()` 사용).
+- 실패 시 `HandleConfigChanged` 는 **기존 `_config` 를 그대로 두고 물러난다.** 파일이 고쳐지는 순간 다음 mtime 변화가 정상 리로드한다.
+- 안내는 `_configReloadFailed` 래치로 **연속 실패당 1회** — 5초 폴링이라 매번 띄우면 편집을 방해한다. 정상 로드 시 해제되므로 다시 깨뜨리면 한 번 더 알린다.
+- 문구(`I18n.ConfigReloadFailed`)는 "지금 앱에서 설정을 바꾸면 편집 중인 내용이 덮어써진다"까지 알린다 — `_config` 유지는 *디폴트 전멸*만 막을 뿐, 그 상태에서 저장하면 사용자가 편집 중이던 파일은 여전히 앱 값으로 덮인다(§N-48 read-modify-write 와 같은 뿌리).
+
+**최상위 타입 가드** — 같은 작업의 회귀 테스트가 별건을 드러냈다. `MergeWithDefaults` 는 사용자 JSON 의 최상위를 객체로 가정하고 `TryGetProperty` 를 부르는데, `null`·배열·스칼라가 오면 `JsonElementWrongTypeException`(= `InvalidOperationException`)이 나고 이 타입은 `IsExpectedLoadException` 필터 **밖**이라 `Load` 를 뚫고 `WndProc` 최상위까지 전파됐다 — config.json 에 `null` 한 줄만 남겨도 프로세스가 종료되던 경로다. 이제 병합 진입점이 최상위 `ValueKind` 를 검사해 객체가 아니면 `JsonException` 으로 바꿔 던지므로 정상 실패 경로를 탄다.
+
 ### Auto-create config on first run
 
 `Settings.Load()` writes a freshly constructed default `AppConfig` to disk immediately when the file is missing, rather than deferring creation to the next `Save()`. Ensures the exe-only distribution UX matches expectations — drop the exe, launch, `config.json` materializes next to it on the first run.
@@ -1175,6 +1186,22 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 `Logger.Shutdown`은 반드시 마지막에 호출하여 이전 단계의 로그가 모두 기록되도록 보장한다. 타이머 해제와 윈도우 파괴는 리소스 해제(5단계) 이후에 수행하여 타이머 콜백이 해제된 리소스를 참조하는 것을 방지한다.
 
 `ProcessExit` 미발화 경로 (FailFast / Access Violation Exception 등 비정상 종료) 에서는 `Program.cs` 의 `AppDomain.CurrentDomain.UnhandledException` 핸들러가 `Logger.Shutdown` 전에 `CleanupPreviousTrayIcon()` 을 best-effort 호출해 트레이 좀비 아이콘을 줄인다 (PR-19). 핸들러가 실패해도 다음 부팅의 `CleanupPreviousTrayIcon` 자기치유 (mutex 획득 직후 step 2) 가 안전망 — 즉시 재실행 시 셸 알림 영역의 좀비 잔류 시간만 좁히는 보조 차단.
+
+### Logger 재초기화 — 세대 토큰 + writer 락 (AUDIT-2026-07-30 §C, 2026-08-01)
+
+`Logger.Initialize` 는 로그 설정(`log_to_file` / `log_file_path` / `log_max_size_mb`)이 바뀔 때마다 drain 스레드를 껐다 켠다. 이전 구조의 종료 신호는 `volatile bool _shutdownRequested` 였는데, 여기에 **되살아나는 경로**가 있었다.
+
+1. `StopDrainThread` 의 `Join(3000)` 이 타임아웃해도 그대로 진행한다 — 회전 구간의 `File.Move`/`File.Delete` 가 AV 스캔·네트워크 경로·tail 뷰어에 막히면 3초를 넘긴다.
+2. 이어지는 `Initialize` 가 `_shutdownRequested = false` 로 되돌리면, 살아남은 좀비의 `while (!_shutdownRequested)` 가 **다시 참**이 되어 영구 부활하고 두 번째 drain 스레드가 더해진다.
+3. 두 스레드가 같은 `StreamWriter` 를 동시에 쓰고, 메인의 `FlushQueue` + `Dispose` 와도 겹친다. `StreamWriter` 는 스레드 안전하지 않으며 `ObjectDisposedException` 은 `catch (IOException or UnauthorizedAccessException)` **필터 밖**이라 백그라운드 스레드를 뚫고 나가 **프로세스를 종료**한다.
+4. `_filePath` 와 `_fileWriter` 가 한 쌍으로 갱신되지 않아 "옛 writer + 새 `_filePath`" 조합이 성립하고, 그 상태의 회전이 **방금 만든 새 로그를 `.old` 로 밀어버린다**(torn pair).
+
+수정은 두 가지다.
+
+- **세대 토큰** — `_shutdownRequested` 를 `int _generation` 으로 대체. `StopDrainThread` 가 `Interlocked.Increment` 하고, 각 drain 스레드는 시작 시 받은 세대가 현재 값과 같은 동안만 돈다. **단조 증가라 좀비가 되살릴 수단이 없다**는 것이 핵심 — 플래그를 어떻게 되돌려도 지나간 세대는 돌아오지 않는다.
+- **`_writerLock`** — `_fileWriter`·`_filePath`·`_maxSizeBytes` 를 한 묶음으로 보호하고, 쓰기·회전·Dispose 를 모두 이 락 아래로 넣어 torn pair 와 동시 Dispose 를 동시에 닫는다. `FlushQueue(generation)` 가 락 안에서 세대를 확인하므로 좀비는 진입 즉시 되돌아간다.
+
+`StopDrainThread` 는 Join 타임아웃 후 `Monitor.TryEnter(_writerLock, 1000ms)` 로 상한을 두고, **획득하지 못하면 Dispose 를 포기하고 참조만 끊는다.** 여기서 강제로 Dispose 하면 좀비의 다음 `WriteLine` 이 위 3번 경로를 그대로 재현하기 때문이다 — 남은 핸들은 `SafeHandle` 파이널라이저가 회수한다. 회귀 가드는 `LoggerReinitTests`(세대 단조성 + 재초기화 라운드트립이 옳은 파일에 기록되는지). Join 타임아웃 자체는 3초 이상 걸리는 파일 잠금이 필요해 단위 테스트로 만들 수 없으므로, 테스트는 부활을 **구조적으로 불가능하게 만든 세대의 단조성**을 고정하는 방식이다.
 
 ### `InvariantGlobalization`
 

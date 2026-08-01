@@ -71,6 +71,11 @@ internal static partial class Program
     // CAPS LOCK 토글 캐시 (메인 스레드 전용 — TIMER_ID_CAPS 폴러가 200ms마다 GetKeyState 비교)
     private static bool _lastCapsLockState;
 
+    // config.json 핫리로드가 파싱 실패 중인지 (메인 스레드 전용 — HandleConfigChanged).
+    // 안내 박스를 연속 실패당 1회로 제한하는 래치. 정상 로드 시 해제되므로, 사용자가 파일을 고친 뒤
+    // 다시 깨뜨리면 새로 한 번 더 안내한다.
+    private static bool _configReloadFailed;
+
     // UpdateChecker 백그라운드 스레드 → 메인 스레드 페이로드 전달.
     // PostMessage 의 wParam/lParam 으로 객체를 직접 못 보내므로 volatile 참조로 게시한다.
     private static volatile UpdateInfo? _pendingUpdate;
@@ -804,7 +809,25 @@ internal static partial class Program
     private static void HandleConfigChanged()
     {
         AppConfig prev = _config;
-        _config = Settings.Load();
+
+        // 파싱 실패를 성공과 구분한다 (AUDIT-2026-07-30 §G). 실패 시 Load 가 돌려주는 전 필드 디폴트를
+        // 채택하면, 그 뒤 어떤 저장 경로(트레이 토글·드래그 종료)든 그 디폴트를 디스크에 확정해
+        // **사용자 설정이 전멸**한다. config.json 은 편집 중 한순간만 파싱 불가여도 이 경로를 탄다.
+        // 기존 인스턴스를 그대로 두고 물러나면, 파일이 고쳐지는 순간 다음 mtime 변화가 정상 리로드한다.
+        if (!Settings.TryLoad(out AppConfig loaded))
+        {
+            Logger.Warning("Config reload failed; keeping previous settings in memory");
+            // 연속 실패 중에는 첫 1회만 알린다 — 5초 폴링이라 매번 띄우면 편집을 방해한다.
+            if (!_configReloadFailed)
+            {
+                _configReloadFailed = true;
+                Tray.ShowConfigReloadFailed();
+            }
+            return;
+        }
+        _configReloadFailed = false;
+
+        _config = loaded;
         Logger.SetLevel(_config.LogLevel);
         // Logger.Initialize 는 drain 스레드를 종료(Join 최대 3s)·재시작하는 무거운 작업이라, 로그 관련
         // 설정이 실제로 바뀐 경우에만 재초기화한다 — 무변경 리로드가 메인 스레드를 블록하지 않도록.

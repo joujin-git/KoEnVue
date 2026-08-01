@@ -64,6 +64,26 @@ internal class JsonSettingsManager<T>
     /// </summary>
     public T Load()
     {
+        TryLoad(out T value);
+        return value;
+    }
+
+    /// <summary>
+    /// <see cref="Load"/> 와 같은 파이프라인이되 <b>성공 여부를 호출자에게 알린다.</b>
+    /// 파싱 실패 시 <c>false</c> 를 반환하며, 이때 <paramref name="value"/> 는 전 필드 디폴트다.
+    ///
+    /// <para>
+    /// 반환값을 무시하고 디폴트를 그대로 채택하면 안 된다 — 핫리로드 호출자(<c>HandleConfigChanged</c>)가
+    /// 그렇게 대입하면 이후 <b>어떤</b> 저장 경로(트레이 토글·드래그 종료)든 그 디폴트를 디스크에 확정해
+    /// 사용자 설정이 전멸한다. config.json 은 편집 중 한순간만 파싱 불가여도 이 경로를 탄다
+    /// (AUDIT-2026-07-30 §G). 부팅 경로처럼 "비교할 기존 인스턴스가 없는" 호출자만 <see cref="Load"/> 로
+    /// 디폴트를 받아도 된다.
+    /// </para>
+    /// </summary>
+    /// <param name="value">성공 시 로드된 값, 실패 시 전 필드 디폴트 (항상 non-null).</param>
+    /// <returns>파일이 정상 로드됐거나 애초에 없어서 디폴트를 생성한 경우 true, 파싱 실패면 false.</returns>
+    public bool TryLoad(out T value)
+    {
         if (File.Exists(_filePath))
         {
             try
@@ -73,7 +93,12 @@ internal class JsonSettingsManager<T>
 
                 T? config = JsonSerializer.Deserialize(mergedJson, _typeInfo);
                 if (config is null)
-                    return new T();
+                {
+                    // 유효 JSON 이지만 리터럴 null — 파싱 실패와 같은 등급으로 다룬다.
+                    LogProvider.Sink?.Warning($"Config at {_filePath} deserialized to null. Keeping previous settings.");
+                    value = new T();
+                    return false;
+                }
 
                 config = ApplyNullSafetyNet(config);
                 config = PostDeserializeFixup(config, mergedJson);
@@ -84,7 +109,8 @@ internal class JsonSettingsManager<T>
                 DateTime loadedMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
                 lock (_mtimeLock) _lastMtime = loadedMtime;
                 LogProvider.Sink?.Info($"Config loaded from {_filePath}");
-                return config;
+                value = config;
+                return true;
             }
             catch (Exception ex) when (IsExpectedLoadException(ex))
             {
@@ -99,14 +125,16 @@ internal class JsonSettingsManager<T>
                     lock (_mtimeLock) _lastMtime = staleMtime;
                 }
                 catch (Exception innerEx) when (IsExpectedIoException(innerEx)) { }
-                return new T();
+                value = new T();
+                return false;
             }
         }
 
         LogProvider.Sink?.Info($"Config not found, creating defaults at {_filePath}");
         T defaults = new();
         Save(defaults);
-        return defaults;
+        value = defaults;
+        return true;
     }
 
     // ================================================================
@@ -258,6 +286,17 @@ internal class JsonSettingsManager<T>
 
         using var defaultDoc = JsonDocument.Parse(defaultJson);
         using var userDoc = JsonDocument.Parse(userJson, UserJsonDocOptions);
+
+        // 설정 파일의 최상위는 반드시 객체다. null / 배열 / 스칼라가 오면 MergeObjects 의
+        // TryGetProperty·EnumerateObject 가 JsonElementWrongTypeException(InvalidOperationException)
+        // 을 던지는데, 이 타입은 IsExpectedLoadException 필터 **밖**이라 Load 를 뚫고 WndProc
+        // 최상위까지 전파된다 — config.json 에 `null` 한 줄만 남겨도 앱이 죽던 경로.
+        // 손상으로 분류해 정상 실패 경로(덮어쓰지 않고 이전 설정 유지)로 보낸다.
+        if (userDoc.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            throw new JsonException(
+                $"Config root must be a JSON object, but was {userDoc.RootElement.ValueKind}.");
+        }
 
         using var ms = new MemoryStream();
         using (var writer = new Utf8JsonWriter(ms))

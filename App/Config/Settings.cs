@@ -78,6 +78,19 @@ internal static class Settings
         return _manager.Load();
     }
 
+    /// <summary>
+    /// <see cref="Load"/> 와 같되 파싱 실패를 <c>false</c> 로 알린다. **핫리로드 경로는 반드시 이쪽을
+    /// 써야 한다** — 실패 시 반환되는 디폴트를 채택하면 이후 저장 경로가 그것을 디스크에 확정해
+    /// 사용자 설정이 전멸한다 (AUDIT-2026-07-30 §G). 부팅처럼 유지할 기존 인스턴스가 없는 경로만
+    /// <see cref="Load"/> 를 쓴다.
+    /// </summary>
+    public static bool TryLoad(out AppConfig config)
+    {
+        string path = PortablePath.ResolveConfigPath();
+        _manager ??= new AppSettingsManager(path, AppConfigJsonContext.Default.AppConfig);
+        return _manager.TryLoad(out config);
+    }
+
     // ================================================================
     // Save — NF-25: 저장 실패 시 인메모리 유지
     // ================================================================

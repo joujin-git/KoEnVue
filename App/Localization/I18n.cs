@@ -94,6 +94,7 @@ internal static class I18n
 
         // 트레이 메시지 박스
         TrayPositionUnavailable, TrayPositionHistoryEmpty,
+        ConfigReloadFailed,
 
         // 트레이 툴팁
         TooltipHangul, TooltipEnglish, TooltipNonKorean,
@@ -185,6 +186,15 @@ internal static class I18n
             "플로팅 배지 위치를 확인할 수 없습니다. 잠시 후 다시 시도하세요.",
             "Cannot determine current floating badge position. Please try again shortly."),
         [I18nKey.TrayPositionHistoryEmpty]  = ("저장된 위치 기록이 없습니다.", "No saved position history."),
+        // 설정 파일을 읽지 못했을 때 — 기존 설정을 그대로 유지 중임을 알린다. 편집 중 저장이 흔한
+        // 경로라 "지금 앱이 쓰면 편집분이 덮인다"는 점까지 안내해야 실제 손실을 막는다.
+        [I18nKey.ConfigReloadFailed]        = (
+            "설정 파일을 읽지 못해 이전 설정을 그대로 사용합니다.\n\n"
+                + "config.json 을 편집 중이라면 저장을 마쳐 주세요 — 그 전에 앱에서 설정을 바꾸면 "
+                + "편집 중인 내용이 덮어써집니다.",
+            "Could not read the settings file; keeping the previous settings.\n\n"
+                + "If you are editing config.json, finish saving it first — changing settings in the app "
+                + "before then will overwrite your edits."),
 
         // 트레이 툴팁
         [I18nKey.TooltipHangul]             = ("한글 모드", "Hangul Mode"),
@@ -324,6 +334,12 @@ internal static class I18n
 
     /// <summary>위치 기록 정리 시 저장된 항목이 없을 때 노출되는 안내 메시지.</summary>
     public static string TrayPositionHistoryEmpty => Get(I18nKey.TrayPositionHistoryEmpty);
+
+    /// <summary>
+    /// config.json 핫리로드가 파싱 실패했을 때 1회 노출되는 안내. 연속 실패 중에는 재노출하지 않는다
+    /// (편집 중 저장이 반복되면 매번 뜨는 것이 더 방해가 된다).
+    /// </summary>
+    public static string ConfigReloadFailed       => Get(I18nKey.ConfigReloadFailed);
 
     // 트레이 툴팁
     public static string TooltipHangul    => Get(I18nKey.TooltipHangul);

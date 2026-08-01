@@ -20,7 +20,30 @@ internal static class Logger
     private static readonly ConcurrentQueue<string> _logQueue = new();
     private static readonly ManualResetEventSlim _drainSignal = new(false);
     private static Thread? _drainThread;
-    private static volatile bool _shutdownRequested;
+
+    /// <summary>
+    /// drain 스레드 세대. <see cref="StopDrainThread"/> 가 증가시키고, 각 drain 스레드는 시작 시
+    /// 받은 세대 값이 현재 값과 같은 동안만 동작한다.
+    ///
+    /// <para>
+    /// 이전 구조는 <c>volatile bool _shutdownRequested</c> 였는데, <see cref="Initialize"/> 가 이를
+    /// <c>false</c> 로 되돌리는 순간 <b>Join 이 타임아웃해 살아남은 좀비 스레드가 자기 루프 조건을
+    /// 다시 참으로 읽고 영구 부활</b>했다 — 두 번째 스레드까지 더해져 같은 <see cref="StreamWriter"/>
+    /// 를 동시에 쓰고, 메인의 Dispose 와 겹치면 <c>ObjectDisposedException</c> 이 catch 필터 밖이라
+    /// 백그라운드 스레드를 뚫고 나가 프로세스를 종료했다 (AUDIT-2026-07-30 §C).
+    /// 세대는 <b>단조 증가</b>라 좀비가 되살릴 수 없다는 점이 핵심이다.
+    /// </para>
+    /// </summary>
+    private static int _generation;
+
+    /// <summary>
+    /// <see cref="_fileWriter"/> · <see cref="_filePath"/> · <see cref="_maxSizeBytes"/> 를 하나로 묶는 락.
+    /// 세 필드는 한 쌍으로만 의미가 있다 — 갱신 중간 상태(옛 writer + 새 filePath)가 보이면 회전 로직이
+    /// 방금 만든 새 로그를 <c>.old</c> 로 밀어버린다. 쓰기(WriteLine/회전)와 Dispose 도 이 락으로 배타화해
+    /// 좀비 스레드가 이미 Dispose 된 writer 를 만지는 경로를 없앤다.
+    /// </summary>
+    private static readonly object _writerLock = new();
+
     private static StreamWriter? _fileWriter;
     private static string _filePath = "";
     private static long _maxSizeBytes;
@@ -29,6 +52,13 @@ internal static class Logger
     private const long BytesPerMb = 1024L * 1024;
     private const int DrainLoopTimeoutMs = 1000;
     private const int ShutdownJoinTimeoutMs = 3000;
+
+    /// <summary>
+    /// Join 타임아웃 후 <see cref="_writerLock"/> 을 기다리는 상한. 좀비가 회전 I/O 안에서 락을 쥔 채
+    /// 멈춰 있을 수 있으므로 무한 대기하지 않는다 — 시간이 넘으면 Dispose 를 포기하고 참조만 끊는다
+    /// (강제 Dispose 는 좀비의 다음 WriteLine 을 죽이는, 바로 이 결함의 원래 사인이다).
+    /// </summary>
+    private const int WriterLockTimeoutMs = 1000;
 
     // 모든 로그 라인의 타임스탬프 포맷 — 정상 로깅(Write)과 self-catch breadcrumb 가 공유(P3).
     private const string TimestampFormat = "yyyy.MM.dd HH:mm:ss.fff";
@@ -67,44 +97,49 @@ internal static class Logger
     /// </summary>
     public static void Initialize(bool enabled, string? logFilePath, int maxSizeMb)
     {
-        // 기존 drain 스레드 종료
+        // 기존 drain 스레드 종료 — 세대를 올려 살아남은 좀비까지 무효화한다.
         StopDrainThread();
 
         if (!enabled) return;
 
-        _filePath = string.IsNullOrEmpty(logFilePath)
-            ? Path.Combine(AppContext.BaseDirectory, "koenvue.log")
-            : logFilePath;
-        _maxSizeBytes = maxSizeMb * BytesPerMb;
+        // StopDrainThread 가 방금 발급한 세대. 아직 어떤 스레드도 이 값을 쓰고 있지 않다.
+        int generation = Volatile.Read(ref _generation);
 
-        try
+        lock (_writerLock)
         {
-            string? dir = Path.GetDirectoryName(_filePath);
-            if (dir is not null && !Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
+            _filePath = string.IsNullOrEmpty(logFilePath)
+                ? Path.Combine(AppContext.BaseDirectory, "koenvue.log")
+                : logFilePath;
+            _maxSizeBytes = maxSizeMb * BytesPerMb;
 
-            _fileWriter = new StreamWriter(_filePath, append: true, Encoding.UTF8)
-                { AutoFlush = true };
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // 파일 로깅 초기화 실패가 앱 부팅을 죽이면 안 되므로 흡수. 다만 Trace.WriteLine으로
-            // 한 번은 흔적을 남겨야 디버거에서 "왜 파일 로깅이 안 찍히는가"를 답할 수 있음.
-            // 로직 버그(NullRef 등)는 전파해 부팅 초기에 드러냄.
-            Trace.WriteLine($"Logger file init failed (falling back to Trace only): {ex.Message}");
-            _fileWriter = null;
-            return;
+            try
+            {
+                string? dir = Path.GetDirectoryName(_filePath);
+                if (dir is not null && !Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+
+                _fileWriter = new StreamWriter(_filePath, append: true, Encoding.UTF8)
+                    { AutoFlush = true };
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // 파일 로깅 초기화 실패가 앱 부팅을 죽이면 안 되므로 흡수. 다만 Trace.WriteLine으로
+                // 한 번은 흔적을 남겨야 디버거에서 "왜 파일 로깅이 안 찍히는가"를 답할 수 있음.
+                // 로직 버그(NullRef 등)는 전파해 부팅 초기에 드러냄.
+                Trace.WriteLine($"Logger file init failed (falling back to Trace only): {ex.Message}");
+                _fileWriter = null;
+                return;
+            }
         }
 
-        // drain 스레드 시작
-        _shutdownRequested = false;
+        // drain 스레드 시작 — 자기 세대를 인자로 받아 그 세대가 유효한 동안만 돈다.
         _drainSignal.Reset();
         _drainThread = new Thread(DrainLoop)
         {
             IsBackground = true,
             Name = "LogDrain",
         };
-        _drainThread.Start();
+        _drainThread.Start(generation);
 
         // Pre-Initialize 버퍼를 큐로 옮긴 뒤 drain 신호 — 부트 초반의 Logger.X 메시지가
         // koenvue.log 에 정상 기록되도록 한다.
@@ -187,21 +222,39 @@ internal static class Logger
     /// drain 스레드 메인 루프. 큐에서 메시지를 꺼내 파일에 batch 쓰기.
     /// ManualResetEventSlim 대기로 CPU 소모 없음.
     /// </summary>
-    private static void DrainLoop()
+    private static void DrainLoop(object? state)
     {
-        while (!_shutdownRequested)
+        int generation = (int)state!;
+
+        while (Volatile.Read(ref _generation) == generation)
         {
-            _drainSignal.Wait(DrainLoopTimeoutMs); // 회전 체크 + shutdown 감지
+            _drainSignal.Wait(DrainLoopTimeoutMs); // 회전 체크 + 세대 만료 감지
             _drainSignal.Reset();
-            FlushQueue();
+            FlushQueue(generation);
         }
 
-        // 종료 전 잔여 메시지 flush
-        FlushQueue();
+        // 세대가 만료됐다면 잔여 flush 는 StopDrainThread 가 새 세대로 이미 수행했거나 곧 수행한다.
+        // 여기서 한 번 더 부르는 것은 정상 종료(Join 성공) 경로에서 마지막 사이클을 놓치지 않기 위함이며,
+        // 만료 상태면 FlushQueue 의 세대 가드가 즉시 되돌린다.
+        FlushQueue(generation);
     }
 
-    /// <summary>큐의 모든 메시지를 파일에 쓰고 회전 체크.</summary>
-    private static void FlushQueue()
+    /// <summary>
+    /// 큐의 모든 메시지를 파일에 쓰고 회전 체크. <paramref name="generation"/> 이 현재 세대가 아니면
+    /// (= 좀비 스레드) 아무것도 하지 않고 돌아간다. writer 접근 전체가 <see cref="_writerLock"/> 아래라
+    /// 메인의 Dispose 와 절대 겹치지 않는다.
+    /// </summary>
+    private static void FlushQueue(int generation)
+    {
+        lock (_writerLock)
+        {
+            if (Volatile.Read(ref _generation) != generation) return;
+            FlushQueueLocked();
+        }
+    }
+
+    /// <summary><see cref="_writerLock"/> 을 이미 보유한 상태에서 호출한다.</summary>
+    private static void FlushQueueLocked()
     {
         // 회전/초기화 실패로 writer 가 없으면 재생성을 1회 시도 — .old 잠금이나 AV 핸들 점유 같은
         // 일시적 실패가 풀리면 로깅이 복구된다(세션 잔여 로그 영구 무음 + 드롭 요약 미기록 방지).
@@ -273,40 +326,74 @@ internal static class Logger
         }
     }
 
-    /// <summary>drain 스레드 종료 + 잔여 flush + writer dispose.</summary>
+    /// <summary>
+    /// drain 스레드 종료 + 잔여 flush + writer dispose.
+    ///
+    /// <para>
+    /// 세대를 <b>먼저</b> 올려 기존 스레드를 전부 무효화한 뒤 Join 한다. Join 이 타임아웃해도 좀비는
+    /// 세대 가드에 막혀 더는 쓰지 못하므로, 이전처럼 "살아 있는 스레드 옆에서 Dispose" 하는 상황이
+    /// 생기지 않는다 (AUDIT-2026-07-30 §C).
+    /// </para>
+    /// </summary>
     private static void StopDrainThread()
     {
-        if (_drainThread is not null)
-        {
-            _shutdownRequested = true;
-            _drainSignal.Set();
-            bool joined = _drainThread.Join(ShutdownJoinTimeoutMs);
-            _drainThread = null;
+        Thread? thread = _drainThread;
+        _drainThread = null;
 
-            // Join 타임아웃 흔적: Logger 큐 경로는 이미 닫혔으므로 _fileWriter에 직접 기록.
-            // 정상적으로는 Join이 즉시 복귀하지만, 타임아웃은 프로세스 종료 지연을 유발하므로
-            // 흔적이 중요하다. Console.Error 병행 폴백.
-            if (!joined)
-            {
-                try
-                {
-                    _fileWriter?.WriteLine(
-                        FormatBreadcrumb($"Logger drain thread join timed out after {ShutdownJoinTimeoutMs}ms"));
-                }
-                catch (Exception ex) when (ex is IOException or ObjectDisposedException)
-                {
-                    _ = ex;
-                }
-                Console.Error.WriteLine(
-                    FormatBreadcrumb($"Logger drain thread join timed out after {ShutdownJoinTimeoutMs}ms"));
-            }
+        // 단조 증가 — 좀비가 되살릴 수 없다. Initialize 는 이 새 세대를 그대로 받아 쓴다.
+        int generation = Interlocked.Increment(ref _generation);
+
+        bool joined = true;
+        if (thread is not null)
+        {
+            _drainSignal.Set();
+            joined = thread.Join(ShutdownJoinTimeoutMs);
         }
 
-        // 잔여 메시지 동기 flush
-        FlushQueue();
+        // 좀비가 회전 I/O 안에서 락을 쥐고 있을 수 있으므로 상한을 두고 기다린다.
+        if (Monitor.TryEnter(_writerLock, WriterLockTimeoutMs))
+        {
+            try
+            {
+                // Join 타임아웃 흔적: Logger 큐 경로는 이미 닫혔으므로 _fileWriter에 직접 기록.
+                // 정상적으로는 Join이 즉시 복귀하지만, 타임아웃은 프로세스 종료 지연을 유발하므로
+                // 흔적이 중요하다. Console.Error 병행 폴백.
+                if (!joined)
+                {
+                    try
+                    {
+                        _fileWriter?.WriteLine(
+                            FormatBreadcrumb($"Logger drain thread join timed out after {ShutdownJoinTimeoutMs}ms"));
+                    }
+                    catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+                    {
+                        _ = ex;
+                    }
+                    Console.Error.WriteLine(
+                        FormatBreadcrumb($"Logger drain thread join timed out after {ShutdownJoinTimeoutMs}ms"));
+                }
 
-        _fileWriter?.Dispose();
-        _fileWriter = null;
+                // 잔여 메시지 동기 flush — 락을 이미 쥐고 있으므로 세대 가드를 우회한 내부 경로 사용.
+                FlushQueueLocked();
+
+                _fileWriter?.Dispose();
+                _fileWriter = null;
+            }
+            finally
+            {
+                Monitor.Exit(_writerLock);
+            }
+        }
+        else
+        {
+            // 좀비가 I/O 에 붙들려 락을 놓지 않는다. **여기서 강제로 Dispose 하면 안 된다** — 그 스레드의
+            // WriteLine 이 ObjectDisposedException 을 내고, 이는 catch 필터 밖이라 프로세스를 종료한다
+            // (이 결함의 원래 사인). 참조만 끊고 물러난다. 좀비는 I/O 가 풀리는 대로 세대 가드에 걸려
+            // 스스로 멈추고, 남은 핸들은 SafeHandle 파이널라이저가 회수한다.
+            _fileWriter = null;
+            Console.Error.WriteLine(
+                FormatBreadcrumb($"Logger writer lock busy after {WriterLockTimeoutMs}ms; skipping dispose"));
+        }
     }
 }
 

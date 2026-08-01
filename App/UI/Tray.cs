@@ -599,6 +599,14 @@ internal static partial class Tray
     private static void ShowPositionError()
         => ShowMessage(I18n.TrayPositionUnavailable);
 
+    /// <summary>
+    /// config.json 을 읽지 못해 이전 설정을 유지했음을 알린다. 호출자
+    /// (<c>Program.HandleConfigChanged</c>)가 연속 실패 중 <b>1회만</b> 부른다 — 편집 중 저장이
+    /// 반복되면 5초 폴링마다 박스가 떠 오히려 방해가 되기 때문 (AUDIT-2026-07-30 §G).
+    /// </summary>
+    internal static void ShowConfigReloadFailed()
+        => ShowMessage(I18n.ConfigReloadFailed);
+
     // ================================================================
     // Private — 툴팁
     // ================================================================
