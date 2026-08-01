@@ -599,6 +599,22 @@ Locking the file to forbid deletion was rejected because atomic-replace editors 
 
 Catch intentionally does NOT `Save()` — the user's broken file stays on disk so they can inspect and recover manually.
 
+### 커밋 베이스는 "지금 값" — 스냅샷이 아니다 (AUDIT-2026-07-30 §B, 2026-08-01)
+
+트레이 메뉴와 상세 설정 다이얼로그는 둘 다 **자체 모달 루프 안에서 산다** — `TrackPopupMenu` 와 `ModalDialogLoop` 모두 메시지를 계속 디스패치하므로, 열려 있는 동안 감지 스레드가 post 한 `WM_CONFIG_CHANGED` 가 그대로 처리돼 `_config` 가 교체될 수 있다(감지 루프의 `Settings.CheckConfigFileChange` 는 `TryHandleModalGate` **앞**에 있어 모달 게이트의 보호를 받지 않는다). 그런데 커밋은 "열릴 때의 스냅샷" 위에 `with { … }` 를 얹었다 → 방금 반영된 외부 편집이 조용히 되돌아가고 뒤따르는 `Settings.Save` 가 디스크까지 덮었다.
+
+- **다이얼로그** — `TryCommit` 의 베이스를 `_initialConfig` → `_currentConfigProvider?.Invoke()` 로 교체. 별도의 필드 diff 로직은 필요 없었다: 그 루프가 **모든 필드를 컨트롤에서 다시 읽어 베이스 위에 덮으므로**, 사용자가 화면에서 본 값은 그대로 이기고 다이얼로그가 노출하지 않는 필드(위치 기록·앱 프로필)만 최신값이 살아남는다 — 이것이 감사가 말한 "필드 병합 커밋"의 실질이다.
+- **트레이 메뉴** — `HandleMenuCommand` 초입의 `config = currentConfig();` 한 줄이 `config with { … }` 24곳을 한꺼번에 덮는다.
+- **"모달 중 이벤트 보류" 안은 채택하지 않았다** — 보류해도 커밋이 먼저 디스크를 덮은 뒤 보류분이 처리되므로 순서만 바뀔 뿐 lost update 가 남는다.
+
+`_currentConfigProvider` 는 `Show` 의 에필로그에서 null 로 되돌리고, `TryCommit` 은 공급자가 없으면 `_initialConfig` 로 폴백한다(셸을 거치지 않는 직접 호출 방어).
+
+### `Save` 의 쓰기와 mtime 갱신은 한 덩어리 (AUDIT-2026-07-30 §F, 2026-08-01)
+
+`_mtimeLock` 의 원래 주석은 "I/O 는 lock 밖에서 수행, 필드 대입/비교만 보호" 였는데, 그 결과 `Save` 의 `WriteAllText` 와 `_lastMtime` 갱신 사이가 열려 있었다. 그 틈에 감지 스레드가 `CheckReload` 를 돌면 새 mtime ≠ 옛 `_lastMtime` 이라 **자기 저장을 외부 편집으로 오인**해 전체 리로드를 유발한다 — 배지 깜빡임과 메모리 전용 변경 소실도 문제지만, 그 리로드가 위 §B 의 재진입 트리거를 늘리는 것이 더 컸다.
+
+이제 `Save` 의 쓰기+mtime 조회와 `CheckReload` 의 mtime 조회+비교가 모두 `_mtimeLock` 안에 있다(직렬화는 순수 계산이라 락 밖). 경합 비용은 무시할 수준 — `CheckReload` 는 5초에 1회, `Save` 는 사용자 조작 시에만 돈다.
+
 ### 파싱 실패는 `TryLoad` 로 호출자에게 전달한다 (AUDIT-2026-07-30 §G, 2026-08-01)
 
 `Load()` 는 성공이든 실패든 `T` 하나만 돌려주므로, 호출자는 받은 값이 **정상 로드분인지 실패분 디폴트인지 구분할 수 없었다.** 핫리로드 경로(`HandleConfigChanged`)가 그 디폴트를 `_config` 에 대입하면 이후 **어떤** 저장 경로(트레이 토글·드래그 종료)든 그것을 디스크에 확정해 사용자 설정이 전멸한다. 위 "Corrupted config spam prevention" 이 파일을 지켜도 **메모리 쪽에서 무너지는** 구멍이었다 — config.json 은 편집 중 한순간만 파싱 불가여도 이 경로를 탄다.

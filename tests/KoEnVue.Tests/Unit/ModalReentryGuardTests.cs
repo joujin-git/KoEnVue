@@ -29,6 +29,7 @@ namespace KoEnVue.Tests.Unit;
 /// 프로덕션 코드에 테스트 전용 노출을 만들지 않기 위함이다 (테스트 csproj 는 reflection 전제).
 /// </para>
 /// </summary>
+[Collection(SettingsDialogStaticsCollection.Name)]
 public class ModalReentryGuardTests
 {
     private const BindingFlags PrivateStatic = BindingFlags.NonPublic | BindingFlags.Static;
@@ -116,7 +117,9 @@ public class ModalReentryGuardTests
         {
             bool secondCallbackFired = false;
             WhileModalActive(() => SettingsDialog.Show(
-                DummyOwner, new AppConfig(), _ => secondCallbackFired = true));
+                DummyOwner, new AppConfig(),
+                currentConfig: static () => new AppConfig(),
+                updateConfig: _ => secondCallbackFired = true));
 
             Assert.False(secondCallbackFired);
             // 가드가 없으면 프롤로그가 두 번째 호출의 스냅샷으로 작업본과 콜백을 통째로 교체한다.

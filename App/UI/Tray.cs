@@ -280,8 +280,15 @@ internal static partial class Tray
     /// config 변경이 필요한 항목은 updateConfig 콜백으로 Program.cs에 위임.
     /// </summary>
     internal static void HandleMenuCommand(int commandId, AppConfig config, IntPtr hwndMain,
-        IntPtr hwndForeground, Action<AppConfig> updateConfig)
+        IntPtr hwndForeground, Func<AppConfig> currentConfig, Action<AppConfig> updateConfig)
     {
+        // 명령 적용의 베이스는 **지금** 값이어야 한다. 호출자가 넘긴 config 는 메뉴를 띄울 때의
+        // 스냅샷인데, TrackPopupMenu 는 자체 모달 루프를 돌리므로 메뉴가 열려 있는 동안 감지
+        // 스레드가 post 한 WM_CONFIG_CHANGED 가 그대로 디스패치돼 _config 가 교체될 수 있다.
+        // 그 경우 아래 24곳의 `config with { … }` 가 옛 베이스 위에 얹혀 방금 반영된 외부 편집을
+        // 조용히 되돌리고, 뒤따르는 Settings.Save 가 디스크까지 덮는다 (AUDIT-2026-07-30 §B).
+        config = currentConfig();
+
         // --- 크기 배율 정수 프리셋 (동적 ID 범위 매칭) ---
         if (commandId >= IDM_SIZE_BASE && commandId < IDM_SIZE_BASE + (ScaleIntegerMax - ScaleIntegerMin + 1))
         {
@@ -453,7 +460,9 @@ internal static partial class Tray
 
             // --- 상세 설정 ---
             case IDM_SETTINGS:
-                SettingsDialog.Show(hwndMain, config, updateConfig);
+                // currentConfig 를 그대로 넘긴다 — 다이얼로그는 며칠이고 열려 있을 수 있고,
+                // 그 사이 config.json 이 외부에서 바뀌면 커밋 베이스가 달라져야 한다 (§B).
+                SettingsDialog.Show(hwndMain, config, currentConfig, updateConfig);
                 break;
 
             // --- 종료 ---

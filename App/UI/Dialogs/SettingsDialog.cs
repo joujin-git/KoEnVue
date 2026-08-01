@@ -82,6 +82,8 @@ internal static partial class SettingsDialog
     private static IntPtr _hwndMain;
     private static AppConfig _initialConfig = null!;
     private static AppConfig _workingConfig = null!;
+    /// <summary>커밋 베이스 공급자 — <see cref="Show"/> 의 currentConfig 파라미터 참조.</summary>
+    private static Func<AppConfig>? _currentConfigProvider;
     private static Action<AppConfig>? _updateCallback;
 
     // ================================================================
@@ -93,7 +95,15 @@ internal static partial class SettingsDialog
     /// 확인 → 유효성 통과 시 updateConfig 호출, 실패 시 MessageBox 후 대화상자 유지.
     /// 취소 / 닫기 → 변경 파기.
     /// </summary>
-    internal static unsafe void Show(IntPtr hwndMain, AppConfig config, Action<AppConfig> updateConfig)
+    /// <param name="config">컨트롤 초기값을 채울 스냅샷 (다이얼로그를 연 시점의 설정).</param>
+    /// <param name="currentConfig">
+    /// 커밋 시점의 <b>현재</b> 설정 공급자. 확인 시 합성 베이스로 쓴다 — 다이얼로그가 떠 있는 동안
+    /// config.json 이 외부에서 바뀌면 <paramref name="config"/> 는 이미 stale 이고, 그것을 베이스로
+    /// 삼으면 다이얼로그가 <b>다루지도 않는 필드</b>(위치 기록·앱 프로필 등)까지 옛 값으로 되돌아간
+    /// 뒤 디스크에 저장된다 (AUDIT-2026-07-30 §B).
+    /// </param>
+    internal static unsafe void Show(IntPtr hwndMain, AppConfig config,
+        Func<AppConfig> currentConfig, Action<AppConfig> updateConfig)
     {
         // 재진입 가드는 반드시 첫 문장 — 프롤로그가 _workingConfig 를 두 번째 호출의 스냅샷으로
         // 덮고 _fields/_fieldInputs 를 비우면, 살아 있는 첫 다이얼로그는 사용자가 편집 중이던
@@ -104,6 +114,7 @@ internal static partial class SettingsDialog
         _hwndMain = hwndMain;
         _initialConfig = config;
         _workingConfig = config;
+        _currentConfigProvider = currentConfig;
         _updateCallback = updateConfig;
         _dlgResult = false;
         _dlgClosed = false;
@@ -133,6 +144,7 @@ internal static partial class SettingsDialog
 
         _hwndDialog = IntPtr.Zero;
         _hwndViewport = IntPtr.Zero;
+        _currentConfigProvider = null;
         _fields.Clear();
         _fieldInputs.Clear();
         _scrollChildren.Clear();
@@ -350,7 +362,13 @@ internal static partial class SettingsDialog
     /// </summary>
     private static bool TryCommit()
     {
-        AppConfig newCfg = _initialConfig;
+        // 베이스는 열릴 때 스냅샷(_initialConfig)이 아니라 **커밋 시점의 현재 설정**이다.
+        // 아래 루프가 다이얼로그의 모든 필드를 컨트롤에서 다시 읽어 덮으므로, 사용자가 화면에서 본 값은
+        // 그대로 이기고 **다이얼로그가 노출하지 않는 필드**(위치 기록·앱 프로필 등)만 현재 값이 살아남는다.
+        // _initialConfig 를 베이스로 두면 다이얼로그가 떠 있는 동안 반영된 외부 편집이 확인 한 번에
+        // 통째로 되돌아가고 Settings.Save 가 디스크까지 덮었다 (AUDIT-2026-07-30 §B).
+        // 공급자가 없으면(직접 호출 등) 종전 동작으로 폴백.
+        AppConfig newCfg = _currentConfigProvider?.Invoke() ?? _initialConfig;
         for (int i = 0; i < _fields.Count; i++)
         {
             var field = _fields[i];

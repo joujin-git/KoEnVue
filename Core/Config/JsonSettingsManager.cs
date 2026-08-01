@@ -36,8 +36,15 @@ internal class JsonSettingsManager<T>
     private readonly JsonTypeInfo<T> _typeInfo;
 
     // _lastMtime 은 메인 스레드(Save/Load)와 감지 스레드(CheckReload)가 공유한다. DateTime 은
-    // 64비트 값이라 volatile 키워드를 받지 못하므로 짧은 lock 으로 read/write 원자성·가시성을 보장한다
-    // (I/O 인 GetLastWriteTimeUtc 는 lock 밖에서 수행, 필드 대입/비교만 보호).
+    // 64비트 값이라 volatile 키워드를 받지 못하므로 lock 으로 read/write 원자성·가시성을 보장한다.
+    //
+    // **파일 쓰기와 mtime 조회까지 이 lock 안에서 수행한다** (AUDIT-2026-07-30 §F). 이전에는
+    // "I/O 는 lock 밖" 이라 Save 의 쓰기와 mtime 갱신 사이에 틈이 있었고, 그 틈에 감지 스레드가
+    // CheckReload 를 돌면 새 mtime ≠ 옛 _lastMtime 이라 **자기 저장을 외부 편집으로 오인**해
+    // 불필요한 전체 리로드를 유발했다(배지 깜빡임 + 메모리 전용 변경 소실). 그 리로드가 §B 의
+    // WM_CONFIG_CHANGED 재진입 트리거를 늘리는 것이 더 큰 문제였다.
+    //
+    // 경합 비용은 무시할 수준이다 — CheckReload 는 5초에 1회, Save 는 사용자 조작 시에만 돈다.
     private readonly object _mtimeLock = new();
     private DateTime _lastMtime = DateTime.MinValue;
 
@@ -106,8 +113,7 @@ internal class JsonSettingsManager<T>
                 config = Validate(config);
                 config = ApplyTheme(config);
 
-                DateTime loadedMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
-                lock (_mtimeLock) _lastMtime = loadedMtime;
+                lock (_mtimeLock) _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
                 LogProvider.Sink?.Info($"Config loaded from {_filePath}");
                 value = config;
                 return true;
@@ -121,8 +127,7 @@ internal class JsonSettingsManager<T>
                 LogProvider.Sink?.Warning($"Failed to load config from {_filePath}: {ex.Message}. Using defaults without overwriting.");
                 try
                 {
-                    DateTime staleMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
-                    lock (_mtimeLock) _lastMtime = staleMtime;
+                    lock (_mtimeLock) _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
                 }
                 catch (Exception innerEx) when (IsExpectedIoException(innerEx)) { }
                 value = new T();
@@ -149,12 +154,16 @@ internal class JsonSettingsManager<T>
     {
         try
         {
+            // 직렬화는 순수 계산이라 lock 밖. 쓰기와 mtime 갱신은 한 덩어리여야 한다 —
+            // 그 사이가 열려 있으면 감지 스레드가 자기 저장을 외부 편집으로 오인한다 (§F).
             string json = JsonSerializer.Serialize(value, _typeInfo);
             json = FormatJson(json);
-            JsonSettingsFile.WriteAllText(_filePath, json);
 
-            DateTime savedMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
-            lock (_mtimeLock) _lastMtime = savedMtime;
+            lock (_mtimeLock)
+            {
+                JsonSettingsFile.WriteAllText(_filePath, json);
+                _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+            }
             LogProvider.Sink?.Debug($"Config saved to {_filePath}");
         }
         catch (Exception ex) when (IsExpectedSaveException(ex))
@@ -183,9 +192,11 @@ internal class JsonSettingsManager<T>
 
         try
         {
-            DateTime mtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+            // 조회까지 lock 안 — Save 의 "쓰기 → mtime 갱신" 사이를 관찰하면 자기 저장을
+            // 외부 편집으로 오인한다 (§F).
             lock (_mtimeLock)
             {
+                DateTime mtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
                 if (mtime != _lastMtime)
                 {
                     _lastMtime = mtime;

@@ -1000,6 +1000,7 @@ internal static partial class Program
     private static void HandleMenuCommand(int commandId)
     {
         Tray.HandleMenuCommand(commandId, _config, _hwndMain, _lastForegroundHwnd,
+            currentConfig: () => _config,
             updateConfig: newConfig =>
             {
                 bool wasHidden = _config.UserHidden;
