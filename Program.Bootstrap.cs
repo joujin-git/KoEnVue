@@ -36,6 +36,13 @@ internal static partial class Program
     /// </summary>
     private static string _registeredOverlayClassName = DefaultConfig.DefaultOverlayClassName;
 
+    /// <summary>
+    /// 종료 시 감지 스레드 합류 대기 상한 (ms). 감지 루프의 최악 sleep
+    /// (<c>MaxPollMs</c> + <c>DetectionBackoffMaxMs</c>)보다 <b>짧다</b> — 의도적이다.
+    /// 근거는 <c>OnProcessExit</c> 의 주석 참조 (AUDIT-2026-07-30 §I).
+    /// </summary>
+    private const int DetectionJoinTimeoutMs = 500;
+
     // ================================================================
     // 다중 인스턴스 방지
     // ================================================================
@@ -210,11 +217,24 @@ internal static partial class Program
     {
         _stopping = true;
 
-        // 0. 감지 스레드 합류 — _stopping=true 신호 후 한 폴링 주기 안에 자발 종료한다.
-        //    IsBackground=true 라 OS 가 어차피 강제 종료하지만, hwnd 파괴 시점과
-        //    detection 의 PostMessageW(_hwndMain, ...) marshal 이 겹치는 짧은 race
-        //    (last-error=1400 / Invalid handle) 를 명시적 Join 으로 차단.
-        _detectionThread?.Join(500);
+        // 0. 감지 스레드 합류 — _stopping=true 신호 후 자발 종료를 기다린다. hwnd 파괴 시점과
+        //    detection 의 PostMessageW(_hwndMain, ...) 가 겹치는 race(last-error=1400 / Invalid
+        //    handle) 를 좁히기 위함이다.
+        //
+        //    **"차단한다" 고 쓰면 사실과 다르다** (AUDIT-2026-07-30 §I). 감지 루프의 최악 sleep 은
+        //    PollIntervalMs(최대 DefaultConfig.MaxPollMs) + 예외 백오프(최대
+        //    DefaultConfig.DetectionBackoffMaxMs) 라 이 타임아웃을 넘길 수 있다 — 즉 백오프 중
+        //    종료하면 Join 이 타임아웃하고 race 창이 그대로 열린다.
+        //
+        //    그럼에도 타임아웃을 늘리지 않는 이유: 스레드가 IsBackground=true 라 OS 가 어차피
+        //    회수하고, race 가 실제로 터져도 결과는 PostMessageW 실패(로그 한 줄)뿐이다. 종료를
+        //    수 초 지연시키는 대가가 이득보다 크다. 대신 타임아웃을 관측 가능하게 남긴다.
+        if (_detectionThread is not null && !_detectionThread.Join(DetectionJoinTimeoutMs))
+        {
+            Logger.Debug(
+                $"Detection thread did not exit within {DetectionJoinTimeoutMs}ms "
+                + "(likely mid-backoff); proceeding with teardown");
+        }
 
         // 1. IME 훅 해제
         ImeStatus.UnregisterHook();

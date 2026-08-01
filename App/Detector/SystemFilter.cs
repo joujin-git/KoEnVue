@@ -26,8 +26,13 @@ internal static class SystemFilter
     private static readonly StrategyBasedComWrappers _comWrappers = new();
     private static readonly IVirtualDesktopManager? _vdm;
 
-    // A4 측정용: VDM COM 호출 실패 빈도. 감지 스레드 단일 라이터라 Interlocked 불요.
-    // 4주 후 데이터로 cross-thread COM 마이그레이션 필요 여부 재결정.
+    // A4 측정용: VDM COM 호출 실패 빈도. 4주 후 데이터로 cross-thread COM 마이그레이션 필요 여부 재결정.
+    //
+    // **라이터는 둘이다** — 감지 스레드(DetectionService)뿐 아니라 메인 스레드도
+    // Program.TryShowIndicatorIfForegroundAllowed 와 부팅 워밍업에서 ShouldHide 를 호출한다.
+    // "감지 스레드 단일 라이터라 Interlocked 불요" 라던 종전 근거는 PR-26 이후 무효였고,
+    // 비원자 증가의 lost update 는 **마이그레이션 판단의 근거가 될 누적 카운트를 과소 집계**한다
+    // (AUDIT-2026-07-30 §J). 측정용 카운터라 값이 틀리면 목적 자체가 사라진다.
     private static int _vdmFailCount;
     private const int VdmFailLogEvery = 1000;
 
@@ -171,9 +176,11 @@ internal static class SystemFilter
             // 예외는 RCW 상태(InvalidComObjectException), 마샬링, 드물게 NullReferenceException
             // 등으로 일관되게 좁히기 어렵다. 본문이 단일 COM 호출 1줄이라 과대 포획 리스크가 낮으므로
             // wide catch 유지. 기본값은 "숨기지 않음"으로 안전 폴백.
-            _vdmFailCount++;
-            if (_vdmFailCount % VdmFailLogEvery == 0)
-                Logger.Debug($"VDM COM failure count: {_vdmFailCount}");
+            // 게이트는 **반환값**으로 평가한다 — 필드를 다시 읽으면 두 스레드가 같은 경계를
+            // 스쳐 지나가며 로그가 건너뛰거나 중복된다 (§J).
+            int failures = Interlocked.Increment(ref _vdmFailCount);
+            if (failures % VdmFailLogEvery == 0)
+                Logger.Debug($"VDM COM failure count: {failures}");
             Logger.Debug($"IVirtualDesktopManager.IsWindowOnCurrentVirtualDesktop rejected: {ex.Message}");
             return true;
         }
