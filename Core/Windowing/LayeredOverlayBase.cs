@@ -99,6 +99,11 @@ internal sealed class LayeredOverlayBase : IDisposable
 
     // 드래그 상태
     private bool _isDragging;
+
+    /// <summary>
+    /// 드래그 중에 도착한 <see cref="Hide"/> 요청 — <see cref="EndDrag"/> 가 소비한다 (§M).
+    /// </summary>
+    private bool _hidePendingDuringDrag;
     private int _dragStartX;
     private int _dragStartY;
     // 드래그 시작 시 커서가 창 안에서 잡고 있는 상대 오프셋(hot point).
@@ -169,9 +174,26 @@ internal sealed class LayeredOverlayBase : IDisposable
         _isVisible = true;
     }
 
-    /// <summary>ShowWindow(SW_HIDE) + 가시 상태 리셋.</summary>
+    /// <summary>
+    /// ShowWindow(SW_HIDE) + 가시 상태 리셋.
+    ///
+    /// <para>
+    /// <b>드래그 중이면 보류</b>한다 (AUDIT-2026-07-30 §M). 시스템 sizemove 모달 루프
+    /// (<c>DefWindowProc</c> 내부의 자체 메시지 펌프)는 <c>WM_TIMER</c> 도 계속 디스패치하므로,
+    /// 표시 시간이 만료된 애니메이션 타이머가 <b>사용자가 붙잡고 있는 배지를 그 자리에서 지워버렸다.</b>
+    /// <see cref="UpdateOverlay"/> 에는 <c>_isDragging</c> 가드가 있었지만 이 경로엔 없어서, 위치는
+    /// 지켜지되 창 자체가 사라지는 비대칭이 남아 있었다. 보류분은 <see cref="EndDrag"/> 가 처리한다 —
+    /// 여기서 그냥 무시해 버리면 "시간이 지나면 숨는다"는 반대편 의도가 깨진다.
+    /// </para>
+    /// </summary>
     public void Hide()
     {
+        if (_isDragging)
+        {
+            _hidePendingDuringDrag = true;
+            return;
+        }
+
         if (_hwndOverlay != IntPtr.Zero)
             User32.ShowWindow(_hwndOverlay, Win32Constants.SW_HIDE);
         _isVisible = false;
@@ -372,6 +394,14 @@ internal sealed class LayeredOverlayBase : IDisposable
             _lastX = rc.Left;
             _lastY = rc.Top;
         }
+
+        // 드래그 중 보류된 숨김을 지금 적용 (§M). 위치를 먼저 확정한 뒤라 저장 경로는 영향받지 않는다.
+        if (_hidePendingDuringDrag)
+        {
+            _hidePendingDuringDrag = false;
+            Hide();
+        }
+
         return (_lastX, _lastY);
     }
 

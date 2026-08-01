@@ -42,6 +42,14 @@ internal static partial class User32
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool IsWindowVisible(IntPtr hWnd);
 
+    /// <summary>
+    /// 핸들이 아직 유효한 창을 가리키는지. 커널이 파괴된 창의 HWND 값을 재발급하므로
+    /// "죽은 항목 정리" 용도로만 신뢰할 수 있다 — 재활용된 핸들도 true 를 돌려준다.
+    /// </summary>
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool IsWindow(IntPtr hWnd);
+
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool IsIconic(IntPtr hWnd);

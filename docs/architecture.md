@@ -81,7 +81,7 @@ KoEnVue/
 ├── KoEnVue.csproj
 │
 └── tests/KoEnVue.Tests/     xUnit (dev-only, P1 예외). InternalsVisibleTo.
-    └── Unit/                baseline **193 PASS** / **23 파일** (2026-08-01)
+    └── Unit/                baseline **197 PASS** / **24 파일** (2026-08-01)
         ├── ColorHelperTests / DpiHelperTests / SettingsValidateTests
         ├── StartupTaskXmlTests / XmlEntityCodecTests / SanitizeLogPathTests
         ├── JsonSettingsMergeTests / OverlayAnimatorTests / AnimationFacadeTests
@@ -90,7 +90,8 @@ KoEnVue/
         ├── UpdateCheckerTests / SettingsProfileMergeTests / ThemePresetsBackupTests
         ├── TrayLeftClickToggleTests / ModalReentryGuardTests
         ├── ConfigLoadFailureTests / LoggerReinitTests
-        └── ConfigCommitBaseTests / ProfileCacheTests / TestCollections(공용 컬렉션 정의)
+        ├── ConfigCommitBaseTests / ProfileCacheTests / DragHideDeferralTests
+        └── TestCollections(공용 컬렉션 정의)
 ```
 
 Every file in `Core/` is reusable in another Windows desktop project; every file in `App/` is product-specific. `tests/` 는 release exe 에 포함되지 않는 dev-only 예외 (P1).

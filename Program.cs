@@ -66,7 +66,24 @@ internal static partial class Program
     // 포그라운드 윈도우 + 앱별 위치 (메인 스레드 전용)
     private static IntPtr _lastForegroundHwnd;
     private static string _currentProcessName = "";
-    private static readonly Dictionary<IntPtr, (int x, int y)> _hwndPositions = [];
+    /// <summary>
+    /// 세션 내 창별 배지 위치 (Fixed 모드). 값에 <b>프로세스명을 함께</b> 담는다 —
+    /// 커널은 파괴된 창의 HWND 값을 재발급하므로, 원시 HWND 만 키로 쓰면 <b>다른 앱의 새 창이 죽은
+    /// 창의 좌표를 물려받는다.</b> 이 경로가 <c>indicator_positions</c>(프로세스명 영구 저장)보다
+    /// 우선순위가 높아, 그 오식별이 사용자가 저장해 둔 위치를 덮어버렸다 (AUDIT-2026-07-30 §L).
+    /// 조회 시 프로세스명이 일치하지 않으면 재활용으로 보고 그 항목을 버린다.
+    /// <para>
+    /// 제거 경로가 전혀 없어 상주 앱에서 단조 증가하던 문제도 함께 닫는다 —
+    /// <see cref="HwndPositionMaxEntries"/> 초과 시 죽은 창부터 정리한다.
+    /// </para>
+    /// </summary>
+    private static readonly Dictionary<IntPtr, (int x, int y, string process)> _hwndPositions = [];
+
+    /// <summary>
+    /// <see cref="_hwndPositions"/> 상한. 초과 시 <see cref="PruneHwndPositions"/> 가 죽은 창을 정리한다.
+    /// 한 세션에서 사용자가 배지를 개별 배치하는 창이 이보다 많기는 어렵다.
+    /// </summary>
+    private const int HwndPositionMaxEntries = 64;
 
     // CAPS LOCK 토글 캐시 (메인 스레드 전용 — TIMER_ID_CAPS 폴러가 200ms마다 GetKeyState 비교)
     private static bool _lastCapsLockState;
@@ -728,6 +745,39 @@ internal static partial class Program
         return GetAppPositionFixed();
     }
 
+    /// <summary>
+    /// <see cref="_hwndPositions"/> 가 상한을 넘으면 이미 파괴된 창의 항목을 정리한다 (AUDIT-2026-07-30 §L).
+    /// 제거 경로가 전혀 없어 상주 앱에서 단조 증가하던 것을 닫는다. 삽입 직전에만 호출되므로
+    /// <c>IsWindow</c> P/Invoke 비용은 사용자가 배지를 드래그해 놓는 순간에만, 그것도 상한 근처에서만 든다.
+    /// </summary>
+    private static void PruneHwndPositions()
+    {
+        if (_hwndPositions.Count < HwndPositionMaxEntries) return;
+
+        List<IntPtr> dead = [];
+        foreach (IntPtr hwnd in _hwndPositions.Keys)
+        {
+            if (!User32.IsWindow(hwnd))
+                dead.Add(hwnd);
+        }
+        foreach (IntPtr hwnd in dead)
+            _hwndPositions.Remove(hwnd);
+
+        Logger.Debug($"Pruned {dead.Count} dead hwnd position entries ({_hwndPositions.Count} remain)");
+
+        // 살아 있는 창만으로 상한을 넘는 극단적 경우 — 가장 오래된 삽입부터 버린다.
+        // Dictionary 의 열거 순서는 삽입 순서를 보장하지 않지만, 여기서 필요한 것은
+        // "무한 성장하지 않는다" 뿐이라 임의 항목 제거로 충분하다.
+        while (_hwndPositions.Count >= HwndPositionMaxEntries)
+        {
+            foreach (IntPtr hwnd in _hwndPositions.Keys)
+            {
+                _hwndPositions.Remove(hwnd);
+                break;
+            }
+        }
+    }
+
     /// <summary>고정 모드 위치 조회 (기존 로직).</summary>
     private static (int x, int y) GetAppPositionFixed()
     {
@@ -735,7 +785,12 @@ internal static partial class Program
         if (_lastForegroundHwnd != IntPtr.Zero
             && _hwndPositions.TryGetValue(_lastForegroundHwnd, out var hwndPos))
         {
-            return ClampToVisibleArea(hwndPos.x, hwndPos.y);
+            // 프로세스명이 같아야 같은 창으로 인정한다 — 다르면 커널이 HWND 값을 재발급해
+            // 다른 앱이 물려받은 것이고, 그 좌표를 쓰면 아래 2번(사용자가 저장한 위치)을 덮는다 (§L).
+            if (hwndPos.process == _currentProcessName)
+                return ClampToVisibleArea(hwndPos.x, hwndPos.y);
+
+            _hwndPositions.Remove(_lastForegroundHwnd);
         }
         // 2. config 프로세스명별 위치 (영구 저장)
         if (_currentProcessName.Length > 0
@@ -857,9 +912,49 @@ internal static partial class Program
         }
         else if (!_config.UserHidden)
             RefreshVisibleIndicator();
-        if (_config.TrayEnabled)
-            Tray.UpdateState(_lastImeState, _config);
+
+        ApplyTrayEnabledTransition(prev.TrayEnabled, _config.TrayEnabled);
+
+        // overlay_class_name 은 부팅 시 1회 등록이라 런타임 변경을 반영할 수 없다 (AUDIT-2026-07-30 §H).
+        // 조용히 무시하면 "고쳤는데 왜 그대로냐" 가 되고, 창 생성이 새 값을 쓰면 미등록 클래스로 실패한다.
+        if (_config.Advanced.OverlayClassName != _registeredOverlayClassName)
+        {
+            Logger.Warning(
+                $"overlay_class_name changed to '{_config.Advanced.OverlayClassName}' but window classes are "
+                + $"registered once at startup; still using '{_registeredOverlayClassName}'. Restart to apply.");
+        }
+
         Logger.Info("Config reloaded");
+    }
+
+    /// <summary>
+    /// <c>tray_enabled</c> 의 런타임 전이를 반영한다 (AUDIT-2026-07-30 §K).
+    ///
+    /// <para>
+    /// 이전에는 리로드 경로가 <c>if (_config.TrayEnabled) Tray.UpdateState(...)</c> 만 해서
+    /// <b>전이 자체를 아무도 처리하지 않았다</b> — true→false 에서는 셸 등록과 HICON 이 그대로 남아
+    /// 아이콘이 계속 보였고(설정을 껐는데 사라지지 않음), false→true 에서는 <c>Initialize</c> 를 부른 적이
+    /// 없으니 재시작 전까지 영영 생기지 않았다.
+    /// </para>
+    /// </summary>
+    private static void ApplyTrayEnabledTransition(bool wasEnabled, bool isEnabled)
+    {
+        if (wasEnabled && !isEnabled)
+        {
+            Tray.Remove();
+            Logger.Info("Tray disabled by config reload");
+            return;
+        }
+
+        if (!wasEnabled && isEnabled)
+        {
+            Tray.Initialize(_hwndMain, _lastImeState, _config);
+            Logger.Info("Tray enabled by config reload");
+            return;
+        }
+
+        if (isEnabled)
+            Tray.UpdateState(_lastImeState, _config);
     }
 
     /// <summary>
@@ -1004,6 +1099,7 @@ internal static partial class Program
             updateConfig: newConfig =>
             {
                 bool wasHidden = _config.UserHidden;
+                bool wasTrayEnabled = _config.TrayEnabled;
                 AppLanguage oldLanguage = _config.Language;
                 _config = ThemePresets.Apply(newConfig);
                 // **무효화는 새 _config 게시 직후, 이 람다의 어떤 렌더보다 먼저** (AUDIT-2026-07-30 §E).
@@ -1037,8 +1133,8 @@ internal static partial class Program
                 {
                     Overlay.UpdateColor(_lastImeState, ResolveCurrent());
                 }
-                if (_config.TrayEnabled)
-                    Tray.UpdateState(_lastImeState, _config);
+                // 상세 설정에서 tray_enabled 를 끄고 켤 수 있으므로 이 경로도 전이를 반영해야 한다 (§K).
+                ApplyTrayEnabledTransition(wasTrayEnabled, _config.TrayEnabled);
                 Settings.Save(_config);
             });
     }

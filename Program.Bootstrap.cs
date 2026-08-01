@@ -28,6 +28,14 @@ internal static partial class Program
     // 동적 ID 라 WndProc switch 에 넣지 못하므로 switch 앞단의 if 분기에서 비교한다.
     private static uint _taskbarCreatedMsgId;
 
+    /// <summary>
+    /// 부팅 시 <see cref="RegisterWindowClasses"/> 가 실제로 등록한 오버레이 클래스명.
+    /// 창 생성은 <c>_config.Advanced.OverlayClassName</c> 이 아니라 이 값을 써야 한다 —
+    /// 클래스 등록은 1회뿐이라 핫리로드로 config 값이 바뀌면 둘이 어긋나고, 그 상태에서
+    /// 창을 만들면 미등록 클래스로 실패한다 (AUDIT-2026-07-30 §H).
+    /// </summary>
+    private static string _registeredOverlayClassName = DefaultConfig.DefaultOverlayClassName;
+
     // ================================================================
     // 다중 인스턴스 방지
     // ================================================================
@@ -117,8 +125,14 @@ internal static partial class Program
         // 오버레이 — WS_EX_LAYERED 라 WM_ERASEBKGND 미수신, hbrBackground 는 NULL 그대로.
         // hCursor=IDC_ARROW 가 필수: NULL 이면 drag_modifier ≠ none 모드의 평상시(HTCLIENT 반환)
         // 호버에 IDC_APPSTARTING 폴백이 노출됨. RegisterStandardClass 가 이를 자동 박는다.
+        //
+        // **등록한 이름을 고정**한다 (AUDIT-2026-07-30 §H). 클래스 등록은 부팅 시 1회뿐인데
+        // overlay_class_name 은 핫리로드로 바뀔 수 있고, 커서 헤일로 창은 lazy 생성이라 그 이후에
+        // 만들어진다 — 창 생성이 _config 를 직접 읽으면 **등록된 적 없는 클래스명**으로
+        // CreateWindowExW 를 호출해 실패한다(헤일로가 영영 안 뜬다). 창 생성은 반드시 이 필드를 쓴다.
+        _registeredOverlayClassName = _config.Advanced.OverlayClassName;
         Win32DialogHelper.RegisterStandardClass(
-            _config.Advanced.OverlayClassName,
+            _registeredOverlayClassName,
             (delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr>)&WndProc);
     }
 
@@ -144,7 +158,7 @@ internal static partial class Program
             Win32Constants.WS_EX_LAYERED
                 | Win32Constants.WS_EX_TOPMOST | Win32Constants.WS_EX_TOOLWINDOW
                 | Win32Constants.WS_EX_NOACTIVATE,
-            _config.Advanced.OverlayClassName, "",
+            _registeredOverlayClassName, "",
             Win32Constants.WS_POPUP,
             0, 0, 0, 0,
             IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
@@ -177,7 +191,7 @@ internal static partial class Program
             Win32Constants.WS_EX_LAYERED
                 | Win32Constants.WS_EX_TOOLWINDOW
                 | Win32Constants.WS_EX_NOACTIVATE | Win32Constants.WS_EX_TRANSPARENT,
-            _config.Advanced.OverlayClassName, "",
+            _registeredOverlayClassName, "",
             Win32Constants.WS_POPUP | Win32Constants.WS_VISIBLE,
             0, 0, 0, 0,
             IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);

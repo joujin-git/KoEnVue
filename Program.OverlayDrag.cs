@@ -134,7 +134,11 @@ internal static partial class Program
             (x, y) = ClampToVisibleArea(x, y);
 
             if (_lastForegroundHwnd != IntPtr.Zero)
-                _hwndPositions[_lastForegroundHwnd] = (x, y);
+            {
+                // 프로세스명을 함께 담아야 HWND 재활용을 조회 시점에 걸러낼 수 있다 (§L).
+                PruneHwndPositions();
+                _hwndPositions[_lastForegroundHwnd] = (x, y, _currentProcessName);
+            }
             if (_currentProcessName.Length > 0)
             {
                 var positions = new Dictionary<string, int[]>(_config.IndicatorPositions)
