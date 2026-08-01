@@ -31,7 +31,7 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 | **ultracode** | **큰 작업만 수동** — 매 턴 주입하던 `inject-turn-context` hook **삭제**, 큰 작업(리뷰·감사·릴리즈·설계비교·버그헌트)만 워크플로우 `/<name>` 수동 호출 | 매 작업 6+ 에이전트 fan-out 은 이 규모(1인·유지보수)에 과잉. 일상은 solo + 필요 시 서브에이전트 |
 | 서브에이전트 effort | 본문 첫 단락 문구 + **모델 차등**(agents `model:`) | explorer=haiku·verifier=sonnet 은 균형 문구, planner/reviewer/docs-keeper/historian 은 opus(inherit) 유지. 매 턴 주입 hook 이 없어져 본문 문구가 서브에이전트 깊이의 단일 보장 |
 | 병렬 | 단일 세션 + 서브에이전트 + **Workflow 도구**(ultracode). Agent Team(TeamCreate)만 미사용 | Workflow 는 결정론적·resume·budget 지원이라 도입. Agent Team 은 토큰 3–5배·resume 미지원·동시 1팀만이라 계속 제외 |
-| 권한 | `bypassPermissions` + **비가역 git 명령만 `permissions.deny`** — `push --force`/`-f`/`--force-with-lease`·`reset --hard`·`filter-branch` (Bash·PowerShell 양쪽 패턴) | 일상 명령은 무프롬프트로 속도 우선, **되돌릴 수 없는 것만** 차단. 그 외는 사용자가 직접 git 으로 책임 |
+| 권한 | `bypassPermissions` + **비가역 git 명령만 `permissions.deny`** — `push --force`/`-f`·`reset --hard`·`filter-branch` (Bash·PowerShell 양쪽 패턴). **`--force-with-lease` 는 2026-08-01 부터 허용** | 일상 명령은 무프롬프트로 속도 우선, **되돌릴 수 없는 것만** 차단. `--force-with-lease` 는 원격이 로컬이 아는 상태일 때만 덮으므로 안전장치가 내장돼 있어 예외 — 커밋 메시지 정정 등에 Claude 가 직접 쓴다. 무조건 `--force` 는 그대로 차단이라 사용자가 직접 git 으로 책임 |
 | PR | main 직커밋, PR 없음 | 1인 프로젝트 기존 흐름 존중 |
 | **빌드** | **debug + release publish 항상 둘 다** | 한쪽만 하면 release exe outdated — verifier 가 강제 |
 | **커밋** | **`git commit` 후 즉시 `git push` 자동** | Stop hook(턴 끝 1회) + SessionEnd 양쪽에서. 다른 장비 즉시 받기 |
@@ -43,6 +43,10 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 > **2026-07-24 균형 재구성**: 프로젝트가 15K 라인 성숙 유지보수 단계(v0.9.9.x)에 들어서며 "작업 시간이 너무 오래 걸린다"는 사용자 요청 → AskUserQuestion 으로 "균형" 방향 승인. effort max→high, fast mode 추가, ultracode 상시→큰 작업 수동, 매 tool call hook→턴당 1회(Stop) 통합, 서브에이전트 모델 차등(explorer=haiku·verifier=sonnet). 기술은 3자 검증(claude-code-guide + schemastore 공식 스키마 + 기존 메모리).
 
 > **2026-07-30 fast mode 해제**: 사용자 요청으로 `fastMode: true` → `false`. 07-24 재구성에서 속도를 위해 도입한 항목 중 **이것 하나만** 되돌린다 — effort·ultracode 수동화·hook 통합·서브에이전트 모델 차등은 그대로. 되돌리는 이유는 fast mode 가 출력 속도를 위해 응답 품질을 절충하기 때문이며, 07-24 재구성의 나머지 축(불필요한 fan-out·hook 오버헤드 제거)은 품질을 깎지 않고 비용을 줄인 항목이라 유지 대상이다. 체감: 일상 작업 응답이 느려지는 대신 깊이가 올라간다.
+
+> **2026-08-01 `--force-with-lease` 허용**: 사용자 요청("필요한 시점에 커밋·푸시 모두 Claude 가 직접")으로 `permissions.deny` 에서 `git push --force-with-lease` 만 제거. 계기는 Claude 가 깨진 커밋 메시지를 amend 하고도 push 하지 못해 사용자에게 명령을 넘겨야 했던 일. **무조건 `--force` 와 `-f` 는 deny 유지** — lease 는 "원격이 내가 마지막으로 본 상태일 때만 덮는다"는 조건을 붙이므로, 다른 장비의 커밋을 모르고 지우는 사고가 구조적으로 막힌다. 반면 `--force` 는 그 확인을 건너뛴다.
+>
+> **두 패턴이 실제로 구분되는지 실측 확인**(2026-08-01): `--force-with-lease --dry-run` 통과 · `--force --dry-run` 거부. 권한 규칙의 `Bash(git push --force:*)` 가 접두 매칭이라 `--force-with-lease` 까지 삼킬 가능성을 대조군으로 배제한 것이다. 같은 실험에서 **`permissions.ask` 는 `bypassPermissions` 모드에서 무시된다**는 것도 확인했다 — `ask` 로 옮기는 것은 차단이 아니라 사실상 허용이므로, 이 하네스에서 실효 있는 게이트는 `deny` 뿐이다.
 
 ## 2. 파일 구조
 
