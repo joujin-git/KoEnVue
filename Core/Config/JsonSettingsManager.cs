@@ -48,6 +48,20 @@ internal class JsonSettingsManager<T>
     private readonly object _mtimeLock = new();
     private DateTime _lastMtime = DateTime.MinValue;
 
+    /// <summary>
+    /// 앱이 <b>마지막으로 디스크와 동기화된 시점</b>의 설정을 직렬화한 것. <see cref="TryLoad"/> 성공과
+    /// <see cref="Save"/> 성공이 갱신한다.
+    ///
+    /// <para>
+    /// <see cref="Save"/> 의 3-way 병합 기준선이다 (AUDIT-2026-07-30 §N-48). 저장은 메모리 인스턴스를
+    /// 통째로 직렬화해 파일을 덮으므로, 그 사이 사용자가 <c>config.json</c> 에 넣은 편집이
+    /// <b>앱이 손대지도 않은 필드까지</b> 사라졌다 — 5초 폴링이 그 편집을 읽어가기 전에 트레이 토글 한
+    /// 번이면 충분하다. 이 기준선이 있으면 "앱이 이번에 바꾼 필드" 를 알 수 있고, 나머지는 디스크
+    /// 값을 살릴 수 있다.
+    /// </para>
+    /// </summary>
+    private string? _lastPersistedJson;
+
     public JsonSettingsManager(string filePath, JsonTypeInfo<T> typeInfo)
     {
         _filePath = filePath;
@@ -113,7 +127,13 @@ internal class JsonSettingsManager<T>
                 config = Validate(config);
                 config = ApplyTheme(config);
 
-                lock (_mtimeLock) _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+                lock (_mtimeLock)
+                {
+                    _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+                    // 방금 디스크와 동기화됐다 — 다음 Save 의 3-way 병합 기준선을 여기서 세운다 (§N-48).
+                    // 파일 원문이 아니라 **앱의 표현**으로 저장해야 주석·포맷 차이가 diff 를 오염시키지 않는다.
+                    _lastPersistedJson = JsonSerializer.Serialize(config, _typeInfo);
+                }
                 LogProvider.Sink?.Info($"Config loaded from {_filePath}");
                 value = config;
                 return true;
@@ -156,13 +176,20 @@ internal class JsonSettingsManager<T>
         {
             // 직렬화는 순수 계산이라 lock 밖. 쓰기와 mtime 갱신은 한 덩어리여야 한다 —
             // 그 사이가 열려 있으면 감지 스레드가 자기 저장을 외부 편집으로 오인한다 (§F).
-            string json = JsonSerializer.Serialize(value, _typeInfo);
-            json = FormatJson(json);
+            string rawJson = JsonSerializer.Serialize(value, _typeInfo);
 
             lock (_mtimeLock)
             {
+                // 디스크가 우리가 마지막으로 본 상태에서 벗어났으면, **이번에 바꾼 필드만** 그 위에
+                // 얹는다 (§N-48). 그러지 않으면 사용자가 방금 파일에 넣은 편집이 앱이 손대지도 않은
+                // 필드까지 통째로 되돌아간다.
+                string merged = MergeOntoDiskIfChanged(rawJson);
+                string json = FormatJson(merged);
+
                 JsonSettingsFile.WriteAllText(_filePath, json);
                 _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+                // 기준선은 **실제로 쓴 내용**이어야 다음 저장의 diff 가 정확하다.
+                _lastPersistedJson = merged;
             }
             LogProvider.Sink?.Debug($"Config saved to {_filePath}");
         }
@@ -173,6 +200,143 @@ internal class JsonSettingsManager<T>
             LogProvider.Sink?.Warning($"Failed to save config: {ex.Message}");
         }
     }
+
+    // ================================================================
+    // Save 3-way 병합 (AUDIT-2026-07-30 §N-48)
+    // ================================================================
+
+    /// <summary>
+    /// 디스크가 우리가 마지막으로 본 상태에서 바뀌었으면, <paramref name="nextJson"/> 중
+    /// <b>이번에 실제로 바뀐 키만</b> 디스크 내용 위에 얹은 JSON 을 돌려준다. 바뀌지 않았으면
+    /// <paramref name="nextJson"/> 그대로.
+    ///
+    /// <para>
+    /// 병합 규칙은 하나다 — <b>앱이 이번에 바꾼 필드는 앱이 이기고, 나머지는 디스크가 이긴다.</b>
+    /// 기준선(<see cref="_lastPersistedJson"/>)이 "앱이 마지막으로 디스크와 같다고 아는 상태" 이므로,
+    /// 기준선과 <paramref name="nextJson"/> 의 차이가 곧 앱의 의도이고, 그 외 디스크와 기준선의
+    /// 차이는 사용자가 파일에 직접 넣은 편집이다.
+    /// </para>
+    ///
+    /// <para>
+    /// 병합할 수 없는 상황(기준선 없음 · 디스크 읽기/파싱 실패 · 최상위가 객체가 아님)에서는
+    /// <paramref name="nextJson"/> 을 그대로 쓴다. 저장 자체를 포기하면 사용자의 트레이 조작이 조용히
+    /// 무시되므로, 그쪽이 더 나쁘다.
+    /// </para>
+    /// </summary>
+    /// <remarks><see cref="_mtimeLock"/> 을 보유한 상태에서 호출한다.</remarks>
+    private string MergeOntoDiskIfChanged(string nextJson)
+    {
+        if (_lastPersistedJson is null) return nextJson;
+
+        DateTime diskMtime;
+        try
+        {
+            if (!File.Exists(_filePath)) return nextJson;
+            diskMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+        }
+        catch (Exception ex) when (IsExpectedIoException(ex))
+        {
+            return nextJson;
+        }
+
+        // 우리가 마지막으로 본 그대로면 덮어써도 잃을 것이 없다 — 흔한 경로라 파싱 비용을 아낀다.
+        if (diskMtime == _lastMtime) return nextJson;
+
+        try
+        {
+            string diskJson = JsonSettingsFile.ReadAllTextStripBom(_filePath);
+
+            using var baseDoc = JsonDocument.Parse(_lastPersistedJson);
+            using var nextDoc = JsonDocument.Parse(nextJson);
+            using var diskDoc = JsonDocument.Parse(diskJson, UserJsonDocOptions);
+
+            if (baseDoc.RootElement.ValueKind != JsonValueKind.Object
+                || nextDoc.RootElement.ValueKind != JsonValueKind.Object
+                || diskDoc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return nextJson;
+            }
+
+            using var ms = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(ms))
+            {
+                MergeChangedOntoDisk(writer, baseDoc.RootElement, nextDoc.RootElement, diskDoc.RootElement);
+            }
+
+            LogProvider.Sink?.Info(
+                $"Config changed on disk since last sync; merged only the fields this save touched ({_filePath})");
+            return Encoding.UTF8.GetString(ms.ToArray());
+        }
+        catch (Exception ex) when (IsExpectedLoadException(ex))
+        {
+            // 디스크가 깨져 있으면 병합할 대상이 없다 — 앱 값을 그대로 쓴다.
+            LogProvider.Sink?.Warning(
+                $"Could not merge onto on-disk config ({ex.Message}); writing in-memory settings as-is");
+            return nextJson;
+        }
+    }
+
+    /// <summary>
+    /// 3-way 병합의 재귀 본체. <paramref name="baseObj"/> 대비 <paramref name="nextObj"/> 에서 값이
+    /// 달라진 키만 <paramref name="nextObj"/> 값을 쓰고, 그 외에는 <paramref name="diskObj"/> 값을 쓴다.
+    /// 디스크에만 있는 키(사용자가 손으로 추가한 프로필 항목 등)는 그대로 보존한다.
+    /// </summary>
+    private static void MergeChangedOntoDisk(
+        Utf8JsonWriter writer, JsonElement baseObj, JsonElement nextObj, JsonElement diskObj)
+    {
+        writer.WriteStartObject();
+
+        foreach (JsonProperty nextProp in nextObj.EnumerateObject())
+        {
+            writer.WritePropertyName(nextProp.Name);
+
+            bool inBase = baseObj.TryGetProperty(nextProp.Name, out JsonElement baseVal);
+            bool inDisk = diskObj.TryGetProperty(nextProp.Name, out JsonElement diskVal);
+
+            // 앱이 이번에 바꾼 필드 → 앱 값이 이긴다. (기준선에 없던 키도 앱이 새로 만든 것으로 본다.)
+            if (!inBase || !SameJson(baseVal, nextProp.Value))
+            {
+                nextProp.Value.WriteTo(writer);
+                continue;
+            }
+
+            if (!inDisk)
+            {
+                // 사용자가 키를 지웠다 — 스키마상 필요한 값이므로 앱 값으로 채운다(디폴트와 동일).
+                nextProp.Value.WriteTo(writer);
+                continue;
+            }
+
+            // 앱이 안 건드린 필드 → 디스크가 이긴다. 중첩 객체는 재귀해야 그 안의 부분 편집이 살아남는다.
+            if (inBase
+                && baseVal.ValueKind == JsonValueKind.Object
+                && nextProp.Value.ValueKind == JsonValueKind.Object
+                && diskVal.ValueKind == JsonValueKind.Object)
+            {
+                MergeChangedOntoDisk(writer, baseVal, nextProp.Value, diskVal);
+            }
+            else
+            {
+                diskVal.WriteTo(writer);
+            }
+        }
+
+        // 디스크에만 있는 키 보존 — 스키마 밖 항목(미래 키·사용자 메모)을 저장이 삼키지 않도록.
+        foreach (JsonProperty diskProp in diskObj.EnumerateObject())
+        {
+            if (!nextObj.TryGetProperty(diskProp.Name, out _))
+                diskProp.WriteTo(writer);
+        }
+
+        writer.WriteEndObject();
+    }
+
+    /// <summary>
+    /// 두 JSON 값이 같은지. 원문 텍스트 비교로 충분하다 — 양쪽 모두 같은 직렬화기가 만든 것이라
+    /// 공백·키 순서가 동일하고, 이 판정은 "앱이 이 필드를 건드렸나" 만 답하면 된다.
+    /// </summary>
+    private static bool SameJson(JsonElement a, JsonElement b)
+        => string.Equals(a.GetRawText(), b.GetRawText(), StringComparison.Ordinal);
 
     // ================================================================
     // CheckReload — mtime 폴링

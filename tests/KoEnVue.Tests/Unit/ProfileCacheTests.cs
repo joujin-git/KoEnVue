@@ -95,7 +95,7 @@ public class ProfileCacheTests : IDisposable
         for (int i = 0; i < 5; i++)
             Settings.ResolveForKey(global, key);
 
-        Assert.Equal(1, Cache().Count);
+        Assert.Single(Cache());
         // 무조건 AddFirst 하던 시절엔 여기가 캐시 수보다 커져 퇴출이 엉뚱한 키를 지웠다.
         Assert.Equal(Cache().Count, LruOrder().Count);
     }
@@ -120,11 +120,11 @@ public class ProfileCacheTests : IDisposable
     {
         AppConfig global = GlobalWith("x.exe", 0.5);
         Settings.ResolveForKey(global, "x.exe");
-        Assert.NotEqual(0, Cache().Count);
+        Assert.NotEmpty(Cache());
 
         Settings.ClearProfileCache();
 
-        Assert.Equal(0, Cache().Count);
-        Assert.Equal(0, LruOrder().Count);
+        Assert.Empty(Cache());
+        Assert.Empty(LruOrder());
     }
 }

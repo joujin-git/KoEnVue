@@ -81,7 +81,7 @@ KoEnVue/
 ├── KoEnVue.csproj
 │
 └── tests/KoEnVue.Tests/     xUnit (dev-only, P1 예외). InternalsVisibleTo.
-    └── Unit/                baseline **197 PASS** / **24 파일** (2026-08-01)
+    └── Unit/                baseline **203 PASS** / **25 파일** (2026-08-01)
         ├── ColorHelperTests / DpiHelperTests / SettingsValidateTests
         ├── StartupTaskXmlTests / XmlEntityCodecTests / SanitizeLogPathTests
         ├── JsonSettingsMergeTests / OverlayAnimatorTests / AnimationFacadeTests
@@ -91,6 +91,7 @@ KoEnVue/
         ├── TrayLeftClickToggleTests / ModalReentryGuardTests
         ├── ConfigLoadFailureTests / LoggerReinitTests
         ├── ConfigCommitBaseTests / ProfileCacheTests / DragHideDeferralTests
+        ├── SaveMergeTests
         └── TestCollections(공용 컬렉션 정의)
 ```
 
