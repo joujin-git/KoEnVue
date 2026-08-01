@@ -95,6 +95,12 @@ internal static partial class SettingsDialog
     /// </summary>
     internal static unsafe void Show(IntPtr hwndMain, AppConfig config, Action<AppConfig> updateConfig)
     {
+        // 재진입 가드는 반드시 첫 문장 — 프롤로그가 _workingConfig 를 두 번째 호출의 스냅샷으로
+        // 덮고 _fields/_fieldInputs 를 비우면, 살아 있는 첫 다이얼로그는 사용자가 편집 중이던
+        // 값을 잃고 TryCommit 이 빈 필드 목록 위에서 돈다 (AUDIT-2026-07-30 §A).
+        if (ModalDialogLoop.RejectReentry())
+            return;
+
         _hwndMain = hwndMain;
         _initialConfig = config;
         _workingConfig = config;

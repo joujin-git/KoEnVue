@@ -60,7 +60,7 @@ Before adding a new helper: **grep Core/ first**.
 
 ### P6 verification invariants
 
-Run at the repo root. **Each grep must match the expected count in its trailing `#` comment; a grep with no annotation must return 0 matches.** 기대값의 단일 진실원은 각 줄의 주석이다 — 아래 9개 grep 은 의도적으로 0 이 아닌 기대값(1+ / ≥1 / 2 / 3 / 4)을 가지므로, "전부 0" 으로 일괄 판정하면 정상 통과 중인 항목을 위반으로 오판한다.
+Run at the repo root. **Each grep must match the expected count in its trailing `#` comment; a grep with no annotation must return 0 matches.** 기대값의 단일 진실원은 각 줄의 주석이다 — 아래 10개 grep 은 의도적으로 0 이 아닌 기대값(1+ / ≥1 / 2 / 3 / 4 / 5)을 가지므로, "전부 0" 으로 일괄 판정하면 정상 통과 중인 항목을 위반으로 오판한다.
 
 ```bash
 git grep "KoEnVue\.App"      Core/   # P6 namespace gate
@@ -86,6 +86,8 @@ git grep -n "User32.UpdateLayeredWindow" Core/Windowing/LayeredCursorBase.cs    
 git grep -n "Gdi32.CreateDIBSection"     Core/Windowing/LayeredOverlayBase.cs   # PR-18: 0 (DibSectionFactory 위임)
 git grep -n "Gdi32.CreateDIBSection"     Core/Windowing/LayeredCursorBase.cs    # PR-18: 0 (DibSectionFactory 위임)
 git grep -nE "private static volatile IntPtr (_hwndMain|_hwndOverlay|_hwndCursorOverlay)" Program.cs   # PR-18 5/5: 3
+git grep "ModalDialogLoop.RejectReentry()" App/ Core/   # AUDIT §A: **5** (다이얼로그 3종 Show 프롤로그 + Tray.ShowMenu 1차 방어 + DialogShell.Run 2차 방어). **카운트로는 "Show() 첫 문장인가"를 못 잡는다** — 위치가 프롤로그 뒤로 밀리면 이 grep 은 그대로 5 이면서 결함은 되살아나므로, 위치 invariant 는 `ModalReentryGuardTests` 가 정적 필드 보존으로 고정
+git grep -nE "SetForegroundWindow\(ModalDialogLoop\.ActiveDialog\)" App/ Core/   # AUDIT §A: 0 — 재진입 시 포커스 복원은 RejectReentry 단일 구현 (P4). 호출처가 직접 복원하면 센티넬(-1) 예외 처리가 복제된다
 ```
 
 > `RunLevel.*HighestAvailable` 의 기존 0-매치 가드는 PR-15 에서 무효화됨 — `BuildStartupTaskXml` 가 config 분기로 `HighestAvailable` 을 정당하게 emit. 대체 invariant 는 위 `PR-15` / `PR-15 후속 fix` 주석이 붙은 grep 묶음이고, **기대값은 각 grep 우측 주석이 단일 진실원** — 1+ / ≥1 / 3 / 4 로 서로 다르며 "각 1매치" 가 아니다. PR-18 의 가드 4개는 overlay/cursor 두 엔진이 `UpdateLayeredWindow` / `CreateDIBSection` 을 직접 호출하지 않고 `LayeredWindowBlit` / `DibSectionFactory` helper 에 위임함을 검증 (호출 단일화) — `ApplyPremultipliedAlpha` 는 의미 차이로 의도적 분기 보존이라 동일 가드 미적용.
@@ -311,7 +313,7 @@ The `SafeFontHandle` `using` pattern is critical — early release would crash `
 [tests/KoEnVue.Tests/](../tests/KoEnVue.Tests/) xUnit project (PR-10, dev-only — release exe 미포함 → P1 예외). `InternalsVisibleTo("KoEnVue.Tests")` 가 KoEnVue.csproj 에 박혀 internal API 접근 가능. 검증 매트릭스:
 
 - **Debug + Release build both clean** (0 warnings, 0 errors). A debug-only build leaves the release exe outdated
-- **`dotnet test tests/KoEnVue.Tests/`** — 현재 baseline **165 PASS** / Unit/ **17 파일** (2026-07-29). ⚠️ **테스트 csproj/디렉토리 명시 필수** — repo 루트에서 인자 없이 `dotnet test` 하면 cwd 의 메인 `KoEnVue.csproj`(테스트 0개)를 잡아 **0개 실행 후 exit 0** 으로 통과처럼 보이는 착시. 반드시 `dotnet test tests/KoEnVue.Tests/` 또는 `tests\KoEnVue.Tests\KoEnVue.Tests.csproj` 로 실행:
+- **`dotnet test tests/KoEnVue.Tests/`** — 현재 baseline **172 PASS** / Unit/ **18 파일** (2026-08-01). ⚠️ **테스트 csproj/디렉토리 명시 필수** — repo 루트에서 인자 없이 `dotnet test` 하면 cwd 의 메인 `KoEnVue.csproj`(테스트 0개)를 잡아 **0개 실행 후 exit 0** 으로 통과처럼 보이는 착시. 반드시 `dotnet test tests/KoEnVue.Tests/` 또는 `tests\KoEnVue.Tests\KoEnVue.Tests.csproj` 로 실행:
   - **PR-10** (G1): `ColorHelperTests` / `DpiHelperTests` / `SettingsValidateTests`
   - **PR-20**: `StartupTaskXmlTests` / `XmlEntityCodecTests` / `SanitizeLogPathTests` (문자열 traversal + reparse/junction 거부)
   - **config 머지 P0**: `JsonSettingsMergeTests`

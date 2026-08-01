@@ -32,6 +32,14 @@ internal static class ModalDialogLoop
     private static IntPtr s_activeDialog;
 
     /// <summary>
+    /// <see cref="RunExternal"/> 이 실제 HWND 대신 세우는 표식. MessageBoxW 처럼 창 핸들을
+    /// 넘겨받지 못하는 외부 모달 구간에서도 <see cref="IsActive"/> 를 참으로 유지하기 위한 값이며,
+    /// 진짜 창이 아니므로 <see cref="RejectReentry"/> 의 포커스 복원 대상에서 제외된다 — P3
+    /// (매직 리터럴 금지). IntPtr 은 const 를 받지 못해 static readonly 로 둔다.
+    /// </summary>
+    private static readonly IntPtr ExternalModalSentinel = (IntPtr)(-1);
+
+    /// <summary>
     /// 현재 활성 모달 다이얼로그 존재 여부.
     /// UI 스레드(재진입 가드) + 감지 스레드(DetectionService 게이트) 양쪽에서 읽힌다.
     /// </summary>
@@ -42,6 +50,38 @@ internal static class ModalDialogLoop
     /// 참조용. <see cref="IsActive"/> 가 false 일 때는 <see cref="IntPtr.Zero"/>.
     /// </summary>
     public static IntPtr ActiveDialog => Volatile.Read(ref s_activeDialog);
+
+    /// <summary>
+    /// 재진입 판정 + 기존 모달로의 포커스 복원. 활성 모달이 있으면 그 창을 앞으로 끌어내고
+    /// <c>true</c> 를 반환한다 — 호출자는 <b>공유 상태를 건드리기 전에</b> 이 판정을 통과시켜야 한다.
+    ///
+    /// <para>
+    /// 이 헬퍼가 필요한 이유: 각 다이얼로그의 <c>Show()</c> 는 <see cref="DialogShell.Run"/> 을
+    /// 부르기 <b>전에</b> 자기 정적 상태(항목 리스트·작업 중 config·컨트롤 HWND)를 리셋하고,
+    /// <c>Run</c> 이 재진입으로 <c>false</c> 를 반환해도 에필로그가 그대로 실행돼 그 상태를 파괴한다.
+    /// 살아 있던 첫 다이얼로그는 그 뒤 자기 상태를 참조하다 <c>NullReferenceException</c> 을 내고,
+    /// WndProc 은 <c>[UnmanagedCallersOnly]</c> 라 관리 예외가 <c>DispatchMessageW</c> 경계를 넘어
+    /// NativeAOT 가 프로세스를 종료한다. 따라서 판정은 <c>Show()</c> <b>첫 문장</b>이어야 하며,
+    /// 판정 로직이 호출처마다 복제되지 않도록 여기 한 곳에 둔다 — P4 (no duplicate impl).
+    /// </para>
+    ///
+    /// <para>
+    /// 모달 중에도 재진입이 성립하는 이유 — <see cref="Run"/> 의 <c>EnableWindow(owner, false)</c> 는
+    /// 마우스·키보드 입력만 막고, 중첩 루프의 <c>GetMessageW</c> 는 필터가 없어 explorer 가 소유한
+    /// 트레이 아이콘이 post 하는 <c>WM_TRAY_CALLBACK</c> 을 그대로 디스패치한다.
+    /// </para>
+    /// </summary>
+    /// <returns>활성 모달이 있어 호출자가 조기 반환해야 하면 true.</returns>
+    public static bool RejectReentry()
+    {
+        IntPtr active = Volatile.Read(ref s_activeDialog);
+        if (active == IntPtr.Zero)
+            return false;
+        // 센티넬은 실제 창이 아니므로 SetForegroundWindow 대상에서 제외 (외부 모달은 Win32 가 이미 포그라운드).
+        if (active != ExternalModalSentinel)
+            User32.SetForegroundWindow(active);
+        return true;
+    }
 
     /// <summary>
     /// 소유자 비활성화 → 중첩 메시지 루프 → 소유자 재활성화 + 포그라운드 복원.
@@ -105,9 +145,9 @@ internal static class ModalDialogLoop
     public static void RunExternal(IntPtr hwndSentinel, Action action)
     {
         IntPtr prev = Volatile.Read(ref s_activeDialog);
-        // IntPtr.Zero 가 넘어와도 IsActive 가 true 로 유지되도록 (-1) sentinel 로 대체.
+        // IntPtr.Zero 가 넘어와도 IsActive 가 true 로 유지되도록 sentinel 로 대체.
         Volatile.Write(ref s_activeDialog,
-            hwndSentinel != IntPtr.Zero ? hwndSentinel : (IntPtr)(-1));
+            hwndSentinel != IntPtr.Zero ? hwndSentinel : ExternalModalSentinel);
         try { action(); }
         finally { Volatile.Write(ref s_activeDialog, prev); }
     }

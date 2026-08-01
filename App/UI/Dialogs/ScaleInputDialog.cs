@@ -65,6 +65,12 @@ internal static class ScaleInputDialog
     /// </summary>
     public static unsafe double? Show(IntPtr hwndMain, double initialValue)
     {
+        // 재진입 가드는 반드시 첫 문장 — 프롤로그의 _scaleDlgClosed = false 는 이미 닫히기로 한
+        // 첫 다이얼로그의 모달 루프를 되살리고, 에필로그의 _hwndScaleEdit = 0 은 그 창의 입력값
+        // 읽기를 무효화한다 (AUDIT-2026-07-30 §A).
+        if (ModalDialogLoop.RejectReentry())
+            return null;
+
         _scaleDlgResult = false;
         _scaleDlgClosed = false;
         _scaleDlgParsedValue = 0;

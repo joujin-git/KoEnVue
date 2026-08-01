@@ -97,12 +97,11 @@ internal static class DialogShell
         Action<DialogShellContext>? onAfterShow,
         ref bool isClosedFlag)
     {
-        // 재진입 가드: 기존 모달이 있으면 그 창으로 포커스만 복원하고 false 반환.
-        if (ModalDialogLoop.IsActive)
-        {
-            User32.SetForegroundWindow(ModalDialogLoop.ActiveDialog);
+        // 재진입 가드 (2차 방어). 각 다이얼로그의 Show() 가 자기 정적 상태를 건드리기 전에
+        // 이미 같은 판정을 통과시키므로 여기까지 오면 정상 경로다 — 이 가드는 DialogShell.Run 을
+        // 직접 부르는 호출자에 대한 보험으로 남긴다. 판정 구현은 ModalDialogLoop 단일 소유 (P4).
+        if (ModalDialogLoop.RejectReentry())
             return false;
-        }
 
         User32.GetCursorPos(out POINT cursorPt);
         IntPtr hMon = User32.MonitorFromPoint(cursorPt, Win32Constants.MONITOR_DEFAULTTONEAREST);

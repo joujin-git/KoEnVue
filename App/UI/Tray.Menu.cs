@@ -5,6 +5,7 @@ using KoEnVue.App.Models;
 using KoEnVue.App.Startup;
 using KoEnVue.App.UI.Dialogs;
 using KoEnVue.Core.Native;
+using KoEnVue.Core.Windowing;
 
 namespace KoEnVue.App.UI;
 
@@ -20,6 +21,12 @@ internal static partial class Tray
     internal static void ShowMenu(IntPtr hwndMain, AppConfig config)
     {
         if (!_initialized) return;
+
+        // 모달 중에는 메뉴 자체를 열지 않는다 (1차 방어). EnableWindow(owner, false) 는 마우스·키보드만
+        // 막을 뿐 explorer 가 post 하는 WM_TRAY_CALLBACK 은 중첩 루프가 그대로 디스패치하므로,
+        // 다이얼로그 3종의 진입 경로인 이 메뉴를 여기서 닫아 재진입 자체를 없앤다. 부수적으로 모달 중
+        // 색상·투명도·종료 같은 다른 메뉴 명령이 실행되는 위험도 함께 막힌다 (AUDIT-2026-07-30 §A).
+        if (ModalDialogLoop.RejectReentry()) return;
 
         // --- 서브메뉴: 투명도 ---
         IntPtr hOpacityMenu = User32.CreatePopupMenu();

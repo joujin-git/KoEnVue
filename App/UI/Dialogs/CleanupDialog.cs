@@ -68,6 +68,11 @@ internal static class CleanupDialog
     /// </summary>
     public static unsafe List<string>? Show(IntPtr hwndMain, List<string> items)
     {
+        // 재진입 가드는 반드시 첫 문장 — 아래 프롤로그와 Run 뒤 에필로그가 살아 있는 다이얼로그의
+        // _items 를 null 로 만들어 CommitSelections 에서 프로세스가 죽는다 (AUDIT-2026-07-30 §A).
+        if (ModalDialogLoop.RejectReentry())
+            return null;
+
         _items = items;
         _selectedItems = null;
         _dlgResult = false;
