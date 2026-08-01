@@ -32,7 +32,14 @@ internal static class Animation
     // 초기화 / 해제
     // ================================================================
 
-    public static void Initialize(IntPtr hwndMain, IntPtr hwndOverlay, AppConfig config)
+    /// <param name="onHidden">
+    /// 애니메이터가 fade-out 을 끝내고 오버레이를 실제로 숨긴 직후 호출된다. 호출자(Program)가
+    /// 자기 가시 상태(<c>_indicatorVisible</c>)를 함께 내리기 위한 훅 — 이것이 없으면 애니메이션이
+    /// 스스로 숨긴 경우에만 플래그가 <c>true</c> 로 남아, 메인·감지 로직이 "보이는 중" 으로 오판한 채
+    /// 영구 불일치에 빠진다 (AUDIT-2026-07-30 §N-34).
+    /// </param>
+    public static void Initialize(IntPtr hwndMain, IntPtr hwndOverlay, AppConfig config,
+        Action? onHidden = null)
     {
         _hwndOverlay = hwndOverlay;
 
@@ -51,7 +58,11 @@ internal static class Animation
             onPositionOffset: Overlay.UpdatePosition,
             onTrackPosition: Overlay.TrackPosition,
             onScaledSize: Overlay.UpdateScaledSize,
-            onHide: Overlay.Hide,
+            onHide: () =>
+            {
+                Overlay.Hide();
+                onHidden?.Invoke();
+            },
             onForceTopmost: Overlay.ForceTopmost,
             getBaseSize: Overlay.GetBaseSize);
     }

@@ -32,6 +32,20 @@ internal static class ImeStatus
     // 동일 스레드의 콜백이 읽으므로 락 불필요 — volatile 은 향후 스레드 변경 방어.
     private static volatile DetectionMethod _detectionMethod = DetectionMethod.Auto;
 
+    /// <summary>
+    /// 포그라운드 HWND 에 대한 <b>per-app resolved</b> detection_method 해석기. App 레이어(Program)가
+    /// 배선한다 — <see cref="OnImeChange"/> 가 감지 루프와 같은 기준으로 판정하기 위한 것으로,
+    /// 없으면 <see cref="_detectionMethod"/>(global)로 폴백한다 (AUDIT-2026-07-30 §N-50).
+    /// 메인 스레드에서만 쓰고 읽는다(WinEvent 훅은 WINEVENT_OUTOFCONTEXT 라 등록 스레드에서 호출).
+    /// </summary>
+    private static Func<IntPtr, DetectionMethod>? _perAppDetectionMethod;
+
+    /// <summary>
+    /// per-app detection_method 해석기를 배선한다. <see cref="RegisterHook"/> 직후 1회 호출.
+    /// </summary>
+    public static void SetPerAppDetectionMethodResolver(Func<IntPtr, DetectionMethod> resolver)
+        => _perAppDetectionMethod = resolver;
+
     // ================================================================
     // Public API
     // ================================================================
@@ -230,7 +244,12 @@ internal static class ImeStatus
         if (hwndFg == IntPtr.Zero) return;
 
         uint threadId = User32.GetWindowThreadProcessId(hwndFg, out _);
-        ImeState newState = Detect(hwndFg, threadId, _detectionMethod);
+        // per-app 프로필이 detection_method 를 오버라이드할 수 있으므로 감지 루프와 **같은 기준**으로
+        // 판정해야 한다. 이 콜백만 global 을 쓰면 같은 창을 두 경로가 다르게 분류해, 프로필로 감지
+        // 방식을 바꾼 앱에서 훅과 폴링이 서로 다른 상태를 게시한다 (AUDIT-2026-07-30 §N-50).
+        // 해석기가 배선되기 전(RegisterHook 직후 첫 콜백)에는 global 로 폴백.
+        DetectionMethod method = _perAppDetectionMethod?.Invoke(hwndFg) ?? _detectionMethod;
+        ImeState newState = Detect(hwndFg, threadId, method);
 
         if (newState != _lastState)
         {

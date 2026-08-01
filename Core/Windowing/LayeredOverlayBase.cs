@@ -128,17 +128,27 @@ internal sealed class LayeredOverlayBase : IDisposable
             throw new InvalidOperationException("CreateCompatibleDC failed");
     }
 
+    /// <summary>
+    /// <b>DC 를 먼저 지운 뒤 비트맵을 해제한다</b> (AUDIT-2026-07-30 §N-39 — 감사는 커서 엔진만
+    /// 지적했지만 같은 구조라 여기도 해당한다). <see cref="DibSectionFactory"/> 는 생성한 DIB 를
+    /// <c>_memDC</c> 에 <c>SelectObject</c> 한 채로 넘기고 복원하지 않는데, GDI 는 <b>DC 에 선택된
+    /// 비트맵의 <c>DeleteObject</c> 를 거부</b>한다 — 순서가 반대면 마지막 DIB 핸들이 샌다.
+    /// <para>
+    /// 폰트는 해당 없다 — <see cref="RenderDibPixels"/> 가 <c>finally</c> 로 이전 HFONT 를 복원하므로
+    /// Dispose 시점에는 선택돼 있지 않다.
+    /// </para>
+    /// </summary>
     public void Dispose()
     {
-        _currentBitmap?.Dispose();
-        _currentBitmap = null;
-        _currentFont?.Dispose();
-        _currentFont = null;
         if (_memDC != IntPtr.Zero)
         {
             Gdi32.DeleteDC(_memDC);
             _memDC = IntPtr.Zero;
         }
+        _currentBitmap?.Dispose();
+        _currentBitmap = null;
+        _currentFont?.Dispose();
+        _currentFont = null;
     }
 
     // ================================================================

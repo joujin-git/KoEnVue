@@ -88,6 +88,10 @@ internal static partial class Program
     // CAPS LOCK 토글 캐시 (메인 스레드 전용 — TIMER_ID_CAPS 폴러가 200ms마다 GetKeyState 비교)
     private static bool _lastCapsLockState;
 
+    // WM_IME_STATE_CHANGED 를 한 번이라도 받았는지 (메인 스레드 전용). _lastImeState 의 초기값이
+    // 실제 상태와 우연히 같을 수 있어, 첫 메시지를 중복으로 오인해 버리지 않도록 하는 래치 (§N-55).
+    private static bool _imeStateReceived;
+
     // config.json 핫리로드가 파싱 실패 중인지 (메인 스레드 전용 — HandleConfigChanged).
     // 안내 박스를 연속 실패당 1회로 제한하는 래치. 정상 로드 시 해제되므로, 사용자가 파일을 고친 뒤
     // 다시 깨뜨리면 새로 한 번 더 안내한다.
@@ -316,7 +320,11 @@ internal static partial class Program
         Logger.Debug("Initializing overlay rendering");
         Overlay.Initialize(_hwndOverlay, _config);
         Logger.Debug("Initializing animation");
-        Animation.Initialize(_hwndMain, _hwndOverlay, _config);
+        // onHidden: 애니메이터가 fade-out 을 끝내고 스스로 숨긴 경우에도 가시 플래그를 내린다.
+        // 이 훅이 없으면 HideOverlay 를 거치지 않는 그 경로에서만 _indicatorVisible 이 true 로 남아
+        // 메인·감지 로직이 영구히 "보이는 중" 으로 오판한다 (AUDIT-2026-07-30 §N-34).
+        Animation.Initialize(_hwndMain, _hwndOverlay, _config,
+            onHidden: static () => _indicatorVisible = false);
 
         // 9b. 트레이 아이콘 초기화
         Tray.Initialize(_hwndMain, _lastImeState, _config);
@@ -341,6 +349,10 @@ internal static partial class Program
 
         // 11. IME 이벤트 훅 등록 — WinEvent 콜백이 사용자 설정 DetectionMethod 를 존중하도록 주입.
         ImeStatus.RegisterHook(_hwndMain, _config.DetectionMethod);
+        // WinEvent 콜백이 감지 루프와 **같은 기준**(per-app resolved)으로 판정하도록 배선한다 (§N-50).
+        // 프로필이 없거나 매칭 실패면 ResolveForApp 이 global 을 그대로 돌려주므로 종전 동작과 같다.
+        ImeStatus.SetPerAppDetectionMethodResolver(
+            static hwnd => (Settings.ResolveForApp(_config, hwnd) ?? _config).DetectionMethod);
 
         // 12. 업데이트 체크 (백그라운드 1회) — UpdateCheckEnabled=false 면 네트워크 호출 없음.
         //     hwndMain 을 로컬로 스냅샷해 lambda closure 에 캡처: UpdateChecker.CheckInBackground 는
@@ -591,6 +603,13 @@ internal static partial class Program
 
     private static void HandleImeStateChanged(ImeState newState)
     {
+        // 같은 IME 전이 1회에 이 메시지가 **2회 도착**한다 — 감지 루프(DetectionService)와 WinEvent
+        // 콜백(ImeStatus.OnImeChange)이 각각 post 하기 때문이다. 멱등 가드가 없으면 강조 팝
+        // 애니메이션이 두 번 트리거돼 배지가 연달아 튄다 (AUDIT-2026-07-30 §N-55).
+        // 첫 메시지는 _lastImeState 의 초기값(English)과 우연히 같을 수 있으므로 별도 래치로 통과시킨다.
+        if (_imeStateReceived && newState == _lastImeState) return;
+        _imeStateReceived = true;
+
         _lastImeState = newState;
         Logger.Debug($"IME state: {newState}");
 

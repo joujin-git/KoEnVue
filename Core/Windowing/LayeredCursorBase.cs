@@ -63,15 +63,26 @@ internal sealed class LayeredCursorBase : IDisposable
             throw new InvalidOperationException("CreateCompatibleDC failed");
     }
 
+    /// <summary>
+    /// <b>DC 를 먼저 지운 뒤 비트맵을 해제한다</b> (AUDIT-2026-07-30 §N-39).
+    /// <see cref="DibSectionFactory"/> 는 생성한 DIB 를 <c>_memDC</c> 에 <c>SelectObject</c> 한 채로
+    /// 넘기고 복원하지 않는데, GDI 는 <b>DC 에 선택된 비트맵의 <c>DeleteObject</c> 를 거부</b>한다.
+    /// 순서가 반대면 마지막 DIB 핸들이 해제되지 않고 샌다 — <c>DeleteDC</c> 가 선택 관계를 끊어야
+    /// 뒤따르는 해제가 실제로 성공한다.
+    /// <para>
+    /// 렌더 중 DIB 교체는 이 문제가 없다 — 새 DIB 의 <c>SelectObject</c> 가 옛 것을 자동으로
+    /// 밀어내므로, 그 뒤의 Dispose 는 선택되지 않은 핸들에 대한 것이다.
+    /// </para>
+    /// </summary>
     public void Dispose()
     {
-        _currentBitmap?.Dispose();
-        _currentBitmap = null;
         if (_memDC != IntPtr.Zero)
         {
             Gdi32.DeleteDC(_memDC);
             _memDC = IntPtr.Zero;
         }
+        _currentBitmap?.Dispose();
+        _currentBitmap = null;
     }
 
     public IntPtr Hwnd => _hwnd;

@@ -20,6 +20,24 @@ namespace KoEnVue.App.Startup;
 /// </summary>
 internal static class StartupTaskManager
 {
+    /// <summary>
+    /// schtasks 작업을 <b>수정</b>하는 경로의 직렬화 락 (AUDIT-2026-07-30 §N-13).
+    ///
+    /// <para>
+    /// <see cref="SyncStartupPathAsync"/> 는 부팅 후 백그라운드 스레드에서 ~8초에 걸쳐 등록 경로를
+    /// 점검·재등록하는데, 그동안 사용자가 트레이에서 「시작 프로그램」을 토글하면
+    /// <see cref="ToggleStartupRegistration"/> 이 <b>같은 작업을 동시에</b> 지우거나 만든다.
+    /// schtasks 는 프로세스 외부 상태라 서로의 중간 단계를 덮어써, 사용자가 켠 등록이 동기화에
+    /// 지워지거나(반대도 성립) "삭제 → 존재 확인" 같은 post-check 가 상대의 결과를 보고 오판한다.
+    /// </para>
+    ///
+    /// <para>
+    /// 조회 전용(<see cref="IsStartupRegistered"/>, <see cref="QueryRegisteredTask"/>)은 잠그지 않는다 —
+    /// 메뉴를 열 때마다 호출되므로 수정 중 UI 가 멈추면 안 되고, 조회는 어차피 스냅샷이다.
+    /// </para>
+    /// </summary>
+    private static readonly object _taskMutationLock = new();
+
     /// <summary>schtasks 작업 이름. v0.x 부터 변경 금지 — 마이그레이션 호환성.</summary>
     private const string TaskName = "KoEnVue";
 
@@ -80,6 +98,25 @@ internal static class StartupTaskManager
     {
         try
         {
+            // 백그라운드 경로 동기화(SyncStartupPathCore)와 같은 작업을 건드리므로 직렬화한다 (§N-13).
+            lock (_taskMutationLock)
+            {
+                ToggleStartupRegistrationCore(config);
+            }
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
+            or PlatformNotSupportedException or FileNotFoundException
+            or IOException or UnauthorizedAccessException)
+        {
+            // 정책 항목 1(타입 좁히기): schtasks.exe 실행 실패 + 임시 XML 파일 write 실패만 잡음.
+            Logger.Warning($"Failed to toggle startup registration: {ex.Message}");
+        }
+    }
+
+    /// <summary><see cref="_taskMutationLock"/> 을 이미 보유한 상태에서 호출한다.</summary>
+    private static void ToggleStartupRegistrationCore(AppConfig config)
+    {
+        {
             if (IsStartupRegistered())
             {
                 bool deleteOk = RunSchtasks($"/delete /tn \"{TaskName}\" /f");
@@ -98,13 +135,6 @@ internal static class StartupTaskManager
                 else
                     Logger.Warning("Startup registration create did not take effect (see schtasks log above)");
             }
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
-            or PlatformNotSupportedException or FileNotFoundException
-            or IOException or UnauthorizedAccessException)
-        {
-            // 정책 항목 1(타입 좁히기): schtasks.exe 실행 실패 + 임시 XML 파일 write 실패만 잡음.
-            Logger.Warning($"Failed to toggle startup registration: {ex.Message}");
         }
     }
 
@@ -221,6 +251,11 @@ internal static class StartupTaskManager
 
     private static void SyncStartupPathCore(AppConfig config)
     {
+        // 트레이 토글(ToggleStartupRegistration)·admin 재등록과 같은 schtasks 작업을 건드리므로
+        // 직렬화한다. 이 스레드는 부팅 후 ~8초 구간을 점유하는데, 그 사이 사용자가 「시작 프로그램」을
+        // 눌러도 서로의 중간 단계를 덮어쓰지 않게 한다 (AUDIT-2026-07-30 §N-13).
+        lock (_taskMutationLock)
+        {
         try
         {
             var (registeredCommand, registeredDelay, registeredRunLevel) = QueryRegisteredTask();
@@ -263,6 +298,7 @@ internal static class StartupTaskManager
         {
             // 정책 항목 1(타입 좁히기): schtasks.exe 실행 실패 + 임시 XML 파일 write 실패만 잡음.
             Logger.Warning($"Failed to sync startup task path: {ex.Message}");
+        }
         }
     }
 
@@ -314,6 +350,9 @@ internal static class StartupTaskManager
     /// </summary>
     internal static void ReregisterIfAdminChanged(AppConfig config)
     {
+        // 세 번째 수정 경로 — 위 둘과 같은 작업을 건드리므로 함께 직렬화한다 (§N-13).
+        lock (_taskMutationLock)
+        {
         try
         {
             if (!IsStartupRegistered()) return;
@@ -334,6 +373,7 @@ internal static class StartupTaskManager
             or IOException or UnauthorizedAccessException)
         {
             Logger.Warning($"ReregisterIfAdminChanged: {ex.Message}");
+        }
         }
     }
 
