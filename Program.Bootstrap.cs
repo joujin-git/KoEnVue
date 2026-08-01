@@ -261,13 +261,26 @@ internal static partial class Program
         Overlay.Dispose();
         CursorOverlay.Dispose();
 
-        // 5. 오버레이 + 메인 윈도우 파괴
+        // 5. 오버레이 + 메인 윈도우 파괴.
+        //    **파괴 직후 핸들 필드를 즉시 비운다** (AUDIT-2026-07-30 §N-42). 이전에는 필드가 죽은
+        //    핸들을 계속 들고 있어, Join 이 타임아웃한 감지 스레드(§I)나 늦게 도착한 콜백이
+        //    PostMessageW/SetWindowPos 를 죽은 hwnd 에 계속 보냈다. 세 필드 모두 volatile 이라
+        //    다른 스레드가 즉시 Zero 를 관측하고 자기 가드(`!= IntPtr.Zero`)에 걸린다.
         if (_hwndOverlay != IntPtr.Zero)
+        {
             User32.DestroyWindow(_hwndOverlay);
+            _hwndOverlay = IntPtr.Zero;
+        }
         if (_hwndCursorOverlay != IntPtr.Zero)
+        {
             User32.DestroyWindow(_hwndCursorOverlay);
+            _hwndCursorOverlay = IntPtr.Zero;
+        }
         if (_hwndMain != IntPtr.Zero)
+        {
             User32.DestroyWindow(_hwndMain);
+            _hwndMain = IntPtr.Zero;
+        }
 
         // 6. Mutex 해제 (Dispose만 — 프로세스 종료 시 OS가 자동 해제.
         //    ReleaseMutex는 소유 스레드에서만 호출 가능하나 ProcessExit는 다른 스레드일 수 있음)

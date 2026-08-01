@@ -49,13 +49,18 @@ internal static partial class Program
     {
         // 시스템 강조색 / 다크 모드 변경 시 프로필 머지 캐시 무효화 — 캐시된 머지 결과가
         // 옛 시스템 색을 박제하고 있을 수 있다 (프로필이 theme=system 을 상속하는 케이스).
+        //
+        // **무효화는 새 _config 게시 뒤여야 한다** (AUDIT-2026-07-30 §N-59). 앞에 두면
+        // 비운 직후~게시 전의 짧은 창에 감지 스레드가 ResolveForApp 으로 **옛 _config 를 써서
+        // 캐시를 다시 채우고**, 새 인스턴스가 게시된 뒤에도 옛 색이 그대로 남는다.
+        bool themeFollowsSystem = _config.Theme == Theme.System;
+        if (themeFollowsSystem)
+            _config = ThemePresets.Apply(_config);
+
         Settings.ClearProfileCache();
 
-        if (_config.Theme == Theme.System)
-        {
-            _config = ThemePresets.Apply(_config);
+        if (themeFollowsSystem)
             Overlay.HandleConfigChanged(_config);
-        }
 
         // PR-13: 글로벌 재적용 후 per-app resolved 로 렌더 — 프로필이 theme=system 상속 시
         //         프로필 색상 6쌍이 새 시스템 색으로 재계산된 인스턴스로 갱신된다.

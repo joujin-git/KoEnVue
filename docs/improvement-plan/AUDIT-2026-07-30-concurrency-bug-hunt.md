@@ -29,7 +29,7 @@
 | **L** ✅ | `_hwndPositions` 가 원시 HWND 를 영구 키로 사용 + 제거 코드 없음 → 핸들 재활용 오식별 + 단조 증가 | 44·63 (2) | ~~P2~~ **해결 2026-08-01** | 2/3 투표 → 메인 재확인 |
 | **I** ✅ | 종료 핸드셰이크 `Join(500)` 이 감지 루프 최대 sleep 보다 짧아 주석이 막는다고 한 race 가 열려 있음 | 23·28·35·65 (4) | ~~P3~~ **해결 2026-08-01** | 2/3 투표 → 메인 재확인 |
 | **J** ✅ | `_vdmFailCount++` 비원자 — "감지 스레드 단일 라이터" 근거 주석이 PR-26 이후 무효 | 5·27·56 (3) | ~~P3~~ **해결 2026-08-01** | 2/3 투표 → 메인 재확인 |
-| **N** | 단건 9종 (아래 §N) | 13·34·39·42·48·50·55·59·60 (9) | P2~P3 | 2/3 투표 |
+| **N** ◐ | 단건 9종 (아래 §N) — **2건 수정 · 1건 오탐 확정 · 6건 미착수** | 13·34·39·42·48·50·55·59·60 (9) | P2~P3 | 2/3 투표 |
 
 ## 2. 커버리지 한계 — 이 목록은 하한선이다
 
@@ -150,12 +150,12 @@
 | 13 | `App/Startup/StartupTaskManager.cs` | 부팅 후 ~8초 백그라운드 schtasks 동기화와 트레이 토글이 같은 태스크를 락 없이 동시 수정 |
 | 34 | `Program.cs` | 애니메이션 타이머가 오버레이를 숨길 때 `_indicatorVisible` 미갱신 → 메인·감지 로직이 영구 불일치 |
 | 39 | `Core/Windowing/LayeredCursorBase.cs` | DIB 섹션이 `_memDC` 에 select 된 채 Dispose — GDI 객체 해제 순서 |
-| 42 | `Program.Bootstrap.cs` | 메인 윈도우가 정상 루프 종료 전 파괴되는 경로에서 `_hwndMain`/`_hwndOverlay` 미리셋 |
+| 42 ✅ | `Program.Bootstrap.cs` | ~~메인 윈도우가 정상 루프 종료 전 파괴되는 경로에서 `_hwndMain`/`_hwndOverlay` 미리셋~~ **해결 2026-08-01** — `DestroyWindow` 직후 세 핸들 필드를 즉시 Zero 로. volatile 이라 다른 스레드가 곧바로 자기 가드에 걸린다 |
 | 48 | `Program.cs` | 모든 저장이 디스크 대조 없는 read-modify-write → 외부 편집 소실 |
 | 50 | `App/Detector/ImeStatus.cs` | WinEvent 콜백은 **global** detection_method 로 분류, 감지 루프는 per-app resolved 로 분류 → 같은 창을 다르게 판정 |
 | 55 | `Program.cs` | 같은 IME 전이 1회에 `WM_IME_STATE_CHANGED` 가 2회 도착하는데 수신부에 멱등 가드 없음 |
-| 59 | `Program.SystemEvents.cs` | `_config` 새 인스턴스 게시와 캐시 무효화의 순서 |
-| 60 | `Program.OverlayDrag.cs` | `WM_NCLBUTTONDOWN`/HTCAPTION 승격 경로의 재진입 |
+| 59 ✅ | `Program.SystemEvents.cs` | ~~`_config` 새 인스턴스 게시와 캐시 무효화의 순서~~ **해결 2026-08-01** — `HandleSettingChange` 의 `ClearProfileCache` 가 게시 **앞**에 있어, 비운 직후~게시 전 창에 감지 스레드가 옛 `_config` 로 캐시를 다시 채웠다. 게시 뒤로 이동 |
+| 60 ❌ | `Program.OverlayDrag.cs` | ~~`WM_NCLBUTTONDOWN`/HTCAPTION 승격 경로의 재진입~~ **오탐 확정 2026-08-01** — 호출처([Program.cs](../../Program.cs) `WM_MOUSEMOVE`)가 `_overlayDragPending && !_overlayDragPromoted` 를 검사하고, `TryPromoteOverlayDrag` 는 동기 `SendMessageW` **이전에** 두 플래그를 모두 세팅한다. sizemove 루프가 `WM_MOUSEMOVE` 를 재디스패치해도 가드에 걸려 재진입하지 않는다 |
 
 ---
 
@@ -180,9 +180,25 @@
 - 따라서 현재 `main` 은 `v0.9.9.7` 보다 개선된 상태다. **보류 사유는 "이번 변경이 위험해서"가 아니라 "1.0 정식이라는 이름에 맞추기 위해 §A 를 먼저 닫기 위해서"였다.**
 - 버전은 `0.9.9.7` 유지, CHANGELOG `[Unreleased]` 에 수정분이 누적돼 있다.
 
+### §N 진행 상황 (2026-08-01)
+
+| 항목 | 상태 |
+|---|---|
+| 42 · 59 | ✅ 수정 완료 |
+| 60 | ❌ **오탐 확정** — 이미 가드가 있다 |
+| 13 · 34 · 39 · 48 · 50 · 55 | ◻ 미착수 |
+
+미착수 6건에 대한 착수 전 메모 (전제 재확인 필요, §3):
+
+- **48 (디스크 대조 없는 read-modify-write)** — 유일하게 **설계 판단이 필요한 건**이다. 저장 경로가 메모리의 `_config` 를 통째로 직렬화하므로, 앱이 모르는 사이 파일에 들어온 편집은 어떤 저장에서도 사라진다. §B 는 "다이얼로그/메뉴가 여는 창"만 닫았고 이건 그보다 넓다. 실질 해법은 저장 직전 디스크를 다시 읽어 필드 단위로 병합하는 것인데, 병합 규칙(누가 이기는가)을 사용자와 합의해야 한다.
+- **39 (`LayeredCursorBase` DIB select 상태 Dispose)** — 초벌 확인에서 **오탐 가능성이 높다.** 커서 엔진에는 `SelectObject` 호출이 없고(`LayeredWindowBlit` 내부에서만 다룬다), 같은 구조인 `LayeredOverlayBase` 는 지적되지 않았다. 확정하려면 `LayeredWindowBlit.Blit` 이 select 를 반환 전에 복원하는지 읽어야 한다.
+- **13 (schtasks 동시 수정)** · **34 (`_indicatorVisible` 미갱신)** · **50 (WinEvent 분류 불일치)** · **55 (`WM_IME_STATE_CHANGED` 중복 수신)** — 전제 미확인.
+
 ### 현재 상태 (2026-08-01 갱신)
 
 **보류 사유였던 §A 는 닫혔다** — 위 §1 표와 §A 절 참조. 문서 첫머리의 "보류한다"는 2026-07-30 시점의 결정 기록이며, 재개 조건 자체는 충족된 상태다.
+
+**2026-08-01 기준 그룹 A~M 13개가 전부 해결됐다** (묶음 1~6). P0 1건 · P1 3건 · P2 7건 · P3 2건. 남은 것은 §N 단건 9종 중 6건뿐이고(위 표), 그중 실제로 판단이 필요한 것은 48 하나다.
 
 남은 판단은 사용자 몫이다: **묶음 1 만으로 v1.0.0.0 을 재개**할지, **묶음 2(§G config 로드 실패 격리 + §C Logger)까지 닫고** 갈지. 묶음 2 는 프로세스 종료(§C)와 설정 전멸(§G)을 포함하지만 §A 와 달리 **메인이 직접 재현하지 않은 2/3 투표 등급**이라, 착수 시 해당 파일을 먼저 읽어 전제를 재확인해야 한다(§3). 묶음 7(`/bug-hunt` 재개)은 §2 의 커버리지 구멍이 남아 있으므로 릴리즈 여부와 무관하게 유효하다.
 
