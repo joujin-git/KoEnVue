@@ -46,6 +46,16 @@ internal static class Settings
     private static readonly LinkedList<string> _profileLruOrder = new();
     private static readonly object _profileCacheLock = new();
 
+    /// <summary>
+    /// 캐시 세대. <see cref="ClearProfileCache"/> 가 증가시킨다. <see cref="ResolveForApp"/> 는
+    /// 값 계산을 <b>락 밖에서</b> 하므로(수 ms 걸릴 수 있다) 그 사이에 무효화가 일어날 수 있는데,
+    /// 세대를 비교하지 않으면 <b>옛 global 로 머지된 결과가 무효화 이후에 꽂혀 영구 stale</b> 이 된다
+    /// — 캐시 키가 config 와 무관해 자기치유도 없었다 (AUDIT-2026-07-30 §D).
+    /// 체감 증상: config 를 저장했는데 특정 앱에서만 옛 색·크기가 계속 나온다.
+    /// 접근은 전부 <see cref="_profileCacheLock"/> 아래.
+    /// </summary>
+    private static int _profileCacheGeneration;
+
     // MergeProfile 고속 경로: 직렬화된 global 의 스냅샷을 캐시. global 인스턴스 바뀌면 무효화.
     // 감지 스레드 전용 — 메인 스레드는 ClearProfileCache 에서만 touch.
     private static AppConfig? _cachedGlobalForJson;
@@ -273,7 +283,17 @@ internal static class Settings
         string key = ResolveMatchKey(global, hwnd);
         if (string.IsNullOrEmpty(key)) return global;
 
+        return ResolveForKey(global, key);
+    }
+
+    /// <summary>
+    /// <see cref="ResolveForApp"/> 의 캐시 경로. hwnd 조회(Win32)와 분리해 단위 테스트
+    /// (<c>ProfileCacheTests</c>) 박제 대상으로 노출한다 — private → internal 완화는 InternalsVisibleTo.
+    /// </summary>
+    internal static AppConfig? ResolveForKey(AppConfig global, string key)
+    {
         // LRU 캐시 조회
+        int generation;
         lock (_profileCacheLock)
         {
             if (_profileCache.TryGetValue(key, out AppConfig? cached))
@@ -283,14 +303,31 @@ internal static class Settings
                 _profileLruOrder.AddFirst(key);
                 return cached;
             }
+            // 계산을 시작하는 시점의 세대를 기억해 둔다 — 삽입 시 이 값이 그대로인지 확인한다.
+            generation = _profileCacheGeneration;
         }
 
-        // 프로필 매칭
+        // 프로필 매칭 — 락 밖에서 수 ms 걸릴 수 있다 (Regex 매칭 포함).
         AppConfig? resolved = MatchProfile(global, key);
 
         // 캐시 저장
         lock (_profileCacheLock)
         {
+            // 계산 중에 무효화가 일어났다면 이 결과는 **옛 global 기반**이다. 넣으면 영구 stale 이
+            // 되므로 이번 호출에만 쓰고 버린다 — 다음 호출이 새 global 로 다시 계산해 채운다 (§D).
+            if (generation != _profileCacheGeneration)
+                return resolved;
+
+            // 같은 키를 다른 스레드가 먼저 넣었을 수 있다. 조회 락과 삽입 락이 분리돼 있어 생기는
+            // 창인데, 이때 무조건 AddFirst 하면 _profileLruOrder 에 같은 키가 두 번 들어가
+            // _profileCache 와 desync 된다(퇴출 시 살아 있는 항목의 키가 사라지거나 죽은 키가 남는다).
+            if (_profileCache.TryGetValue(key, out AppConfig? raced))
+            {
+                _profileLruOrder.Remove(key);
+                _profileLruOrder.AddFirst(key);
+                return raced;
+            }
+
             if (_profileCache.Count >= ProfileCacheMaxSize)
             {
                 string oldest = _profileLruOrder.Last!.Value;
@@ -316,6 +353,8 @@ internal static class Settings
             _profileLruOrder.Clear();
             _cachedGlobalForJson = null;
             _cachedGlobalJson = null;
+            // 계산 중이던 ResolveForApp 이 옛 global 기반 결과를 꽂지 못하도록 세대를 올린다 (§D).
+            _profileCacheGeneration++;
         }
     }
 

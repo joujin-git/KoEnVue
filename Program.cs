@@ -1006,6 +1006,13 @@ internal static partial class Program
                 bool wasHidden = _config.UserHidden;
                 AppLanguage oldLanguage = _config.Language;
                 _config = ThemePresets.Apply(newConfig);
+                // **무효화는 새 _config 게시 직후, 이 람다의 어떤 렌더보다 먼저** (AUDIT-2026-07-30 §E).
+                // 아래 ShowIndicatorAtForeground / Overlay.UpdateColor 가 ResolveCurrent() 로 per-app
+                // 머지 결과를 읽는데, 무효화가 람다 끝에 있던 동안에는 **같은 람다 안에서 옛 global 로
+                // 머지된 캐시**가 쓰여 방금 바꾼 설정이 한 프레임 반영되지 않았다.
+                // (트레이/메뉴 토글은 Settings.Save 의 mtime self-bump 때문에 HandleConfigChanged 를
+                //  타지 않으므로, 그쪽 경로의 무효화에 기댈 수 없어 여기서 직접 호출한다.)
+                Settings.ClearProfileCache();
                 // 자체 Settings.Save 는 mtime self-bump 로 WM_CONFIG_CHANGED 를 차단하므로
                 // HandleConfigChanged 를 통한 I18n.Load 갱신 경로가 동작 안 한다. 사용자 가시
                 // 전환을 위해 람다 안에서 직접 재로드. Tray.UpdateState 가 뒤따라 fresh string.
@@ -1033,10 +1040,6 @@ internal static partial class Program
                 if (_config.TrayEnabled)
                     Tray.UpdateState(_lastImeState, _config);
                 Settings.Save(_config);
-                // 트레이/메뉴 토글로 글로벌 옵션이 바뀌면 per-app 머지 결과가 stale.
-                // HandleConfigChanged/HandleSettingChange 두 경로는 이미 ClearProfileCache 를
-                // 호출하지만 이 람다는 mtime self-bump 가 없어 별도 무효화가 필요하다.
-                Settings.ClearProfileCache();
             });
     }
 
