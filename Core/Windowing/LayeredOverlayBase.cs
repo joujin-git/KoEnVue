@@ -178,6 +178,12 @@ internal sealed class LayeredOverlayBase : IDisposable
     /// </summary>
     public void Show(int x, int y)
     {
+        // 보류된 숨김을 취소한다. 드래그 중에도 한/영 전환·포커스 변경으로 Show 가 도달하는데
+        // (시스템 sizemove 루프는 WM_TIMER 뿐 아니라 그 메시지들도 그대로 디스패치한다),
+        // 여기서 지우지 않으면 **다시 보여준 배지를 EndDrag 가 stale 한 보류분으로 지워버린다**
+        // (릴리즈 리뷰 2026-08-01 확정 #10·#13·#19).
+        _hidePendingDuringDrag = false;
+
         UpdateDpiFromPoint(x, y);
         _lastX = x;
         _lastY = y;
@@ -393,8 +399,15 @@ internal sealed class LayeredOverlayBase : IDisposable
             WindowSnapHelper.ClearTargets();
     }
 
-    /// <summary>드래그 종료 (WM_EXITSIZEMOVE). 새 위치를 _lastX/_lastY에 반영 + 스냅 캐시 해제.</summary>
-    public (int x, int y) EndDrag()
+    /// <summary>
+    /// 드래그 종료 (WM_EXITSIZEMOVE). 새 위치를 _lastX/_lastY에 반영 + 스냅 캐시 해제.
+    /// </summary>
+    /// <returns>
+    /// 최종 좌표와 <c>Hidden</c> — 드래그 중 보류됐던 숨김을 여기서 적용했는지. <b>호출자는 Hidden 이면
+    /// 자기 가시 상태도 내려야 한다</b>: 이 경로의 숨김은 파사드의 <c>onHide</c> 래퍼를 거치지 않아
+    /// §N-34 의 <c>onHidden</c> 훅이 발화하지 않는다 (릴리즈 리뷰 2026-08-01 확정 #13).
+    /// </returns>
+    public (int x, int y, bool Hidden) EndDrag()
     {
         _isDragging = false;
         WindowSnapHelper.ClearTargets();
@@ -406,13 +419,15 @@ internal sealed class LayeredOverlayBase : IDisposable
         }
 
         // 드래그 중 보류된 숨김을 지금 적용 (§M). 위치를 먼저 확정한 뒤라 저장 경로는 영향받지 않는다.
+        bool hidden = false;
         if (_hidePendingDuringDrag)
         {
             _hidePendingDuringDrag = false;
             Hide();
+            hidden = true;
         }
 
-        return (_lastX, _lastY);
+        return (_lastX, _lastY, hidden);
     }
 
     /// <summary>

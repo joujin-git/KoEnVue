@@ -81,7 +81,7 @@ KoEnVue/
 ├── KoEnVue.csproj
 │
 └── tests/KoEnVue.Tests/     xUnit (dev-only, P1 예외). InternalsVisibleTo.
-    └── Unit/                baseline **203 PASS** / **25 파일** (2026-08-01)
+    └── Unit/                baseline **211 PASS** / **25 파일** (2026-08-02)
         ├── ColorHelperTests / DpiHelperTests / SettingsValidateTests
         ├── StartupTaskXmlTests / XmlEntityCodecTests / SanitizeLogPathTests
         ├── JsonSettingsMergeTests / OverlayAnimatorTests / AnimationFacadeTests

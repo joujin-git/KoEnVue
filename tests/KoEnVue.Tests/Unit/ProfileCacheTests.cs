@@ -116,6 +116,37 @@ public class ProfileCacheTests : IDisposable
     }
 
     [Fact]
+    public void 다른_global_로_조회하면_옛_결과를_쓰지_않는다()
+    {
+        // 세대 카운터만으로는 이 창이 닫히지 않는다 — 감지 스레드는 틱 시작에 config 를 스냅샷하고
+        // Win32 조회를 여럿 거친 뒤에야 ResolveForApp 을 부르므로, **호출자가 넘긴 global 이 이미
+        // 무효화 이전 값**일 수 있다. 계산 중 무효화가 없었어도(세대 동일) 옛 결과가 캐시에 남는다
+        // (릴리즈 리뷰 2026-08-01 확정 #7).
+        const string key = "notepad.exe";
+
+        AppConfig? withOld = Settings.ResolveForKey(GlobalWith(key, 0.5), key);
+        Assert.Equal(0.5, withOld!.Opacity, precision: 6);
+
+        // 무효화 없이, 그냥 다른 global 인스턴스로 조회 — 새 값이 나와야 한다.
+        AppConfig? withNew = Settings.ResolveForKey(GlobalWith(key, 0.9), key);
+        Assert.Equal(0.9, withNew!.Opacity, precision: 6);
+    }
+
+    [Fact]
+    public void 같은_global_인스턴스는_캐시가_재사용된다()
+    {
+        // 위 검증이 캐시를 무력화한 것이 아님을 확인 — 같은 인스턴스면 히트해야 한다.
+        const string key = "code.exe";
+        AppConfig global = GlobalWith(key, 0.6);
+
+        AppConfig? first = Settings.ResolveForKey(global, key);
+        AppConfig? second = Settings.ResolveForKey(global, key);
+
+        Assert.Same(first, second);
+        Assert.Single(Cache());
+    }
+
+    [Fact]
     public void 무효화는_캐시와_LRU_를_모두_비운다()
     {
         AppConfig global = GlobalWith("x.exe", 0.5);

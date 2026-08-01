@@ -1037,6 +1037,12 @@ internal static partial class Program
                 Tray.ShowMenu(_hwndMain, _config);
                 break;
             case Win32Constants.WM_LBUTTONUP:
+                // 좌클릭도 모달 중에는 막는다. §A 는 ShowMenu 에만 가드를 넣었는데 이 분기는 그 경로를
+                // 거치지 않아 열려 있었다 — 상세 설정이 떠 있는 동안 좌클릭이 UserHidden /
+                // CursorIndicatorEnabled 를 바꾸고 헤일로 창까지 재생성하는데, 그 둘은 다이얼로그
+                // 노출 필드라 「확인」 한 번에 컨트롤 값으로 되돌아간다 (릴리즈 리뷰 2026-08-01 확정 #16).
+                if (ModalDialogLoop.RejectReentry()) break;
+
                 switch (_config.TrayClickAction)
                 {
                     case TrayClickAction.Toggle:
@@ -1072,7 +1078,8 @@ internal static partial class Program
         bool wasCursorEnabled = _config.CursorIndicatorEnabled;
 
         _config = Tray.ComputeLeftClickCycle(_config);
-        Settings.Save(_config);
+        // 반환값 반영 필수 — 병합이 일어났으면 디스크가 메모리보다 앞선다 (릴리즈 리뷰 2026-08-01 확정 #1).
+        _config = Settings.Save(_config);
         Logger.Info($"Tray click cycle: {Tray.GetVisibility(_config)} " +
                     $"(UserHidden={_config.UserHidden}, CursorIndicatorEnabled={_config.CursorIndicatorEnabled})");
 
@@ -1154,7 +1161,8 @@ internal static partial class Program
                 }
                 // 상세 설정에서 tray_enabled 를 끄고 켤 수 있으므로 이 경로도 전이를 반영해야 한다 (§K).
                 ApplyTrayEnabledTransition(wasTrayEnabled, _config.TrayEnabled);
-                Settings.Save(_config);
+                // 반환값 반영 필수 — 병합이 일어났으면 디스크가 메모리보다 앞선다 (릴리즈 리뷰 2026-08-01 확정 #1).
+                _config = Settings.Save(_config);
             });
     }
 

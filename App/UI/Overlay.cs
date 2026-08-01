@@ -151,8 +151,12 @@ internal static class Overlay
         return _engine.HandleMoving(ref movingRect, BuildStyle(_config, state), snapToWindows, snapThresholdPx, snapGapPx);
     }
 
-    /// <summary>드래그 종료 (WM_EXITSIZEMOVE).</summary>
-    public static (int x, int y) EndDrag()
+    /// <summary>
+    /// 드래그 종료 (WM_EXITSIZEMOVE). <c>Hidden</c> 이면 드래그 중 보류됐던 숨김이 여기서 적용된 것으로,
+    /// 이 경로는 애니메이션의 <c>onHide</c> 래퍼를 거치지 않으므로 <b>호출자가 가시 플래그를 직접
+    /// 내려야 한다</b> (릴리즈 리뷰 2026-08-01 확정 #13).
+    /// </summary>
+    public static (int x, int y, bool Hidden) EndDrag()
     {
         return _engine.EndDrag();
     }

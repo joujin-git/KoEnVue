@@ -41,8 +41,18 @@ internal static class Settings
     // 감지 스레드(CheckConfigFileChange)와 메인 스레드(Load/Save)가 공유. volatile로 가시성 확보.
     private static volatile AppSettingsManager? _manager;
 
-    // 앱 프로필 LRU 캐시 (감지 스레드 읽기 + 메인 스레드 클리어)
-    private static readonly Dictionary<string, AppConfig?> _profileCache = new();
+    // 앱 프로필 LRU 캐시 (감지 스레드 읽기 + 메인 스레드 클리어).
+    //
+    // **값에 계산 당시의 global 인스턴스를 함께 담는다.** 세대 카운터만으로는 §D 의 실제 창이 닫히지
+    // 않는다 — 감지 스레드는 틱 시작에 `AppConfig cfg = host.GetConfig()` 를 스냅샷하고 Win32 조회를
+    // 여럿 거친 뒤에야 ResolveForApp 을 부르므로, **호출자가 넘긴 global 이 이미 무효화 이전 값**일 수
+    // 있다. 그 경우 계산 중 무효화가 없었어도(세대 동일) 옛 global 로 머지한 결과가 빈 캐시에 꽂힌다
+    // (릴리즈 리뷰 2026-08-01 확정 #7, 단위 테스트로 실측 재현).
+    //
+    // AppConfig 는 record 라 `with` 마다 새 인스턴스다. 참조 동등성으로 "이 결과가 지금 쓰는 global 에서
+    // 나온 것인가" 를 정확히 판정할 수 있고, 어긋나면 미스로 떨어져 **자기치유**된다 — 세대 카운터에는
+    // 없던 성질이다.
+    private static readonly Dictionary<string, (AppConfig? Value, AppConfig Global)> _profileCache = new();
     private static readonly LinkedList<string> _profileLruOrder = new();
     private static readonly object _profileCacheLock = new();
 
@@ -109,14 +119,20 @@ internal static class Settings
     /// config.json 저장. path 미지정 시 현재 활성 경로 또는 <see cref="PortablePath.ResolveConfigPath"/>
     /// 가 결정한 기본 경로 사용.
     /// </summary>
-    public static void Save(AppConfig config, string? path = null)
+    /// <returns>
+    /// 디스크에 확정된 설정. 3-way 병합이 일어났으면 <paramref name="config"/> 와 다르다 —
+    /// <b>호출자는 이 값을 `_config` 에 반영해야 한다.</b> 반환값을 버리면 병합 결과가 메모리에 없는
+    /// 채로 mtime 이 self-bump 되어 핫리로드도 돌지 않고, 다음 저장이 옛 값으로 사용자 편집을 다시
+    /// 덮는다 (릴리즈 리뷰 2026-08-01 확정 #1·#3·#5).
+    /// </returns>
+    public static AppConfig Save(AppConfig config, string? path = null)
     {
         if (_manager is null || (path is not null && path != _manager.FilePath))
         {
             string targetPath = path ?? PortablePath.ResolveConfigPath();
             _manager = new AppSettingsManager(targetPath, AppConfigJsonContext.Default.AppConfig);
         }
-        _manager.Save(config);
+        return _manager.Save(config);
     }
 
     // ================================================================
@@ -296,12 +312,20 @@ internal static class Settings
         int generation;
         lock (_profileCacheLock)
         {
-            if (_profileCache.TryGetValue(key, out AppConfig? cached))
+            if (_profileCache.TryGetValue(key, out var cached))
             {
-                // LRU 순서 갱신
+                // **이 결과가 지금 쓰는 global 에서 나온 것일 때만** 히트다. 아니면 옛 global 기반이므로
+                // 버리고 재계산한다 — 이것이 §D 의 자기치유다 (확정 #7).
+                if (ReferenceEquals(cached.Global, global))
+                {
+                    // LRU 순서 갱신
+                    _profileLruOrder.Remove(key);
+                    _profileLruOrder.AddFirst(key);
+                    return cached.Value;
+                }
+
+                _profileCache.Remove(key);
                 _profileLruOrder.Remove(key);
-                _profileLruOrder.AddFirst(key);
-                return cached;
             }
             // 계산을 시작하는 시점의 세대를 기억해 둔다 — 삽입 시 이 값이 그대로인지 확인한다.
             generation = _profileCacheGeneration;
@@ -321,20 +345,22 @@ internal static class Settings
             // 같은 키를 다른 스레드가 먼저 넣었을 수 있다. 조회 락과 삽입 락이 분리돼 있어 생기는
             // 창인데, 이때 무조건 AddFirst 하면 _profileLruOrder 에 같은 키가 두 번 들어가
             // _profileCache 와 desync 된다(퇴출 시 살아 있는 항목의 키가 사라지거나 죽은 키가 남는다).
-            if (_profileCache.TryGetValue(key, out AppConfig? raced))
+            if (_profileCache.TryGetValue(key, out var raced) && ReferenceEquals(raced.Global, global))
             {
                 _profileLruOrder.Remove(key);
                 _profileLruOrder.AddFirst(key);
-                return raced;
+                return raced.Value;
             }
 
-            if (_profileCache.Count >= ProfileCacheMaxSize)
+            if (!_profileCache.ContainsKey(key) && _profileCache.Count >= ProfileCacheMaxSize)
             {
                 string oldest = _profileLruOrder.Last!.Value;
                 _profileLruOrder.RemoveLast();
                 _profileCache.Remove(oldest);
             }
-            _profileCache[key] = resolved;
+            // 같은 global 로 계산했음을 함께 박아 둔다 — 다음 조회가 이 짝으로 유효성을 판정한다.
+            _profileCache[key] = (resolved, global);
+            _profileLruOrder.Remove(key);
             _profileLruOrder.AddFirst(key);
         }
 

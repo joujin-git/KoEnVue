@@ -105,7 +105,19 @@ internal static class Logger
         // StopDrainThread 가 방금 발급한 세대. 아직 어떤 스레드도 이 값을 쓰고 있지 않다.
         int generation = Volatile.Read(ref _generation);
 
-        lock (_writerLock)
+        // **무제한 대기 금지** — StopDrainThread 가 좀비 I/O 에 1초 상한을 둔 의미가, 여기서 무한정
+        // 기다리면 사라진다. Initialize 는 메인(UI) 스레드에서 config 리로드로 호출되므로 그대로
+        // 붙잡히면 메시지 루프가 멈춘다 (릴리즈 리뷰 2026-08-01 확정 #9·#14).
+        // 획득 실패는 기존 "파일 로깅 초기화 실패" 와 같은 등급으로 다룬다 — Trace 로만 흔적을 남기고
+        // 파일 로깅 없이 진행. 다음 리로드가 재시도한다.
+        if (!Monitor.TryEnter(_writerLock, WriterLockTimeoutMs))
+        {
+            Trace.WriteLine(
+                $"Logger init skipped: writer lock busy after {WriterLockTimeoutMs}ms (file logging stays off this round)");
+            return;
+        }
+
+        try
         {
             _filePath = string.IsNullOrEmpty(logFilePath)
                 ? Path.Combine(AppContext.BaseDirectory, "koenvue.log")
@@ -130,6 +142,10 @@ internal static class Logger
                 _fileWriter = null;
                 return;
             }
+        }
+        finally
+        {
+            Monitor.Exit(_writerLock);
         }
 
         // drain 스레드 시작 — 자기 세대를 인자로 받아 그 세대가 유효한 동안만 돈다.
@@ -386,13 +402,18 @@ internal static class Logger
         }
         else
         {
-            // 좀비가 I/O 에 붙들려 락을 놓지 않는다. **여기서 강제로 Dispose 하면 안 된다** — 그 스레드의
-            // WriteLine 이 ObjectDisposedException 을 내고, 이는 catch 필터 밖이라 프로세스를 종료한다
-            // (이 결함의 원래 사인). 참조만 끊고 물러난다. 좀비는 I/O 가 풀리는 대로 세대 가드에 걸려
-            // 스스로 멈추고, 남은 핸들은 SafeHandle 파이널라이저가 회수한다.
-            _fileWriter = null;
+            // 좀비가 I/O 에 붙들려 락을 놓지 않는다. **여기서는 _fileWriter 를 아예 건드리지 않는다.**
+            //
+            // Dispose 가 안 되는 건 자명하다 — 그 스레드의 WriteLine 이 ObjectDisposedException 을 내고
+            // 이는 catch 필터 밖이라 프로세스를 종료한다(이 결함의 원래 사인). 그런데 **null 대입도
+            // 같은 이유로 안 된다**: FlushQueueLocked 는 진입 시 한 번 null 검사를 한 뒤 _fileWriter 를
+            // 여러 번 역참조하므로, 락 밖에서 null 을 쓰면 그 사이에 NullReferenceException 이 터진다 —
+            // 역시 필터 밖이라 결과가 똑같다 (릴리즈 리뷰 2026-08-01 확정 #4·#8·#11).
+            //
+            // 그냥 물러나도 안전하다: 좀비는 I/O 가 풀리는 대로 세대 가드에 걸려 스스로 멈추고, 이후
+            // Initialize 가 락을 잡아 writer 를 정상 교체한다. 남은 핸들은 SafeHandle 파이널라이저가 회수.
             Console.Error.WriteLine(
-                FormatBreadcrumb($"Logger writer lock busy after {WriterLockTimeoutMs}ms; skipping dispose"));
+                FormatBreadcrumb($"Logger writer lock busy after {WriterLockTimeoutMs}ms; leaving writer untouched"));
         }
     }
 }

@@ -114,7 +114,7 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — **99
 
 | 키 | 타입 | 기본값 | 범위 | 설명 |
 |---|---|---|---|---|
-| `tray_enabled` | bool | `true` | — | 트레이 아이콘 표시. `false` 면 메뉴 접근 불가 — config.json 직접 편집 + 재기동만 가능 |
+| `tray_enabled` | bool | `true` | ✅ | 트레이 아이콘 표시. **런타임 반영** (2026-08-01, AUDIT §K) — 상세 설정이나 config.json 편집으로 끄면 아이콘이 즉시 사라지고, 켜면 즉시 생긴다. 다만 `false` 인 동안에는 우클릭 메뉴가 없으므로 되돌리려면 config.json 을 직접 편집해야 한다 |
 | `tray_tooltip` | bool | `true` | — | 트레이 아이콘 호버 시 툴팁 표시 |
 | `tray_click_action` | enum | `"toggle"` | `toggle` / `settings` / `none` | 트레이 좌클릭 동작. `toggle` = **표시 상태 4단계 순환** — 둘 다 보임 → 배지만 → 헤일로만 → 모두 숨김 → (다시) 둘 다 보임. `user_hidden` + `cursor_indicator_enabled` 조합이 곧 현재 단계다. `settings` = 설정 파일 열기, `none` = 좌클릭 무시 |
 | `tray_quick_opacity_presets` | double[] | `[0.95, 0.85, 0.6]` | 0.1 ~ 1.0 | 트레이 메뉴 "빠른 투명도" 서브메뉴에 노출할 프리셋 3개. 기본값은 `DefaultConfig.TrayQuickOpacity1/2/3` const + `TrayQuickOpacityPresets` property 단일 진실원에서 derive (감사 High ④, 2026-06-01 — 값 불변) |
@@ -207,7 +207,7 @@ IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 스케일
 | 키 | 타입 | 기본값 | 설명 |
 |---|---|---|---|
 | `advanced.force_topmost_interval_ms` | int | `5000` | TopmostWatchdog 가 인디를 `HWND_TOPMOST` 로 재고정하는 주기. 0 = 비활성. 일부 풀스크린 / 게임 모드 / 가상 데스크톱 잔재가 z-order 를 깨는 케이스 방어 |
-| `advanced.overlay_class_name` | string | `"KoEnVueOverlay"` | 오버레이 윈도우의 Win32 클래스명. 1~255자 ASCII 영문/숫자/언더스코어만 허용. [Settings.Validate](../App/Config/Settings.cs#L184) 에서 비정상 값은 디폴트로 폴백 |
+| `advanced.overlay_class_name` | string | `"KoEnVueOverlay"` | 오버레이 윈도우의 Win32 클래스명. 1~255자 ASCII 영문/숫자/언더스코어만 허용. [Settings.Validate](../App/Config/Settings.cs#L184) 에서 비정상 값은 디폴트로 폴백. **런타임 변경은 반영되지 않는다** (2026-08-01, AUDIT §H) — 윈도우 클래스는 부팅 시 1회 등록이라 실행 중 값을 바꾸면 경고 로그 1회만 남기고 무시한다. 적용하려면 재시작 |
 
 ---
 

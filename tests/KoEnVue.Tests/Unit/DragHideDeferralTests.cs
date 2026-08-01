@@ -75,6 +75,38 @@ public class DragHideDeferralTests
     }
 
     [Fact]
+    public void 드래그_중_재표시는_보류된_Hide_를_취소한다()
+    {
+        // 드래그 중에도 한/영 전환·포커스 변경으로 Show 가 도달한다(sizemove 루프는 그 메시지들도
+        // 디스패치한다). 보류를 지우지 않으면 **다시 보여준 배지를 EndDrag 가 stale 한 보류분으로
+        // 지워버린다** (릴리즈 리뷰 2026-08-01 확정 #10·#19).
+        using var engine = NewEngine();
+        ForceVisible(engine);
+
+        engine.BeginDrag(snapToWindows: false);
+        engine.Hide();              // 보류
+        engine.Show(100, 100);      // 재표시 — 보류가 취소되어야 한다
+        var result = engine.EndDrag();
+
+        Assert.True(engine.IsVisible);
+        Assert.False(result.Hidden);
+    }
+
+    [Fact]
+    public void EndDrag_는_보류를_적용했는지_알려준다()
+    {
+        // 이 경로의 Hide 는 애니메이션의 onHide 래퍼를 거치지 않아 onHidden 훅이 발화하지 않는다.
+        // 호출자가 가시 플래그를 직접 내리려면 적용 여부를 알아야 한다 (확정 #13).
+        using var engine = NewEngine();
+        ForceVisible(engine);
+
+        engine.BeginDrag(snapToWindows: false);
+        engine.Hide();
+
+        Assert.True(engine.EndDrag().Hidden);
+    }
+
+    [Fact]
     public void 보류_없이_끝난_드래그는_가시_상태를_바꾸지_않는다()
     {
         using var engine = NewEngine();
