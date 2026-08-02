@@ -848,6 +848,50 @@ internal static partial class Program
         }
     }
 
+    /// <summary>
+    /// config 의 <c>indicator_positions</c> 가 바뀌면 그 프로세스의 <b>세션 캐시</b>를 버린다
+    /// (bug-hunt 3차 Q).
+    ///
+    /// <para>
+    /// <see cref="_hwndPositions"/> 는 드래그로만 채워지고 정리 경로는 죽은 창·HWND 재활용·상한뿐이라
+    /// <b>config 변경에 대한 무효화가 없었다.</b> 그런데 <see cref="GetAppPositionFixed"/> 는 이 캐시를
+    /// <b>1순위</b>로 조회하므로, 위치 기록 정리 창에서 항목을 지우거나 파일에서 좌표를 고쳐도 그 창이
+    /// 살아 있는 동안에는 옛 좌표가 계속 쓰였다(창을 닫았다 열면 새 HWND 라 저절로 풀린다).
+    /// </para>
+    ///
+    /// <para>
+    /// <b>통째로 비우지는 않는다</b> — 드래그로 만든 세션 위치는 config 에 없을 수도 있고(저장 전),
+    /// 무관한 리로드가 그것을 지우면 사용자가 방금 옮긴 배지가 되돌아간다. config 쪽 항목이 실제로
+    /// 달라진 프로세스의 엔트리만 버린다.
+    /// </para>
+    /// </summary>
+    private static void InvalidateSessionPositions(AppConfig prev, AppConfig next)
+    {
+        Dictionary<string, int[]> before = prev.IndicatorPositions;
+        Dictionary<string, int[]> after = next.IndicatorPositions;
+        if (ReferenceEquals(before, after)) return;
+
+        List<IntPtr> stale = [];
+        foreach ((IntPtr hwnd, (int _, int _, string process)) in _hwndPositions)
+        {
+            bool hadBefore = before.TryGetValue(process, out int[]? oldPos);
+            bool hasAfter = after.TryGetValue(process, out int[]? newPos);
+
+            // 양쪽 다 없으면(= 드래그만 하고 아직 저장 안 된 위치) 그대로 둔다.
+            bool unchanged = hadBefore == hasAfter
+                             && (!hadBefore || oldPos.AsSpan().SequenceEqual(newPos));
+            if (unchanged) continue;
+
+            stale.Add(hwnd);
+        }
+
+        foreach (IntPtr hwnd in stale)
+            _hwndPositions.Remove(hwnd);
+
+        if (stale.Count > 0)
+            Logger.Debug($"Invalidated {stale.Count} session position entries after config change");
+    }
+
     /// <summary>고정 모드 위치 조회 (기존 로직).</summary>
     private static (int x, int y) GetAppPositionFixed()
     {
@@ -1064,6 +1108,8 @@ internal static partial class Program
             RefreshVisibleIndicator();
 
         ApplyTrayEnabledTransition(prev.TrayEnabled, next.TrayEnabled);
+
+        InvalidateSessionPositions(prev, next);
 
         // overlay_class_name 은 부팅 시 1회 등록이라 런타임 변경을 반영할 수 없다 (AUDIT-2026-07-30 §H).
         // 조용히 무시하면 "고쳤는데 왜 그대로냐" 가 되고, 창 생성이 새 값을 쓰면 미등록 클래스로 실패한다.

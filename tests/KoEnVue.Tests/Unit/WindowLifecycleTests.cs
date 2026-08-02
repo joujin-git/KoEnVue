@@ -174,6 +174,48 @@ public class WindowLifecycleTests
     }
 
     // ================================================================
+    // bug-hunt 3차 Q — 세션 위치 캐시는 config 변경을 인지해야 한다
+    // ================================================================
+
+    [Fact]
+    public void config_에서_사라진_위치_기록은_세션_캐시도_버린다()
+    {
+        // _hwndPositions 는 드래그로만 채워지고 정리 경로가 죽은 창·HWND 재활용·상한뿐이라
+        // config 변경에 대한 무효화가 없었다. GetAppPositionFixed 는 이 캐시를 **1순위**로
+        // 조회하므로, 정리 창에서 항목을 지워도 그 창이 살아 있는 동안 옛 좌표가 계속 쓰였다.
+        var positions = (Dictionary<IntPtr, (int x, int y, string process)>)Get("_hwndPositions")!;
+        var saved = new Dictionary<IntPtr, (int, int, string)>(
+            positions.ToDictionary(kv => kv.Key, kv => (kv.Value.x, kv.Value.y, kv.Value.process)));
+        try
+        {
+            positions.Clear();
+            positions[(IntPtr)0x2001] = (10, 20, "notepad");   // config 에도 있는 항목
+            positions[(IntPtr)0x2002] = (30, 40, "chrome");    // 드래그만 하고 저장 전인 항목
+
+            var prev = new KoEnVue.App.Models.AppConfig
+            {
+                IndicatorPositions = new() { ["notepad"] = [10, 20] },
+            };
+            var next = new KoEnVue.App.Models.AppConfig
+            {
+                IndicatorPositions = new(),   // 사용자가 정리 창에서 notepad 기록을 지웠다
+            };
+
+            MethodInfo m = ProgramType.GetMethod("InvalidateSessionPositions", PrivateStatic)!;
+            m.Invoke(null, [prev, next]);
+
+            Assert.False(positions.ContainsKey((IntPtr)0x2001), "config 에서 지운 항목은 캐시도 버려야 한다");
+            Assert.True(positions.ContainsKey((IntPtr)0x2002),
+                "config 에 없던 세션 전용 위치는 무관한 리로드가 지우면 안 된다");
+        }
+        finally
+        {
+            positions.Clear();
+            foreach ((IntPtr hwnd, var entry) in saved) positions[hwnd] = entry;
+        }
+    }
+
+    // ================================================================
     // bug-hunt 3차 A·B — 가드와 보류 소비는 한 쌍이다
     // ================================================================
 

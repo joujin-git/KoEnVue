@@ -151,6 +151,14 @@ internal class JsonSettingsManager<T>
         {
             try
             {
+                // **mtime 을 내용보다 먼저 찍는다** (bug-hunt 3차 N). 아래 파이프라인은 JsonDocument
+                // 2회 파싱 · 역직렬화 · PostDeserializeFixup(원본 파일 재개봉) · Migrate · Validate 를
+                // 지나 결코 짧지 않다. 나중에 찍으면 그 사이 저장된 편집의 mtime 이 **옛 내용**에
+                // 붙어 "이 내용과 동기화됨" 으로 확정되고, 폴링이 더는 차이를 보지 못해 그 편집을
+                // 영영 놓친다. 먼저 찍으면 오차가 "다음 폴링이 한 번 더 읽는다" 는 안전한 쪽으로
+                // 기운다 — 같은 내용을 한 번 더 읽는 것은 무해하다.
+                DateTime mtimeBeforeRead = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+
                 string userJson = JsonSettingsFile.ReadAllTextStripBom(_filePath);
                 string mergedJson = MergeWithDefaults(userJson, _typeInfo);
 
@@ -171,8 +179,8 @@ internal class JsonSettingsManager<T>
 
                 lock (_mtimeLock)
                 {
-                    // 성공 로드 — 폴링 기준과 동기화 기준이 함께 이 시점으로 맞춰진다.
-                    _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+                    // 성공 로드 — 폴링 기준과 동기화 기준이 함께 **읽기 시점**으로 맞춰진다.
+                    _lastMtime = mtimeBeforeRead;
                     _syncedMtime = _lastMtime;
                     // 방금 디스크와 동기화됐다 — 다음 Save 의 3-way 병합 기준선을 여기서 세운다 (§N-48).
                     // 파일 원문이 아니라 **앱의 표현**으로 저장해야 주석·포맷 차이가 diff 를 오염시키지 않는다.
