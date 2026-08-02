@@ -94,7 +94,7 @@ internal static class I18n
 
         // 트레이 메시지 박스
         TrayPositionUnavailable, TrayPositionHistoryEmpty,
-        ConfigReloadFailed,
+        ConfigReloadFailed, StartupTaskBusy,
 
         // 트레이 툴팁
         TooltipHangul, TooltipEnglish, TooltipNonKorean,
@@ -186,6 +186,11 @@ internal static class I18n
             "플로팅 배지 위치를 확인할 수 없습니다. 잠시 후 다시 시도하세요.",
             "Cannot determine current floating badge position. Please try again shortly."),
         [I18nKey.TrayPositionHistoryEmpty]  = ("저장된 위치 기록이 없습니다.", "No saved position history."),
+        // 부팅 직후 배경 schtasks 동기화(~8초)와 겹쳐 토글이 무시된 경우. 조용히 넘어가면
+        // "눌렀는데 아무 일도 안 일어난다" 가 되므로 재시도를 안내한다.
+        [I18nKey.StartupTaskBusy]           = (
+            "시작 프로그램 설정을 지금 변경할 수 없습니다. 잠시 후 다시 시도하세요.",
+            "Cannot change the startup setting right now. Please try again shortly."),
         // 설정 파일을 읽지 못했을 때 — 기존 설정을 그대로 유지 중임을 알린다. 편집 중 저장이 흔한
         // 경로라 "지금 앱이 쓰면 편집분이 덮인다"는 점까지 안내해야 실제 손실을 막는다.
         [I18nKey.ConfigReloadFailed]        = (
@@ -340,6 +345,9 @@ internal static class I18n
     /// (편집 중 저장이 반복되면 매번 뜨는 것이 더 방해가 된다).
     /// </summary>
     public static string ConfigReloadFailed       => Get(I18nKey.ConfigReloadFailed);
+
+    /// <summary>배경 schtasks 동기화와 겹쳐 시작 프로그램 토글이 무시됐을 때의 안내.</summary>
+    public static string StartupTaskBusy         => Get(I18nKey.StartupTaskBusy);
 
     // 트레이 툴팁
     public static string TooltipHangul    => Get(I18nKey.TooltipHangul);

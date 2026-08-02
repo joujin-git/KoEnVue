@@ -38,6 +38,24 @@ internal static class StartupTaskManager
     /// </summary>
     private static readonly object _taskMutationLock = new();
 
+    /// <summary>
+    /// UI 스레드가 <see cref="_taskMutationLock"/> 을 기다리는 상한 (ms).
+    ///
+    /// <para>
+    /// <b>UI 경로는 절대 무제한 대기하면 안 된다.</b> 백그라운드 <see cref="SyncStartupPathAsync"/> 는
+    /// 이 락을 <c>QueryRegisteredTask</c>(최대 3s) + <c>RegisterStartupTaskWithXml</c>(최대 5s) 동안
+    /// 보유하는데, 토글은 <c>WM_COMMAND</c> → <c>WndProcCore</c> 스택에서 돌므로 <c>Monitor.Enter</c> 로
+    /// 붙잡히면 <b>메시지 루프가 그만큼 멈춘다</b>(<c>Monitor</c> 는 메시지를 펌프하지 않는다) —
+    /// 배지·헤일로가 응답을 잃는다 (bug-hunt 2026-08-02 확정 #4).
+    /// </para>
+    ///
+    /// <para>
+    /// 배경 동기화는 부팅 후 1회, ~8초 구간뿐이라 사용자가 그 창에 정확히 겹칠 확률은 낮다.
+    /// 겹치면 조작을 무시하고 안내한다 — 멈춘 UI 보다 낫다.
+    /// </para>
+    /// </summary>
+    private const int TaskMutationWaitMs = 200;
+
     /// <summary>schtasks 작업 이름. v0.x 부터 변경 금지 — 마이그레이션 호환성.</summary>
     private const string TaskName = "KoEnVue";
 
@@ -94,15 +112,22 @@ internal static class StartupTaskManager
     /// 등록 ↔ 해제 토글. 메뉴 핸들러에서 호출.
     /// PR-15: <paramref name="config"/> 의 <c>AdminElevation</c> 으로 RunLevel 분기.
     /// </summary>
-    internal static void ToggleStartupRegistration(AppConfig config)
+    /// <returns>
+    /// 토글을 수행했으면 true. 배경 동기화가 진행 중이라 <see cref="TaskMutationWaitMs"/> 안에 락을
+    /// 얻지 못하면 <b>아무것도 하지 않고</b> false — 호출자가 사용자에게 알린다 (확정 #4).
+    /// </returns>
+    internal static bool ToggleStartupRegistration(AppConfig config)
     {
+        // UI 스레드다 — 상한 없이 기다리면 메시지 루프가 멈춘다 (확정 #4).
+        if (!Monitor.TryEnter(_taskMutationLock, TaskMutationWaitMs))
+        {
+            Logger.Warning("Startup task busy (background path sync in progress); toggle skipped");
+            return false;
+        }
+
         try
         {
-            // 백그라운드 경로 동기화(SyncStartupPathCore)와 같은 작업을 건드리므로 직렬화한다 (§N-13).
-            lock (_taskMutationLock)
-            {
-                ToggleStartupRegistrationCore(config);
-            }
+            ToggleStartupRegistrationCore(config);
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
             or PlatformNotSupportedException or FileNotFoundException
@@ -111,6 +136,12 @@ internal static class StartupTaskManager
             // 정책 항목 1(타입 좁히기): schtasks.exe 실행 실패 + 임시 XML 파일 write 실패만 잡음.
             Logger.Warning($"Failed to toggle startup registration: {ex.Message}");
         }
+        finally
+        {
+            Monitor.Exit(_taskMutationLock);
+        }
+
+        return true;
     }
 
     /// <summary><see cref="_taskMutationLock"/> 을 이미 보유한 상태에서 호출한다.</summary>
@@ -351,8 +382,14 @@ internal static class StartupTaskManager
     internal static void ReregisterIfAdminChanged(AppConfig config)
     {
         // 세 번째 수정 경로 — 위 둘과 같은 작업을 건드리므로 함께 직렬화한다 (§N-13).
-        lock (_taskMutationLock)
+        // 이것도 UI 스레드(WM_COMMAND) 라 상한을 둔다 (확정 #4). 놓쳐도 조용히 넘어간다 —
+        // 부팅 후 SyncStartupPathAsync 나 다음 admin 토글이 결국 RunLevel 을 맞춘다.
+        if (!Monitor.TryEnter(_taskMutationLock, TaskMutationWaitMs))
         {
+            Logger.Warning("Startup task busy; admin re-register skipped (will sync on next boot)");
+            return;
+        }
+
         try
         {
             if (!IsStartupRegistered()) return;
@@ -374,6 +411,9 @@ internal static class StartupTaskManager
         {
             Logger.Warning($"ReregisterIfAdminChanged: {ex.Message}");
         }
+        finally
+        {
+            Monitor.Exit(_taskMutationLock);
         }
     }
 

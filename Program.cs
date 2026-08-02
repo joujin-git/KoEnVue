@@ -1072,14 +1072,45 @@ internal static partial class Program
     /// </para>
     /// config.json 에 즉시 저장 — 재기동/포그라운드 전환에도 현재 단계가 유지된다.
     /// </summary>
+    /// <summary>
+    /// 설정을 저장하고, 3-way 병합으로 <b>디스크의 사용자 편집이 새로 들어온 경우</b> 파생 캐시까지
+    /// 반영한다. 저장 경로는 전부 이 헬퍼를 거쳐야 한다.
+    ///
+    /// <para>
+    /// 릴리즈 리뷰 #1 은 <c>Settings.Save</c> 반환값을 <c>_config</c> 에 되돌리는 것까지만 고쳤는데,
+    /// 세 호출 지점 모두 그 대입이 마지막 문장이라 <b>엔진·프로필·I18n 캐시로는 전파되지 않았다</b> —
+    /// 병합으로 들어온 색상·폰트·프로필 편집이 다음 전체 리로드까지 화면에 반영되지 않는다
+    /// (bug-hunt 2026-08-02 확정 #15).
+    /// </para>
+    ///
+    /// <para>
+    /// 병합이 없었으면 <c>Save</c> 가 입력을 <b>그대로</b> 돌려주므로 참조 비교로 구분한다 — 흔한
+    /// 경로에서 불필요한 캐시 무효화를 하지 않기 위함이다. 커서 lifecycle·표시 전이는 호출자마다
+    /// 맥락이 달라 여기서 하지 않는다(각 호출자가 자기 전이 판정으로 이미 수행).
+    /// </para>
+    /// </summary>
+    private static AppConfig SaveAndSync(AppConfig config)
+    {
+        AppConfig saved = Settings.Save(config);
+        if (ReferenceEquals(saved, config))
+            return saved;
+
+        Logger.Info("Config merged with on-disk edits during save; refreshing derived state");
+        Settings.ClearProfileCache();
+        I18n.Load(saved.Language);
+        ImeStatus.UpdateDetectionMethod(saved.DetectionMethod);
+        Overlay.HandleConfigChanged(saved);
+        return saved;
+    }
+
     private static void HandleTrayToggle()
     {
         bool wasHidden = _config.UserHidden;
         bool wasCursorEnabled = _config.CursorIndicatorEnabled;
 
         _config = Tray.ComputeLeftClickCycle(_config);
-        // 반환값 반영 필수 — 병합이 일어났으면 디스크가 메모리보다 앞선다 (릴리즈 리뷰 2026-08-01 확정 #1).
-        _config = Settings.Save(_config);
+        // 저장 + 병합 시 파생 캐시까지 반영 (확정 #1·#15).
+        _config = SaveAndSync(_config);
         Logger.Info($"Tray click cycle: {Tray.GetVisibility(_config)} " +
                     $"(UserHidden={_config.UserHidden}, CursorIndicatorEnabled={_config.CursorIndicatorEnabled})");
 
@@ -1161,8 +1192,8 @@ internal static partial class Program
                 }
                 // 상세 설정에서 tray_enabled 를 끄고 켤 수 있으므로 이 경로도 전이를 반영해야 한다 (§K).
                 ApplyTrayEnabledTransition(wasTrayEnabled, _config.TrayEnabled);
-                // 반환값 반영 필수 — 병합이 일어났으면 디스크가 메모리보다 앞선다 (릴리즈 리뷰 2026-08-01 확정 #1).
-                _config = Settings.Save(_config);
+                // 저장 + 병합 시 파생 캐시까지 반영 (확정 #1·#15).
+                _config = SaveAndSync(_config);
             });
     }
 

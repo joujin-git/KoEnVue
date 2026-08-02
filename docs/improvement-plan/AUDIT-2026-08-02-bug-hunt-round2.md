@@ -40,10 +40,15 @@
 | # | 상태 |
 |---|---|
 | N1 · N14 | ✅ **수정 완료** (`0b9d79d`) — `_lastMtime` 을 폴링 기준과 동기화 기준으로 분리 |
-| N11 · N4 · N15 · N16 | ◻ **이번 세션 수정분의 결함** — 우선 처리 대상 |
-| 그 외 45건 | ◻ 미착수 (대부분 선재) |
+| N4 · N11 · N15 · N16 | ✅ **수정 완료** — 이번 세션 수정분의 결함 4건 (아래) |
+| 그 외 41건 | ◻ 미착수 (대부분 선재) |
 
-### 우선 처리 대상 (이번 세션이 만들었거나 불완전하게 남긴 것)
+**N4** — UI 경로(`ToggleStartupRegistration` · `ReregisterIfAdminChanged`)가 `Monitor.TryEnter(200ms)` 로 상한을 둔다. 겹치면 조작을 무시하고 `I18n.StartupTaskBusy` 로 안내 — 조용히 넘어가면 "눌렀는데 아무 일도 안 일어난다" 가 된다.
+**N11** — `Initialize` 가 새 `StreamWriter` 대입 전에 기존 것을 Dispose. 락을 쥔 상태라 좀비가 쓰는 중이 아니다(그게 락 획득이 뜻하는 바).
+**N15** — 저장 경로 4곳을 `SaveAndSync` 헬퍼로 통일. 병합이 실제로 일어난 경우(참조 비교)에만 프로필 캐시·I18n·감지 방식·엔진 캐시를 다시 세운다.
+**N16** — `ScaleInputDialog` / `CleanupDialog` 가 자체 모달 루프를 돈 **뒤에** `currentConfig()` 를 다시 읽는다.
+
+### 처리된 우선 대상 (이번 세션이 만들었거나 불완전하게 남긴 것) — ✅ 전부 수정
 
 - **N11** — `StopDrainThread` 의 "writer 를 건드리지 않는다" 분기(락 타임아웃) 뒤에 `Initialize` 가 `_fileWriter` 를 새로 대입해 **옛 writer 가 누수**된다. 릴리즈 리뷰 #4 를 고치면서 생긴 반대편 구멍.
 - **N4** — §N-13 으로 넣은 `_taskMutationLock` 을 UI 스레드가 잡는데, 백그라운드 schtasks 동기화가 최대 ~8초 보유한다. `Monitor.Enter` 는 메시지를 펌프하지 않으므로 **메시지 루프가 그동안 멈춘다.**

@@ -130,6 +130,14 @@ internal static class Logger
                 if (dir is not null && !Directory.Exists(dir))
                     Directory.CreateDirectory(dir);
 
+                // 기존 writer 를 먼저 정리한다. StopDrainThread 의 락 타임아웃 분기는 좀비를 죽이지
+                // 않으려고 **일부러 writer 를 남기고** 물러나는데, 여기서 그대로 새 인스턴스를 대입하면
+                // 그 핸들이 Dispose 없이 사라진다 (bug-hunt 2026-08-02 확정 #11 — 릴리즈 리뷰 #4 를
+                // 고치면서 생긴 반대편 구멍). 이 시점엔 락을 쥐고 있으므로 좀비가 쓰는 중이 아니다 —
+                // 그게 락 획득이 뜻하는 바다.
+                _fileWriter?.Dispose();
+                _fileWriter = null;
+
                 _fileWriter = new StreamWriter(_filePath, append: true, Encoding.UTF8)
                     { AutoFlush = true };
             }

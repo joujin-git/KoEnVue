@@ -126,8 +126,8 @@ internal static partial class Program
                         [_currentProcessName] = [(int)rel.Corner, rel.DeltaX, rel.DeltaY]
                     };
                     _config = _config with { IndicatorPositionsRelative = positions };
-                    // 반환값 반영 필수 — 병합이 일어났으면 디스크가 메모리보다 앞선다 (릴리즈 리뷰 2026-08-01 확정 #1).
-                    _config = Settings.Save(_config);
+                    // 저장 + 병합 시 파생 캐시까지 반영 (확정 #1·#15).
+                    _config = SaveAndSync(_config);
                     Logger.Debug($"Saved relative position for {_currentProcessName}: "
                         + $"corner={rel.Corner}, delta=({rel.DeltaX}, {rel.DeltaY}) logical px");
                 }
@@ -153,8 +153,8 @@ internal static partial class Program
                     [_currentProcessName] = [x, y]
                 };
                 _config = _config with { IndicatorPositions = positions };
-                // 반환값 반영 필수 — 병합이 일어났으면 디스크가 메모리보다 앞선다 (릴리즈 리뷰 2026-08-01 확정 #1).
-                _config = Settings.Save(_config);
+                // 저장 + 병합 시 파생 캐시까지 반영 (확정 #1·#15).
+                _config = SaveAndSync(_config);
                 Logger.Debug($"Saved indicator position for {_currentProcessName}: ({x}, {y})");
             }
         }

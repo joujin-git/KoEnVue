@@ -304,6 +304,11 @@ internal static partial class Tray
             double? typed = ScaleInputDialog.Show(_hwndMain, config.IndicatorScale);
             if (typed.HasValue)
             {
+                // 다이얼로그가 **자체 모달 루프**를 돌았으므로 그 사이 WM_CONFIG_CHANGED 가 처리돼
+                // config 가 교체됐을 수 있다. 진입 시 한 번 잡은 값은 여기서 이미 stale 이다
+                // (bug-hunt 2026-08-02 확정 #16 — §B 수정이 함수 진입 1회만 다시 읽던 한계).
+                config = currentConfig();
+
                 double rounded = Math.Round(typed.Value, 1);
                 if (Math.Abs(rounded - config.IndicatorScale) > ScaleInputDialog.ScaleTolerance)
                     updateConfig(config with { IndicatorScale = rounded });
@@ -329,7 +334,10 @@ internal static partial class Tray
 
             // --- 시작 프로그램 등록 ---
             case IDM_STARTUP:
-                StartupTaskManager.ToggleStartupRegistration(config);
+                // 부팅 직후 배경 경로 동기화와 겹치면 조작이 무시된다 — 조용히 넘어가면 "눌렀는데
+                // 아무 일도 안 일어난다" 가 되므로 알린다 (bug-hunt 2026-08-02 확정 #4).
+                if (!StartupTaskManager.ToggleStartupRegistration(config))
+                    ShowMessage(I18n.StartupTaskBusy);
                 break;
 
             // --- 관리자 권한 토글 (PR-15 후속 fix #3, 2026-05-29: 4 case 통일) ---
@@ -416,7 +424,7 @@ internal static partial class Tray
 
             // --- 위치 기록 정리 ---
             case IDM_CLEANUP:
-                CleanupPositions(config, updateConfig);
+                CleanupPositions(config, currentConfig, updateConfig);
                 break;
 
             // --- 플로팅 배지 숨김 토글 ---
@@ -662,7 +670,8 @@ internal static partial class Tray
     /// 앱별 위치 기록 정리 대화상자 — empty 안내 + dialog 띄우기. 비즈니스 로직은
     /// <see cref="PositionCleanupService"/> 로 위임 (고정·창 기준 합집합, 모드 태그 라벨).
     /// </summary>
-    private static void CleanupPositions(AppConfig config, Action<AppConfig> updateConfig)
+    private static void CleanupPositions(AppConfig config, Func<AppConfig> currentConfig,
+        Action<AppConfig> updateConfig)
     {
         var (displayItems, originalNames) = PositionCleanupService.Compute(config);
         if (displayItems.Count == 0)
@@ -673,6 +682,11 @@ internal static partial class Tray
 
         List<string>? selected = CleanupDialog.Show(_hwndMain, displayItems);
         if (selected is null || selected.Count == 0) return;
+
+        // 다이얼로그가 **자체 모달 루프**를 돌았으므로 그 사이 config 가 교체됐을 수 있다 —
+        // 삭제를 적용할 베이스는 지금 값이어야 한다 (bug-hunt 2026-08-02 확정 #16).
+        // displayItems/originalNames 는 사용자가 화면에서 고른 항목이라 그대로 쓴다.
+        config = currentConfig();
 
         updateConfig(PositionCleanupService.RemoveSelected(config, displayItems, originalNames, selected));
     }
