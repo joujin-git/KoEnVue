@@ -115,6 +115,13 @@ internal static partial class Tray
     //
     // 재진입을 버리지 않는 이유: 안쪽 호출이 더 **새로운** 상태(방금 바뀐 테마 색)를 들고 온다.
     // 표시만 남기고 바깥 프레임이 끝날 때 그 값으로 한 번 더 갱신한다.
+    //
+    // **가드와 보류 소비는 반드시 한 쌍이다** (bug-hunt 3차 A·B). 종전에는 가드를 세우는 곳이 둘
+    // (UpdateState · HandleAddRetryTimer)인데 보류를 소비·정리하는 곳은 UpdateState 하나뿐이었다.
+    // 재시도 프레임에 들어온 갱신은 그 프레임에서 유실되고, 표식만 프레임 밖으로 살아남아 **다음**
+    // UpdateState 가 방금 그린 최신 아이콘 위에 몇 초 전 상태를 덮어썼다. 게다가 같은 블로킹
+    // Shell_NotifyIconW 를 부르는 Initialize·Remove 는 가드 자체가 없었다. 이제 셸 호출 구간은
+    // 전부 RunShellCall 하나를 지나간다 (P4).
     private static bool _shellCallInProgress;
     private static bool _updatePending;
     private static ImeState _pendingUpdateState;
@@ -140,9 +147,11 @@ internal static partial class Tray
             return;
         }
 
-        _currentIcon = TrayIcon.CreateIcon(initialState, config);
+        SafeIconHandle icon = TrayIcon.CreateIcon(initialState, config);
+        _currentIcon = icon;
 
-        _notifyIcon = new NotifyIconManager(hwndMain, AppMessages.WM_TRAY_CALLBACK, DefaultConfig.AppGuid);
+        NotifyIconManager notify = new(hwndMain, AppMessages.WM_TRAY_CALLBACK, DefaultConfig.AppGuid);
+        _notifyIcon = notify;
 
         // **무효 HICON 을 셸에 등록하지 않는다.** TrayIcon.CreateIcon 은 GDI 실패 시
         // SafeIconHandle(IntPtr.Zero) 를 돌려주는데, 그것을 NIF_ICON 과 함께 NIM_ADD 하면 셸이 빈 칸을
@@ -151,10 +160,18 @@ internal static partial class Tray
         // **최초 등록 경로만 그 정책에서 빠져 있었다** (확정 #13·#44). 부팅 자동 시작(schtasks
         // LogonTrigger)은 explorer 초기화 전이라 NIM_ADD 실패 구간과 GDI 압박 구간이 겹친다.
         // 무효면 Add 를 건너뛰고 아래 재시도 경로로 보낸다 — 재시도가 아이콘부터 다시 만든다.
-        bool added = !_currentIcon.IsInvalid
-                     && _notifyIcon.Add(_currentIcon.DangerousGetHandle(), BuildTooltip(initialState, config));
-
+        //
+        // **_initialized 를 셸 호출 앞에 세운다** (bug-hunt 3차 B). NIM_ADD 는 블로킹 IPC 라 그 구간에
+        // 재진입이 들어오는데, 종전에는 _initialized 가 아직 false 라 UpdateState 가 첫 줄에서 조용히
+        // 사라졌다 — 등록 직후 상태가 이미 낡아 있어도 반영할 길이 없었다. 이제 보류 표식으로 남고
+        // RunShellCall 의 드레인이 최신 값으로 한 번 더 갱신한다.
         _initialized = true;
+
+        bool added = false;
+        RunShellCall(
+            () => added = !icon.IsInvalid
+                          && notify.Add(icon.DangerousGetHandle(), BuildTooltip(initialState, config)),
+            drainPending: true);
 
         if (!added)
         {
@@ -210,17 +227,14 @@ internal static partial class Tray
             return;
         }
 
-        bool added;
-        _shellCallInProgress = true;
-        try
-        {
-            added = _notifyIcon.Add(_currentIcon.DangerousGetHandle(),
-                BuildTooltip(_pendingInitialState, _pendingConfig));
-        }
-        finally
-        {
-            _shellCallInProgress = false;
-        }
+        bool added = false;
+        NotifyIconManager notify = _notifyIcon;
+        SafeIconHandle icon = _currentIcon;
+        ImeState pendingState = _pendingInitialState;
+        AppConfig pendingConfig = _pendingConfig;
+        RunShellCall(
+            () => added = notify.Add(icon.DangerousGetHandle(), BuildTooltip(pendingState, pendingConfig)),
+            drainPending: true);
 
         if (added)
         {
@@ -258,24 +272,53 @@ internal static partial class Tray
             return;
         }
 
+        RunShellCall(() => UpdateStateCore(state, config), drainPending: true);
+    }
+
+    /// <summary>
+    /// 블로킹 <c>Shell_NotifyIconW</c> 구간을 재진입 가드와 함께 실행하는 <b>단일 진입점</b> (P4).
+    /// 최외곽 프레임만 보류 표식을 소비·정리한다 — 중첩 호출이 바깥 프레임의 가드를 먼저 풀어
+    /// 버리면 그 구간의 재진입이 다시 열린다.
+    ///
+    /// <para>
+    /// <paramref name="drainPending"/> 이 false 인 경우는 <see cref="Remove"/> 하나다. 아이콘을
+    /// 없애는 중에 보류분을 재생하면 방금 지운 아이콘을 되살리게 되고, 그 시점
+    /// <c>_currentIcon</c>·<c>_notifyIcon</c> 은 이미 정리된 뒤다. <b>그렇다고 표식을 지우지도
+    /// 않는다</b> — <see cref="Recreate"/> 가 Remove 직후 Initialize 를 부르므로, 제거 구간에 들어온
+    /// 더 새로운 상태는 그 Initialize 의 드레인이 소비해야 한다. 종료 경로에서 남는 표식은
+    /// <c>_initialized == false</c> 라 아무도 읽지 않는다.
+    /// </para>
+    /// </summary>
+    private static void RunShellCall(Action call, bool drainPending)
+    {
+        bool outermost = !_shellCallInProgress;
         _shellCallInProgress = true;
         try
         {
-            UpdateStateCore(state, config);
+            call();
 
             // 재진입이 들고 온 더 새로운 상태를 여기서 소비한다 (테마 색 변경 등).
-            while (_updatePending)
+            if (drainPending && outermost)
             {
-                _updatePending = false;
-                AppConfig pending = _pendingUpdateConfig!;
-                UpdateStateCore(_pendingUpdateState, pending);
+                while (_updatePending)
+                {
+                    _updatePending = false;
+                    AppConfig pending = _pendingUpdateConfig!;
+                    UpdateStateCore(_pendingUpdateState, pending);
+                }
             }
         }
         finally
         {
-            _shellCallInProgress = false;
-            _updatePending = false;
-            _pendingUpdateConfig = null;
+            if (outermost)
+            {
+                _shellCallInProgress = false;
+                if (drainPending)
+                {
+                    _updatePending = false;
+                    _pendingUpdateConfig = null;
+                }
+            }
         }
     }
 
@@ -351,14 +394,23 @@ internal static partial class Tray
         // 재시도 타이머 정리 — Recreate 경로에서 이전 retry 상태가 새 초기화에 섞이지 않도록.
         StopAddRetryTimer();
 
-        bool removed = _notifyIcon?.Remove() ?? true;
+        // **_initialized 를 셸 호출 앞에 내린다** (bug-hunt 3차 B). NIM_DELETE 도 블로킹 IPC 이고,
+        // 종전에는 이 플래그가 true 인 채로 그 구간에 들어가 재진입한 UpdateState 가 본체까지 내려가
+        // 방금 넘긴 HICON 을 만졌다. 여기서 내려 두면 재진입은 첫 줄에서 즉시 돌아간다.
+        _initialized = false;
+
+        bool removed = true;
+        NotifyIconManager? notify = _notifyIcon;
+        // 제거 중에는 보류분을 재생하지 않는다 — 방금 지운 아이콘을 되살리는 셈이고, 아래에서
+        // _currentIcon·_notifyIcon 이 정리된다.
+        RunShellCall(() => removed = notify?.Remove() ?? true, drainPending: false);
+
         if (!removed)
             Logger.Warning("Failed to remove tray icon on shutdown");
 
         _currentIcon?.Dispose();
         _currentIcon = null;
         _notifyIcon = null;
-        _initialized = false;
 
         Logger.Info("Tray icon removed");
     }

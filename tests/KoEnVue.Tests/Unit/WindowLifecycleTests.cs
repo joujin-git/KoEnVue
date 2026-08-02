@@ -172,4 +172,87 @@ public class WindowLifecycleTests
             TrayField("_pendingUpdateConfig").SetValue(null, savedPendingCfg);
         }
     }
+
+    // ================================================================
+    // bug-hunt 3차 A·B — 가드와 보류 소비는 한 쌍이다
+    // ================================================================
+
+    [Fact]
+    public void 중첩된_셸_호출은_바깥_프레임의_가드를_풀지_않는다()
+    {
+        // 종전에는 가드 대입이 호출 지점마다 흩어져 있어(`_shellCallInProgress = true/false`),
+        // 안쪽 프레임의 finally 가 바깥 구간의 가드까지 내려 **그 구간의 재진입이 다시 열렸다**.
+        // RunShellCall 은 최외곽 프레임만 가드를 되돌린다.
+        MethodInfo run = typeof(KoEnVue.App.UI.Tray).GetMethod("RunShellCall", PrivateStatic)
+            ?? throw new InvalidOperationException("Tray.RunShellCall not found — 이름이 바뀌었으면 테스트도 갱신할 것.");
+
+        object? savedShell = TrayField("_shellCallInProgress").GetValue(null);
+        try
+        {
+            TrayField("_shellCallInProgress").SetValue(null, false);
+
+            bool guardAfterInner = false;
+            Action outer = () =>
+            {
+                // 안쪽 프레임 — 아무것도 하지 않고 빠져나온다(셸/GDI 미접촉).
+                run.Invoke(null, [(Action)(() => { }), false]);
+                guardAfterInner = (bool)TrayField("_shellCallInProgress").GetValue(null)!;
+            };
+
+            run.Invoke(null, [outer, false]);
+
+            Assert.True(guardAfterInner, "중첩 프레임이 끝나도 바깥 구간의 가드는 유지돼야 한다");
+            Assert.False((bool)TrayField("_shellCallInProgress").GetValue(null)!,
+                "최외곽 프레임은 가드를 반드시 되돌려야 한다");
+        }
+        finally
+        {
+            TrayField("_shellCallInProgress").SetValue(null, savedShell);
+        }
+    }
+
+    [Fact]
+    public void 아이콘_제거_구간에_들어온_갱신은_버려지지_않는다()
+    {
+        // Recreate 는 Remove → Initialize 를 잇는다. 제거 구간(NIM_DELETE, 블로킹 IPC)에 들어온
+        // 더 새로운 상태를 Remove 의 finally 가 지워 버리면, 뒤따르는 Initialize 의 드레인이
+        // 소비할 것이 남지 않아 **그 갱신은 영영 반영되지 않는다**. 제거 중에 재생하지 않되
+        // 표식은 남기는 것이 이 설계의 요지다.
+        //
+        // _notifyIcon = null 이라 `notify?.Remove() ?? true` 로 셸에 닿지 않고,
+        // _hwndMain = Zero 라 StopAddRetryTimer 의 KillTimer 도 건너뛴다.
+        object? savedInit = TrayField("_initialized").GetValue(null);
+        object? savedHwnd = TrayField("_hwndMain").GetValue(null);
+        object? savedNotify = TrayField("_notifyIcon").GetValue(null);
+        object? savedIcon = TrayField("_currentIcon").GetValue(null);
+        object? savedPending = TrayField("_updatePending").GetValue(null);
+        object? savedPendingCfg = TrayField("_pendingUpdateConfig").GetValue(null);
+        try
+        {
+            TrayField("_initialized").SetValue(null, true);
+            TrayField("_hwndMain").SetValue(null, IntPtr.Zero);
+            TrayField("_notifyIcon").SetValue(null, null);
+            TrayField("_currentIcon").SetValue(null, null);
+
+            var newer = new KoEnVue.App.Models.AppConfig();
+            TrayField("_updatePending").SetValue(null, true);
+            TrayField("_pendingUpdateConfig").SetValue(null, newer);
+
+            KoEnVue.App.UI.Tray.Remove();
+
+            Assert.True((bool)TrayField("_updatePending").GetValue(null)!,
+                "제거 구간의 보류 표식은 뒤따르는 Initialize 가 소비하도록 남아야 한다");
+            Assert.Same(newer, TrayField("_pendingUpdateConfig").GetValue(null));
+            Assert.False((bool)TrayField("_initialized").GetValue(null)!);
+        }
+        finally
+        {
+            TrayField("_initialized").SetValue(null, savedInit);
+            TrayField("_hwndMain").SetValue(null, savedHwnd);
+            TrayField("_notifyIcon").SetValue(null, savedNotify);
+            TrayField("_currentIcon").SetValue(null, savedIcon);
+            TrayField("_updatePending").SetValue(null, savedPending);
+            TrayField("_pendingUpdateConfig").SetValue(null, savedPendingCfg);
+        }
+    }
 }
