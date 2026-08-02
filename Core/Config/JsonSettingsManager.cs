@@ -419,10 +419,22 @@ internal class JsonSettingsManager<T>
         }
 
         // 디스크에만 있는 키 보존 — 스키마 밖 항목(미래 키·사용자 메모)을 저장이 삼키지 않도록.
+        //
+        // **단, 앱이 이번에 지운 키는 되살리지 않는다** (bug-hunt 3차 F). 릴리즈 리뷰 #12 로 중첩
+        // 객체가 스칼라 단위까지 재귀하게 되면서, 이 루프가 `indicator_positions` ·
+        // `indicator_positions_relative` · `app_profiles` 같은 **열린 딕셔너리 안쪽**에서도 돈다.
+        // 그 셋은 사용자가 키를 자유롭게 늘리고 줄이는 곳이고 앱도 지운다(위치 기록 정리·프로필
+        // 삭제). 무조건 보존하면 **삭제가 영영 전파되지 않아** 지운 항목이 파일에 남고 다음 로드로
+        // 되살아난다.
+        //
+        // 판정 기준은 기준선이다 — base 에 있었는데 next 에 없으면 **앱이 이번에 지운 것**이고,
+        // base 에도 없으면 사용자가 파일에 직접 넣어 앱이 아직 읽지 않은 것이라 보존해야 한다.
         foreach (JsonProperty diskProp in diskObj.EnumerateObject())
         {
-            if (!nextObj.TryGetProperty(diskProp.Name, out _))
-                diskProp.WriteTo(writer);
+            if (nextObj.TryGetProperty(diskProp.Name, out _)) continue;
+            if (baseObj.TryGetProperty(diskProp.Name, out _)) continue;   // 앱이 지웠다
+
+            diskProp.WriteTo(writer);
         }
 
         writer.WriteEndObject();

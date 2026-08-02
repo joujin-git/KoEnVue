@@ -78,6 +78,56 @@ public class SaveMergeTests : IDisposable
         Assert.Equal(42, result.SnapGapPx);                 // 병합 없으면 10 으로 되돌아간다
     }
 
+    // ================================================================
+    // bug-hunt 3차 F — 열린 딕셔너리의 키 삭제도 전파돼야 한다
+    // ================================================================
+
+    [Fact]
+    public void 앱이_지운_위치_기록은_병합이_되살리지_않는다()
+    {
+        // 릴리즈 리뷰 #12 로 중첩 객체가 스칼라 단위까지 재귀하면서, disk-only 보존 루프가
+        // indicator_positions 같은 **열린 딕셔너리 안쪽**에서도 돌게 됐다. 그 결과 앱이 지운
+        // 항목(위치 기록 정리·프로필 삭제)이 디스크에서 되살아나 다음 로드로 돌아왔다.
+        var manager = NewManager();
+        manager.Save(new AppConfig()
+        {
+            IndicatorPositions = new() { ["notepad"] = [100, 200], ["chrome"] = [300, 400] },
+        });
+
+        // 사용자가 **다른** 필드를 고쳐 병합 경로를 연다 (디스크가 기준선에서 벗어나야 병합한다).
+        UserEdits(File.ReadAllText(_path).Replace("\"snap_gap_px\": 10", "\"snap_gap_px\": 42"));
+
+        // 앱이 notepad 기록만 지운다.
+        manager.Save(new AppConfig()
+        {
+            IndicatorPositions = new() { ["chrome"] = [300, 400] },
+        });
+
+        AppConfig result = ReadBack();
+        Assert.False(result.IndicatorPositions.ContainsKey("notepad"));  // 되살아나면 실패
+        Assert.True(result.IndicatorPositions.ContainsKey("chrome"));
+        Assert.Equal(42, result.SnapGapPx);   // 사용자 편집 보존은 그대로여야 한다
+    }
+
+    [Fact]
+    public void 사용자가_파일에만_넣은_프로필은_저장이_삼키지_않는다()
+    {
+        // 위 삭제 전파의 반대편 — 기준선에 **없던** disk-only 키는 사용자가 직접 넣고 앱이 아직
+        // 읽지 않은 것이므로 보존해야 한다. 이 구분이 무너지면 둘 중 하나가 반드시 깨진다.
+        var manager = NewManager();
+        manager.Save(new AppConfig() with { Opacity = 0.5 });
+
+        // 앱이 모르는 프로필을 사용자가 파일에 직접 추가 + 다른 필드도 고침.
+        UserEdits(File.ReadAllText(_path)
+            .Replace("\"app_profiles\": {}", "\"app_profiles\": { \"code\": { \"opacity\": 0.2 } }"));
+
+        manager.Save(new AppConfig() with { Opacity = 0.8 });
+
+        AppConfig result = ReadBack();
+        Assert.True(result.AppProfiles.ContainsKey("code"));
+        Assert.Equal(0.8, result.Opacity, precision: 6);
+    }
+
     [Fact]
     public void 앱이_바꾼_필드는_디스크_편집을_이긴다()
     {
