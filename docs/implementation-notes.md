@@ -1313,6 +1313,42 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 
 `_shellCallInProgress` 가드 + 보류 표식으로 닫는다. **재진입을 버리지 않는 이유**는 안쪽 호출이 더 **새로운** 상태(방금 바뀐 테마 색)를 들고 오기 때문이다 — 표시만 남기고 바깥 프레임이 끝날 때 그 값으로 한 번 더 갱신한다. `HandleAddRetryTimer` 도 같은 가드를 공유한다(NIM_ADD 역시 블로킹 IPC이고, WM_TIMER 는 posted 라 중첩 펌프에서 디스패치된다).
 
+### 트레이 셸 호출 프로토콜 — 단일 진입점 (bug-hunt 3차 A·B)
+
+`Shell_NotifyIconW` 는 explorer 로 가는 블로킹 크로스프로세스 SendMessage 라 그 구간에 *sent* 메시지가 계속 디스패치된다(위 G8 절). 그 재진입을 다루는 장치는 **두 조각**이다 — `_shellCallInProgress` 가드와 보류 표식(`_updatePending`/`_pendingUpdateState`/`_pendingUpdateConfig`). **그 둘이 한 쌍인데 흩어져 있던 것이 3차 A·B 의 뿌리다.** 가드를 세우는 곳은 둘(`UpdateState`·`HandleAddRetryTimer`)인데 소비·정리하는 곳은 `UpdateState` 하나뿐이었고, 같은 블로킹 호출을 하는 `Initialize`·`Remove` 는 가드 자체가 없었다.
+
+이제 셸 호출 구간은 전부 `Tray.RunShellCall(Action call, bool drainPending)` 을 지나간다 (P4). 계약 셋:
+
+1. **최외곽 프레임만 가드를 되돌린다** — `bool outermost = !_shellCallInProgress` 로 판정한다. 중첩 호출의 `finally` 가 바깥 구간의 가드를 먼저 내리면 그 구간의 재진입이 다시 열린다(`ModalDialogLoop.RunExternal` 의 스택형 복원과 같은 이유).
+2. **`Remove` 만 `drainPending: false`, 그러나 표식은 지우지 않는다** — 제거 중에 보류분을 재생하면 방금 지운 아이콘을 되살리고 그 시점 `_currentIcon`·`_notifyIcon` 은 정리된 뒤다. 그렇다고 버리면 `Recreate`(= `Remove` → `Initialize`) 의 제거 구간에 들어온 더 새로운 상태가 유실된다 — 그것은 뒤따르는 `Initialize` 의 드레인이 소비해야 한다. 종료 경로에서 남는 표식은 `_initialized == false` 라 아무도 읽지 않는다.
+3. **`_initialized` 전이는 셸 호출 밖에 둔다** — `Initialize` 는 NIM_ADD **전**에 true 로(그래야 그 구간의 재진입이 `_initialized` 가드에서 조용히 사라지지 않고 보류로 남는다), `Remove` 는 NIM_DELETE **전**에 false 로(그래야 재진입이 첫 줄에서 돌아가 방금 셸에 넘긴 HICON 을 만지지 않는다).
+
+회귀 가드는 `WindowLifecycleTests` 2건(중첩 프레임이 바깥 가드를 풀지 않는가 · 제거 구간의 표식이 남는가). 둘 다 `_notifyIcon = null` + `_hwndMain = Zero` 로 셸·GDI 미접촉이다. **재시도 프레임이 보류를 실제로 소비하는지는 단위 테스트로 고정할 수 없다** — `UpdateStateCore` 가 GDI 에 닿는다. 구조가 단일 경로라는 사실로만 담보된다.
+
+### 설정 전이 적용자 — 진입점 셋 (bug-hunt 3차 C)
+
+`ApplyConfigTransition(prev, next)` 의 진입점은 **셋**이다: ① config.json 핫리로드 ② 저장 중 3-way 병합 ③ **트레이/상세 설정의 `updateConfig` 람다**. ③ 이 3차에서 추가됐다.
+
+종전에 ③ 은 적용자를 자체 나열했고 — 프로필 캐시·I18n·감지 방식·오버레이·커서 헤일로·UserHidden·트레이 전이 — **그 목록에서 로거만 빠져 있었다.** `Settings.Save` 의 mtime self-bump 가 핫리로드를 막고, `SaveAndSync` 는 병합이 실제로 일어난 경우에만 ② 로 들어가므로, 상세 설정에서 바꾼 `log_level`/`log_to_file` 은 **어느 경로로도 적용되지 않았다**(재시작까지).
+
+G6 이 "개별 호출자를 고치는 대신 진입점을 하나로 모은다" 고 적은 함정이 이 자리에서 그대로 터진 것이라, 나열을 걷어내고 ③ 도 같은 함수를 쓰게 했다. 두 경로의 유일한 실질 차이였던 「포그라운드 hwnd 를 모를 때 색만 갱신」은 `RefreshVisibleIndicator` 에 흡수했다 — 이제 DPI 변경·설정 변경·메뉴 조작이 모두 같은 헬퍼를 지난다.
+
+invariant 2줄로 고정한다([conventions.md](conventions.md)): `ApplyConfigTransition(` = **4**(정의 1 + 호출 3), `Logger.(SetLevel|Initialize)(` in `Program.cs` = **4**(부팅 2 + 전이 함수 2). 후자가 핵심이다 — 호출자가 자체 나열로 되돌아가도 앞 카운트는 그대로이므로, 로거 적용이 전이 함수 **안에만** 있다는 사실을 따로 못 박아야 한다.
+
+### `TryLoad` 와 `Load` 의 책임 분리 (bug-hunt 3차 E)
+
+AUDIT-2026-07-30 §G 는 "파싱 실패 시 전 필드 디폴트를 디스크에 확정 → 사용자 설정 전멸" 을 `TryLoad` 의 **false 반환**으로 닫았다. 그런데 **파일 부재 분기는 그 가드 밖에 있었다** — `new T()` 를 만들어 `Save` 로 디스크에 쓰고 `true` 를 돌려준다. 호출자에겐 정상 로드로 보이므로 §G 가드가 발동하지 않는다.
+
+진입점이 둘이었다. ① `Save` 가 병합 후 되읽는 순간 파일이 사라져 있으면(백신 격리·동기화 클라이언트) 디폴트가 호출자에게 반환되고, `SaveAndSync` 가 그것을 `_config` 에 실은 뒤 `ApplyConfigTransition` 까지 돌려 **앱 전역에 적용**한다. ② 핫리로드의 `Settings.TryLoad` 도 같은 true 를 받는다.
+
+**생성 책임은 `Load` 에 있다.** 파일 부재 시 디폴트를 만드는 것은 "비교할 기존 인스턴스가 없는" 부팅 경로에서만 옳다. `TryLoad` 는 파일이 없으면 **false + 디스크 미변경**이고, 런타임 호출자는 들고 있던 인스턴스를 유지한다.
+
+### 3-way 병합 — 열린 딕셔너리의 키 삭제 (bug-hunt 3차 F)
+
+「디스크에만 있는 키는 보존한다」 는 규칙(스키마 밖 항목·사용자 메모 보호)은 릴리즈 리뷰 #12 의 스칼라 단위 재귀 이후 **열린 딕셔너리 안쪽까지** 내려갔다. `indicator_positions` · `indicator_positions_relative` · `app_profiles` 는 `Dictionary<…>` 라 JSON 상 Object 이고, **사용자와 앱이 함께 키를 늘리고 줄이는** 곳이다. 무조건 보존하면 앱의 삭제가 전파되지 않아 지운 항목이 다음 로드로 되살아난다.
+
+판정 기준은 **기준선**이다 — `base` 에 있었는데 `next` 에 없으면 앱이 이번에 지운 것이므로 되살리지 않고, `base` 에도 없으면 사용자가 파일에 직접 넣고 앱이 아직 읽지 않은 것이므로 보존한다. 스키마 필드는 `nextObj` 에 항상 존재해 이 루프에 도달하지 않으므로 영향은 열린 딕셔너리에 한정된다. 회귀 가드는 `SaveMergeTests` 2건 — **삭제 전파와 그 반대편을 함께** 고정한다(구분이 무너지면 둘 중 하나가 반드시 깨진다).
+
 ### 종료 시퀀스의 스레드 친화성 — 확정 (bug-hunt 2026-08-02 G18)
 
 `OnProcessExit` 안에 **양립 불가능한 두 전제**가 있었다.
