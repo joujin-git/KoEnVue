@@ -313,7 +313,7 @@ The `SafeFontHandle` `using` pattern is critical — early release would crash `
 [tests/KoEnVue.Tests/](../tests/KoEnVue.Tests/) xUnit project (PR-10, dev-only — release exe 미포함 → P1 예외). `InternalsVisibleTo("KoEnVue.Tests")` 가 KoEnVue.csproj 에 박혀 internal API 접근 가능. 검증 매트릭스:
 
 - **Debug + Release build both clean** (0 warnings, 0 errors). A debug-only build leaves the release exe outdated
-- **`dotnet test tests/KoEnVue.Tests/`** — 현재 baseline **211 PASS** / Unit/ **25 파일** (2026-08-02). ⚠️ **테스트 csproj/디렉토리 명시 필수** — repo 루트에서 인자 없이 `dotnet test` 하면 cwd 의 메인 `KoEnVue.csproj`(테스트 0개)를 잡아 **0개 실행 후 exit 0** 으로 통과처럼 보이는 착시. 반드시 `dotnet test tests/KoEnVue.Tests/` 또는 `tests\KoEnVue.Tests\KoEnVue.Tests.csproj` 로 실행:
+- **`dotnet test tests/KoEnVue.Tests/`** — 현재 baseline **212 PASS** / Unit/ **25 파일** (2026-08-02). ⚠️ **테스트 csproj/디렉토리 명시 필수** — repo 루트에서 인자 없이 `dotnet test` 하면 cwd 의 메인 `KoEnVue.csproj`(테스트 0개)를 잡아 **0개 실행 후 exit 0** 으로 통과처럼 보이는 착시. 반드시 `dotnet test tests/KoEnVue.Tests/` 또는 `tests\KoEnVue.Tests\KoEnVue.Tests.csproj` 로 실행:
   - **PR-10** (G1): `ColorHelperTests` / `DpiHelperTests` / `SettingsValidateTests`
   - **PR-20**: `StartupTaskXmlTests` / `XmlEntityCodecTests` / `SanitizeLogPathTests` (문자열 traversal + reparse/junction 거부)
   - **config 머지 P0**: `JsonSettingsMergeTests`

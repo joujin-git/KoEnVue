@@ -46,7 +46,27 @@ internal class JsonSettingsManager<T>
     //
     // 경합 비용은 무시할 수준이다 — CheckReload 는 5초에 1회, Save 는 사용자 조작 시에만 돈다.
     private readonly object _mtimeLock = new();
+
+    /// <summary>
+    /// <b>폴링 기준</b> mtime — "변경을 눈치챘다" 는 표식. <see cref="CheckReload"/> 가 갱신하며,
+    /// 로드 실패 시에도 갱신해 5초 폴링이 같은 손상 파일로 무한 재발송하는 것을 막는다.
+    /// </summary>
     private DateTime _lastMtime = DateTime.MinValue;
+
+    /// <summary>
+    /// <b>동기화 기준</b> mtime — <see cref="_lastPersistedJson"/> 이 나타내는 내용의 mtime.
+    /// <see cref="TryLoad"/> 성공과 <see cref="Save"/> 성공만 갱신한다.
+    ///
+    /// <para>
+    /// <see cref="_lastMtime"/> 과 <b>반드시 분리</b>돼야 한다. 하나로 쓰면 두 의미가 섞인다 —
+    /// 감지 스레드의 <c>CheckReload</c> 는 "변경을 눈치챘다" 는 뜻으로 올리는데, 3-way 병합 가드는
+    /// "메모리가 그 내용을 반영했다" 는 뜻을 필요로 한다. 겹쳐 쓰면 <b>파일이 바뀐 것을 눈치채기만 하고
+    /// 읽지는 못한 상태</b>(편집기가 파일을 잡고 있어 로드가 IOException 으로 실패한 경우)에서
+    /// 병합 가드가 무장 해제돼, 다음 저장이 사용자 편집을 통째로 덮는다
+    /// (bug-hunt 2026-08-02 확정 #1·#14 — §N-48 이 막으려던 바로 그 손실).
+    /// </para>
+    /// </summary>
+    private DateTime _syncedMtime = DateTime.MinValue;
 
     /// <summary>
     /// 앱이 <b>마지막으로 디스크와 동기화된 시점</b>의 설정을 직렬화한 것. <see cref="TryLoad"/> 성공과
@@ -129,7 +149,9 @@ internal class JsonSettingsManager<T>
 
                 lock (_mtimeLock)
                 {
+                    // 성공 로드 — 폴링 기준과 동기화 기준이 함께 이 시점으로 맞춰진다.
                     _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+                    _syncedMtime = _lastMtime;
                     // 방금 디스크와 동기화됐다 — 다음 Save 의 3-way 병합 기준선을 여기서 세운다 (§N-48).
                     // 파일 원문이 아니라 **앱의 표현**으로 저장해야 주석·포맷 차이가 diff 를 오염시키지 않는다.
                     _lastPersistedJson = JsonSerializer.Serialize(config, _typeInfo);
@@ -198,6 +220,7 @@ internal class JsonSettingsManager<T>
 
                 JsonSettingsFile.WriteAllText(_filePath, json);
                 _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+                _syncedMtime = _lastMtime;
                 // 기준선은 **실제로 쓴 내용**이어야 다음 저장의 diff 가 정확하다.
                 _lastPersistedJson = merged;
             }
@@ -259,8 +282,10 @@ internal class JsonSettingsManager<T>
             return nextJson;
         }
 
-        // 우리가 마지막으로 본 그대로면 덮어써도 잃을 것이 없다 — 흔한 경로라 파싱 비용을 아낀다.
-        if (diskMtime == _lastMtime) return nextJson;
+        // 우리가 마지막으로 **읽어 반영한** 그대로면 덮어써도 잃을 것이 없다 (흔한 경로라 파싱 비용을 아낀다).
+        // 여기서 _lastMtime 을 보면 안 된다 — 그것은 "변경을 눈치챘다" 는 뜻일 뿐이라, 파일이 바뀐 것을
+        // 알았지만 읽지는 못한 상태에서도 같아져 가드가 무장 해제된다 (확정 #1·#14).
+        if (diskMtime == _syncedMtime) return nextJson;
 
         try
         {

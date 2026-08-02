@@ -234,6 +234,29 @@ public class SaveMergeTests : IDisposable
     }
 
     [Fact]
+    public void 변경을_눈치챘지만_읽지_못한_경우에도_병합한다()
+    {
+        // 폴링 기준(_lastMtime)과 동기화 기준(_syncedMtime)을 한 필드로 쓰면, "파일이 바뀐 것은
+        // 알았지만 읽지는 못한" 상태에서 병합 가드가 무장 해제된다 — 편집기가 파일을 잠깐 잡고 있어
+        // 로드가 실패하는 흔한 경로다 (bug-hunt 2026-08-02 확정 #1·#14).
+        var manager = NewManager();
+        AppConfig cfg = manager.Save(new AppConfig() with { Opacity = 0.5, SnapGapPx = 10 });
+
+        // 사용자가 편집 — 아직 앱은 못 읽었다.
+        UserEdits(File.ReadAllText(_path).Replace("\"snap_gap_px\": 10", "\"snap_gap_px\": 42"));
+
+        // 감지 스레드가 변경을 눈치챈다 (CheckReload 가 폴링 기준만 올린다).
+        Assert.True(manager.CheckReload());
+
+        // 이 시점에 저장 — 눈치챈 것이 곧 반영은 아니므로 병합이 반드시 일어나야 한다.
+        manager.Save(cfg with { Opacity = 0.8 });
+
+        AppConfig result = ReadBack();
+        Assert.Equal(0.8, result.Opacity, precision: 6);
+        Assert.Equal(42, result.SnapGapPx);
+    }
+
+    [Fact]
     public void 표기만_다른_값은_앱이_바꾼_것으로_보지_않는다()
     {
         // 원래 결함: 기준선에 디스크 원문 조각이 섞여 사용자가 쓴 표기(0.80)가 남는데 다음 값은
