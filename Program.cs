@@ -902,48 +902,80 @@ internal static partial class Program
         _configReloadFailed = false;
 
         _config = loaded;
-        Logger.SetLevel(_config.LogLevel);
+        ApplyConfigTransition(prev, loaded);
+
+        Logger.Info("Config reloaded");
+    }
+
+    /// <summary>
+    /// 설정 인스턴스 교체를 앱 전역에 반영한다 — 로거·I18n·프로필 캐시·감지 방식·오버레이 엔진·
+    /// 커서 헤일로·배지 표시·트레이·클래스명 경고. <b><c>_config</c> 는 호출 전에
+    /// <paramref name="next"/> 로 갱신돼 있어야 한다</b> — <see cref="ApplyCursorConfigChange"/> 와
+    /// <see cref="ApplyTrayEnabledTransition"/> 이 필드를 직접 읽는다.
+    ///
+    /// <para>
+    /// 진입점이 <b>둘</b>이다. (1) config.json 핫리로드(<see cref="HandleConfigChanged"/>),
+    /// (2) 저장 중 3-way 병합으로 디스크의 사용자 편집이 들어온 경우(<see cref="SaveAndSync"/>).
+    /// 후자를 여기로 모으지 않으면 <b>어디서도 처리되지 않는다</b> — <c>Settings.Save</c> 의 mtime
+    /// self-bump 가 핫리로드를 차단하기 때문이다.
+    /// </para>
+    ///
+    /// <para>
+    /// 이전에는 저장 호출자마다 자기 전이만 적용했고, 병합으로 들어온 값은 <c>_config</c> 에만
+    /// 실렸다 — 커서 헤일로·트레이·로거는 <b>병합 전 값으로 이미 실행을 끝낸 뒤</b>라 화면과
+    /// 설정이 영구히 어긋났다(자기치유 경로도 self-bump 로 막혀 있다). 호출자 규율에 의존하는
+    /// 구조였던 것이 원인이라, 개별 호출자를 고치는 대신 진입점을 하나로 모은다
+    /// (bug-hunt 2026-08-02 확정 #28·#31·#47).
+    /// </para>
+    ///
+    /// <para>
+    /// 전이 판정은 전부 <paramref name="prev"/>/<paramref name="next"/> 비교라 <b>두 번 호출해도
+    /// 안전하다</b> — 저장 호출자가 자기 변경을 먼저 적용한 뒤 병합이 겹쳐 들어오는 경우, 두 번째
+    /// 호출은 실제로 달라진 것만 처리한다.
+    /// </para>
+    /// </summary>
+    private static void ApplyConfigTransition(AppConfig prev, AppConfig next)
+    {
+        Logger.SetLevel(next.LogLevel);
         // Logger.Initialize 는 drain 스레드를 종료(Join 최대 3s)·재시작하는 무거운 작업이라, 로그 관련
         // 설정이 실제로 바뀐 경우에만 재초기화한다 — 무변경 리로드가 메인 스레드를 블록하지 않도록.
-        if (prev.LogToFile != _config.LogToFile
-            || prev.LogFilePath != _config.LogFilePath
-            || prev.LogMaxSizeMb != _config.LogMaxSizeMb)
+        if (prev.LogToFile != next.LogToFile
+            || prev.LogFilePath != next.LogFilePath
+            || prev.LogMaxSizeMb != next.LogMaxSizeMb)
         {
-            string resolvedLogPath = PortablePath.SanitizeLogPath(_config.LogFilePath, out string? logPathReject);
-            Logger.Initialize(_config.LogToFile, resolvedLogPath, _config.LogMaxSizeMb);
+            string resolvedLogPath = PortablePath.SanitizeLogPath(next.LogFilePath, out string? logPathReject);
+            Logger.Initialize(next.LogToFile, resolvedLogPath, next.LogMaxSizeMb);
             if (logPathReject is not null)
                 Logger.Warning($"{logPathReject}; using '{resolvedLogPath}'");
         }
-        I18n.Load(_config.Language);
+        I18n.Load(next.Language);
         Settings.ClearProfileCache();
-        ImeStatus.UpdateDetectionMethod(_config.DetectionMethod);
+        ImeStatus.UpdateDetectionMethod(next.DetectionMethod);
         // 글로벌 기준으로 엔진 캐시 재빌드 — 다음 per-app TriggerShow 가 style 차이 시 추가 무효화.
-        Overlay.HandleConfigChanged(_config);
+        Overlay.HandleConfigChanged(next);
 
-        // 커서 헤일로 lifecycle — config.json 리로드 경로. HandleMenuCommand 람다도 동일 헬퍼 호출.
+        // 커서 헤일로 lifecycle.
         ApplyCursorConfigChange();
 
-        // PR-26: config 핫리로드로 user_hidden false→true 시 즉시 숨김 (이전엔 가시 인디가 동결).
-        if (!prev.UserHidden && _config.UserHidden)
+        // PR-26: user_hidden false→true 시 즉시 숨김 (이전엔 가시 인디가 동결).
+        if (!prev.UserHidden && next.UserHidden)
         {
             if (_indicatorVisible)
                 HideOverlay("config UserHidden");
         }
-        else if (!_config.UserHidden)
+        else if (!next.UserHidden)
             RefreshVisibleIndicator();
 
-        ApplyTrayEnabledTransition(prev.TrayEnabled, _config.TrayEnabled);
+        ApplyTrayEnabledTransition(prev.TrayEnabled, next.TrayEnabled);
 
         // overlay_class_name 은 부팅 시 1회 등록이라 런타임 변경을 반영할 수 없다 (AUDIT-2026-07-30 §H).
         // 조용히 무시하면 "고쳤는데 왜 그대로냐" 가 되고, 창 생성이 새 값을 쓰면 미등록 클래스로 실패한다.
-        if (_config.Advanced.OverlayClassName != _registeredOverlayClassName)
+        if (next.Advanced.OverlayClassName != _registeredOverlayClassName)
         {
             Logger.Warning(
-                $"overlay_class_name changed to '{_config.Advanced.OverlayClassName}' but window classes are "
+                $"overlay_class_name changed to '{next.Advanced.OverlayClassName}' but window classes are "
                 + $"registered once at startup; still using '{_registeredOverlayClassName}'. Restart to apply.");
         }
-
-        Logger.Info("Config reloaded");
     }
 
     /// <summary>
@@ -1057,6 +1089,40 @@ internal static partial class Program
     }
 
     /// <summary>
+    /// 설정을 저장하고, 3-way 병합으로 <b>디스크의 사용자 편집이 새로 들어온 경우</b> 그것을
+    /// 핫리로드와 <b>같은 수준으로</b> 적용한다 (<see cref="ApplyConfigTransition"/>).
+    /// 저장 경로는 전부 이 헬퍼를 거쳐야 한다.
+    ///
+    /// <para>
+    /// <c>_config</c> 를 직접 읽고 쓴다 — 이전 시그니처는 병합 결과를 <b>반환</b>했고, 호출자가
+    /// 그 값을 대입하지 않으면 조용히 손실됐다(릴리즈 리뷰 2026-08-01 확정 #1 의 정체가 그
+    /// 미대입이다). 반환값을 없애 그 함정 자체를 제거한다.
+    /// </para>
+    ///
+    /// <para>
+    /// 이전에는 프로필 캐시·I18n·감지 방식·오버레이 엔진 <b>4가지만</b> 다시 세웠는데, 그 사이
+    /// 호출자는 커서 헤일로·트레이·표시 전이를 <b>병합 전 값으로</b> 이미 적용하고 끝낸 상태였다.
+    /// 헬퍼가 "호출자가 자기 전이 판정으로 이미 수행" 을 전제했지만, 그 판정 자체가 병합 전
+    /// 값 위에서 끝난 뒤라 전제가 성립하지 않았다 (확정 #28·#31·#47).
+    /// </para>
+    ///
+    /// <para>
+    /// 병합이 없었으면 <c>Save</c> 가 입력을 <b>그대로</b> 돌려주므로 참조 비교로 구분한다 — 흔한
+    /// 경로에서 불필요한 재적용을 하지 않기 위함이다.
+    /// </para>
+    /// </summary>
+    private static void SaveAndSync()
+    {
+        AppConfig before = _config;
+        AppConfig saved = Settings.Save(before);
+        _config = saved;
+        if (ReferenceEquals(saved, before)) return;
+
+        Logger.Info("Config merged with on-disk edits during save; applying merged state");
+        ApplyConfigTransition(before, saved);
+    }
+
+    /// <summary>
     /// 트레이 좌클릭: 표시 상태 4단계를 순환한다 —
     /// <b>둘 다 보임 → 배지만 → 헤일로만 → 모두 숨김 → (다시) 둘 다 보임</b>.
     /// 전이 계산의 단일 진실원은 <see cref="Tray.ComputeLeftClickCycle"/> 이고, 여기서는 그
@@ -1065,6 +1131,7 @@ internal static partial class Program
     /// 커서 헤일로 윈도우 lifecycle 은 <see cref="ApplyCursorConfigChange"/> 가 담당하며, 메뉴
     /// 경로(HandleMenuCommand 람다)와 마찬가지로 <b>직접 호출해야 한다</b> — Settings.Save 의
     /// mtime self-bump 가 WM_CONFIG_CHANGED 를 차단해 HandleConfigChanged 경로가 돌지 않기 때문.
+    /// (병합이 일어난 경우는 <see cref="SaveAndSync"/> 가 별도로 처리한다.)
     /// </para>
     /// <para>
     /// 트레이 메뉴의 체크 상태는 <see cref="Tray.ShowMenu"/> 가 열릴 때마다 현재 <c>_config</c> 로
@@ -1072,45 +1139,14 @@ internal static partial class Program
     /// </para>
     /// config.json 에 즉시 저장 — 재기동/포그라운드 전환에도 현재 단계가 유지된다.
     /// </summary>
-    /// <summary>
-    /// 설정을 저장하고, 3-way 병합으로 <b>디스크의 사용자 편집이 새로 들어온 경우</b> 파생 캐시까지
-    /// 반영한다. 저장 경로는 전부 이 헬퍼를 거쳐야 한다.
-    ///
-    /// <para>
-    /// 릴리즈 리뷰 #1 은 <c>Settings.Save</c> 반환값을 <c>_config</c> 에 되돌리는 것까지만 고쳤는데,
-    /// 세 호출 지점 모두 그 대입이 마지막 문장이라 <b>엔진·프로필·I18n 캐시로는 전파되지 않았다</b> —
-    /// 병합으로 들어온 색상·폰트·프로필 편집이 다음 전체 리로드까지 화면에 반영되지 않는다
-    /// (bug-hunt 2026-08-02 확정 #15).
-    /// </para>
-    ///
-    /// <para>
-    /// 병합이 없었으면 <c>Save</c> 가 입력을 <b>그대로</b> 돌려주므로 참조 비교로 구분한다 — 흔한
-    /// 경로에서 불필요한 캐시 무효화를 하지 않기 위함이다. 커서 lifecycle·표시 전이는 호출자마다
-    /// 맥락이 달라 여기서 하지 않는다(각 호출자가 자기 전이 판정으로 이미 수행).
-    /// </para>
-    /// </summary>
-    private static AppConfig SaveAndSync(AppConfig config)
-    {
-        AppConfig saved = Settings.Save(config);
-        if (ReferenceEquals(saved, config))
-            return saved;
-
-        Logger.Info("Config merged with on-disk edits during save; refreshing derived state");
-        Settings.ClearProfileCache();
-        I18n.Load(saved.Language);
-        ImeStatus.UpdateDetectionMethod(saved.DetectionMethod);
-        Overlay.HandleConfigChanged(saved);
-        return saved;
-    }
-
     private static void HandleTrayToggle()
     {
         bool wasHidden = _config.UserHidden;
         bool wasCursorEnabled = _config.CursorIndicatorEnabled;
 
         _config = Tray.ComputeLeftClickCycle(_config);
-        // 저장 + 병합 시 파생 캐시까지 반영 (확정 #1·#15).
-        _config = SaveAndSync(_config);
+        // 저장 + 병합 시 전이 재적용까지 (확정 #1·#15·#28). _config 갱신은 헬퍼가 한다.
+        SaveAndSync();
         Logger.Info($"Tray click cycle: {Tray.GetVisibility(_config)} " +
                     $"(UserHidden={_config.UserHidden}, CursorIndicatorEnabled={_config.CursorIndicatorEnabled})");
 
@@ -1192,8 +1228,9 @@ internal static partial class Program
                 }
                 // 상세 설정에서 tray_enabled 를 끄고 켤 수 있으므로 이 경로도 전이를 반영해야 한다 (§K).
                 ApplyTrayEnabledTransition(wasTrayEnabled, _config.TrayEnabled);
-                // 저장 + 병합 시 파생 캐시까지 반영 (확정 #1·#15).
-                _config = SaveAndSync(_config);
+                // 저장 + 병합 시 전이 재적용까지 (확정 #1·#15·#28·#47). 위 적용자들은 병합 **전**
+                // 값으로 돌았으므로, 디스크에서 새 값이 들어왔으면 헬퍼가 그 차이만 다시 적용한다.
+                SaveAndSync();
             });
     }
 

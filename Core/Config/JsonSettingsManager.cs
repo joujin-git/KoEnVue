@@ -50,12 +50,20 @@ internal class JsonSettingsManager<T>
     /// <summary>
     /// <b>폴링 기준</b> mtime — "변경을 눈치챘다" 는 표식. <see cref="CheckReload"/> 가 갱신하며,
     /// 로드 실패 시에도 갱신해 5초 폴링이 같은 손상 파일로 무한 재발송하는 것을 막는다.
+    ///
+    /// <para>
+    /// 단 하나의 예외로 <c>MinValue</c> 까지 <b>되돌린다</b> — <see cref="Save"/> 가 병합한 파일을
+    /// 되읽지 못한 경우. 그때는 self-bump 를 취소해 폴링이 핫리로드를 발사하게 하는 것이 곧
+    /// 자기치유 경로다 (확정 #19). 스팸 차단 목적과 방향이 반대라 여기 명시한다.
+    /// </para>
     /// </summary>
     private DateTime _lastMtime = DateTime.MinValue;
 
     /// <summary>
     /// <b>동기화 기준</b> mtime — <see cref="_lastPersistedJson"/> 이 나타내는 내용의 mtime.
-    /// <see cref="TryLoad"/> 성공과 <see cref="Save"/> 성공만 갱신한다.
+    /// <see cref="TryLoad"/> 성공과 <see cref="Save"/> 성공만 갱신한다. 반대로 <see cref="Save"/> 가
+    /// 병합 후 되읽기에 실패하면 <c>MinValue</c> 로 <b>물린다</b> — 인메모리가 디스크를 따라잡지 못한
+    /// 상태에서 "동기화됨" 을 주장하면 다음 저장이 병합을 건너뛰기 때문 (확정 #19).
     ///
     /// <para>
     /// <see cref="_lastMtime"/> 과 <b>반드시 분리</b>돼야 한다. 하나로 쓰면 두 의미가 섞인다 —
@@ -229,8 +237,33 @@ internal class JsonSettingsManager<T>
             // 병합이 있었으면 디스크와 메모리가 갈라진 상태다. 방금 쓴 파일을 다시 읽어 호출자에게
             // 돌려줘야 인메모리가 따라잡는다 — TryLoad 가 _lastMtime·_lastPersistedJson 도 정규
             // 표현으로 다시 세우므로 다음 저장의 diff 기준선까지 한 번에 정리된다.
-            if (didMerge && TryLoad(out T reloaded))
-                return reloaded;
+            if (didMerge)
+            {
+                if (TryLoad(out T reloaded))
+                    return reloaded;
+
+                // 방금 쓴 파일을 되읽지 못했다 — 백신·에디터·동기화 클라이언트가 순간적으로 잡는 경로다.
+                // 이때 디스크와 기준선에는 **병합 결과**가, 호출자에게 돌려줄 인메모리에는 **병합 전** 값이
+                // 있다. 그 상태를 "디스크와 동기화됨" 으로 남겨두면 다음 저장이 두 번 배신한다 —
+                // (1) diskMtime == _syncedMtime 이라 3-way 병합을 통째로 건너뛰고,
+                // (2) 설령 병합하더라도 기준선이 병합 결과라 사용자 편집 필드가 "앱이 이번에 바꿨다" 로
+                //     오분류돼 앱의 옛 값이 이긴다.
+                // 어느 쪽이든 방금 살아남은 사용자 편집을 되돌려 쓴다 (bug-hunt 2026-08-02 확정 #19).
+                //
+                // 그래서 세 표식을 함께 물린다. 기준선은 **호출자가 실제로 들고 있는 값**(rawJson)으로
+                // 되돌려야 다음 diff 가 "앱이 이번에 바꾼 것" 만 집어낸다. 폴링 기준까지 내리는 이유는
+                // 자기치유다 — self-bump 를 취소해 5초 mtime 폴러가 핫리로드를 발사하게 하고, 그
+                // TryLoad 성공이 인메모리·기준선·양쪽 mtime 을 한 번에 정상화한다.
+                lock (_mtimeLock)
+                {
+                    _lastMtime = DateTime.MinValue;
+                    _syncedMtime = DateTime.MinValue;
+                    _lastPersistedJson = rawJson;
+                }
+                LogProvider.Sink?.Warning(
+                    $"Merged config written to {_filePath} but could not be re-read; in-memory settings still "
+                    + "hold the pre-merge value. Next save will re-merge and the mtime poll will resync.");
+            }
         }
         catch (Exception ex) when (IsExpectedSaveException(ex))
         {

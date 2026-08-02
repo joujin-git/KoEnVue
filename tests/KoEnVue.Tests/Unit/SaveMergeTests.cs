@@ -1,3 +1,4 @@
+using System.Text.Json;
 using KoEnVue.App.Config;
 using KoEnVue.App.Models;
 using KoEnVue.Core.Config;
@@ -273,5 +274,87 @@ public class SaveMergeTests : IDisposable
         manager.Save(cfg with { SnapGapPx = 10 });
 
         Assert.Equal(42, ReadBack().SnapGapPx);
+    }
+
+    // ================================================================
+    // 병합했지만 되읽지 못한 경우 (bug-hunt 2026-08-02 확정 #19)
+    // ================================================================
+
+    /// <summary>
+    /// 병합 직후의 되읽기만 실패시키는 매니저 — 방금 쓴 파일을 백신·에디터·동기화 클라이언트가
+    /// 순간적으로 잡는 흔한 경로다. <c>Validate</c> 훅에서 <see cref="JsonException"/> 을 던지면
+    /// <c>TryLoad</c> 의 예외 필터에 걸려 정상 실패 경로(false 반환)를 그대로 탄다.
+    /// </summary>
+    private sealed class ReadBackFailingManager(string path)
+        : JsonSettingsManager<AppConfig>(path, AppConfigJsonContext.Default.AppConfig)
+    {
+        public bool FailNextLoad { get; set; }
+
+        protected override AppConfig Validate(AppConfig config)
+        {
+            if (!FailNextLoad) return config;
+            FailNextLoad = false;
+            throw new JsonException("injected read-back failure");
+        }
+    }
+
+    [Fact]
+    public void 되읽기가_실패해도_다음_저장이_사용자_편집을_지킨다()
+    {
+        // 원래 결함: 병합은 성공해 디스크·기준선에는 사용자 편집이 살아남았는데, 되읽기가 실패하면
+        // 인메모리만 병합 **전** 값으로 남았다. 그런데도 동기화 표식은 "디스크와 같음" 으로 서 있어
+        // 다음 저장이 병합을 건너뛰고 그 편집을 되돌려 썼다 — 병합이 손실을 한 번만 지연시킨 셈
+        // (확정 #19. 릴리즈 리뷰 #1 이 성공 분기만 닫고 실패 분기를 남긴 자리다).
+        var manager = new ReadBackFailingManager(_path);
+        AppConfig cfg = manager.Save(new AppConfig() with { Opacity = 0.5, SnapGapPx = 10 });
+
+        UserEdits(File.ReadAllText(_path).Replace("\"snap_gap_px\": 10", "\"snap_gap_px\": 42"));
+
+        manager.FailNextLoad = true;
+        AppConfig afterMerge = manager.Save(cfg with { Opacity = 0.8 });
+
+        // 되읽기가 실패했으니 호출자는 병합 전 값을 받는다 — 여기까지는 설계상 정상이다.
+        Assert.Equal(10, afterMerge.SnapGapPx);
+        // 그러나 디스크에는 병합 결과가 확정돼 있다.
+        Assert.Equal(42, ReadBack().SnapGapPx);
+
+        // 다음 저장 — 표식을 물리지 않으면 여기서 42 가 10 으로 되돌아간다.
+        manager.Save(afterMerge with { Opacity = 0.9 });
+
+        AppConfig result = ReadBack();
+        Assert.Equal(0.9, result.Opacity, precision: 6);
+        Assert.Equal(42, result.SnapGapPx);
+    }
+
+    [Fact]
+    public void 되읽기_실패는_핫리로드_자기치유_경로를_열어둔다()
+    {
+        // 되읽기 실패 상태는 "인메모리가 디스크보다 뒤처짐" 이므로 핫리로드가 따라잡아야 한다.
+        // 그런데 Save 의 mtime self-bump 가 폴러를 잠재우므로, 그 self-bump 를 취소하지 않으면
+        // 자기치유 경로가 원천 차단된다 — 다음 저장까지 불일치가 유지된다.
+        var manager = new ReadBackFailingManager(_path);
+        AppConfig cfg = manager.Save(new AppConfig() with { Opacity = 0.5, SnapGapPx = 10 });
+
+        UserEdits(File.ReadAllText(_path).Replace("\"snap_gap_px\": 10", "\"snap_gap_px\": 42"));
+
+        manager.FailNextLoad = true;
+        manager.Save(cfg with { Opacity = 0.8 });
+
+        Assert.True(manager.CheckReload(), "되읽기에 실패했으면 폴링이 리로드를 발사해야 한다");
+    }
+
+    [Fact]
+    public void 되읽기가_성공하면_self_bump_는_유지된다()
+    {
+        // 대칭 확인 — 정상 경로에서까지 폴러를 깨우면 저장할 때마다 불필요한 전체 리로드가 돈다.
+        var manager = new ReadBackFailingManager(_path);
+        AppConfig cfg = manager.Save(new AppConfig() with { Opacity = 0.5, SnapGapPx = 10 });
+
+        UserEdits(File.ReadAllText(_path).Replace("\"snap_gap_px\": 10", "\"snap_gap_px\": 42"));
+
+        AppConfig afterMerge = manager.Save(cfg with { Opacity = 0.8 });
+        Assert.Equal(42, afterMerge.SnapGapPx);   // 되읽기 성공 — 병합 결과가 실린다
+
+        Assert.False(manager.CheckReload(), "정상 저장은 자기 변경으로 핫리로드를 유발하지 않아야 한다");
     }
 }

@@ -126,8 +126,9 @@ internal static partial class Program
                         [_currentProcessName] = [(int)rel.Corner, rel.DeltaX, rel.DeltaY]
                     };
                     _config = _config with { IndicatorPositionsRelative = positions };
-                    // 저장 + 병합 시 파생 캐시까지 반영 (확정 #1·#15).
-                    _config = SaveAndSync(_config);
+                    // 저장 + 병합 시 전이 재적용까지 (확정 #1·#15·#28). 드래그 경로는 자체 전이
+                    // 적용자가 없으므로, 병합으로 들어온 값은 전적으로 헬퍼에 의존한다.
+                    SaveAndSync();
                     Logger.Debug($"Saved relative position for {_currentProcessName}: "
                         + $"corner={rel.Corner}, delta=({rel.DeltaX}, {rel.DeltaY}) logical px");
                 }
@@ -153,8 +154,9 @@ internal static partial class Program
                     [_currentProcessName] = [x, y]
                 };
                 _config = _config with { IndicatorPositions = positions };
-                // 저장 + 병합 시 파생 캐시까지 반영 (확정 #1·#15).
-                _config = SaveAndSync(_config);
+                // 저장 + 병합 시 전이 재적용까지 (확정 #1·#15·#28). 드래그 경로는 자체 전이
+                // 적용자가 없으므로, 병합으로 들어온 값은 전적으로 헬퍼에 의존한다.
+                SaveAndSync();
                 Logger.Debug($"Saved indicator position for {_currentProcessName}: ({x}, {y})");
             }
         }
