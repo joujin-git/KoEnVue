@@ -331,6 +331,8 @@ The `SafeFontHandle` `using` pattern is critical — early release would crash `
   - **위치 정리**: `PositionCleanupServiceTests`
   - **PR-33**: `UpdateCheckerTests` / `SettingsProfileMergeTests` / `ThemePresetsBackupTests`
   - **트레이 좌클릭 순환** (2026-07-29): `TrayLeftClickToggleTests` — 4단계 전이(`ComputeLeftClickCycle`) + 단계별 도형(`Tray.GetShapes`) 대응
+  - **AUDIT-2026-07-30 동시성 bug-hunt**: `ModalReentryGuardTests`(§A 재진입 가드 위치) / `ConfigCommitBaseTests`(§B 커밋 베이스 = 지금 값) / `ProfileCacheTests`(§D LRU 불변식 + 무효화 세대) / `ConfigLoadFailureTests`(§G 파싱 실패의 호출자 전달) / `DragHideDeferralTests`(§M 드래그 중 숨김 보류) / `LoggerReinitTests`(§C 세대 단조성 + 재초기화 라운드트립) / `SaveMergeTests`(§N-48 3-way 병합)
+  - **bug-hunt 2026-08-02 2차**: `WindowLifecycleTests`(G5 창별 hwnd 필드 리셋 + 다른 필드 보존, G17 핫리로드 재진입 보류 표식) / `IndicatorVisibilityTests`(G14 `PositionMode` 전환 시 이동 래치 해제 3케이스) + `SaveMergeTests`(G11 되읽기 실패 롤백) · `LoggerReinitTests`(G1 OFF·초기화 실패 시 드롭) 확장. **G2·G3·G10·G16 은 스레드 타이밍/실제 창 의존이라 단위 테스트가 불가능** — invariant grep 이 대신 고정
 - **Smoke gate matrix** exercised manually: boot → tray icon appears → indicator follows foreground → IME toggle changes color → drag works → drag with Shift locks axis → drag with snap sticks to edges → CAPS LOCK toggles bars → config hot-reload → corrupted config spam check → update check (both branches: no update / new version) → Start Menu ESC dismissal hides indicator → Search bar ESC dismissal hides indicator
 - **`git grep` invariants** (listed above) each match their annotated expected count — unannotated = 0 matches
 - **Byte-size tracking** against the previous stage's baseline

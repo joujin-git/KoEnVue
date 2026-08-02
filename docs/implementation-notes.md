@@ -470,6 +470,8 @@ Detection loop sends `WM_POSITION_UPDATED` **before** `WM_IME_STATE_CHANGED` / `
 
 `DetectionService` evaluates `ResolveForApp + SystemFilter.ShouldHide` every tick (not only on foreground change). After hysteresis confirms filtered, HIDE is posted whenever `_indicatorVisible` is true (**level trigger**, PR-26) — not only on `!LastFiltered → filtered` edges. `LastFiltered` still marks filtered state for duplicate-message bookkeeping and to force `foregroundChanged` on filter exit (PRD §7.2). Re-HIDE while already marked filtered logs at Debug. Fixes both the classic "desktop click → same app return" reappear path and the PR-26 case where an external path (UserHidden unhide) re-showed the indicator while the foreground remained filtered.
 
+**확정 filtered 분기는 파생 캐시도 함께 갱신한다** (bug-hunt 2026-08-02 G13): `TryHandleFilter` 의 확정 HIDE 경로와 포인터 suppress 경로는 `state.LastHwndForeground` 를 직접 대입하는데, `UpdateForegroundProcessCache` 는 **그 필드 하나만 보고 조기 반환**한다(`hwndForeground == state.LastHwndForeground`). 두 분기가 hwnd 만 앞당겨 세우면 필터가 풀린 뒤에도 `LastForegroundProcessName` / `LastWindowFrame` 이 **영원히 이전 앱 값**으로 남아 per-app 프로필 매칭과 창 이동 추적이 엉뚱한 앱 기준으로 돈다 — 작업 표시줄을 거친 앱 전환이 매번 이 경로다. 그래서 두 분기 모두 hwnd 대입 **직전**에 `UpdateForegroundProcessCache(ref state, hwndForeground)` 를 부른다(같은 hwnd 면 즉시 반환하므로 추가 비용 0).
+
 **틱 스냅샷**: `ProcessDetectionTick` 은 진입 시 `AppConfig cfg = _config` 를 한 번만 읽어 그 틱 내 모든 분기(잠금 가드, `TryHandleFilter` 의 `ResolveForApp(cfg, …)` 등)가 같은 인스턴스를 보도록 한다. 메인 스레드가 틱 도중 `_config` 를 `with` 로 통째 교체(레코드 — 참조 대입은 원자적)해도 한 틱 안의 일관성이 깨지지 않는다. 분할 헬퍼들은 이미 `appConfig`(per-app resolved) 스냅샷이나 `DefaultConfig` 상수를 쓰므로, 직접 `_config` 를 읽던 자리만 `cfg` 로 통일했다 — `ResolveCurrent()` 의 메인-스레드 재호출 모델(아래 [프로필 머지 파이프라인](#프로필-머지-파이프라인))과 같은 "다음 틱 자연 수렴" 정책의 연장.
 
 #### HIDE 디바운스 (flip-flop 흡수)
@@ -544,7 +546,7 @@ IME 감지 경로는 두 가지다 — (1) 디텍션 스레드 80ms 폴링 (`Det
 
 ### DPI change handling (`Program.HandleDpiChanged`)
 
-`WM_DPICHANGED` 는 메인 윈도우 WndProc 에서 무인자 `HandleDpiChanged()` 로 디스패치되어 `Overlay.HandleDpiChanged()` 한 줄만 호출한다. 메시지 페이로드(`wParam`: HIWORD/LOWORD = newDpiY/newDpiX, `lParam`: RECT* 권장 크기/위치)는 **현재 미사용** — 오버레이가 자체 DPI 재조회로 처리하기 때문이다(IMP-6, 2026-06-03 — `(wParam, lParam)` dead param 제거로 무인자 핸들러 그룹과 시그니처 일관성 확보). per-monitor DPI 정밀 대응이 필요해지면 dispatch 의 `WM_DPICHANGED` case 에서 `wParam`/`lParam` 을 다시 전달하면 된다(WndProc 인자라 항상 가용). 위 `Program.HandleDpiChanged`(메인 윈도우 메시지 핸들러)는 [Label DIB flip-flop prevention](#label-dib-flip-flop-prevention) 에서 다룬 `LayeredOverlayBase.HandleDpiChanged`(엔진 캐시 무효화)와는 별개 메서드이다.
+`WM_DPICHANGED` 는 메인 윈도우 WndProc 에서 무인자 `HandleDpiChanged()` 로 디스패치되어 `Overlay.HandleDpiChanged()` → `RefreshVisibleIndicator()` 를 호출한다. **후속 렌더가 반드시 필요하다** — 엔진의 `HandleDpiChanged` 는 캐시를 무효화하고 새 DIB 섹션을 만들지만 **그리지는 않아서**, 그 상태에서 Render 없이 블리트만 하는 애니메이션 프레임(`UpdateAlpha`/`UpdatePosition`/`UpdateScaledSize`)이 먼저 돌면 전 픽셀 0 인 빈 DIB 가 `UpdateLayeredWindow` 로 올라가 배지가 통째로 사라진다. 형제 경로(`HandleDisplayChange`·`HandleSettingChange`·`HandleConfigChanged`)는 모두 직후 `RefreshVisibleIndicator` 를 부르는데 **이 경로와 전원 복귀(`HandlePowerResume`)만** 빠져 있었다 (bug-hunt 2026-08-02 G15). 메시지 페이로드(`wParam`: HIWORD/LOWORD = newDpiY/newDpiX, `lParam`: RECT* 권장 크기/위치)는 **현재 미사용** — 오버레이가 자체 DPI 재조회로 처리하기 때문이다(IMP-6, 2026-06-03 — `(wParam, lParam)` dead param 제거로 무인자 핸들러 그룹과 시그니처 일관성 확보). per-monitor DPI 정밀 대응이 필요해지면 dispatch 의 `WM_DPICHANGED` case 에서 `wParam`/`lParam` 을 다시 전달하면 된다(WndProc 인자라 항상 가용). 위 `Program.HandleDpiChanged`(메인 윈도우 메시지 핸들러)는 [Label DIB flip-flop prevention](#label-dib-flip-flop-prevention) 에서 다룬 `LayeredOverlayBase.HandleDpiChanged`(엔진 캐시 무효화)와는 별개 메서드이다.
 
 ---
 
@@ -1007,7 +1009,9 @@ case IDM_ADMIN_ELEVATION:
 break;
 ```
 
-③ 의 안내는 fix #3 시점엔 `User32.MessageBoxW(hwndMain, …, "KoEnVue", MB_OK)` 직접 호출이었으나, 2026-06-03 (감사 DUP-6 합류) 에 같은 파일의 `ShowMessage(body)` 헬퍼 (`ModalDialogLoop.RunExternal(_hwndMain, () => User32.MessageBoxW(_hwndMain, body, DefaultConfig.AppName, uType: MB_OK))`) 위임으로 교체 — 트레이 안내 MessageBox 의 나머지 3 경로 (`ShowPositionError`/`CleanupPositions` empty/위치 기록 empty) 와 **단일 경로로 통합**. 동작 불변 (같은 owner `_hwndMain`·타이틀 `DefaultConfig.AppName`·MB_OK 단일 버튼) — 유일한 델타인 `RunExternal` 가드는 박스 표시 중 감지 인디 jitter 억제일 뿐, 박스 닫힌 뒤 ④ 의 `WM_CLOSE` 자동 종료라 무해.
+③ 의 안내는 fix #3 시점엔 `User32.MessageBoxW(hwndMain, …, "KoEnVue", MB_OK)` 직접 호출이었으나, 2026-06-03 (감사 DUP-6 합류) 에 같은 파일의 `ShowMessage(body)` 헬퍼 (`ModalDialogLoop.RunExternal(IntPtr.Zero, () => User32.MessageBoxW(_hwndMain, body, DefaultConfig.AppName, uType: MB_OK))`) 위임으로 교체 — 트레이 안내 MessageBox 의 나머지 3 경로 (`ShowPositionError`/`CleanupPositions` empty/위치 기록 empty) 와 **단일 경로로 통합**. 동작 불변 (같은 owner `_hwndMain`·타이틀 `DefaultConfig.AppName`·MB_OK 단일 버튼) — 유일한 델타인 `RunExternal` 가드는 박스 표시 중 감지 인디 jitter 억제일 뿐, 박스 닫힌 뒤 ④ 의 `WM_CLOSE` 자동 종료라 무해.
+
+**첫 인자는 반드시 `IntPtr.Zero`(→ 센티넬 치환)다** — 2026-08-02 까지 `_hwndMain` 을 넘겼는데, 그러면 `RejectReentry` 가 그것을 진짜 다이얼로그로 오인해 **보이지 않는 0×0 메시지 창으로 포커스를 옮긴다**(센티넬이 존재하는 이유가 통째로 우회됨). `MessageBoxW` 자체의 owner 는 그대로 `_hwndMain` — 그건 모달 소유자 지정이라 별개다 (bug-hunt 2026-08-02 G10, invariant grep `RunExternal(_hwndMain` = 0). ④ 의 `WM_CLOSE` 는 `DefWindowProcW` 가 곧바로 `DestroyWindow` 를 수행하는 경로라 `OnProcessExit` **보다 먼저** `WM_DESTROY` 가 오고, 거기서 hwnd 필드를 Zero 로 내린다 (G5).
 
 자동 spawn 안 함 — Windows token 모델의 admin→일반 down-grade 한계를 사용자 수동 재실행으로 자연 회피. 사용자가 일반 권한 재실행 시 `config.AdminElevation=true` → [`AdminElevation.TryRelaunchAsAdmin`](../App/Bootstrap/AdminElevation.cs) 가 UAC 1회로 admin 자동 진입, `false` → 일반 권한 그대로. admin 환경 재실행은 토큰 상속 (KoEnVue 통제 외 — fix #2 §7.2 의 down-grade 한계 그대로 보존).
 
@@ -1222,7 +1226,9 @@ cross-thread 접근하는 `Program.cs` 의 hwnd 3종 (`_hwndMain` / `_hwndOverla
 
 step 1 의 `_stopping = true` 와 step 5 의 `DestroyWindow(_hwndMain)` 사이에는 **step 0 — 감지 스레드 합류** 가 끼어 race window 를 좁힌다 (PR-19). `Program.cs` 의 `_detectionThread` field (`StartDetectionThread` 가 로컬 변수 대신 field 에 보관) 를 `_detectionThread?.Join(500)` 으로 합류시켜, `_stopping=true` 신호 후 한 폴링 주기 (50ms) 안에 자발 종료하는 감지 스레드가 step 5 이전에 끝나도록 강제한다. 감지 스레드는 `IsBackground = true` 라 OS 가 프로세스 종료 시 강제 회수하지만, 그 사이 `DestroyWindow(_hwndMain)` 과 감지 스레드의 `PostMessageW(_hwndMain, WM_UPDATE_INDICATOR, ...)` 가 겹치면 `GetLastWin32Error = 1400 (ERROR_INVALID_WINDOW_HANDLE)` marshal race 가 발생할 수 있다. 500 ms 타임아웃은 stuck 스레드가 메인 종료를 영구 블록하지 않게 하는 상한 — IsBackground 안전망과 명시 합류의 절충.
 
-COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자동 수행하므로 `ProcessExit` 에서는 건드리지 않는다. `ProcessExit` 는 finalizer 스레드에서 돌기 때문에 여기서 `CoUninitialize` 를 불러도 메인 스레드 apartment 와 매칭되지 않는다.
+COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자동 수행하므로 `ProcessExit` 에서는 건드리지 않는다. ~~`ProcessExit` 는 finalizer 스레드에서 돌기 때문에 여기서 `CoUninitialize` 를 불러도 메인 스레드 apartment 와 매칭되지 않는다.~~ — **이 근거는 확인된 적 없는 전제였다.** 참이면 단계 5 의 `DestroyWindow` 3회가 전부 조용히 실패하므로 같은 함수 안에서 두 서술이 양립하지 않는다. 아래 **「종료 시퀀스의 스레드 친화성 — 미확인」** 절 참조 — 계측만 넣어 두었고, 실측 전까지 이 문단의 근거는 **미확인**이다 (bug-hunt 2026-08-02 G18).
+
+**단계 5 는 hwnd 필드의 유일한 리셋 지점이 아니다** — `Program.WndProcCore` 의 `WM_DESTROY` 도 파괴된 창을 판별해 해당 필드만 Zero 로 내린다(세 창이 같은 WndProc 을 공유한다). 트레이 「관리자 권한」 토글의 `PostMessageW(hwndMain, WM_CLOSE)` 처럼 창이 `OnProcessExit` 보다 **먼저** 죽는 정상 경로가 있기 때문이다. 이 단계에 도달했을 때 이미 Zero 면 `DestroyWindowLogged` 가 건너뛰므로 이중 파괴도 함께 막힌다 (bug-hunt 2026-08-02 G5).
 
 `Logger.Shutdown`은 반드시 마지막에 호출하여 이전 단계의 로그가 모두 기록되도록 보장한다. 타이머 해제와 윈도우 파괴는 리소스 해제(5단계) 이후에 수행하여 타이머 콜백이 해제된 리소스를 참조하는 것을 방지한다.
 
@@ -1334,9 +1340,11 @@ Enabled in [KoEnVue.csproj](../KoEnVue.csproj) — strips ICU from the NativeAOT
 
 **ARGB byte 순서 주의**: DWM 의 0xAARRGGBB (R 이 high byte) 와 `GetSysColor` 의 COLORREF 0x00BBGGRR (B 가 high byte) 는 R/B 순서가 반대다. 두 경로가 같은 `ColorHelper` 헬퍼를 공유하지 않고 각자 분리한다 — `ColorHelper.ColorRefToRgb` 는 COLORREF 전용이라 ARGB 에 그대로 쓰면 색이 뒤집힌다.
 
-**메시지 시그널** (모두 같은 `HandleSettingChange` 핸들러로 라우팅 — `Settings.ClearProfileCache` → `ThemePresets.Apply`(theme=system 일 때) → `Overlay.HandleConfigChanged` → `RefreshVisibleIndicator`(→ `Animation.TriggerShow`) → `Tray.UpdateState` 를 순서대로 트리거):
+**메시지 시그널** (모두 같은 `HandleSettingChange` 핸들러로 라우팅 — `ThemePresets.Apply`(theme=system 일 때) → `Settings.ClearProfileCache` → `Overlay.HandleConfigChanged` + `ApplyCursorConfigChange`(둘 다 theme=system 일 때) → `RefreshVisibleIndicator`(→ `Animation.TriggerShow`) → `Tray.UpdateState` 를 순서대로 트리거):
 
 > **트레이 아이콘도 같이 갱신해야 한다** — `TrayIcon.CreateIcon` 이 배경/도형에 쓰는 색은 `ThemePresets.Apply` 가 재계산하는 Bg/Fg 6쌍과 같은 값이고, 셸은 `NIM_MODIFY` 를 받기 전까지 이전 HICON 을 계속 들고 있다. 마지막 `Tray.UpdateState` 가 빠지면 배지·헤일로만 새 색으로 바뀌고 **트레이 아이콘만 옛 색으로 남아** 다음 IME 전환까지 유지된다(v1.0.0.0 에서 수정). `HandleConfigChanged` 의 동일 갱신과 대칭을 맞춰야 하는 자리다.
+
+> **커서 헤일로도 같이 갱신해야 한다** — `CursorOverlay.BuildStyle` 이 동심원 색을 같은 `HangulBg`/`EnglishBg`/`NonKoreanBg` 에서 뽑는데, `CursorOverlay` 는 **자체 `_config` 스냅샷**을 들고 있고 갱신 진입점이 `ApplyCursorConfigChange` 하나뿐이다. 이 경로에서 부르지 않으면 인스턴스가 바뀌지 않아 **영구히** 옛 테마 색으로 그린다(자가치유 없음) — 배지와 트레이만 새 색이 되고 헤일로만 남는 상태가 다음 config 리로드나 트레이 토글까지 지속됐다 (bug-hunt 2026-08-02 G9). 위 트레이 항목과 **같은 부류의 누락**이라 한 자리에 둔다.
 
 - `WM_SETTINGCHANGE` (0x001A) — 시스템 색 / 시각 설정 전반의 광역 브로드캐스트
 - `WM_THEMECHANGED` (0x031A) — 비주얼 스타일 / 다크 모드 토글 시 별도 브로드캐스트 (PR-01 에서 추가)

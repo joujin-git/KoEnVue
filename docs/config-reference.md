@@ -132,9 +132,9 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — **99
 |---|---|---|---|---|
 | `log_level` | enum | `"INFO"` | `DEBUG` / `INFO` / `WARNING` / `ERROR` | 로그 레벨. DEBUG 는 상세 (시작 메뉴 ↔ 검색 창 전환 등 80ms 폴링 결과 포함) |
 | `language` | enum | `"auto"` | `auto` / `ko` / `en` | UI 언어 (트레이 메뉴 / 다이얼로그 / 툴팁). `auto` = Windows 시스템 언어 자동 감지 |
-| `log_to_file` | bool | `true` | — | `koenvue.log` 파일 쓰기. `false` = Trace 만 (디버거 부착 시 가시) |
+| `log_to_file` | bool | `true` | — | `koenvue.log` 파일 쓰기. `false` = Trace 만 (디버거 부착 시 가시). 꺼져 있는 동안의 로그는 **그 자리에서 버린다** — 다시 켜도 그 사이의 줄은 나오지 않는다 (v1.0.0.0 이전에는 메모리에 최대 1만 줄을 보류했다가 되켤 때 한꺼번에 쏟아냈다, [bug-hunt 2026-08-02 G1](improvement-plan/AUDIT-2026-08-02-bug-hunt-round2.md)). 로그 경로를 쓸 수 없어 **초기화에 실패한 경우도 동일**하게 드롭 |
 | `log_file_path` | string | `""` | — | 사용자 지정 로그 경로. 빈 문자열 = 기본 (`exe폴더\koenvue.log` 또는 `%LOCALAPPDATA%\KoEnVue\koenvue.log`). [PortablePath.SanitizeLogPath](../App/Config/PortablePath.cs) 가 허용 루트 외 값은 거절 |
-| `log_max_size_mb` | int | `1` | 1 ~ 100 | 로그 파일 최대 크기 (MB). 도달 시 `koenvue.log.1` 로 단일 회전 |
+| `log_max_size_mb` | int | `1` | 1 ~ 100 | 로그 파일 최대 크기 (MB). 도달 시 `koenvue.log.old` 로 단일 회전 (이전 `.old` 는 덮어쓴다 — 보관본은 1개) |
 
 ## 업데이트 (Update)
 
