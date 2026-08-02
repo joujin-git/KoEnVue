@@ -45,7 +45,9 @@
 |---|---|
 | N1 · N14 | ✅ **수정 완료** (`0b9d79d`) — `_lastMtime` 을 폴링 기준과 동기화 기준으로 분리 |
 | N4 · N11 · N15 · N16 | ✅ **수정 완료** — 이번 세션 수정분의 결함 4건 (아래) |
-| 그 외 41건 | ◻ 미착수 (대부분 선재) |
+| 그 외 **44건** | ◻ 미착수 (대부분 선재) → **§5 에서 20그룹으로 병합** |
+
+> **2026-08-02 정정**: 이 표는 미착수분을 「41건」 으로 적었으나 산술이 맞지 않는다 — 확정 50건에서 수정 완료 6건을 빼면 **44건**이다. 「9건 수정 / 41건 문서화」 라고 적힌 세션 요약도 같은 오류다(실제 수정은 6건). 아래 §5 병합은 44건 기준이다.
 
 **N4** — UI 경로(`ToggleStartupRegistration` · `ReregisterIfAdminChanged`)가 `Monitor.TryEnter(200ms)` 로 상한을 둔다. 겹치면 조작을 무시하고 `I18n.StartupTaskBusy` 로 안내 — 조용히 넘어가면 "눌렀는데 아무 일도 안 일어난다" 가 된다.
 **N11** — `Initialize` 가 새 `StreamWriter` 대입 전에 기존 것을 Dispose. 락을 쥔 상태라 좀비가 쓰는 중이 아니다(그게 락 획득이 뜻하는 바).
@@ -65,7 +67,85 @@
 
 ---
 
-## 5. 확정 50건 상세
+## 5. 병합 결과 — 미착수 44건 → 20그룹 (2026-08-02)
+
+§6 의 원본 44건을 근본 원인 단위로 병합했다. **병합 판정은 전부 코드를 직접 열어 확인했다** — §4 규칙대로, 그리고 "이미 고쳤으니 중복일 것" 이라는 추정이 이 프로젝트에서 두 번 틀렸기 때문이다.
+
+### 5.1 순수 중복 — 이미 닫힘 (7건, 착수 불필요)
+
+코드 확인으로 **닫혔음이 증명된** 것만 여기 둔다. 표의 "확인" 열이 근거다.
+
+| 원본 | 동일 결함 | 확인 |
+|---|---|---|
+| N22 | N1 · N14 (`0b9d79d`) | `JsonSettingsManager.cs:288` 병합 가드가 `_syncedMtime` 을 본다. `CheckReload`(:443-446)는 `_lastMtime` 만 전진 — 두 의미가 실제로 분리됨 |
+| N30 | N11 (`19f4ba5`) | `Logger.cs:138-139` 가 새 writer 대입 **전에** `_fileWriter?.Dispose()` 수행 |
+| N21 · N26 · N32 · N38 · N46 | N16 (`19f4ba5`) | `Tray.cs:310`(ScaleInputDialog 후) · `:689`(CleanupDialog 후) 둘 다 `config = currentConfig()` 재조회 |
+
+### 5.2 미해결 — 37건 / 20그룹
+
+**⚠ G6 은 새로 확인된 잔여 결함이다.** N28 · N31 · N47 을 "N15 수정으로 닫혔다" 로 처리하려다 코드를 열어 보니 절반만 닫혀 있었다. 병합 작업이 실제로 잡아낸 것이라 우선순위 최상단에 둔다.
+
+| 그룹 | 제목 | 원본 | 건수 | 영향 |
+|---|---|---|---|---|
+| **G6** | 저장 병합 후 **전이 적용자**가 재실행되지 않음 | N28 · N31 · N47 | 3 | 🔴 설정 유실·불일치 |
+| **G1** | `log_to_file=false` 면 로그가 소비자 없는 버퍼에 무한 적재 | N3 · N9 · N20 · N36 · N50 | 5 | 🔴 메모리 상주 + 핫패스 비용 |
+| **G4** | `_indicatorVisible` 이 화면과 어긋난 채 `true` 로 박제 | N7 · N17 · N25 · N37 | 4 | 🟠 불필요 IPC + 재표시 불가 |
+| **G5** | `WM_CLOSE` 경로가 핸들 필드 리셋을 우회 | N10 · N40 · N43 | 3 | 🟠 죽은/재활용 HWND 에 post |
+| **G2** | `_drainThread` 가 non-volatile + 락 밖 변경 | N2 · N24 · N35 | 3 | 🟡 로그 유실 |
+| **G7** | 트레이 최초 등록만 무효 HICON 방어 누락 | N13 · N44 | 2 | 🟠 빈 트레이 아이콘 고착 |
+| **G8** | `Tray.UpdateState` 가 블로킹 IPC 중 재진입 | N8 · N42 | 2 | 🟠 살아있는 HICON 파괴 |
+| **G9** | 테마 변경이 커서 헤일로에만 전달 안 됨 | N33 · N49 | 2 | 🟠 색 불일치 영구 |
+| **G10** | 비가시 `_hwndMain` 을 포커스 복원 대상으로 사용 | N29 · N41 | 2 | 🟠 배지 영영 숨김 |
+| **G3** | 크래시 핸들러의 `StopDrainThread` 가 임의 스레드 재진입 | N23 | 1 | 🟠 크래시 로그 유실 |
+| **G11** | `Save` 의 `TryLoad` 실패 분기가 조용히 병합 전 값 반환 | N19 | 1 | 🔴 사용자 편집 되돌림 |
+| **G12** | `WaitForExit` 반환값 무시 → 미등록 오판 + 핸들 누수 | N12 | 1 | 🟠 중복 등록 |
+| **G13** | 필터 분기가 FG 캐시를 반만 갱신 | N5 | 1 | 🟡 프로필 오적용 |
+| **G14** | `WindowMoving` 래치가 config 교체를 인지 못함 | N18 | 1 | 🟠 배지 영구 숨김 |
+| **G15** | DPI 변경 후 후속 Render 없이 빈 DIB 블리트 | N6 | 1 | 🟠 배지 소멸 |
+| **G16** | `EnableWindow` 가 별도 top-level 배지를 막지 못함 | N39 | 1 | 🟠 모달 뒤 설정 변경 |
+| **G17** | 리로드 실패 MessageBox 안에서 `HandleConfigChanged` 재진입 | N34 | 1 | 🟠 안내 무한 누적 |
+| **G18** | `OnProcessExit` 의 스레드 친화성 전제가 자기모순 | N45 | 1 | 🟡 종료 정리 미수행 |
+| **G19** | `user_hidden` true→false 핫리로드만 비대칭 | N48 | 1 | 🟠 배지 복원 안 됨 |
+| **G20** | `CleanupDialog` 선택 항목이 stale 스냅샷 기준 | N27 잔여 | 1 | 🟠 엉뚱한 위치 삭제 |
+
+### 5.3 그룹 상세
+
+**G6 — 저장 병합 후 전이 적용자가 재실행되지 않음** (N28 · N31 · N47)
+`Program.cs:1092-1104` 의 `SaveAndSync` 는 병합 발생 시 `ClearProfileCache` · `I18n.Load` · `UpdateDetectionMethod` · `Overlay.HandleConfigChanged` **4가지만** 다시 세운다. 그런데 `HandleMenuCommand` 람다(`:1156-1197`)는 그 앞에서 `ApplyCursorConfigChange()`(:1177) · `ApplyUserHiddenTransition`(:1182) · `ShowIndicatorAtForeground`/`UpdateColor`(:1188/1191) · `ApplyTrayEnabledTransition`(:1194) 를 **병합 전 값으로** 실행하고, `SaveAndSync` 는 마지막 문장(:1196)이다. `Logger.SetLevel`/`Initialize` 는 양쪽 어디에도 없다. 헬퍼의 doc comment(:1088-1089)가 "커서 lifecycle·표시 전이는 호출자마다 맥락이 달라 여기서 하지 않는다(각 호출자가 자기 전이 판정으로 이미 수행)" 라고 적었지만, **그 판정 자체가 병합 전 값 위에서 끝난 뒤**라 전제가 성립하지 않는다. `Save` 의 mtime self-bump 로 핫리로드도 차단돼 자기치유가 없다.
+*재현*: `config.json` 에서 `cursor_indicator_enabled: false` 로 편집 → 5초 폴링 전에 트레이 메뉴에서 투명도 변경 → `_config` 와 디스크는 `false`, 그러나 커서 헤일로는 켜진 채 남는다.
+*방향*: 전이 적용자를 병합 후 재실행 가능한 형태로 분리하거나, 람다에서 `Save` 를 **먼저** 호출해 적용자가 병합 결과 위에서 돌게 한다(형제 경로 `HandleTrayToggle` 은 이미 Save 가 먼저다 — 순서 불일치 자체가 결함의 증거).
+
+**G1 — 파일 로깅 OFF 가 "드롭" 이 아니라 "무한 보류"** (N3 · N9 · N20 · N36 · N50)
+`Logger.cs:228` 의 `if (_drainThread is null)` 이 **pre-init 과 로깅 비활성을 구분하지 못한다.** `_drainThread` 가 영구 null 이 되는 경로가 셋: `Initialize(enabled:false)` 조기 반환(:103), writer 락 타임아웃(:113-118), `StreamWriter` 생성 실패(:144-151). 이후 모든 스레드의 모든 로그가 `_preInitBuffer` 로 가는데 소비자는 `Initialize` 성공 끝의 `FlushPreInitBuffer` 뿐이다. 감지 루프가 80ms 주기라 `log_level=debug` 조합에서 수십 초 만에 상한(10,000)에 닿고, 이후 호출마다 축출 루프를 돈다.
+*방향*: "파일 로깅 비활성" 을 별도 상태로 두고 그 경우 큐에 넣지 않고 버린다.
+
+**G4 — `_indicatorVisible` 거짓 true** (N7 · N17 · N25 · N37)
+`ShowIndicatorAtForeground`(`Program.cs:599`)가 `_indicatorVisible = true` 를 **먼저** 세우고 `Animation.TriggerShow` 를 부르는데, NonKorean + `NonKoreanImeMode.Hide`(기본값) 가드(`Animation.cs:86-89`)가 `TriggerHide(forceHidden:true)` 로 빠지고, `OverlayAnimator.TriggerHide` 첫 줄(`:296`)이 `_phase == Hidden` 이면 즉시 return 해 `_onHide()` → `onHidden` 훅이 발화하지 않는다. `_phase` 초기값이 `Hidden` 이라 **부팅 후 첫 NonKorean 알림에서 바로 성립**한다. `HandlePositionUpdated`(`:674`)도 같은 선-대입 패턴이다. 이 플래그는 감지 스레드가 읽는 유일한 가시성 계약이라, 거짓 true 는 매 틱 불필요한 `WM_HIDE_INDICATOR` 를 유발하고 `wasHidden` 재표시 판정을 무력화한다.
+*방향*: 플래그를 `onHidden`/`onShown` 훅에서만 갱신하도록 단일화하거나, `TriggerShow` 의 Hide 가드 경로가 훅을 반드시 발화시키게 한다.
+
+**G5 — `WM_CLOSE` 가 §N-42 invariant 를 우회** (N10 · N40 · N43)
+`WndProcCore` 에 `WM_CLOSE` case 가 없어 `DefWindowProcW` 가 `DestroyWindow(_hwndMain)` 을 수행하는데, 뒤따르는 `WM_DESTROY` 는 `PostQuitMessage(0)` 만 하고 핸들 필드를 Zero 로 내리지 않는다. §N-42 의 필드 리셋은 `OnProcessExit` 한 곳에만 있다. **트레이 「관리자 권한」 토글(`Tray.cs:359`)이 이 경로를 정상 동작으로 탄다** — 예외 경로가 아니다.
+*방향*: `WM_CLOSE` case 를 추가해 파괴 전에 세 핸들 필드를 Zero 로 내린다.
+
+**G2 — `_drainThread` 가시성** (N2 · N24 · N35)
+`Logger.cs:22` 는 여전히 `private static Thread? _drainThread;` — 같은 파일의 `_generation` 은 `Volatile.Read`/`Interlocked` 로 다루는데 이것만 누락이다. 라우팅 스위치로 모든 스레드가 읽고 메인이 `Initialize`/`StopDrainThread` 에서 **락 밖**으로 쓴다. `StopDrainThread`(:364-365)의 read-then-clear 도 비원자이며, G3 의 경로로 다른 스레드에서 진입 가능하다.
+
+**G20 — `CleanupDialog` 선택 항목 매핑** (N27 잔여)
+N16 수정으로 커밋 베이스는 `currentConfig()` 재조회(`Tray.cs:689`)로 닫혔으나, `displayItems`/`originalNames` 는 **다이얼로그 열기 전 스냅샷**에서 계산된 채 남는다. 코드 주석(:688)은 "사용자가 화면에서 고른 항목이라 그대로 쓴다" 로 의도적 선택임을 밝히지만, 그 사이 리로드가 `indicator_positions` 를 바꿨다면 선택이 더 이상 존재하지 않는 항목을 가리킬 수 있다. **의도적 결정이 옳은지 판단이 필요한 항목** — 오탐일 수도 있다.
+
+나머지 그룹(G3 · G7 ~ G19)은 각 원본 항목이 §6 에 그대로 있고 병합으로 달라진 것이 없으므로 여기서 반복하지 않는다.
+
+### 5.4 착수 순서 제안
+
+1. **G6 · G11** — 둘 다 저장 경로이고 사용자 편집 유실 계열. **같이 다뤄야 한다** — 이 자리는 한 세션에 네 번 고쳐진 곳이라 개별 수정이 또 서로의 구멍을 만들 위험이 가장 크다.
+2. **G1 · G2 · G3** — 전부 `Logger.cs` 의 `_drainThread` 를 건드린다. 파일 단위로 한 번에.
+3. **G5 · G10 · G16 · G17** — 창 lifecycle / 모달 계약. 서로 전제를 공유한다.
+4. **G4 · G14 · G19** — 배지 가시성 상태 기계. 셋 다 "숨겨졌는데 복원 경로가 없다" 는 같은 축이다.
+5. 나머지는 독립적이라 순서 무관.
+
+---
+
+## 6. 확정 50건 상세
 
 아래는 워크플로우가 반환한 원문을 정리한 것이다. 중복 제거 키가 `파일 + kind + desc 앞부분` 이라 **같은 결함이 다른 서술로 여러 번 잡혀 있을 수 있다** — 07-30 때 67건이 고유 14그룹이었던 것과 같은 성질이므로, 착수 시 먼저 병합할 것.
 
