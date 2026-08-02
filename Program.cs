@@ -97,6 +97,14 @@ internal static partial class Program
     // 다시 깨뜨리면 새로 한 번 더 안내한다.
     private static bool _configReloadFailed;
 
+    // HandleConfigChanged 재진입 가드 (메인 스레드 전용 — 락/volatile 불필요).
+    // 리로드 실패 안내는 MessageBoxW 라 Win32 자체 모달 루프가 _hwndMain 앞으로 post 된 메시지를
+    // 그대로 디스패치하고, 감지 스레드는 모달 여부와 무관하게 5초 폴링을 계속한다 — 사용자가 그
+    // 사이 파일을 고쳐 저장하면 안내 박스 **안에서** 리로드가 재진입한다 (확정 #34).
+    // Pending 은 그 재진입을 버리지 않기 위한 표식이다: 바깥 프레임이 끝날 때 한 번 더 처리한다.
+    private static bool _configChangeInProgress;
+    private static bool _configChangePending;
+
     // UpdateChecker 백그라운드 스레드 → 메인 스레드 페이로드 전달.
     // PostMessage 의 wParam/lParam 으로 객체를 직접 못 보내므로 volatile 참조로 게시한다.
     private static volatile UpdateInfo? _pendingUpdate;
@@ -316,6 +324,15 @@ internal static partial class Program
             return;
         }
 
+        // 9-1. 모달 다이얼로그가 열려 있는 동안 배지도 함께 비활성화한다. 배지는 소유자 없는 별도
+        //      최상위 창이라 ModalDialogLoop 의 EnableWindow(owner, false) 대상이 아니었고, 그래서
+        //      다이얼로그 뒤에서 드래그가 됐다 — 드래그 종료가 Settings.Save 까지 수행하므로 열린
+        //      다이얼로그 뒤에서 설정이 갈아치워지고, 「확인」 이 그것을 되돌렸다 (확정 #39).
+        //      호출 시점 조회라 파괴 후에도 안전하다. 커서 헤일로는 WS_EX_TRANSPARENT 로 입력을
+        //      아예 받지 않으므로 대상이 아니다.
+        ModalDialogLoop.ExtraModalWindows =
+            () => _hwndOverlay != IntPtr.Zero ? [_hwndOverlay] : [];
+
         // 9a. 렌더링 + 애니메이션 초기화
         Logger.Debug("Initializing overlay rendering");
         Overlay.Initialize(_hwndOverlay, _config);
@@ -507,8 +524,29 @@ internal static partial class Program
                 return IntPtr.Zero;
 
             case Win32Constants.WM_DESTROY:
+                // **파괴 직후 해당 핸들 필드를 즉시 비운다.** AUDIT-2026-07-30 §N-42 가 세운 이
+                // invariant 의 구현은 OnProcessExit 한 곳에만 있었는데, 창이 그보다 **먼저** 죽는
+                // 경로가 있다 — WndProcCore 에 WM_CLOSE case 가 없어 DefWindowProcW 가 곧바로
+                // DestroyWindow 를 수행하고, 뒤따르는 여기서는 PostQuitMessage 만 했다. 그 사이
+                // (메시지 큐가 WM_QUIT 까지 배수되고 MainImpl 이 반환할 때까지, 감지 루프의 sleep
+                // 한 틱 이상) 감지 스레드는 `!= IntPtr.Zero` 가드를 통과해 죽은 HWND 에 계속
+                // PostMessageW 를 보낸다 — 커널이 그 값을 재발급하면 무관한 창에 WM_APP 범위
+                // 메시지가 배달된다(§L 과 같은 재활용 문제).
+                //
+                // 예외 경로가 아니다 — 트레이 「관리자 권한」 토글이 PostMessageW(hwndMain,
+                // WM_CLOSE) 로 이 경로를 **정상 동작으로** 탄다 (Tray.HandleMenuCommand).
+                // 세 창이 같은 WndProc 을 공유하므로(Program.Bootstrap.RegisterWindowClasses)
+                // 어느 창이 죽었는지 판별해 그 필드만 내린다
+                // (bug-hunt 2026-08-02 확정 #10·#40·#43).
                 if (hwnd == _hwndMain)
+                {
+                    _hwndMain = IntPtr.Zero;
                     User32.PostQuitMessage(0);
+                }
+                else if (hwnd == _hwndOverlay)
+                    _hwndOverlay = IntPtr.Zero;
+                else if (hwnd == _hwndCursorOverlay)
+                    _hwndCursorOverlay = IntPtr.Zero;
                 return IntPtr.Zero;
 
             // === 오버레이 드래그 / 좌클릭 일시 숨김 ===
@@ -880,7 +918,49 @@ internal static partial class Program
         return (clampedX, clampedY);
     }
 
+    /// <summary>
+    /// config.json 핫리로드 진입점. <b>재진입 가드를 포함한다.</b>
+    ///
+    /// <para>
+    /// 리로드가 실패하면 안내 <c>MessageBoxW</c> 를 띄우는데, 그것은 Win32 자체 모달 루프라
+    /// <c>_hwndMain</c> 앞으로 post 된 메시지를 계속 디스패치한다. 감지 스레드는 모달 여부와 무관하게
+    /// <c>CheckConfigFileChange</c> 를 돌리므로(모달 게이트보다 **앞**에 있다), 사용자가 그 사이
+    /// 파일을 고쳐 저장하면 <b>안내 박스 안에서 이 함수가 재진입</b>한다. 그대로 처리하면 재진입한
+    /// 리로드가 성공하면서 <see cref="_configReloadFailed"/> 래치를 풀어 "연속 실패당 1회" 설계(§G)가
+    /// 깨지고 안내 박스가 무한히 쌓인다. 중첩 펌프 안에서 <c>Logger.Initialize</c> 가 drain 스레드
+    /// Join(최대 3s)으로 블록하는 문제도 함께 온다 (bug-hunt 2026-08-02 확정 #34).
+    /// </para>
+    ///
+    /// <para>
+    /// 재진입을 <b>버리지는 않는다</b> — 표시만 남기고 바깥 프레임이 끝날 때 다시 처리한다.
+    /// 조용히 무시하면 "파일을 고쳤는데 반영이 안 된다" 가 된다.
+    /// </para>
+    /// </summary>
     private static void HandleConfigChanged()
+    {
+        if (_configChangeInProgress)
+        {
+            _configChangePending = true;
+            return;
+        }
+
+        _configChangeInProgress = true;
+        try
+        {
+            do
+            {
+                _configChangePending = false;
+                HandleConfigChangedCore();
+            }
+            while (_configChangePending);
+        }
+        finally
+        {
+            _configChangeInProgress = false;
+        }
+    }
+
+    private static void HandleConfigChangedCore()
     {
         AppConfig prev = _config;
 

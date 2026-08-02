@@ -266,6 +266,11 @@ internal static partial class Program
         //    핸들을 계속 들고 있어, Join 이 타임아웃한 감지 스레드(§I)나 늦게 도착한 콜백이
         //    PostMessageW/SetWindowPos 를 죽은 hwnd 에 계속 보냈다. 세 필드 모두 volatile 이라
         //    다른 스레드가 즉시 Zero 를 관측하고 자기 가드(`!= IntPtr.Zero`)에 걸린다.
+        //
+        //    **여기가 유일한 리셋 지점은 아니다** — WM_DESTROY 핸들러(Program.WndProcCore)도 같은
+        //    리셋을 한다. 창이 이 지점보다 **먼저** 죽는 경로(트레이 「관리자 권한」 토글이 보내는
+        //    WM_CLOSE)가 있고, 그때는 아래 가드가 이미 Zero 를 보고 건너뛴다 — 이중 파괴도 함께
+        //    막힌다 (bug-hunt 2026-08-02 확정 #10·#40·#43).
         if (_hwndOverlay != IntPtr.Zero)
         {
             User32.DestroyWindow(_hwndOverlay);

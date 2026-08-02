@@ -81,7 +81,7 @@
 | N30 | N11 (`19f4ba5`) | `Logger.cs:138-139` 가 새 writer 대입 **전에** `_fileWriter?.Dispose()` 수행 |
 | N21 · N26 · N32 · N38 · N46 | N16 (`19f4ba5`) | `Tray.cs:310`(ScaleInputDialog 후) · `:689`(CleanupDialog 후) 둘 다 `config = currentConfig()` 재조회 |
 
-### 5.2 그룹 목록 — 20그룹 (**5그룹 13건 해결** · 15그룹 24건 미해결)
+### 5.2 그룹 목록 — 20그룹 (**9그룹 20건 해결** · 11그룹 17건 미해결)
 
 **⚠ G6 은 새로 확인된 잔여 결함이다.** N28 · N31 · N47 을 "N15 수정으로 닫혔다" 로 처리하려다 코드를 열어 보니 절반만 닫혀 있었다. 병합 작업이 실제로 잡아낸 것이라 우선순위 최상단에 뒀고, **G11 과 함께 2026-08-02 에 수정 완료**했다(§5.5).
 
@@ -90,20 +90,20 @@
 | ~~**G6**~~ ✅ | 저장 병합 후 **전이 적용자**가 재실행되지 않음 | N28 · N31 · N47 | 3 | 🔴 설정 유실·불일치 |
 | ~~**G1**~~ ✅ | `log_to_file=false` 면 로그가 소비자 없는 버퍼에 무한 적재 | N3 · N9 · N20 · N36 · N50 | 5 | 🔴 메모리 상주 + 핫패스 비용 |
 | **G4** | `_indicatorVisible` 이 화면과 어긋난 채 `true` 로 박제 | N7 · N17 · N25 · N37 | 4 | 🟠 불필요 IPC + 재표시 불가 |
-| **G5** | `WM_CLOSE` 경로가 핸들 필드 리셋을 우회 | N10 · N40 · N43 | 3 | 🟠 죽은/재활용 HWND 에 post |
+| ~~**G5**~~ ✅ | `WM_CLOSE` 경로가 핸들 필드 리셋을 우회 | N10 · N40 · N43 | 3 | 🟠 죽은/재활용 HWND 에 post |
 | ~~**G2**~~ ✅ | `_drainThread` 가 non-volatile + 락 밖 변경 | N2 · N24 · N35 | 3 | 🟡 로그 유실 |
 | **G7** | 트레이 최초 등록만 무효 HICON 방어 누락 | N13 · N44 | 2 | 🟠 빈 트레이 아이콘 고착 |
 | **G8** | `Tray.UpdateState` 가 블로킹 IPC 중 재진입 | N8 · N42 | 2 | 🟠 살아있는 HICON 파괴 |
 | **G9** | 테마 변경이 커서 헤일로에만 전달 안 됨 | N33 · N49 | 2 | 🟠 색 불일치 영구 |
-| **G10** | 비가시 `_hwndMain` 을 포커스 복원 대상으로 사용 | N29 · N41 | 2 | 🟠 배지 영영 숨김 |
+| ~~**G10**~~ ✅ | 비가시 `_hwndMain` 을 포커스 복원 대상으로 사용 | N29 · N41 | 2 | 🟠 배지 영영 숨김 |
 | ~~**G3**~~ ✅ | 크래시 핸들러의 `StopDrainThread` 가 임의 스레드 재진입 | N23 | 1 | 🟠 크래시 로그 유실 |
 | ~~**G11**~~ ✅ | `Save` 의 `TryLoad` 실패 분기가 조용히 병합 전 값 반환 | N19 | 1 | 🔴 사용자 편집 되돌림 |
 | **G12** | `WaitForExit` 반환값 무시 → 미등록 오판 + 핸들 누수 | N12 | 1 | 🟠 중복 등록 |
 | **G13** | 필터 분기가 FG 캐시를 반만 갱신 | N5 | 1 | 🟡 프로필 오적용 |
 | **G14** | `WindowMoving` 래치가 config 교체를 인지 못함 | N18 | 1 | 🟠 배지 영구 숨김 |
 | **G15** | DPI 변경 후 후속 Render 없이 빈 DIB 블리트 | N6 | 1 | 🟠 배지 소멸 |
-| **G16** | `EnableWindow` 가 별도 top-level 배지를 막지 못함 | N39 | 1 | 🟠 모달 뒤 설정 변경 |
-| **G17** | 리로드 실패 MessageBox 안에서 `HandleConfigChanged` 재진입 | N34 | 1 | 🟠 안내 무한 누적 |
+| ~~**G16**~~ ✅ | `EnableWindow` 가 별도 top-level 배지를 막지 못함 | N39 | 1 | 🟠 모달 뒤 설정 변경 |
+| ~~**G17**~~ ✅ | 리로드 실패 MessageBox 안에서 `HandleConfigChanged` 재진입 | N34 | 1 | 🟠 안내 무한 누적 |
 | **G18** | `OnProcessExit` 의 스레드 친화성 전제가 자기모순 | N45 | 1 | 🟡 종료 정리 미수행 |
 | **G19** | `user_hidden` true→false 핫리로드만 비대칭 | N48 | 1 | 🟠 배지 복원 안 됨 |
 | **G20** | `CleanupDialog` 선택 항목이 stale 스냅샷 기준 | N27 잔여 | 1 | 🟠 엉뚱한 위치 삭제 |
@@ -123,7 +123,7 @@
 `ShowIndicatorAtForeground`(`Program.cs:599`)가 `_indicatorVisible = true` 를 **먼저** 세우고 `Animation.TriggerShow` 를 부르는데, NonKorean + `NonKoreanImeMode.Hide`(기본값) 가드(`Animation.cs:86-89`)가 `TriggerHide(forceHidden:true)` 로 빠지고, `OverlayAnimator.TriggerHide` 첫 줄(`:296`)이 `_phase == Hidden` 이면 즉시 return 해 `_onHide()` → `onHidden` 훅이 발화하지 않는다. `_phase` 초기값이 `Hidden` 이라 **부팅 후 첫 NonKorean 알림에서 바로 성립**한다. `HandlePositionUpdated`(`:674`)도 같은 선-대입 패턴이다. 이 플래그는 감지 스레드가 읽는 유일한 가시성 계약이라, 거짓 true 는 매 틱 불필요한 `WM_HIDE_INDICATOR` 를 유발하고 `wasHidden` 재표시 판정을 무력화한다.
 *방향*: 플래그를 `onHidden`/`onShown` 훅에서만 갱신하도록 단일화하거나, `TriggerShow` 의 Hide 가드 경로가 훅을 반드시 발화시키게 한다.
 
-**G5 — `WM_CLOSE` 가 §N-42 invariant 를 우회** (N10 · N40 · N43)
+**G5 ✅ — `WM_CLOSE` 가 §N-42 invariant 를 우회** (N10 · N40 · N43)
 `WndProcCore` 에 `WM_CLOSE` case 가 없어 `DefWindowProcW` 가 `DestroyWindow(_hwndMain)` 을 수행하는데, 뒤따르는 `WM_DESTROY` 는 `PostQuitMessage(0)` 만 하고 핸들 필드를 Zero 로 내리지 않는다. §N-42 의 필드 리셋은 `OnProcessExit` 한 곳에만 있다. **트레이 「관리자 권한」 토글(`Tray.cs:359`)이 이 경로를 정상 동작으로 탄다** — 예외 경로가 아니다.
 *방향*: `WM_CLOSE` case 를 추가해 파괴 전에 세 핸들 필드를 Zero 로 내린다.
 
@@ -139,8 +139,8 @@ N16 수정으로 커밋 베이스는 `currentConfig()` 재조회(`Tray.cs:689`)�
 
 1. ~~**G6 · G11**~~ — ✅ **2026-08-02 수정 완료** (§5.5). 둘 다 저장 경로이고 사용자 편집 유실 계열이라 같이 다뤘다 — 이 자리는 한 세션에 네 번 고쳐진 곳이라 개별 수정이 또 서로의 구멍을 만들 위험이 가장 컸다.
 2. ~~**G1 · G2 · G3**~~ — ✅ **2026-08-02 수정 완료** (§5.5). 셋 다 `_drainThread` 필드 하나에 역할이 둘(Join 대상 + 라우팅 스위치) 얹혀 있던 데서 나왔다.
-3. **G5 · G10 · G16 · G17** — 창 lifecycle / 모달 계약. 서로 전제를 공유한다. ← **다음 후보**
-4. **G4 · G14 · G19** — 배지 가시성 상태 기계. 셋 다 "숨겨졌는데 복원 경로가 없다" 는 같은 축이다.
+3. ~~**G5 · G10 · G16 · G17**~~ — ✅ **2026-08-02 수정 완료** (§5.5). 창 lifecycle / 모달 계약. 넷 다 "정상 동작으로 타는 경로에 가드가 없다" 는 성질이었다.
+4. **G4 · G14 · G19** — 배지 가시성 상태 기계. 셋 다 "숨겨졌는데 복원 경로가 없다" 는 같은 축이다. ← **다음 후보**
 5. 나머지는 독립적이라 순서 무관.
 
 ### 5.5 수정 기록 (2026-08-02)
@@ -176,6 +176,24 @@ N16 수정으로 커밋 베이스는 `currentConfig()` 재조회(`Tray.cs:689`)�
 - 빌드 debug 경고 0 · AOT publish 성공.
 
 **남은 검증** — 실기 확인 미수행. `log_to_file` 을 껐다 켜며 작업 관리자의 메모리가 더 이상 차오르지 않는지, 다시 켰을 때 묵은 줄이 쏟아지지 않는지 보면 된다.
+
+#### 창 lifecycle / 모달 계약 — G5 · G10 · G16 · G17
+
+넷 다 성질이 같다 — **예외 상황이 아니라 정상 조작이 타는 경로에 가드가 없었다.**
+
+- **G5** (`Program.WndProcCore`) — `WM_DESTROY` 분기가 파괴된 창의 핸들 필드를 즉시 Zero 로 내린다. §N-42 의 리셋이 `OnProcessExit` 한 곳에만 있었는데, 트레이 「관리자 권한」 토글이 보내는 `WM_CLOSE` 가 그보다 **먼저** 창을 죽인다(`WndProcCore` 에 `WM_CLOSE` case 가 없어 `DefWindowProcW` 가 `DestroyWindow` 수행). 세 창이 같은 WndProc 을 공유하므로 어느 창이 죽었는지 판별해 그 필드만 내린다. `OnProcessExit` 의 `DestroyWindow` 는 이제 이미 Zero 인 것을 보고 건너뛰므로 이중 파괴도 함께 막힌다.
+- **G10** (`Core/Windowing/ModalDialogLoop`, `App/UI/Tray`) — 포커스 복원을 **가시 창에 한정**한다. `Run` 의 finally 와 `RejectReentry` 양쪽에 `IsWindowVisible` 가드. KoEnVue 의 소유자는 0×0 · 스타일 0 메시지 창이라, 여기로 포그라운드를 옮기면 감지 루프가 self-HWND 가드에 매 틱 걸려 아무것도 post 하지 않고 배지가 돌아오지 않았다. 더불어 `Tray.ShowMessage` 가 `RunExternal` 에 `IntPtr.Zero`(→ 센티넬)를 넘기도록 고쳤다 — `_hwndMain` 을 넘겨 센티넬 배제 조건을 통째로 우회하던 것이 #41 이다.
+- **G16** (`ModalDialogLoop.ExtraModalWindows`) — 모달 구간에 소유자와 함께 비활성화할 창을 App 이 공급한다(P6: Core 는 App 의 창을 모른다). 배지는 소유자 없는 별도 최상위 창이라 `EnableWindow(owner, false)` 대상이 아니었고, 그래서 다이얼로그 뒤에서 드래그가 됐다 — 드래그 종료가 `Settings.Save` 까지 수행하므로 열린 다이얼로그 뒤에서 설정이 갈아치워지고 「확인」 이 그것을 되돌렸다. 커서 헤일로는 `WS_EX_TRANSPARENT` 로 입력을 아예 받지 않아 대상이 아니다.
+- **G17** (`Program.HandleConfigChanged`) — 재진입 가드 + **보류 표식**. 리로드 실패 안내는 `MessageBoxW` 라 자체 모달 루프가 `WM_CONFIG_CHANGED` 를 그대로 디스패치하고, 감지 스레드는 모달과 무관하게 5초 폴링을 계속한다. 재진입한 리로드가 성공하면 `_configReloadFailed` 래치가 풀려 "연속 실패당 1회" 설계(§G)가 깨져 안내가 무한히 쌓였다. **재진입을 버리지는 않는다** — 표시만 남기고 바깥 프레임의 `do/while` 이 소비한다. 조용히 무시하면 "파일을 고쳤는데 반영이 안 된다" 가 되기 때문이다.
+
+**검증**
+- `WindowLifecycleTests` 신설 (218 → **222**) — G5 는 `[Theory]` 3케이스(세 창 각각), G17 은 보류 표식 1케이스. 실제 창 없이 검증한다: `WM_DESTROY` 분기는 `hwnd` 를 세 필드와 비교만 하므로 더미 핸들로 충분하고, 메인 창 분기의 `PostQuitMessage` 는 테스트 스레드 큐에 `WM_QUIT` 를 넣을 뿐이다(테스트는 메시지 루프를 돌리지 않는다).
+- **대조군 실측** — 필드 리셋과 보류 표식을 각각 되돌리자 4종 모두 실패: 세 핸들이 `0x1001`·`0x1002`·`0x1003` 그대로 남았고 보류 표식도 서지 않았다. G5 테스트는 **다른 두 필드가 지워지지 않는 것**도 함께 본다.
+- **G10·G16 은 단위 테스트가 불가능하다** — 실제 창과 메시지 루프가 필요하다. invariant grep 2줄로 고정: `RunExternal(_hwndMain` = 0, `IsWindowVisible(hwndOwner)` = 1.
+- G17 의 대조군은 **가드 전체가 아니라 보류 표식만** 되돌렸다. 가드를 통째로 빼면 `HandleConfigChangedCore` 가 실제로 실행돼 파일 I/O 와 안내 박스로 이어지기 때문이다 — 그래서 "재진입 시 Core 가 실행되지 않는다" 는 절반은 코드로만 담보된다.
+- 빌드 debug 경고 0 · AOT publish 성공.
+
+**남은 검증** — 실기 확인 미수행. ① 트레이 「관리자 권한」 토글 후 종료가 깔끔한지 ② 상세 설정을 닫은 뒤 배지가 정상 복귀하는지 ③ 다이얼로그가 열린 동안 배지 드래그가 막히는지 ④ 잘못된 `config.json` 안내 박스를 띄워 둔 채 파일을 고쳤을 때 박스가 하나만 뜨고 수정이 반영되는지.
 
 ---
 

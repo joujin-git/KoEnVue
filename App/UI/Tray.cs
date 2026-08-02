@@ -610,8 +610,16 @@ internal static partial class Tray
     /// 모아 호출처마다 누락되지 않도록 한다.
     /// </summary>
     private static void ShowMessage(string body)
-        => ModalDialogLoop.RunExternal(_hwndMain, () =>
+    {
+        // 표식은 반드시 **센티넬**이다 — IntPtr.Zero 를 넘기면 RunExternal 이 치환한다. 종전에는
+        // _hwndMain 을 넘겼는데, 그러면 RejectReentry 가 그것을 진짜 다이얼로그로 오인해
+        // **보이지 않는 0×0 메시지 창으로 포커스를 옮긴다** — 센티넬이 존재하는 이유(외부 모달은
+        // 실제 창이 없으니 포커스 복원 대상에서 뺀다)가 통째로 우회됐다. 안내 박스가 떠 있는 동안
+        // 사용자가 트레이 아이콘을 조작하면 그 경로를 탄다 (bug-hunt 2026-08-02 확정 #41).
+        // MessageBoxW 자체의 소유자는 그대로 _hwndMain 이다 — 그건 모달 소유자 지정이라 별개다.
+        ModalDialogLoop.RunExternal(IntPtr.Zero, () =>
             User32.MessageBoxW(_hwndMain, body, DefaultConfig.AppName, uType: Win32Constants.MB_OK));
+    }
 
     private static void ShowPositionError()
         => ShowMessage(I18n.TrayPositionUnavailable);

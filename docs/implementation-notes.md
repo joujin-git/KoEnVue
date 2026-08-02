@@ -1262,6 +1262,22 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 
 회귀 가드는 `LoggerReinitTests` 3종(꺼진 동안의 로그가 파일에 새지 않는가 · 꺼진 동안 버퍼가 자라지 않는가 · 초기화 실패 시에도 자라지 않는가). **G2·G3 는 스레드 타이밍 의존이라 결정적 단위 테스트를 만들 수 없다** — 크래시 핸들러를 drain 스레드 위에서 재현하려면 그 스레드가 락을 쥔 채 예외를 던지도록 만들어야 한다. 대신 [conventions.md](conventions.md) 의 invariant grep 이 라우팅 판정이 스레드 필드로 되돌아가는 회귀를 잡는다.
 
+### 창 lifecycle / 모달 계약 (bug-hunt 2026-08-02 G5·G10·G16·G17)
+
+네 결함의 공통 성질은 **예외 상황이 아니라 정상 조작이 타는 경로에 가드가 없었다**는 것이다.
+
+**보이지 않는 소유자에게 포커스를 주면 안 된다 (G10).** `_hwndMain` 은 `CreateWindowExW(0, MainClassName, …, 0, 0,0,0,0)` 로 만든 **0×0 · 스타일 0 · 비가시** 메시지 전용 창이다. `SetForegroundWindow` 는 그런 창에도 성공하는데(트레이 메뉴가 의존하는 Q135788 트릭과 같다), 그 결과 포그라운드가 자기 프로세스의 보이지 않는 창이 된다. 그러면 `DetectionService.ProcessDetectionTick` 의 self-HWND 가드(`hwndForeground == host.GetHwndMain() → return`)에 **매 틱** 걸려 아무것도 post 하지 않고, 모달 게이트가 이미 배지를 숨겨 둔 상태(`LastFiltered = true`)라 사용자가 다른 창을 직접 클릭할 때까지 배지가 돌아오지 않는다. 그래서 `ModalDialogLoop` 의 두 복원 지점(`Run` 의 finally, `RejectReentry`)에 `IsWindowVisible` 가드를 둔다 — 가시 소유자면 종전대로 복원한다(그쪽이 모달의 정석이고 Core 는 재사용 컴포넌트다).
+
+같은 뿌리의 두 번째 경로가 `Tray.ShowMessage` 였다. `ExternalModalSentinel` 은 "외부 모달(`MessageBoxW`)은 진짜 창이 없으니 포커스 복원 대상에서 뺀다" 는 계약을 위해 존재하는데, `RunExternal(_hwndMain, …)` 로 실제 핸들을 넘기면 그 배제 조건이 통째로 우회된다. 이제 `IntPtr.Zero` 를 넘겨 센티넬로 치환시킨다 — `MessageBoxW` **자체의 소유자**는 그대로 `_hwndMain` 이다(그건 모달 소유자 지정이라 별개다).
+
+**소유자 하나만 막는 것으로는 부족하다 (G16).** `EnableWindow(owner, false)` 는 소유자를 갖지 않는 별도 최상위 창에 미치지 않는다. 배지(`WS_EX_TOPMOST`, `hWndParent = NULL`)가 그런 창이라 다이얼로그가 떠 있는 동안에도 드래그되고, `WM_NCLBUTTONDOWN`/`HTCAPTION` 승격이 `DefWindowProc` 의 sizemove 루프를 다이얼로그 루프 안에 **3중 중첩**시킨다. 드래그 종료(`HandleOverlayDragEnd`)는 `Settings.Save` 까지 수행하므로 **열려 있는 다이얼로그 뒤에서 설정이 갈아치워지고**, 그 뒤 「확인」 이 커밋 베이스로 그것을 되돌린다. `ModalDialogLoop.ExtraModalWindows` 공급자로 App 이 배지를 넘기고, `Run` 이 진입 시 조회해 함께 비활성화한 뒤 finally 에서 같은 목록을 되살린다 — Core 는 App 의 창을 알 수 없으므로(P6) 공급자 형태여야 한다. 커서 헤일로는 `WS_EX_TRANSPARENT` 로 입력을 아예 받지 않아 대상이 아니다.
+
+**창은 `OnProcessExit` 보다 먼저 죽을 수 있다 (G5).** §N-42 는 "파괴 직후 핸들 필드를 즉시 Zero" 를 세웠지만 구현이 `OnProcessExit` 한 곳에만 있었다. `WndProcCore` 에 `WM_CLOSE` case 가 없어 `DefWindowProcW` 가 곧바로 `DestroyWindow(_hwndMain)` 을 수행하고, 뒤따르는 `WM_DESTROY` 는 `PostQuitMessage` 만 했다 — **트레이 「관리자 권한」 토글이 `PostMessageW(hwndMain, WM_CLOSE)` 로 이 경로를 정상 동작으로 탄다.** 메시지 큐가 `WM_QUIT` 까지 배수되고 `MainImpl` 이 반환할 때까지(감지 루프 sleep 한 틱 이상) 세 volatile 필드가 죽은 값을 들고 있어, 감지 스레드가 `!= IntPtr.Zero` 가드를 통과해 계속 post 한다. 커널이 그 HWND 값을 재발급하면 무관한 창에 `WM_APP` 범위 메시지가 배달된다(§L 과 같은 재활용 문제). 이제 `WM_DESTROY` 가 파괴된 창을 판별해 해당 필드만 내린다(세 창이 같은 WndProc 을 공유한다). `OnProcessExit` 의 `DestroyWindow` 는 이미 Zero 를 보고 건너뛰므로 이중 파괴도 함께 막힌다.
+
+**모달 안에서 핫리로드가 재진입한다 (G17).** 리로드 실패 안내는 `MessageBoxW` 라 Win32 자체 모달 루프가 `_hwndMain` 앞으로 post 된 메시지를 계속 디스패치하고, 감지 스레드의 `CheckConfigFileChange` 는 모달 게이트보다 **앞**에 있어 억제되지 않는다. 사용자가 박스를 띄워 둔 채 파일을 고쳐 저장하면 안내 박스 **안에서** `HandleConfigChanged` 가 재진입하고, 그것이 성공하면 `_configReloadFailed` 래치가 풀려 "연속 실패당 1회"(§G)가 깨진다. 가드는 두 필드다 — `_configChangeInProgress` 로 재진입을 막고, `_configChangePending` 으로 그 변경을 **보류**한 뒤 바깥 프레임의 `do/while` 이 소비한다. 조용히 거부하면 "파일을 고쳤는데 반영이 안 된다" 가 되므로 버리지 않는 쪽을 택했다.
+
+회귀 가드는 `WindowLifecycleTests`(G5 세 창 × 필드 리셋 + 다른 필드 보존, G17 보류 표식)와 invariant grep 2줄(`RunExternal(_hwndMain` = 0, `IsWindowVisible(hwndOwner)` = 1). **G10·G16 은 실제 창과 메시지 루프가 필요해 단위 테스트가 불가능하다.** G17 의 대조군도 가드 전체가 아니라 보류 표식만 되돌려 확인했다 — 가드를 통째로 빼면 파일 I/O 와 안내 박스가 실제로 실행되기 때문이다.
+
 ### `InvariantGlobalization`
 
 Enabled in [KoEnVue.csproj](../KoEnVue.csproj) — strips ICU from the NativeAOT publish. Means no `CultureInfo` usage except for `CultureInfo.InvariantCulture`. IME language detection uses `GetUserDefaultUILanguage` P/Invoke instead of `CultureInfo.CurrentUICulture`.
