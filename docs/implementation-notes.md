@@ -1244,6 +1244,24 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 
 `StopDrainThread` 는 Join 타임아웃 후 `Monitor.TryEnter(_writerLock, 1000ms)` 로 상한을 두고, **획득하지 못하면 Dispose 를 포기하고 참조만 끊는다.** 여기서 강제로 Dispose 하면 좀비의 다음 `WriteLine` 이 위 3번 경로를 그대로 재현하기 때문이다 — 남은 핸들은 `SafeHandle` 파이널라이저가 회수한다. 회귀 가드는 `LoggerReinitTests`(세대 단조성 + 재초기화 라운드트립이 옳은 파일에 기록되는지). Join 타임아웃 자체는 3초 이상 걸리는 파일 잠금이 필요해 단위 테스트로 만들 수 없으므로, 테스트는 부활을 **구조적으로 불가능하게 만든 세대의 단조성**을 고정하는 방식이다.
 
+### Logger 라우팅 상태 + lifecycle 락 (bug-hunt 2026-08-02 G1·G2·G3)
+
+위 세대 토큰 수정이 닫지 않은 축이 셋 더 있었다. 전부 `_drainThread` 필드 하나에 **역할이 두 개** 얹혀 있던 데서 나왔다 — Join 대상 참조이면서 동시에 로그 라우팅 스위치였다.
+
+**G1 — 파일 로깅 OFF 가 "드롭" 이 아니라 "무한 보류"였다.** `EnqueueToFile` 의 `_drainThread is null` 은 서로 다른 세 상황을 뭉친다: (a) 아직 `Initialize` 전, (b) 사용자가 `log_to_file` 을 껐다, (c) 초기화에 실패했다(writer 락 타임아웃 · `StreamWriter` 생성 실패). 버퍼링이 맞는 건 (a) 뿐인데 셋 다 `_preInitBuffer` 로 흘렀고, 그 버퍼를 비우는 곳은 `Initialize` 성공 끝의 `FlushPreInitBuffer` 하나다. 결과적으로 파일 로깅을 끄면 프로세스 수명 내내 최대 1만 개 문자열이 상주하고, 상한 도달 후에는 로그 호출마다 축출 루프가 도는 트레드밀이 됐다 — 감지 루프가 80ms 주기라 `log_level: debug` 조합에서 수십 초면 닿는다. 다시 켜는 순간에는 몇 시간 묵은 줄이 한꺼번에 쏟아져 파일 타임스탬프가 거꾸로 뛰었다.
+
+→ 라우팅을 `FileLogRoute { PreInit, Queue, Drop }` enum 으로 명시하고 `_drainThread` 에서 그 역할을 떼어냈다. (b)(c) 는 `Drop` 이라 큐에 넣지 않는다 — `Trace` 출력은 그대로 나가므로 디버거에서는 여전히 보인다.
+
+**G2 — 라우팅 필드가 non-volatile 이었다.** 모든 스레드가 로그 호출마다 읽고 메인이 락 밖에서 쓰는 필드인데, 같은 파일의 `_generation` 은 이미 `Interlocked`/`Volatile` 로 다루면서 이것만 평범한 참조였다. 새 `_route` 는 `volatile` 이고, `EnqueueToFile` 은 **한 번만 읽어 로컬에 담는다** — 판정과 동작이 서로 다른 상태를 보면 안 되기 때문이다. `_drainThread` 자체도 `Volatile.Write` / `Interlocked.Exchange` 로만 접근한다(후자는 `StopDrainThread` 의 read-then-clear 를 원자화해, 두 경로가 겹쳐도 Join 대상을 정확히 한 번만 집게 한다).
+
+**G3 — 크래시 핸들러가 임의 스레드에서 `Shutdown` 을 부른다.** `AppDomain.UnhandledException` 은 **예외를 던진 스레드 위에서** 실행되므로 감지 / LogDrain / UpdateChecker / StartupPathSync 어느 쪽이든 될 수 있다. 세 갈래 결함이 있었다.
+
+- **자기-Join** — 예외가 LogDrain 스레드에서 났으면 `thread == Thread.CurrentThread` 라 `Join(3000)` 이 3초를 통째로 버리고 반드시 실패한다. → 같으면 Join 을 건너뛰고 흔적만 남긴다.
+- **락 재진입** — 그 스레드가 `_writerLock` 을 쥔 채 죽었다면 `Monitor` 는 재진입 가능이라 `TryEnter` 가 즉시 성공하고, **방금 예외를 던진 `FlushQueueLocked` 를 그대로 다시 실행한다.** 같은 예외가 재발하면 잔여 flush 도 breadcrumb 도 남지 않는다 — "`_writerLock` 은 메인 Dispose 와 절대 안 겹친다" 는 보장이 동일 스레드 크래시 경로에서는 성립하지 않는다. → `Monitor.IsEntered` 로 감지해 flush 를 건너뛴다.
+- **`Initialize` 와의 경합** — 메인이 새 스레드를 대입한 직후 `Start` 하기 전에 크래시 핸들러가 끼어들면 세대가 먼저 올라가, 방금 뜬 스레드가 자기 세대 검사에 걸려 한 줄도 쓰지 못하고 끝난다. → `_lifecycleLock` 으로 `Initialize` 와 `Shutdown` 을 직렬화. `_writerLock` 과 역할이 다르며(이쪽은 필드 **전이**를 보호), 획득 순서는 항상 `_lifecycleLock` → `_writerLock` 이다. drain 스레드는 `_writerLock` 만 쓰므로 역순 경로가 없어 데드락이 성립하지 않는다. 크래시 핸들러가 무한정 막히지 않도록 양쪽 다 `TryEnter` + 1초 상한이다.
+
+회귀 가드는 `LoggerReinitTests` 3종(꺼진 동안의 로그가 파일에 새지 않는가 · 꺼진 동안 버퍼가 자라지 않는가 · 초기화 실패 시에도 자라지 않는가). **G2·G3 는 스레드 타이밍 의존이라 결정적 단위 테스트를 만들 수 없다** — 크래시 핸들러를 drain 스레드 위에서 재현하려면 그 스레드가 락을 쥔 채 예외를 던지도록 만들어야 한다. 대신 [conventions.md](conventions.md) 의 invariant grep 이 라우팅 판정이 스레드 필드로 되돌아가는 회귀를 잡는다.
+
 ### `InvariantGlobalization`
 
 Enabled in [KoEnVue.csproj](../KoEnVue.csproj) — strips ICU from the NativeAOT publish. Means no `CultureInfo` usage except for `CultureInfo.InvariantCulture`. IME language detection uses `GetUserDefaultUILanguage` P/Invoke instead of `CultureInfo.CurrentUICulture`.

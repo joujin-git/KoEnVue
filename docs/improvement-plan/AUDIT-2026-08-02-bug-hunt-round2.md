@@ -81,22 +81,22 @@
 | N30 | N11 (`19f4ba5`) | `Logger.cs:138-139` 가 새 writer 대입 **전에** `_fileWriter?.Dispose()` 수행 |
 | N21 · N26 · N32 · N38 · N46 | N16 (`19f4ba5`) | `Tray.cs:310`(ScaleInputDialog 후) · `:689`(CleanupDialog 후) 둘 다 `config = currentConfig()` 재조회 |
 
-### 5.2 그룹 목록 — 20그룹 (2건 해결 · 18그룹 33건 미해결)
+### 5.2 그룹 목록 — 20그룹 (**5그룹 13건 해결** · 15그룹 24건 미해결)
 
 **⚠ G6 은 새로 확인된 잔여 결함이다.** N28 · N31 · N47 을 "N15 수정으로 닫혔다" 로 처리하려다 코드를 열어 보니 절반만 닫혀 있었다. 병합 작업이 실제로 잡아낸 것이라 우선순위 최상단에 뒀고, **G11 과 함께 2026-08-02 에 수정 완료**했다(§5.5).
 
 | 그룹 | 제목 | 원본 | 건수 | 영향 |
 |---|---|---|---|---|
 | ~~**G6**~~ ✅ | 저장 병합 후 **전이 적용자**가 재실행되지 않음 | N28 · N31 · N47 | 3 | 🔴 설정 유실·불일치 |
-| **G1** | `log_to_file=false` 면 로그가 소비자 없는 버퍼에 무한 적재 | N3 · N9 · N20 · N36 · N50 | 5 | 🔴 메모리 상주 + 핫패스 비용 |
+| ~~**G1**~~ ✅ | `log_to_file=false` 면 로그가 소비자 없는 버퍼에 무한 적재 | N3 · N9 · N20 · N36 · N50 | 5 | 🔴 메모리 상주 + 핫패스 비용 |
 | **G4** | `_indicatorVisible` 이 화면과 어긋난 채 `true` 로 박제 | N7 · N17 · N25 · N37 | 4 | 🟠 불필요 IPC + 재표시 불가 |
 | **G5** | `WM_CLOSE` 경로가 핸들 필드 리셋을 우회 | N10 · N40 · N43 | 3 | 🟠 죽은/재활용 HWND 에 post |
-| **G2** | `_drainThread` 가 non-volatile + 락 밖 변경 | N2 · N24 · N35 | 3 | 🟡 로그 유실 |
+| ~~**G2**~~ ✅ | `_drainThread` 가 non-volatile + 락 밖 변경 | N2 · N24 · N35 | 3 | 🟡 로그 유실 |
 | **G7** | 트레이 최초 등록만 무효 HICON 방어 누락 | N13 · N44 | 2 | 🟠 빈 트레이 아이콘 고착 |
 | **G8** | `Tray.UpdateState` 가 블로킹 IPC 중 재진입 | N8 · N42 | 2 | 🟠 살아있는 HICON 파괴 |
 | **G9** | 테마 변경이 커서 헤일로에만 전달 안 됨 | N33 · N49 | 2 | 🟠 색 불일치 영구 |
 | **G10** | 비가시 `_hwndMain` 을 포커스 복원 대상으로 사용 | N29 · N41 | 2 | 🟠 배지 영영 숨김 |
-| **G3** | 크래시 핸들러의 `StopDrainThread` 가 임의 스레드 재진입 | N23 | 1 | 🟠 크래시 로그 유실 |
+| ~~**G3**~~ ✅ | 크래시 핸들러의 `StopDrainThread` 가 임의 스레드 재진입 | N23 | 1 | 🟠 크래시 로그 유실 |
 | ~~**G11**~~ ✅ | `Save` 의 `TryLoad` 실패 분기가 조용히 병합 전 값 반환 | N19 | 1 | 🔴 사용자 편집 되돌림 |
 | **G12** | `WaitForExit` 반환값 무시 → 미등록 오판 + 핸들 누수 | N12 | 1 | 🟠 중복 등록 |
 | **G13** | 필터 분기가 FG 캐시를 반만 갱신 | N5 | 1 | 🟡 프로필 오적용 |
@@ -115,7 +115,7 @@
 *재현*: `config.json` 에서 `cursor_indicator_enabled: false` 로 편집 → 5초 폴링 전에 트레이 메뉴에서 투명도 변경 → `_config` 와 디스크는 `false`, 그러나 커서 헤일로는 켜진 채 남는다.
 *방향*: 전이 적용자를 병합 후 재실행 가능한 형태로 분리하거나, 람다에서 `Save` 를 **먼저** 호출해 적용자가 병합 결과 위에서 돌게 한다(형제 경로 `HandleTrayToggle` 은 이미 Save 가 먼저다 — 순서 불일치 자체가 결함의 증거).
 
-**G1 — 파일 로깅 OFF 가 "드롭" 이 아니라 "무한 보류"** (N3 · N9 · N20 · N36 · N50)
+**G1 ✅ — 파일 로깅 OFF 가 "드롭" 이 아니라 "무한 보류"** (N3 · N9 · N20 · N36 · N50)
 `Logger.cs:228` 의 `if (_drainThread is null)` 이 **pre-init 과 로깅 비활성을 구분하지 못한다.** `_drainThread` 가 영구 null 이 되는 경로가 셋: `Initialize(enabled:false)` 조기 반환(:103), writer 락 타임아웃(:113-118), `StreamWriter` 생성 실패(:144-151). 이후 모든 스레드의 모든 로그가 `_preInitBuffer` 로 가는데 소비자는 `Initialize` 성공 끝의 `FlushPreInitBuffer` 뿐이다. 감지 루프가 80ms 주기라 `log_level=debug` 조합에서 수십 초 만에 상한(10,000)에 닿고, 이후 호출마다 축출 루프를 돈다.
 *방향*: "파일 로깅 비활성" 을 별도 상태로 두고 그 경우 큐에 넣지 않고 버린다.
 
@@ -127,7 +127,7 @@
 `WndProcCore` 에 `WM_CLOSE` case 가 없어 `DefWindowProcW` 가 `DestroyWindow(_hwndMain)` 을 수행하는데, 뒤따르는 `WM_DESTROY` 는 `PostQuitMessage(0)` 만 하고 핸들 필드를 Zero 로 내리지 않는다. §N-42 의 필드 리셋은 `OnProcessExit` 한 곳에만 있다. **트레이 「관리자 권한」 토글(`Tray.cs:359`)이 이 경로를 정상 동작으로 탄다** — 예외 경로가 아니다.
 *방향*: `WM_CLOSE` case 를 추가해 파괴 전에 세 핸들 필드를 Zero 로 내린다.
 
-**G2 — `_drainThread` 가시성** (N2 · N24 · N35)
+**G2 ✅ — `_drainThread` 가시성** (N2 · N24 · N35)
 `Logger.cs:22` 는 여전히 `private static Thread? _drainThread;` — 같은 파일의 `_generation` 은 `Volatile.Read`/`Interlocked` 로 다루는데 이것만 누락이다. 라우팅 스위치로 모든 스레드가 읽고 메인이 `Initialize`/`StopDrainThread` 에서 **락 밖**으로 쓴다. `StopDrainThread`(:364-365)의 read-then-clear 도 비원자이며, G3 의 경로로 다른 스레드에서 진입 가능하다.
 
 **G20 — `CleanupDialog` 선택 항목 매핑** (N27 잔여)
@@ -138,12 +138,14 @@ N16 수정으로 커밋 베이스는 `currentConfig()` 재조회(`Tray.cs:689`)�
 ### 5.4 착수 순서 제안
 
 1. ~~**G6 · G11**~~ — ✅ **2026-08-02 수정 완료** (§5.5). 둘 다 저장 경로이고 사용자 편집 유실 계열이라 같이 다뤘다 — 이 자리는 한 세션에 네 번 고쳐진 곳이라 개별 수정이 또 서로의 구멍을 만들 위험이 가장 컸다.
-2. **G1 · G2 · G3** — 전부 `Logger.cs` 의 `_drainThread` 를 건드린다. 파일 단위로 한 번에. ← **다음 후보**
-3. **G5 · G10 · G16 · G17** — 창 lifecycle / 모달 계약. 서로 전제를 공유한다.
+2. ~~**G1 · G2 · G3**~~ — ✅ **2026-08-02 수정 완료** (§5.5). 셋 다 `_drainThread` 필드 하나에 역할이 둘(Join 대상 + 라우팅 스위치) 얹혀 있던 데서 나왔다.
+3. **G5 · G10 · G16 · G17** — 창 lifecycle / 모달 계약. 서로 전제를 공유한다. ← **다음 후보**
 4. **G4 · G14 · G19** — 배지 가시성 상태 기계. 셋 다 "숨겨졌는데 복원 경로가 없다" 는 같은 축이다.
 5. 나머지는 독립적이라 순서 무관.
 
-### 5.5 G6 · G11 수정 기록 (2026-08-02)
+### 5.5 수정 기록 (2026-08-02)
+
+#### 저장 경로 — G6 · G11
 
 **G11 — `Save` 의 되읽기 실패 분기** (`Core/Config/JsonSettingsManager.cs`)
 병합 후 `TryLoad` 가 실패하면 `_lastMtime`·`_syncedMtime`·`_lastPersistedJson` 세 표식을 함께 물린다. 기준선은 **호출자가 실제로 들고 있는 값**(`rawJson`)으로 되돌려야 다음 diff 가 "앱이 이번에 바꾼 것" 만 집어내고, 폴링 기준까지 내려야 self-bump 가 취소돼 5초 폴러의 핫리로드가 자기치유 경로로 열린다. Warning 로그도 남긴다 — 종전에는 완전히 침묵했다.
@@ -158,6 +160,22 @@ N16 수정으로 커밋 베이스는 `currentConfig()` 재조회(`Tray.cs:689`)�
 - 빌드 debug 경고 0 · AOT publish 성공.
 
 **남은 검증** — 실기 확인은 못 했다. `config.json` 에서 `cursor_indicator_enabled` 를 끄고 5초 안에 트레이 메뉴에서 투명도를 바꿔, 헤일로가 실제로 꺼지는지 눈으로 봐야 한다.
+
+#### Logger — G1 · G2 · G3
+
+셋 다 뿌리가 하나다 — **`_drainThread` 필드에 역할이 두 개 얹혀 있었다.** Join 대상 참조이면서 동시에 로그 라우팅 스위치였고, 세 결함이 전부 그 겸직에서 나왔다. 그래서 라우팅 역할을 `FileLogRoute { PreInit, Queue, Drop }` enum(`volatile _route`)으로 분리하는 것이 수정의 중심이다.
+
+- **G1** — `Initialize(enabled:false)` · writer 락 타임아웃 · `StreamWriter` 생성 실패 세 경로가 모두 `Drop` 을 세운다. 종전에는 셋 다 `_drainThread` 를 null 로 남겨 `EnqueueToFile` 이 "아직 부팅 중" 으로 읽었고, 비우는 주체가 없는 `_preInitBuffer` 에 1만 개까지 쌓였다.
+- **G2** — `_route` 는 `volatile` 이고 `EnqueueToFile` 이 **한 번만 읽어 로컬에 담는다**(판정과 동작이 다른 상태를 보면 안 된다). `_drainThread` 도 `Volatile.Write` / `Interlocked.Exchange` 로만 접근 — 후자가 `StopDrainThread` 의 read-then-clear 를 원자화해 두 경로가 겹쳐도 Join 대상을 정확히 한 번만 집는다.
+- **G3** — 자기-Join 회피(`thread == Thread.CurrentThread`), `Monitor.IsEntered(_writerLock)` 으로 락 재진입 감지 후 flush 건너뛰기, `_lifecycleLock` 으로 `Initialize` ↔ `Shutdown` 직렬화. 락 순서는 항상 `_lifecycleLock` → `_writerLock` 이고 drain 스레드는 후자만 쓰므로 데드락 경로가 없다. 크래시 핸들러가 막히지 않도록 양쪽 다 `TryEnter` + 1초 상한.
+
+**검증**
+- `LoggerReinitTests` 3종 신설 (215 → **218**) — 꺼진 동안의 로그가 파일에 새지 않는가 · 꺼진 동안 버퍼가 자라지 않는가 · 초기화 실패 시에도 자라지 않는가. 세 번째는 경로 자리에 같은 이름의 디렉토리를 만들어 `StreamWriter` 실패를 **결정적으로** 유도한다.
+- **대조군 실측** — `Drop` 을 `PreInit` 과 같게 되돌리자 3종 모두 실패: 꺼진 동안의 로그가 파일에 나타나고, 버퍼가 0 → 200 으로 자랐다. 기존 4종은 양쪽에서 통과(회귀 없음).
+- **G2·G3 는 결정적 단위 테스트가 불가능하다** — 크래시 핸들러를 drain 스레드 위에서 재현하려면 그 스레드가 `_writerLock` 을 쥔 채 예외를 던지게 만들어야 한다. invariant grep 1줄(`if (_drainThread is null)` = 0)이 라우팅 판정의 회귀만 잡는다.
+- 빌드 debug 경고 0 · AOT publish 성공.
+
+**남은 검증** — 실기 확인 미수행. `log_to_file` 을 껐다 켜며 작업 관리자의 메모리가 더 이상 차오르지 않는지, 다시 켰을 때 묵은 줄이 쏟아지지 않는지 보면 된다.
 
 ---
 

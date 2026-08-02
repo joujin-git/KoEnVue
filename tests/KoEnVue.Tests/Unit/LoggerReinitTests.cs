@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using KoEnVue.Core.Logging;
 using Xunit;
@@ -143,5 +144,65 @@ public class LoggerReinitTests : IDisposable
         Logger.Shutdown();
 
         Assert.Contains("after-revive", ReadAllWithRetry(path));
+    }
+
+    // ================================================================
+    // 파일 로깅 OFF = 드롭 (bug-hunt 2026-08-02 G1 — 확정 #3·#9·#20·#36·#50)
+    // ================================================================
+
+    private static int PreInitBufferCount() =>
+        ((ConcurrentQueue<string>)typeof(Logger)
+            .GetField("_preInitBuffer", BindingFlags.NonPublic | BindingFlags.Static)!
+            .GetValue(null)!).Count;
+
+    [Fact]
+    public void 파일_로깅이_꺼져_있는_동안의_로그는_버려진다()
+    {
+        // 원래 결함: Initialize(false) 는 _drainThread 를 null 로 남기는데, EnqueueToFile 이 그
+        // 조건을 "아직 부팅 중" 으로만 읽어 **모든 로그를 pre-init 버퍼로** 보냈다. 그 버퍼를 비우는
+        // 곳은 Initialize 성공 끝뿐이라, 다시 켜는 순간 몇 시간 묵은 줄이 한꺼번에 쏟아지고 파일의
+        // 타임스탬프가 그 지점에서 거꾸로 뛰었다.
+        string path = PathFor("off.log");
+
+        Logger.Initialize(false, null, 1);
+        Logger.Error("logged-while-off");
+
+        Logger.Initialize(true, path, 1);
+        Logger.Error("logged-while-on");
+        Logger.Shutdown();
+
+        string text = ReadAllWithRetry(path);
+        Assert.Contains("logged-while-on", text);
+        Assert.DoesNotContain("logged-while-off", text);
+    }
+
+    [Fact]
+    public void 파일_로깅이_꺼져_있으면_버퍼가_자라지_않는다()
+    {
+        // 메모리 측 증상 — 상한(10,000)까지 문자열을 붙들고, 그 뒤로는 로그 호출마다 축출 루프가
+        // 도는 트레드밀이 된다. 감지 루프가 80ms 주기라 debug 레벨에서는 수십 초면 닿는다.
+        Logger.Initialize(false, null, 1);
+        int before = PreInitBufferCount();
+
+        for (int i = 0; i < 200; i++) Logger.Error($"off-{i}");
+
+        Assert.Equal(before, PreInitBufferCount());
+    }
+
+    [Fact]
+    public void 초기화에_실패해도_버퍼가_자라지_않는다()
+    {
+        // writer 생성 실패도 _drainThread 를 null 로 남기는 경로였다 — 사용자는 파일 로깅을 켠
+        // 상태인데 실제로는 무한 보류로 빠진다. 로그 파일 자리에 같은 이름의 디렉토리를 두면
+        // StreamWriter 가 UnauthorizedAccessException 으로 실패해 이 분기를 결정적으로 탄다.
+        string blocked = PathFor("blocked.log");
+        Directory.CreateDirectory(blocked);
+
+        Logger.Initialize(true, blocked, 1);
+        int before = PreInitBufferCount();
+
+        for (int i = 0; i < 200; i++) Logger.Error($"failed-init-{i}");
+
+        Assert.Equal(before, PreInitBufferCount());
     }
 }

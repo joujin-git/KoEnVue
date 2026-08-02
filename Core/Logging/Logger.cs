@@ -19,7 +19,47 @@ internal static class Logger
     // 비동기 파일 로깅
     private static readonly ConcurrentQueue<string> _logQueue = new();
     private static readonly ManualResetEventSlim _drainSignal = new(false);
+
+    /// <summary>
+    /// 현재 drain 스레드. <b>Join 대상 참조를 잡는 용도로만</b> 쓴다 — 로그 라우팅 판정에 쓰면 안 된다
+    /// (그 역할은 <see cref="_route"/> 가 맡는다). 쓰기는 <c>Volatile.Write</c> ·
+    /// <c>Interlocked.Exchange</c> 로만 한다.
+    /// </summary>
     private static Thread? _drainThread;
+
+    /// <summary>
+    /// <see cref="EnqueueToFile"/> 의 라우팅 상태.
+    ///
+    /// <para>
+    /// 종전에는 <c>_drainThread is null</c> 하나로 판정했는데, 그 조건은 <b>서로 다른 세 상황</b>을
+    /// 뭉친다 — (a) 아직 <see cref="Initialize"/> 전, (b) 사용자가 파일 로깅을 껐다,
+    /// (c) 초기화에 실패했다(writer 락 타임아웃 · <see cref="StreamWriter"/> 생성 실패).
+    /// 버퍼링이 맞는 것은 (a) 뿐인데 셋 다 <see cref="_preInitBuffer"/> 로 흘렀고, 그 버퍼를 비우는
+    /// 곳은 Initialize 끝의 <see cref="FlushPreInitBuffer"/> 하나뿐이다. 결과적으로
+    /// <c>log_to_file: false</c> 는 "드롭" 이 아니라 <b>무한 보류</b>로 동작해, 프로세스 수명 내내
+    /// 최대 <see cref="MaxQueueSize"/> 개 문자열이 상주하고 그 뒤로는 로그 호출마다 축출 루프가
+    /// 돌았다 — 감지 루프가 80ms 주기라 <c>log_level: debug</c> 조합에서 수십 초면 상한에 닿는다
+    /// (bug-hunt 2026-08-02 확정 #3·#9·#20·#36·#50).
+    /// </para>
+    /// </summary>
+    private enum FileLogRoute
+    {
+        /// <summary><see cref="Initialize"/> 이전 — 버퍼에 모았다가 Initialize 가 옮겨 적는다.</summary>
+        PreInit,
+
+        /// <summary>drain 스레드 가동 중 — 큐로 보낸다.</summary>
+        Queue,
+
+        /// <summary>파일 로깅 꺼짐 또는 초기화 실패 — 버린다. <c>Trace</c> 출력은 그대로 나간다.</summary>
+        Drop,
+    }
+
+    /// <summary>
+    /// 라우팅 상태. <b>모든 스레드가 로그 호출마다 읽고</b> 메인 스레드가 Initialize/Shutdown 에서
+    /// 쓰므로 <c>volatile</c> 이 필요하다 — 같은 파일의 <see cref="_generation"/> 은 이미
+    /// Interlocked/Volatile 로 다루는데 라우팅 필드만 평범한 참조였다 (확정 #2·#24·#35).
+    /// </summary>
+    private static volatile FileLogRoute _route = FileLogRoute.PreInit;
 
     /// <summary>
     /// drain 스레드 세대. <see cref="StopDrainThread"/> 가 증가시키고, 각 drain 스레드는 시작 시
@@ -44,6 +84,26 @@ internal static class Logger
     /// </summary>
     private static readonly object _writerLock = new();
 
+    /// <summary>
+    /// <see cref="Initialize"/> 와 <see cref="Shutdown"/> 을 서로 배타화하는 lifecycle 락.
+    /// <see cref="_writerLock"/> 과 역할이 다르다 — 이쪽은 <see cref="_drainThread"/> ·
+    /// <see cref="_generation"/> · <see cref="_route"/> 의 <b>전이</b>를 직렬화한다.
+    ///
+    /// <para>
+    /// Shutdown 은 크래시 핸들러(<c>AppDomain.UnhandledException</c>)를 통해 <b>예외를 던진 임의의
+    /// 스레드</b>에서 들어온다. 메인이 Initialize 안에서 새 스레드를 대입한 직후 <c>Start</c> 하기
+    /// 전에 끼어들면 세대가 먼저 올라가, 방금 뜬 스레드가 자기 세대 검사에 걸려 <b>한 줄도 쓰지
+    /// 못하고 즉시 끝난다</b> — 그 상태로 라우팅만 <see cref="FileLogRoute.Queue"/> 면 큐에 쌓이고
+    /// 아무도 비우지 않는다 (확정 #35).
+    /// </para>
+    ///
+    /// <para>
+    /// 획득 순서는 항상 <c>_lifecycleLock</c> → <c>_writerLock</c> 이다. drain 스레드는
+    /// <c>_writerLock</c> 만 쓰므로 역순 경로가 없어 데드락이 성립하지 않는다.
+    /// </para>
+    /// </summary>
+    private static readonly object _lifecycleLock = new();
+
     private static StreamWriter? _fileWriter;
     private static string _filePath = "";
     private static long _maxSizeBytes;
@@ -59,6 +119,13 @@ internal static class Logger
     /// (강제 Dispose 는 좀비의 다음 WriteLine 을 죽이는, 바로 이 결함의 원래 사인이다).
     /// </summary>
     private const int WriterLockTimeoutMs = 1000;
+
+    /// <summary>
+    /// <see cref="_lifecycleLock"/> 대기 상한. 크래시 핸들러의 <see cref="Shutdown"/> 이 메인의
+    /// <see cref="Initialize"/> 뒤에서 무한정 막히면 안 되므로 상한을 둔다 — 못 잡으면 물러나고
+    /// 흔적만 남긴다(프로세스는 어차피 종료 중이다).
+    /// </summary>
+    private const int LifecycleLockTimeoutMs = 1000;
 
     // 모든 로그 라인의 타임스탬프 포맷 — 정상 로깅(Write)과 self-catch breadcrumb 가 공유(P3).
     private const string TimestampFormat = "yyyy.MM.dd HH:mm:ss.fff";
@@ -97,10 +164,37 @@ internal static class Logger
     /// </summary>
     public static void Initialize(bool enabled, string? logFilePath, int maxSizeMb)
     {
+        if (!Monitor.TryEnter(_lifecycleLock, LifecycleLockTimeoutMs))
+        {
+            Trace.WriteLine(
+                $"Logger init skipped: lifecycle lock busy after {LifecycleLockTimeoutMs}ms "
+                + "(a concurrent Initialize/Shutdown is in progress)");
+            return;
+        }
+        try
+        {
+            InitializeCore(enabled, logFilePath, maxSizeMb);
+        }
+        finally
+        {
+            Monitor.Exit(_lifecycleLock);
+        }
+    }
+
+    /// <remarks><see cref="_lifecycleLock"/> 을 보유한 상태에서 호출한다.</remarks>
+    private static void InitializeCore(bool enabled, string? logFilePath, int maxSizeMb)
+    {
         // 기존 drain 스레드 종료 — 세대를 올려 살아남은 좀비까지 무효화한다.
         StopDrainThread();
 
-        if (!enabled) return;
+        if (!enabled)
+        {
+            // 파일 로깅 OFF 는 "보류" 가 아니라 **드롭**이다. 비우는 주체가 없는 버퍼에 쌓으면
+            // 1만 개 문자열을 상주시킨 채 결국 버리게 되고, 상한 도달 후에는 로그 호출마다
+            // 축출 루프가 도는 트레드밀이 된다 (확정 #9·#20·#50).
+            _route = FileLogRoute.Drop;
+            return;
+        }
 
         // StopDrainThread 가 방금 발급한 세대. 아직 어떤 스레드도 이 값을 쓰고 있지 않다.
         int generation = Volatile.Read(ref _generation);
@@ -114,6 +208,10 @@ internal static class Logger
         {
             Trace.WriteLine(
                 $"Logger init skipped: writer lock busy after {WriterLockTimeoutMs}ms (file logging stays off this round)");
+            // 초기화 실패도 드롭이다 — 다음 리로드가 재시도할 때까지 소비자 없는 버퍼에 쌓아 둘
+            // 이유가 없다. 종전에는 이 경로가 _drainThread 를 null 로 남겨 무한 보류로 빠졌다
+            // (확정 #3·#36).
+            _route = FileLogRoute.Drop;
             return;
         }
 
@@ -148,6 +246,9 @@ internal static class Logger
                 // 로직 버그(NullRef 등)는 전파해 부팅 초기에 드러냄.
                 Trace.WriteLine($"Logger file init failed (falling back to Trace only): {ex.Message}");
                 _fileWriter = null;
+                // writer 가 없으면 drain 스레드를 띄우지 않는다 — 큐로 보내 봐야 소비자가 없다.
+                // 종전에는 여기서도 무한 보류로 빠졌다 (확정 #3·#36).
+                _route = FileLogRoute.Drop;
                 return;
             }
         }
@@ -158,12 +259,16 @@ internal static class Logger
 
         // drain 스레드 시작 — 자기 세대를 인자로 받아 그 세대가 유효한 동안만 돈다.
         _drainSignal.Reset();
-        _drainThread = new Thread(DrainLoop)
+        var drain = new Thread(DrainLoop)
         {
             IsBackground = true,
             Name = "LogDrain",
         };
-        _drainThread.Start(generation);
+        // Start 보다 **먼저** 게시한다 — 그 사이 Shutdown 이 들어와도 Join 대상을 놓치지 않는다.
+        // (동시 진입 자체는 _lifecycleLock 이 막지만, 필드 게시 순서는 그와 별개로 지킨다.)
+        Volatile.Write(ref _drainThread, drain);
+        _route = FileLogRoute.Queue;
+        drain.Start(generation);
 
         // Pre-Initialize 버퍼를 큐로 옮긴 뒤 drain 신호 — 부트 초반의 Logger.X 메시지가
         // koenvue.log 에 정상 기록되도록 한다.
@@ -186,10 +291,34 @@ internal static class Logger
             _drainSignal.Set();
     }
 
-    /// <summary>파일 로깅 종료. 잔여 메시지 flush 후 writer dispose.</summary>
+    /// <summary>
+    /// 파일 로깅 종료. 잔여 메시지 flush 후 writer dispose.
+    ///
+    /// <para>
+    /// 크래시 핸들러(<c>AppDomain.UnhandledException</c>)에서 <b>예외를 던진 임의의 스레드</b>로
+    /// 들어올 수 있다 — 감지 / LogDrain / UpdateChecker / StartupPathSync 어느 쪽이든 가능하다.
+    /// 메인의 <see cref="Initialize"/> 와 겹치면 세대·스레드 필드가 엉키므로 같은 lifecycle 락으로
+    /// 직렬화한다 (확정 #23·#35).
+    /// </para>
+    /// </summary>
     public static void Shutdown()
     {
-        StopDrainThread();
+        if (!Monitor.TryEnter(_lifecycleLock, LifecycleLockTimeoutMs))
+        {
+            Console.Error.WriteLine(FormatBreadcrumb(
+                $"Logger shutdown skipped: lifecycle lock busy after {LifecycleLockTimeoutMs}ms"));
+            return;
+        }
+        try
+        {
+            StopDrainThread();
+            // 종료 뒤의 로그는 기록할 곳이 없다 — 버퍼에 쌓아 두면 아무도 비우지 않는다.
+            _route = FileLogRoute.Drop;
+        }
+        finally
+        {
+            Monitor.Exit(_lifecycleLock);
+        }
     }
 
     public static void Debug(string message) => Write(LogLevel.Debug, "[DEBUG]", message);
@@ -219,15 +348,27 @@ internal static class Logger
     // ================================================================
 
     /// <summary>
-    /// 비차단 enqueue. drain 스레드가 없으면 <see cref="_preInitBuffer"/> 로 우회 — Initialize 가
-    /// 호출되면 본 버퍼를 큐로 옮겨 한꺼번에 기록한다. <see cref="MaxQueueSize"/> 초과 시 최고령부터
-    /// 드롭하여 메모리 무제한 증가를 차단.
+    /// 비차단 enqueue. 목적지는 <see cref="_route"/> 가 정한다 — Initialize 전이면
+    /// <see cref="_preInitBuffer"/>(나중에 옮겨 적는다), 파일 로깅이 꺼져 있거나 초기화에 실패했으면
+    /// 드롭, 정상이면 <see cref="_logQueue"/>. <see cref="MaxQueueSize"/> 초과 시 최고령부터 드롭하여
+    /// 메모리 무제한 증가를 차단.
     /// </summary>
     private static void EnqueueToFile(string formatted)
     {
-        if (_drainThread is null)
+        // volatile 필드는 한 번만 읽어 로컬에 담는다 — 판정과 동작이 서로 다른 상태를 보면 안 된다.
+        FileLogRoute route = _route;
+
+        if (route == FileLogRoute.Drop)
         {
-            // Pre-Initialize 단계: 버퍼에 누적. Initialize 가 끝나면 FlushPreInitBuffer 가 옮겨 적는다.
+            // 파일 로깅이 꺼져 있거나 초기화에 실패했다. Trace 출력은 Write 에서 이미 나갔으므로
+            // 여기서 끝낸다 — 소비자 없는 버퍼에 쌓으면 상한까지 문자열을 붙들고 있다가 그 뒤로는
+            // 호출마다 축출 루프만 도는 트레드밀이 된다 (확정 #3·#9·#20·#36·#50).
+            return;
+        }
+
+        if (route == FileLogRoute.PreInit)
+        {
+            // Initialize 이전: 버퍼에 누적. Initialize 가 끝나면 FlushPreInitBuffer 가 옮겨 적는다.
             while (_preInitBuffer.Count >= MaxQueueSize && _preInitBuffer.TryDequeue(out _))
                 Interlocked.Increment(ref _preInitDroppedCount);
             _preInitBuffer.Enqueue(formatted);
@@ -358,20 +499,52 @@ internal static class Logger
     /// 세대 가드에 막혀 더는 쓰지 못하므로, 이전처럼 "살아 있는 스레드 옆에서 Dispose" 하는 상황이
     /// 생기지 않는다 (AUDIT-2026-07-30 §C).
     /// </para>
+    ///
+    /// <para>
+    /// <b>임의의 스레드에서 들어올 수 있다</b> — 크래시 핸들러 경로(<see cref="Shutdown"/>)가 예외를
+    /// 던진 스레드 위에서 돌기 때문이다. 그 스레드가 drain 스레드 자신일 수도, 이미
+    /// <see cref="_writerLock"/> 을 쥔 채 죽었을 수도 있어 자기-Join 과 락 재진입을 각각 가드한다
+    /// (확정 #23).
+    /// </para>
     /// </summary>
+    /// <remarks><see cref="_lifecycleLock"/> 을 보유한 상태에서 호출한다.</remarks>
     private static void StopDrainThread()
     {
-        Thread? thread = _drainThread;
-        _drainThread = null;
+        // read-then-clear 를 원자화 — 두 경로가 겹쳐도 Join 대상을 정확히 한 번만 집는다.
+        Thread? thread = Interlocked.Exchange(ref _drainThread, null);
+
+        // 라우팅은 PreInit 로 되돌린다. 지금은 drain 이 없고, 뒤이은 Initialize 가 Queue / Drop 중
+        // 하나로 확정한다 (Shutdown 경로는 호출자가 Drop 으로 덮는다).
+        _route = FileLogRoute.PreInit;
 
         // 단조 증가 — 좀비가 되살릴 수 없다. Initialize 는 이 새 세대를 그대로 받아 쓴다.
         int generation = Interlocked.Increment(ref _generation);
 
         bool joined = true;
-        if (thread is not null)
+        if (thread is not null && thread == Thread.CurrentThread)
+        {
+            // 크래시 핸들러가 **drain 스레드 자신 위에서** 돈다. 자기를 Join 하면 3초를 통째로
+            // 버리고 반드시 실패한다 — 종료를 그만큼 늦출 뿐이다 (확정 #23).
+            Console.Error.WriteLine(FormatBreadcrumb(
+                "Logger shutdown invoked on the drain thread itself; skipping self-join"));
+        }
+        else if (thread is not null)
         {
             _drainSignal.Set();
             joined = thread.Join(ShutdownJoinTimeoutMs);
+        }
+
+        // 이 스레드가 이미 _writerLock 을 쥐고 있다면, 우리는 **그 락 안에서 죽어** 크래시 핸들러로
+        // 들어온 것이다. Monitor 는 재진입 가능이라 아래 TryEnter 가 즉시 성공하고, 그러면 방금
+        // 예외를 던진 FlushQueueLocked 를 그대로 다시 실행한다 — 같은 예외가 재발하면 잔여 flush 도
+        // breadcrumb 도 남지 않는다. "_writerLock 은 메인 Dispose 와 절대 안 겹친다" 는 보장이
+        // 동일 스레드 크래시 경로에서는 성립하지 않는다 (확정 #23).
+        if (Monitor.IsEntered(_writerLock))
+        {
+            Console.Error.WriteLine(FormatBreadcrumb(
+                "Logger shutdown re-entered from inside the writer lock; skipping flush to avoid "
+                + "repeating the write that just failed"));
+            return;
         }
 
         // 좀비가 회전 I/O 안에서 락을 쥐고 있을 수 있으므로 상한을 두고 기다린다.
