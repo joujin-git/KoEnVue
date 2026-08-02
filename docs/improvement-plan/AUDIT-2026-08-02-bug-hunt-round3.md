@@ -72,6 +72,20 @@
 
 **검증** — `WindowLifecycleTests` 2건 추가 (226 → **228**). 둘 다 **대조군 실측**: `outermost` 판정을 제거하니 중첩 테스트가, 표식 정리를 무조건으로 되돌리니 제거-구간 테스트가 정확히 실패했다. 셸/GDI 미접촉으로 검증된다(`_notifyIcon = null` + `_hwndMain = Zero`). **재시도 프레임이 보류를 실제로 소비하는지**는 `UpdateStateCore` 가 GDI 에 닿아 단위 테스트로 고정할 수 없다 — 구조가 `RunShellCall` 단일 경로라는 사실로만 담보된다.
 
+### 묶음 2 — 전이 적용 통합 + 설정 전멸 재봉쇄 (C·E) ✅
+
+**C — 적용자 나열에서 Logger 만 빠져 있었다.** `HandleMenuCommand` 의 `updateConfig` 람다가 프로필 캐시·I18n·감지 방식·오버레이·커서 헤일로·UserHidden·트레이 전이를 **하나씩 나열**해 적용했는데, 그 목록에 로거가 없었다. 그래서 상세 설정 창에서 `log_level`·`log_to_file` 을 바꾸면 디스크에는 저장되지만 러닝 로거는 그대로였고, `Settings.Save` 의 mtime self-bump 가 핫리로드까지 막아 **재시작 전까지** 반영되지 않았다. `SaveAndSync` 는 3-way 병합이 실제로 일어난 경우에만 `ApplyConfigTransition` 을 부르므로 그쪽으로도 구제되지 않는다.
+
+G6 이 "개별 호출자를 고치는 대신 진입점을 하나로 모은다" 고 적은 함정이 **이 자리에서 실제로 터진 것**이라, 나열을 통째로 걷어내고 람다도 `ApplyConfigTransition(prev, _config)` 을 쓰게 했다. 두 경로의 유일한 실질 차이였던 「포그라운드 hwnd 를 모를 때 색만 갱신」은 `RefreshVisibleIndicator` 에 흡수해 세 경로가 같은 헬퍼를 지나가게 했다(P4).
+
+**E — `TryLoad` 의 파일 부재 분기가 `true` 를 돌려주고 있었다.** AUDIT-2026-07-30 §G 는 "파싱 실패 시 전 필드 디폴트를 디스크에 확정 → 사용자 설정 전멸" 을 `TryLoad` 의 **false 반환**으로 닫았는데, **파일 부재 분기는 그 가드 밖에 있었다** — `new T()` 를 만들어 `Save` 로 디스크에 쓰고 `true` 를 돌려준다. 호출자에겐 정상 로드로 보이므로 §G 가드가 발동하지 않는다.
+
+진입점이 둘이다. ① `Save` 가 병합 후 되읽는 순간 파일이 사라져 있으면(백신 격리·동기화 클라이언트) 디폴트를 호출자에게 돌려주고, `SaveAndSync` 가 그것을 `_config` 에 실은 뒤 `ApplyConfigTransition` 까지 돌려 **디폴트를 앱 전역에 적용**한다. ② 핫리로드의 `Settings.TryLoad` 도 같은 분기에서 true+디폴트를 받는다.
+
+**생성 책임을 `Load` 로 옮겼다** — 파일 부재 시 디폴트를 만드는 것은 "비교할 기존 인스턴스가 없는" 부팅 경로에서만 옳다. `TryLoad` 는 이제 파일이 없으면 **false + 디스크 미변경**이고, 런타임 호출자는 들고 있던 인스턴스를 유지한다.
+
+**검증** — 테스트 228 → **229**. 기존 `TryLoad_파일이_없으면_true_이고_디폴트를_생성한다` 는 **옛 계약을 고정하던 테스트이고 그 계약이 곧 결함**이었다 — 새 계약 2건(`TryLoad` 는 false + 미변경 / `Load` 는 생성)으로 교체했다. C 는 구조적 사실이라 [conventions.md](../conventions.md) invariant 2줄로 고정: `ApplyConfigTransition(` = **4**(정의 1 + 호출 3), `Logger.(SetLevel|Initialize)(` in Program.cs = **4**(부팅 2 + 전이 함수 2 — 호출자가 자체 나열로 되돌아가면 이 카운트는 그대로면서 그 경로만 조용히 빠진다).
+
 ### R 재판정 — ⚠️ **부분 오탐**
 
 "`SaveAndSync` 가 `ApplyConfigTransition` 을 부르면 `Logger.Initialize` 가 UI 를 5초 붙잡는다" 는 조건부로만 참이다. `ApplyConfigTransition`(Program.cs:1035-1037)은 **로그 관련 설정이 실제로 바뀐 경우에만** 재초기화한다 — 무변경 저장은 `Logger.SetLevel` 만 지난다. 남는 것은 "로그 설정을 바꾼 저장에서 UI 가 잠시 멈춘다" 인데, 그것은 기존 핫리로드 경로에도 동일하게 있던 성질이고 재초기화가 실제로 필요한 경우다. **C 를 고치는 데 제약이 되지 않는다.**

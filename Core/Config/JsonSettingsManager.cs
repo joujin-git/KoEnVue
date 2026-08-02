@@ -113,6 +113,20 @@ internal class JsonSettingsManager<T>
     /// </summary>
     public T Load()
     {
+        // **파일 부재 시 디폴트를 만드는 것은 이 경로의 책임이다** (bug-hunt 3차 E). 종전에는
+        // TryLoad 안에 있었는데, 거기 두면 런타임 호출자(핫리로드 · Save 의 병합 후 되읽기)가
+        // 파일 부재를 `true` = **정상 로드**로 받는다. 그러면 AUDIT-2026-07-30 §G 가 세운
+        // "false 면 기존 인스턴스를 두고 물러난다" 가드가 통째로 우회되고, 전 필드 디폴트가
+        // 인메모리와 디스크에 동시에 확정돼 사용자 설정이 전멸한다. 그 분기는 **비교할 기존
+        // 인스턴스가 없는 부팅 경로**에서만 옳다.
+        if (!File.Exists(_filePath))
+        {
+            LogProvider.Sink?.Info($"Config not found, creating defaults at {_filePath}");
+            T defaults = new();
+            Save(defaults);
+            return defaults;
+        }
+
         TryLoad(out T value);
         return value;
     }
@@ -185,11 +199,13 @@ internal class JsonSettingsManager<T>
             }
         }
 
-        LogProvider.Sink?.Info($"Config not found, creating defaults at {_filePath}");
-        T defaults = new();
-        Save(defaults);
-        value = defaults;
-        return true;
+        // 파일이 없다 — **정상 로드가 아니다.** 여기서 디폴트를 만들어 디스크에 확정하고 true 를
+        // 돌려주면 §G 가드가 우회된다(위 Load 주석 참조). 생성은 Load 의 책임이고, 이 경로의
+        // 호출자는 "지금 들고 있는 인스턴스를 유지" 해야 한다 (bug-hunt 3차 E).
+        LogProvider.Sink?.Warning(
+            $"Config not found at {_filePath}; keeping caller's current state (no defaults written)");
+        value = new T();
+        return false;
     }
 
     // ================================================================

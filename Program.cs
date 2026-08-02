@@ -1288,45 +1288,23 @@ internal static partial class Program
             currentConfig: () => _config,
             updateConfig: newConfig =>
             {
-                bool wasHidden = _config.UserHidden;
-                bool wasTrayEnabled = _config.TrayEnabled;
-                AppLanguage oldLanguage = _config.Language;
+                // **전이 적용은 핫리로드와 같은 함수를 쓴다** (P4 — bug-hunt 3차 C).
+                //
+                // 종전에는 여기서 적용자를 하나씩 나열했는데, 그 목록에서 **Logger 만 빠져 있었다** —
+                // 상세 설정에서 log_level / log_to_file 을 바꾸면 디스크에는 저장되지만 러닝 로거는
+                // 그대로였고, Settings.Save 의 mtime self-bump 가 핫리로드까지 막아 **재시작 전까지**
+                // 반영되지 않았다. G6 이 "개별 호출자를 고치는 대신 진입점을 하나로" 라고 적은 바로 그
+                // 함정이 이 자리에서 실제로 터진 것이라, 나열을 통째로 걷어낸다.
+                //
+                // 순서 계약은 그대로다 — _config 를 **먼저** 게시해야 ApplyCursorConfigChange /
+                // ApplyTrayEnabledTransition 이 필드를 직접 읽는 전제가 성립하고, ClearProfileCache 도
+                // 새 인스턴스 게시 뒤에 도는 것이 §N-59 가 세운 순서다.
+                AppConfig prev = _config;
                 _config = ThemePresets.Apply(newConfig);
-                // **무효화는 새 _config 게시 직후, 이 람다의 어떤 렌더보다 먼저** (AUDIT-2026-07-30 §E).
-                // 아래 ShowIndicatorAtForeground / Overlay.UpdateColor 가 ResolveCurrent() 로 per-app
-                // 머지 결과를 읽는데, 무효화가 람다 끝에 있던 동안에는 **같은 람다 안에서 옛 global 로
-                // 머지된 캐시**가 쓰여 방금 바꾼 설정이 한 프레임 반영되지 않았다.
-                // (트레이/메뉴 토글은 Settings.Save 의 mtime self-bump 때문에 HandleConfigChanged 를
-                //  타지 않으므로, 그쪽 경로의 무효화에 기댈 수 없어 여기서 직접 호출한다.)
-                Settings.ClearProfileCache();
-                // 자체 Settings.Save 는 mtime self-bump 로 WM_CONFIG_CHANGED 를 차단하므로
-                // HandleConfigChanged 를 통한 I18n.Load 갱신 경로가 동작 안 한다. 사용자 가시
-                // 전환을 위해 람다 안에서 직접 재로드. Tray.UpdateState 가 뒤따라 fresh string.
-                if (oldLanguage != _config.Language)
-                    I18n.Load(_config.Language);
-                ImeStatus.UpdateDetectionMethod(_config.DetectionMethod);
-                Overlay.HandleConfigChanged(_config);
-                // 커서 헤일로 lifecycle — mtime self-bump 로 HandleConfigChanged 우회되므로 직접 호출.
-                ApplyCursorConfigChange();
+                ApplyConfigTransition(prev, _config);
 
-                if (wasHidden != _config.UserHidden)
-                {
-                    // UserHidden 토글 — 좌클릭 HandleTrayToggle 과 동일한 표시/숨김 전환 적용
-                    ApplyUserHiddenTransition(wasHidden, _config.UserHidden);
-                }
-                // 인디가 가시 상태라면 애니메이터 config 갱신 + 새 alpha/크기/색상이 즉시 반영되도록
-                // TriggerShow로 전체 갱신. TriggerShow는 UpdateConfig + Overlay.Show를 포함한다.
-                // PR-13: per-app resolved 로 갱신해 메뉴 변경 시점부터 프로필 시각 override 도 즉시 반영.
-                else if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
-                    ShowIndicatorAtForeground(_lastImeState, ResolveCurrent(), imeChanged: false);
-                else if (_indicatorVisible)
-                {
-                    Overlay.UpdateColor(_lastImeState, ResolveCurrent());
-                }
-                // 상세 설정에서 tray_enabled 를 끄고 켤 수 있으므로 이 경로도 전이를 반영해야 한다 (§K).
-                ApplyTrayEnabledTransition(wasTrayEnabled, _config.TrayEnabled);
-                // 저장 + 병합 시 전이 재적용까지 (확정 #1·#15·#28·#47). 위 적용자들은 병합 **전**
-                // 값으로 돌았으므로, 디스크에서 새 값이 들어왔으면 헬퍼가 그 차이만 다시 적용한다.
+                // 저장 + 병합 시 전이 재적용까지 (확정 #1·#15·#28·#47). 위 적용은 병합 **전** 값으로
+                // 돌았으므로, 디스크에서 새 값이 들어왔으면 헬퍼가 그 차이만 다시 적용한다.
                 SaveAndSync();
             });
     }

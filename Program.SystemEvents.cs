@@ -37,6 +37,13 @@ internal static partial class Program
     {
         if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
             ShowIndicatorAtForeground(_lastImeState, ResolveCurrent(), imeChanged: false);
+        else if (_indicatorVisible)
+        {
+            // 포그라운드 hwnd 를 아직 모르는 상태(부팅 직후·필터 구간 통과 전)에서는 위치를 다시
+            // 잡을 수 없지만 색·스타일은 갱신할 수 있다. 트레이 메뉴 경로에만 있던 분기를 여기로
+            // 올려 세 경로가 같은 헬퍼를 쓰게 한다 (P4 — bug-hunt 3차 C 통합의 전제).
+            Overlay.UpdateColor(_lastImeState, ResolveCurrent());
+        }
     }
 
     private static void HandleDisplayChange()

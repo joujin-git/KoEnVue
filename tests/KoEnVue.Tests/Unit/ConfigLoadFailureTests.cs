@@ -108,18 +108,35 @@ public class ConfigLoadFailureTests : IDisposable
     }
 
     [Fact]
-    public void TryLoad_파일이_없으면_true_이고_디폴트를_생성한다()
+    public void TryLoad_파일이_없으면_false_이고_아무것도_쓰지_않는다()
     {
-        // 신규 설치 경로. 여기서 나오는 디폴트는 정상이므로 실패분 디폴트와 반드시 구분돼야 한다 —
-        // 이 구분이 무너지면 호출자가 "디폴트가 나왔으니 실패"로 오판해 첫 실행이 깨진다.
+        // **계약이 바뀌었다** (bug-hunt 3차 E). 종전에는 여기서 디폴트를 만들어 디스크에 확정하고
+        // true 를 돌려줬는데, 그러면 §G 가드("false 면 기존 인스턴스를 두고 물러난다")가 통째로
+        // 우회된다 — 런타임 호출자(핫리로드 · Save 의 병합 후 되읽기)가 그 true 를 정상 로드로 받아
+        // 전 필드 디폴트를 인메모리와 디스크에 동시에 확정하고, 색·위치·앱 프로필·로그 설정이
+        // 한꺼번에 사라진다. 생성은 Load 의 책임으로 옮겼다.
         string path = Path.Combine(_dir, "fresh.json");
         Assert.False(File.Exists(path));
 
         bool ok = ManagerFor("fresh.json").TryLoad(out AppConfig config);
 
-        Assert.True(ok);
+        Assert.False(ok);
+        Assert.NotNull(config);                 // 실패해도 non-null 계약은 유지
+        Assert.False(File.Exists(path));        // 디스크를 건드리지 않는다
+    }
+
+    [Fact]
+    public void Load_는_파일이_없으면_디폴트를_생성한다()
+    {
+        // 신규 설치(부팅) 경로 — "비교할 기존 인스턴스가 없는" 호출자만 이쪽을 쓴다.
+        // 포터블 UX 상 디폴트를 즉시 디스크에 만드는 동작 자체는 그대로다.
+        string path = Path.Combine(_dir, "fresh-load.json");
+        Assert.False(File.Exists(path));
+
+        AppConfig config = ManagerFor("fresh-load.json").Load();
+
         Assert.NotNull(config);
-        Assert.True(File.Exists(path)); // 포터블 UX — 디폴트를 즉시 디스크에 만든다
+        Assert.True(File.Exists(path));
     }
 
     [Fact]
