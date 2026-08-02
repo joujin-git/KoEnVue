@@ -1213,20 +1213,23 @@ cross-thread 접근하는 `Program.cs` 의 hwnd 3종 (`_hwndMain` / `_hwndOverla
 
 ### `OnProcessExit` cleanup sequence
 
-`Program.Bootstrap.OnProcessExit`는 다음 순서로 리소스를 정리한다:
+`Program.Bootstrap.OnProcessExit`는 다음 순서로 리소스를 정리한다 (번호는 코드의 단계 주석과 같다):
 
-1. `_stopping = true` — 감지 스레드 종료 신호 (volatile)
-2. IME 훅 해제 (`ImeStatus.UnregisterHook`)
-3. CAPS LOCK 폴링 타이머 명시적 해제 (`KillTimer`)
+- `_stopping = true` — 감지 스레드 종료 신호 (volatile). 번호 없는 첫 줄이며, 바로 뒤에 스레드 친화성 계측 로그가 붙는다(아래 「종료 시퀀스의 스레드 친화성」).
+0. 감지 스레드 합류 (`Join(DetectionJoinTimeoutMs)`)
+1. IME 훅 해제 (`ImeStatus.UnregisterHook`)
+1a. 세션 알림 해제 (`WTSUnRegisterSessionNotification`) — `DestroyWindow` 전이어야 wtsapi32 내부 매핑이 정리된다
+2. CAPS LOCK 폴링 타이머 명시적 해제 (`KillTimer`)
+2a. 커서 헤일로 모션 폴링 타이머 해제 (활성 중일 때만 등록되어 있음)
+3. 트레이 아이콘 제거 (`NIM_DELETE`) — **창 파괴보다 앞**이다. `Tray.Remove` 내부의 `StopAddRetryTimer` 가 `KillTimer(_hwndMain, …)` 를 부르므로 죽은 hwnd 에 Win32 호출이 나가면 안 된다
 4. 애니메이션 + 렌더링 리소스 해제 (윈도우 파괴 전)
-5. 오버레이 + 메인 윈도우 명시적 파괴 (`DestroyWindow`)
-6. 트레이 아이콘 제거 (`NIM_DELETE`)
-7. Mutex 해제 (`Dispose` only — `ReleaseMutex`는 소유 스레드에서만 가능하나 `ProcessExit`는 다른 스레드일 수 있음)
-8. 종료 로그 기록 + 로거 종료 (`Logger.Info` → `Logger.Shutdown`)
+5. 오버레이 + 커서 헤일로 + 메인 윈도우 명시적 파괴 (`DestroyWindow`) + 핸들 필드 Zero
+6. Mutex 해제 (`Dispose` only — `ReleaseMutex`는 소유 스레드에서만 가능)
+7. 종료 로그 기록 + 로거 종료 (`Logger.Info` → `Logger.Shutdown`)
 
-step 1 의 `_stopping = true` 와 step 5 의 `DestroyWindow(_hwndMain)` 사이에는 **step 0 — 감지 스레드 합류** 가 끼어 race window 를 좁힌다 (PR-19). `Program.cs` 의 `_detectionThread` field (`StartDetectionThread` 가 로컬 변수 대신 field 에 보관) 를 `_detectionThread?.Join(500)` 으로 합류시켜, `_stopping=true` 신호 후 한 폴링 주기 (50ms) 안에 자발 종료하는 감지 스레드가 step 5 이전에 끝나도록 강제한다. 감지 스레드는 `IsBackground = true` 라 OS 가 프로세스 종료 시 강제 회수하지만, 그 사이 `DestroyWindow(_hwndMain)` 과 감지 스레드의 `PostMessageW(_hwndMain, WM_UPDATE_INDICATOR, ...)` 가 겹치면 `GetLastWin32Error = 1400 (ERROR_INVALID_WINDOW_HANDLE)` marshal race 가 발생할 수 있다. 500 ms 타임아웃은 stuck 스레드가 메인 종료를 영구 블록하지 않게 하는 상한 — IsBackground 안전망과 명시 합류의 절충.
+`_stopping = true` 와 단계 5 의 `DestroyWindow(_hwndMain)` 사이에는 **단계 0 — 감지 스레드 합류** 가 끼어 race window 를 좁힌다 (PR-19). `Program.cs` 의 `_detectionThread` field (`StartDetectionThread` 가 로컬 변수 대신 field 에 보관) 를 `_detectionThread?.Join(500)` 으로 합류시켜, `_stopping=true` 신호 후 한 폴링 주기 (50ms) 안에 자발 종료하는 감지 스레드가 step 5 이전에 끝나도록 강제한다. 감지 스레드는 `IsBackground = true` 라 OS 가 프로세스 종료 시 강제 회수하지만, 그 사이 `DestroyWindow(_hwndMain)` 과 감지 스레드의 `PostMessageW(_hwndMain, WM_UPDATE_INDICATOR, ...)` 가 겹치면 `GetLastWin32Error = 1400 (ERROR_INVALID_WINDOW_HANDLE)` marshal race 가 발생할 수 있다. 500 ms 타임아웃은 stuck 스레드가 메인 종료를 영구 블록하지 않게 하는 상한 — IsBackground 안전망과 명시 합류의 절충.
 
-COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자동 수행하므로 `ProcessExit` 에서는 건드리지 않는다. ~~`ProcessExit` 는 finalizer 스레드에서 돌기 때문에 여기서 `CoUninitialize` 를 불러도 메인 스레드 apartment 와 매칭되지 않는다.~~ — **이 근거는 확인된 적 없는 전제였다.** 참이면 단계 5 의 `DestroyWindow` 3회가 전부 조용히 실패하므로 같은 함수 안에서 두 서술이 양립하지 않는다. 아래 **「종료 시퀀스의 스레드 친화성 — 미확인」** 절 참조 — 계측만 넣어 두었고, 실측 전까지 이 문단의 근거는 **미확인**이다 (bug-hunt 2026-08-02 G18).
+COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자동 수행하므로 `ProcessExit` 에서는 건드리지 않는다. **결론은 그대로지만 근거는 바뀌었다** — 종전 주석은 "`ProcessExit` 는 finalizer 스레드에서 돌아 메인 스레드 apartment 와 매칭되지 않는다" 를 이유로 들었는데, 그 전제가 2026-08-02 실측으로 **반증됐다**(핸들러는 메인 스레드에서 돈다). 부르지 않는 이유는 "매칭이 안 되니 소용없다" 가 아니라 **CLR 이 이미 하므로 불필요**하다는 것이다. 아래 **「종료 시퀀스의 스레드 친화성 — 확정」** 절 참조 (bug-hunt 2026-08-02 G18).
 
 **단계 5 는 hwnd 필드의 유일한 리셋 지점이 아니다** — `Program.WndProcCore` 의 `WM_DESTROY` 도 파괴된 창을 판별해 해당 필드만 Zero 로 내린다(세 창이 같은 WndProc 을 공유한다). 트레이 「관리자 권한」 토글의 `PostMessageW(hwndMain, WM_CLOSE)` 처럼 창이 `OnProcessExit` 보다 **먼저** 죽는 정상 경로가 있기 때문이다. 이 단계에 도달했을 때 이미 Zero 면 `DestroyWindowLogged` 가 건너뛰므로 이중 파괴도 함께 막힌다 (bug-hunt 2026-08-02 G5).
 
@@ -1310,20 +1313,29 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 
 `_shellCallInProgress` 가드 + 보류 표식으로 닫는다. **재진입을 버리지 않는 이유**는 안쪽 호출이 더 **새로운** 상태(방금 바뀐 테마 색)를 들고 오기 때문이다 — 표시만 남기고 바깥 프레임이 끝날 때 그 값으로 한 번 더 갱신한다. `HandleAddRetryTimer` 도 같은 가드를 공유한다(NIM_ADD 역시 블로킹 IPC이고, WM_TIMER 는 posted 라 중첩 펌프에서 디스패치된다).
 
-### 종료 시퀀스의 스레드 친화성 — 미확인 (bug-hunt 2026-08-02 G18)
+### 종료 시퀀스의 스레드 친화성 — 확정 (bug-hunt 2026-08-02 G18)
 
-`OnProcessExit` 안에 **양립 불가능한 두 전제**가 있다.
+`OnProcessExit` 안에 **양립 불가능한 두 전제**가 있었다.
 
 - 단계 5 는 `DestroyWindow(_hwndOverlay/_hwndCursorOverlay/_hwndMain)` 를 수행한다 — Win32 는 **다른 스레드가 만든 창의 파괴를 거부**하므로, 이 코드가 의미를 가지려면 메인 스레드에서 돌아야 한다.
 - 단계 7 의 주석은 "ProcessExit 는 finalizer 스레드에서 돌아 메인 스레드의 apartment 와 매칭되지도 않는다" 고 **단언**했다. 이것이 참이면 위 `DestroyWindow` 3회가 전부 조용히 실패하고, §N-42 가 넣은 "파괴 직후 필드를 Zero" 라인은 살아 있는 창의 핸들을 지우는 셈이 된다. 단계 2·2a 의 `KillTimer` 도 같은 가정 위에 있다.
 
-**어느 쪽이든 한쪽은 결함이다.** 그런데 어느 쪽이 사실인지는 실측 없이 단정할 수 없어 — 이 프로젝트에서 "그럴 것이다" 로 고쳐 새 결함을 만든 전례가 반복됐다 — **수정 대신 계측을 넣었다**:
+어느 쪽이든 한쪽이 결함이었으므로 — 그리고 이 프로젝트에서 "그럴 것이다" 로 고쳐 새 결함을 만든 전례가 반복됐으므로 — 수정 대신 계측을 넣었고, **2026-08-02 실측으로 확정했다.**
 
-- `ProcessExit` 등록 시점의 `Environment.CurrentManagedThreadId` 를 `_mainThreadId` 에 기록
-- 핸들러 진입 시 현재 스레드와 비교해 `sameThread=` 로 Debug 로그
-- `DestroyWindowLogged` 가 실패 시 `GetLastError` 를 함께 남김
+**계측** — `ProcessExit` 등록 시점의 `Environment.CurrentManagedThreadId` 를 `_mainThreadId` 에 기록하고, 핸들러 진입 시 현재 스레드와 비교해 `sameThread=` 로 Debug 로그. `DestroyWindowLogged` 는 **세 갈래(`skipped` / `ok` / `failed`)를 모두** 남긴다 — 실패만 찍으면 무로그가 "성공" 과 "조기 반환(이미 Zero)" 중 어느 쪽인지 구분되지 않아 실측이 성립하지 않는다.
 
-단계 7 주석의 단정은 **"미확인"** 으로 정정했다. 다음 실행에서 `log_level: debug` 로 `koenvue.log` 를 보면 확정된다.
+**실측** — `log_level: debug` 로 두 종료 경로를 각각 1회 실행(설정·로그를 실사용 폴더와 분리한 사본에서):
+
+| 종료 경로 | 관측 |
+|---|---|
+| 트레이 「종료」 (`WM_COMMAND`/`IDM_EXIT` → `PostQuitMessage`) | `sameThread=True` · `DestroyWindow(_hwndOverlay/_hwndCursorOverlay/_hwndMain) ok` **3회** |
+| 트레이 「관리자 권한」 토글 (`WM_CLOSE`) | `sameThread=True` · 오버레이 둘은 `ok`, `_hwndMain` 만 `skipped: already reset by WM_DESTROY` |
+
+**결론 — 단계 7 주석이 틀렸다.** `ProcessExit` 는 **메인 스레드에서 돈다**(`threadId=1 == mainThreadId=1`, 정상 `Main` 반환 종료의 CoreCLR 동작). 따라서 단계 2·2a 의 `KillTimer` 와 단계 5 의 `DestroyWindow` 는 유효하고, §N-42 의 "파괴 직후 필드를 Zero" 도 실제로 파괴된 창을 지운다. COM 해제를 부르지 않는 결론 자체는 유지되지만 근거는 `[STAThread]` 로 CLR 이 이미 수행한다는 것이다.
+
+**부수 확인 — G5 가 실기에서 재현됐다.** `WM_CLOSE` 경로에서 `_hwndMain` 만 `skipped` 이고 오버레이 둘은 `ok` 였다. 즉 `WM_DESTROY` 핸들러가 **파괴된 창을 판별해 그 필드만** 내린다는 설계가 그대로 관측됐다(`WM_CLOSE` 는 메인 창에만 갔으므로 오버레이가 살아 있는 것이 맞다). 단위 테스트가 불가능하다고 적어 둔 경로의 실기 증거다.
+
+계측은 제거하지 않는다 — 종료 경로가 바뀌면(예: 새 종료 트리거 추가) 같은 판정을 다시 해야 하고, 비용은 종료 시 Debug 4줄뿐이다(기본 `log_level: INFO` 에서는 나오지 않는다).
 
 > **주의 — 이 계측을 손볼 때**: 세 핸들 필드는 감지 스레드가 읽는 `volatile` 이다. 헬퍼에 `ref IntPtr` 로 넘기면 **CS0420** 대로 volatile 보장이 사라져 §N-42 의 "다른 스레드가 즉시 Zero 를 관측한다" 는 전제가 깨진다(실제로 이 계측을 넣다가 한 번 걸렸고 컴파일러 경고가 잡았다). 헬퍼는 파괴·로그만 맡고 **필드 대입은 호출자가 직접** 한다.
 

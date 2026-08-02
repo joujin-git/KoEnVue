@@ -83,7 +83,7 @@
 
 ### 5.2 그룹 목록 — 20그룹 **전부 처리 완료**
 
-**수정 18그룹 35건 · 계측 1그룹 1건(G18, 사실 확인 대기) · 오탐 1그룹 1건(G20).**
+**수정 18그룹 35건 · 계측 1그룹 1건(G18 — 2026-08-02 실측으로 **확정 완료**, 코드 수정 불필요 판정) · 오탐 1그룹 1건(G20).**
 
 **⚠ G6 은 새로 확인된 잔여 결함이다.** N28 · N31 · N47 을 "N15 수정으로 닫혔다" 로 처리하려다 코드를 열어 보니 절반만 닫혀 있었다. 병합 작업이 실제로 잡아낸 것이라 우선순위 최상단에 뒀고, **G11 과 함께 2026-08-02 에 수정 완료**했다(§5.5).
 
@@ -106,7 +106,7 @@
 | ~~**G15**~~ ✅ | DPI 변경 후 후속 Render 없이 빈 DIB 블리트 | N6 | 1 | 🟠 배지 소멸 |
 | ~~**G16**~~ ✅ | `EnableWindow` 가 별도 top-level 배지를 막지 못함 | N39 | 1 | 🟠 모달 뒤 설정 변경 |
 | ~~**G17**~~ ✅ | 리로드 실패 MessageBox 안에서 `HandleConfigChanged` 재진입 | N34 | 1 | 🟠 안내 무한 누적 |
-| **G18** 🔍 | `OnProcessExit` 의 스레드 친화성 전제가 자기모순 | N45 | 1 | 🟡 종료 정리 미수행 |
+| ~~**G18**~~ ✅ | `OnProcessExit` 의 스레드 친화성 전제가 자기모순 | N45 | 1 | **실측 확정 — 주석이 틀렸고 코드는 옳았다** |
 | ~~**G19**~~ ✅ | `user_hidden` true→false 핫리로드만 비대칭 | N48 | 1 | 🟠 배지 복원 안 됨 |
 | ~~**G20**~~ ❌ | `CleanupDialog` 선택 항목이 stale 스냅샷 기준 | N27 잔여 | 1 | **오탐 확정** |
 
@@ -151,7 +151,7 @@ N27 은 "리로드가 `indicator_positions` 를 바꿨다면 선택이 더 이�
 2. ~~**G1 · G2 · G3**~~ — ✅ **2026-08-02 수정 완료** (§5.5). 셋 다 `_drainThread` 필드 하나에 역할이 둘(Join 대상 + 라우팅 스위치) 얹혀 있던 데서 나왔다.
 3. ~~**G5 · G10 · G16 · G17**~~ — ✅ **2026-08-02 수정 완료** (§5.5). 창 lifecycle / 모달 계약. 넷 다 "정상 동작으로 타는 경로에 가드가 없다" 는 성질이었다.
 4. ~~**G4 · G14 · G19**~~ — ✅ **2026-08-02 수정 완료** (§5.5). 배지 가시성 상태 기계. 셋 다 "숨겨졌는데 복원 경로가 없다" 는 같은 축이었다.
-5. ~~나머지 8그룹 11건~~ — ✅ **2026-08-02 처리 완료** (§5.5). G7·G8(트레이 아이콘) · G9(커서 테마) · G12(schtasks) · G13(FG 캐시) · G15(DPI 빈 DIB) 수정, **G18 은 계측만**(사실 확인 대기), **G20 은 오탐 확정**.
+5. ~~나머지 8그룹 11건~~ — ✅ **2026-08-02 처리 완료** (§5.5). G7·G8(트레이 아이콘) · G9(커서 테마) · G12(schtasks) · G13(FG 캐시) · G15(DPI 빈 DIB) 수정, **G18 은 계측 → 같은 날 실측으로 확정**(§5.6), **G20 은 오탐 확정**.
 
 **§5 의 20그룹은 전부 처리됐다.** 남은 것은 실기 검증뿐이다 — 각 절의 「남은 검증」 참조.
 
@@ -234,18 +234,35 @@ N27 은 "리로드가 `indicator_positions` 를 바꿨다면 선택이 더 이�
 - **G12** (`App/Startup/StartupTaskManager`) — 조회 경로 둘이 `WaitForExit(timeout)` 반환값을 확인하고, 타임아웃이면 `KillTimedOutChild` 로 자식을 정리한다. 종전에는 반환값을 버리고 `ExitCode` 를 읽어 `InvalidOperationException` 이 났고 **catch 가 그것을 "미등록" 으로 삼켰다** — 메뉴 체크가 실제와 반대로 표시되고 그 상태에서 누르면 이미 있는 태스크를 다시 만든다. 동시에 자식 프로세스와 파이프 핸들 2개가 매 우클릭마다 고아로 쌓였다(`StandardOutput` 을 동기 모드로 만졌기 때문에 `Process.Dispose` 가 닫지 않는다). `RunSchtasks` 는 반환값은 이미 보고 있었으나 자식을 남긴 채 돌아갔다 — 함께 정리한다.
 - **G13** (`App/Detector/DetectionService`) — 두 필터 분기가 `LastHwndForeground` 를 앞당겨 세우기 **전에** `UpdateForegroundProcessCache` 를 호출한다. 그 함수는 hwnd 하나만 보고 조기 반환하므로, 종전에는 필터가 풀린 뒤에도 프로세스명과 창 프레임이 **영원히 이전 앱 값**으로 남아 per-app 프로필 매칭과 창 이동 추적이 엉뚱한 앱 기준으로 돌았다. 같은 hwnd 면 즉시 반환하므로 추가 비용은 없다.
 - **G15** (`Program.SystemEvents`) — `HandleDpiChanged` 와 `HandlePowerResume` 에 `RefreshVisibleIndicator()` 추가. `Overlay.HandleDpiChanged` 는 캐시를 무효화하고 `PrepareResources` 로 새 DIB 섹션을 만들지만 **그리지는 않아** 그 시점 `_memDC` 는 전 픽셀 0 이다. Render 없이 블리트만 하는 애니메이션 프레임이 먼저 돌면 빈 비트맵이 `UpdateLayeredWindow` 로 올라가 배지가 사라진다. 형제 경로 셋은 모두 후속 렌더가 있었는데 이 둘만 빠져 있었다.
-- **G18** 🔍 (`Program.Bootstrap`) — **수정하지 않았다.** 단계 5 의 `DestroyWindow` 와 단계 7 의 주석("finalizer 스레드에서 돈다")이 서로 다른 전제 위에 있고 둘 다 참일 수 없는데, 어느 쪽이 사실인지는 **실측 없이 단정할 수 없다.** 그래서 계측만 넣었다 — `ProcessExit` 등록 시점의 스레드 ID 를 기록해 두고, 핸들러 진입 시 현재 스레드와 비교해 Debug 로 남기며, `DestroyWindow` 실패 시 `GetLastError` 를 함께 찍는다. 단계 7 주석의 단정은 **"미확인"** 으로 정정했다. 다음 실행의 로그가 이를 가른다.
+- **G18** ✅ (`Program.Bootstrap`) — **수정하지 않고 계측만 넣었고, 같은 날 실측으로 확정했다** (§5.6). 단계 5 의 `DestroyWindow` 와 단계 7 의 주석("finalizer 스레드에서 돈다")이 서로 다른 전제 위에 있고 둘 다 참일 수 없는데, 어느 쪽이 사실인지는 **실측 없이 단정할 수 없었다.** 결과는 **주석이 틀렸다** — `ProcessExit` 는 메인 스레드에서 돌고 `DestroyWindow` 는 성공한다.
 - **G20** ❌ — 오탐 확정. 위 §5.3 참조.
 
 **검증**
 - `WindowLifecycleTests` 에 G8 재진입 케이스 1건 추가 (225 → **226**). 가드는 셸에 닿기 **전에** 반환하므로 GDI/셸 미접촉으로 검증된다. 더 새로운 상태를 보류에 싣는지(`Assert.Same`)까지 본다.
 - **대조군 실측** — 재진입 가드를 제거하자 그 케이스가 실패했다.
-- **나머지는 단위 테스트가 불가능하다** — G7(GDI 실패 유도) · G9·G15(실제 창) · G12(스케줄러 타임아웃 유도) · G13(`TryHandleFilter` 가 Win32 필터에 닿음) · G18(종료 시퀀스).
+- **나머지는 단위 테스트가 불가능하다** — G7(GDI 실패 유도) · G9·G15(실제 창) · G12(스케줄러 타임아웃 유도) · G13(`TryHandleFilter` 가 Win32 필터에 닿음) · G18(종료 시퀀스 — **대신 실기 실측으로 확정, §5.6**).
 - 빌드 debug 경고 0 · AOT publish 성공.
 
 > **작업 중 잡은 회귀** — G18 계측을 넣으며 `DestroyWindowLogged(ref IntPtr hwnd, …)` 로 리팩터링했다가 컴파일러 경고 **CS0420**(volatile 필드를 `ref` 로 넘기면 volatile 보장이 사라진다)에 걸렸다. 그 세 핸들은 감지 스레드가 읽는 volatile 이고 그것이 §N-42 의 전제 자체라, 그대로 뒀으면 이번 세션에서 다시 "수정이 새 결함을 만든" 사례가 됐을 것이다. 필드 대입을 호출자로 되돌리고 헬퍼는 파괴·로그만 맡게 했다.
 
-**남은 검증** — 실기 확인 미수행. ① 부팅 직후(explorer 초기화 전) 트레이 아이콘이 정상적으로 뜨는지 ② 라이트↔다크 전환 시 **커서 헤일로도** 새 색으로 바뀌는지 ③ 트레이 우클릭 시 「시작 프로그램」 체크가 실제 등록 상태와 맞는지 ④ 모니터 간 이동(DPI 변경)·절전 복귀 후 배지가 남아 있는지 ⑤ **G18 은 로그 확인이 곧 검증이다** — 종료 후 `koenvue.log` 에서 `OnProcessExit: threadId=… sameThread=…` 와 `DestroyWindow(...) failed` 유무를 보면 된다(`log_level: debug` 필요).
+**남은 검증** — 실기 확인 미수행. ① 부팅 직후(explorer 초기화 전) 트레이 아이콘이 정상적으로 뜨는지 ② 라이트↔다크 전환 시 **커서 헤일로도** 새 색으로 바뀌는지 ③ 트레이 우클릭 시 「시작 프로그램」 체크가 실제 등록 상태와 맞는지 ④ 모니터 간 이동(DPI 변경)·절전 복귀 후 배지가 남아 있는지 ~~⑤ G18 로그 확인~~ → **완료 (§5.6)**.
+
+### 5.6 G18 실측 — 확정 (2026-08-02)
+
+`log_level: debug` 로 **두 종료 경로를 각각 1회** 실행해 확정했다. 실사용 설정·로그를 건드리지 않도록 exe 와 config 사본을 별도 폴더에 두고 돌렸으며, 종료는 실사용 조작과 같은 메시지를 외부에서 게시해 재현했다(`WM_COMMAND`/`IDM_EXIT` = 트레이 「종료」, `WM_CLOSE` = 트레이 「관리자 권한」 토글).
+
+| 종료 경로 | 관측 로그 |
+|---|---|
+| 트레이 「종료」 (`PostQuitMessage`) | `OnProcessExit: threadId=1, mainThreadId=1, sameThread=True` · `DestroyWindow(_hwndOverlay) ok` · `DestroyWindow(_hwndCursorOverlay) ok` · `DestroyWindow(_hwndMain) ok` |
+| 「관리자 권한」 토글 (`WM_CLOSE`) | 동일한 `sameThread=True` · 오버레이 둘은 `ok` · `DestroyWindow(_hwndMain) skipped: already reset by WM_DESTROY` |
+
+**결론 — 단계 7 주석이 틀렸고 코드(단계 2·2a·5)는 옳았다.** `ProcessExit` 는 메인 스레드에서 돈다. 따라서 `KillTimer` 와 `DestroyWindow` 는 유효하고, §N-42 의 "파괴 직후 필드 Zero" 도 실제로 파괴된 창을 지운다. COM 해제를 부르지 않는 결론은 유지되지만 근거는 `[STAThread]` 로 CLR 이 이미 수행한다는 것으로 바뀐다. 주석·문서를 확정 서술로 교체했다.
+
+**계측 보강이 필요했다** — 최초 계측은 `DestroyWindow` **실패 시에만** 로그했는데, 그러면 무로그가 "성공" 과 "조기 반환(핸들이 이미 Zero)" 중 어느 쪽인지 구분되지 않는다. 첫 실행이 정확히 그 함정에 걸렸다(`WM_CLOSE` 로 종료했더니 G5 가 먼저 필드를 내려 아무 로그도 남지 않았다). 세 갈래(`skipped`/`ok`/`failed`)를 모두 남기도록 고친 뒤에야 실측이 성립했다.
+
+**부수 확인 — G5 가 실기에서 재현됐다.** `WM_CLOSE` 경로에서 `_hwndMain` 만 `skipped` 이고 오버레이 둘은 `ok` 였다 — `WM_DESTROY` 핸들러가 파괴된 창을 판별해 **그 필드만** 내린다는 설계가 그대로 관측됐다. §5.5 에서 "단위 테스트 불가" 로 남겨 둔 경로의 실기 증거다.
+
+**계측은 유지한다** — 종료 트리거가 추가되면 같은 판정을 다시 해야 하고, 비용은 종료 시 Debug 4줄뿐이다(기본 `INFO` 에서는 나오지 않는다).
 
 ---
 
@@ -577,7 +594,9 @@ AUDIT-2026-07-30 §N-42 는 '메인 윈도우가 정상 루프 종료 전 파괴
 트레이 최초 등록 경로만 "무효 HICON 방어" 정책에서 빠져 있고, 재시도 타이머는 그 무효 핸들을 그대로 재사용한다. TrayIcon.CreateIcon 은 실패 시 `new SafeIconHandle(IntPtr.Zero, ownsHandle:false)` 를 돌려주는데(TrayIcon.cs:104-108, 135-139), Tray.UpdateState 는 이를 `newIcon.IsInvalid` 로 걸러 이전 아이콘을 유지하는 우아한 열화가 있는 반면(Tray.cs:200-212), Initialize 는 검사 없이 `_notifyIcon.Add(_currentIcon.DangerousGetHandle(), …)`(Tray.cs:130) 로 NULL HICON 을 NIF_ICON 과 함께 셸에 등록하고 무효 핸들을 _currentIcon 에 그대로 보관한다. 이어 HandleAddRetryTimer 는 `_currentIcon is null` 만 확인하고(Tray.cs:156) 최대 30회 동안 같은 무효 핸들로만 Add 를 반복한다(Tray.cs:164) — 아이콘을 다시 만들지 않는다. 재현 근거: 부팅 자동 시작(schtasks LogonTrigger, StartupTaskManager.cs:49)처럼 explorer 초기화 전에 기동돼 NIM_ADD 가 실패하는 구간은 GDI/USER 자원 압박 구간과 겹치므로 CreateIcon 실패(GetSystemMetrics 기반 DIB 생성)와 동시 발생이 성립한다. 그 상태에서 Add 가 성공하면 빈 칸 아이콘이 박히고, 실패하면 30회 재시도가 전부 무의미해진 뒤 _initialized=true·_added=false 로 남아 이후 UpdateState 의 NIM_MODIFY 가 전부 early-return(NotifyI
 
 
-### N45 — `Program.Bootstrap.cs` (other)
+### N45 — `Program.Bootstrap.cs` (other) — ✅ **실측 확정 (2026-08-02, §5.6)**
+
+> **결론**: 단계 7 주석이 틀렸다. `ProcessExit` 는 **메인 스레드에서 돌고**(`sameThread=True`) `DestroyWindow` 는 `ok` 를 돌려준다. 코드(단계 2·2a·5)는 옳았으므로 동작 수정은 없고, 주석·문서만 확정 서술로 교체했다.
 
 **위치**: OnProcessExit 단계 5 (Program.Bootstrap.cs:264-283) vs 단계 7 주석 (Program.Bootstrap.cs:290-291)
 
