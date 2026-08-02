@@ -229,6 +229,12 @@ internal static class DetectionService
                 User32.PostMessageW(host.GetHwndMain(), AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
             }
+            // 파생 캐시(프로세스명·창 프레임)를 hwnd 와 **함께** 갱신한다. 종전에는 여기서
+            // LastHwndForeground 만 앞당겨 세웠는데, UpdateForegroundProcessCache 는 그 필드 하나만
+            // 보고 조기 반환하므로 필터가 풀린 뒤에도 이름과 프레임이 **영원히 이전 앱 값**으로
+            // 남았다 — per-app 프로필 매칭과 창 이동 추적이 둘 다 엉뚱한 앱 기준으로 돈다
+            // (bug-hunt 2026-08-02 확정 #5). 같은 hwnd 면 그 함수가 즉시 반환하므로 비용도 없다.
+            UpdateForegroundProcessCache(ref state, hwndForeground);
             state.LastHwndForeground = hwndForeground;
             state.LastHwndFocus = hwndFocus;
             state.LastFiltered = true;
@@ -272,6 +278,8 @@ internal static class DetectionService
                 User32.PostMessageW(host.GetHwndMain(), AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
             }
+            // 위 Pointer suppress 분기와 같은 이유로 파생 캐시를 함께 갱신한다 (확정 #5).
+            UpdateForegroundProcessCache(ref state, hwndForeground);
             state.LastHwndForeground = hwndForeground;
             state.LastHwndFocus = hwndFocus;
             state.LastFiltered = true;

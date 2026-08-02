@@ -213,9 +213,39 @@ internal static partial class Program
     // 종료 처리
     // ================================================================
 
+    /// <summary>
+    /// <c>ProcessExit</c> 핸들러를 등록한 스레드(= 메인). 아래 스레드 친화성 실측용 (확정 #45).
+    /// </summary>
+    private static int _mainThreadId;
+
+    /// <summary>
+    /// 창을 파괴하고, 실패하면 <c>GetLastError</c> 와 함께 흔적을 남긴다 — <c>DestroyWindow</c> 는
+    /// <b>창을 만든 스레드에서만</b> 성공하므로 이 로그가 곧 <c>OnProcessExit</c> 의 스레드 친화성
+    /// 실측이다 (확정 #45).
+    ///
+    /// <para>
+    /// <b>필드 대입은 호출자가 직접 한다</b> — 세 핸들 필드는 감지 스레드가 읽는 <c>volatile</c> 인데
+    /// <c>ref</c> 로 넘기면 CS0420 대로 volatile 보장이 사라져, §N-42 가 세운 "다른 스레드가 즉시
+    /// Zero 를 관측하고 자기 가드에 걸린다" 는 전제가 깨진다. 헬퍼는 파괴와 로그만 맡는다.
+    /// </para>
+    /// </summary>
+    private static void DestroyWindowLogged(IntPtr hwnd, string name)
+    {
+        if (hwnd == IntPtr.Zero) return;
+
+        if (!User32.DestroyWindow(hwnd))
+            Logger.Debug($"DestroyWindow({name}) failed: error={Marshal.GetLastPInvokeError()}");
+    }
+
     private static void OnProcessExit(object? sender, EventArgs e)
     {
         _stopping = true;
+
+        // 스레드 친화성 실측 (확정 #45) — 단계 5 의 DestroyWindow 와 단계 7 의 주석이 서로 다른
+        // 전제 위에 서 있다. 이 로그와 아래 DestroyWindow 반환값이 다음 실행에서 그것을 확정한다.
+        int exitThreadId = Environment.CurrentManagedThreadId;
+        Logger.Debug($"OnProcessExit: threadId={exitThreadId}, mainThreadId={_mainThreadId}, "
+                     + $"sameThread={exitThreadId == _mainThreadId}");
 
         // 0. 감지 스레드 합류 — _stopping=true 신호 후 자발 종료를 기다린다. hwnd 파괴 시점과
         //    detection 의 PostMessageW(_hwndMain, ...) 가 겹치는 race(last-error=1400 / Invalid
@@ -271,21 +301,14 @@ internal static partial class Program
         //    리셋을 한다. 창이 이 지점보다 **먼저** 죽는 경로(트레이 「관리자 권한」 토글이 보내는
         //    WM_CLOSE)가 있고, 그때는 아래 가드가 이미 Zero 를 보고 건너뛴다 — 이중 파괴도 함께
         //    막힌다 (bug-hunt 2026-08-02 확정 #10·#40·#43).
-        if (_hwndOverlay != IntPtr.Zero)
-        {
-            User32.DestroyWindow(_hwndOverlay);
-            _hwndOverlay = IntPtr.Zero;
-        }
-        if (_hwndCursorOverlay != IntPtr.Zero)
-        {
-            User32.DestroyWindow(_hwndCursorOverlay);
-            _hwndCursorOverlay = IntPtr.Zero;
-        }
-        if (_hwndMain != IntPtr.Zero)
-        {
-            User32.DestroyWindow(_hwndMain);
-            _hwndMain = IntPtr.Zero;
-        }
+        //    반환값을 로그로 남긴다 — 이 함수가 창을 만든 스레드가 아니라면 Win32 가 파괴를 거부하고
+        //    false 를 돌려준다. 위 threadId 로그와 짝을 이뤄 단계 7 의 전제를 실측으로 가른다 (#45).
+        DestroyWindowLogged(_hwndOverlay, nameof(_hwndOverlay));
+        _hwndOverlay = IntPtr.Zero;
+        DestroyWindowLogged(_hwndCursorOverlay, nameof(_hwndCursorOverlay));
+        _hwndCursorOverlay = IntPtr.Zero;
+        DestroyWindowLogged(_hwndMain, nameof(_hwndMain));
+        _hwndMain = IntPtr.Zero;
 
         // 6. Mutex 해제 (Dispose만 — 프로세스 종료 시 OS가 자동 해제.
         //    ReleaseMutex는 소유 스레드에서만 호출 가능하나 ProcessExit는 다른 스레드일 수 있음)
@@ -293,7 +316,16 @@ internal static partial class Program
 
         // 7. 로거 종료 (Shutdown 전에 최종 로그 기록)
         //    COM 해제는 [STAThread] 로 CLR 이 메인 스레드 종료 시 자동 수행하므로 여기서 부르지 않는다.
-        //    ProcessExit 는 finalizer 스레드에서 돌아 메인 스레드의 apartment 와 매칭되지도 않는다.
+        //
+        //    **이전 주석은 "ProcessExit 는 finalizer 스레드에서 돌아 메인 스레드의 apartment 와
+        //    매칭되지도 않는다" 고 단언했으나, 그것은 확인된 적 없는 전제였다.** 참이라면 위 단계 5 의
+        //    DestroyWindow 3회가 전부 조용히 실패하고(Win32 는 다른 스레드가 만든 창의 파괴를 거부한다)
+        //    §N-42 가 넣은 "파괴 직후 필드를 Zero" 라인은 살아 있는 창의 핸들을 지우는 셈이 된다.
+        //    단계 2·2a 의 KillTimer 도 같은 스레드 친화성 가정 위에 있다. 반대로 실제로 메인
+        //    스레드에서 돈다면(정상 Main 반환 종료의 CoreCLR 동작) 이 주석이 사실과 다르고, COM 해제를
+        //    생략한 근거 자체가 틀린 전제 위에 선다. **어느 쪽이든 한쪽은 결함이다** (확정 #45).
+        //    위의 threadId 로그와 DestroyWindowLogged 의 반환값이 다음 실행에서 이를 가른다 —
+        //    그때까지 이 절의 근거는 **미확인**이다. 추측으로 고치지 않는다.
         Logger.Info("KoEnVue stopped");
         Logger.Shutdown();
     }

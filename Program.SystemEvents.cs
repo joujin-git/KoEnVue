@@ -26,6 +26,8 @@ internal static partial class Program
     {
         Logger.Info("Power resumed");
         Overlay.HandleDpiChanged();
+        // 후속 렌더 필수 — 아래 HandleDpiChanged 의 주석 참조 (확정 #6).
+        RefreshVisibleIndicator();
     }
 
     /// <summary>인디가 가시 상태(+ 포그라운드 유효)면 현재 위치로 TriggerShow 재호출 (per-app resolved,
@@ -60,7 +62,18 @@ internal static partial class Program
         Settings.ClearProfileCache();
 
         if (themeFollowsSystem)
+        {
             Overlay.HandleConfigChanged(_config);
+
+            // **커서 헤일로도 같은 색을 읽는다** — CursorOverlay.BuildStyle 이
+            // config.HangulBg / EnglishBg / NonKoreanBg 에서 동심원 색을 뽑는다. 그런데
+            // CursorOverlay 는 자체 _config 스냅샷을 들고 있고 갱신 진입점이
+            // ApplyCursorConfigChange 하나뿐이라, 이 경로에서 호출하지 않으면 **영구히** 옛 테마
+            // 색으로 그린다(인스턴스가 안 바뀌므로 자가치유도 없다). 배지와 트레이만 새 색으로
+            // 바뀌고 헤일로만 남는 상태가 다음 config 리로드나 트레이 토글까지 지속됐다
+            // (bug-hunt 2026-08-02 확정 #33·#49).
+            ApplyCursorConfigChange();
+        }
 
         // PR-13: 글로벌 재적용 후 per-app resolved 로 렌더 — 프로필이 theme=system 상속 시
         //         프로필 색상 6쌍이 새 시스템 색으로 재계산된 인스턴스로 갱신된다.
@@ -79,6 +92,16 @@ internal static partial class Program
         // 현재 미사용 — Overlay 가 자체 DPI 재조회로 처리한다. per-monitor DPI 정밀 대응이 필요해지면
         // dispatch 의 WM_DPICHANGED case 에서 wParam/lParam 을 다시 전달하면 된다(WndProc 에서 항상 가용).
         Overlay.HandleDpiChanged();
+
+        // **후속 렌더가 반드시 필요하다.** Overlay.HandleDpiChanged 는 캐시를 무효화하고
+        // PrepareResources 로 새 DIB 섹션을 만들지만 **그리지는 않는다** — 그 시점의 _memDC 는 전
+        // 픽셀이 0 인 빈 비트맵이다. 그 상태에서 Render 없이 블리트만 하는 애니메이션 프레임
+        // (UpdateAlpha / UpdatePosition / UpdateScaledSize)이 먼저 돌면 빈 DIB 가
+        // UpdateLayeredWindow 로 올라가 **배지가 통째로 사라진다**. 형제 경로
+        // (HandleDisplayChange · HandleSettingChange · HandleConfigChanged)는 모두 직후
+        // RefreshVisibleIndicator 를 부르는데 이 경로와 전원 복귀만 빠져 있었다
+        // (bug-hunt 2026-08-02 확정 #6). app.manifest 가 PerMonitorV2 라 WM_DPICHANGED 를 실제로 받는다.
+        RefreshVisibleIndicator();
     }
 
     /// <summary>

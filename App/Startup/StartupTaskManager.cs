@@ -79,6 +79,39 @@ internal static class StartupTaskManager
     private const int SchtasksQueryTimeoutMs = 3000;
     private const int SchtasksCommandTimeoutMs = 5000;
 
+    /// <summary>
+    /// 타임아웃한 schtasks 자식 프로세스를 정리한다.
+    ///
+    /// <para>
+    /// 종전에는 조회 경로 둘이 <c>WaitForExit(timeout)</c> 의 <b>반환값을 버리고</b> 곧바로
+    /// <c>ExitCode</c> 를 읽었다. 타임아웃 시 그것이 <see cref="InvalidOperationException"/> 을 던지고
+    /// 메서드 자신의 catch 필터가 그것을 <b>"미등록"</b> 으로 삼켰다 — 트레이 메뉴의 「시작 프로그램」
+    /// 체크가 실제와 반대로 표시되고, 그 상태에서 누르면 이미 있는 태스크를 다시 만든다. 동시에
+    /// 자식 프로세스와 리다이렉트된 파이프 핸들 2개가 매번 고아로 남았다 (<c>StandardOutput</c> 을
+    /// 동기 모드로 만졌기 때문에 <c>Process.Dispose</c> 가 그것들을 닫지 않는다).
+    /// 태스크 스케줄러가 느린 구간(로그온 직후·도메인 정책 갱신 중)은 <b>우클릭마다</b> 이 경로를 탄다
+    /// (bug-hunt 2026-08-02 확정 #12).
+    /// </para>
+    ///
+    /// <para>
+    /// 정리 실패는 흡수한다 — 여기서 예외가 나면 호출자의 폴백까지 막힌다.
+    /// </para>
+    /// </summary>
+    private static void KillTimedOutChild(Process proc, string what)
+    {
+        Logger.Warning($"schtasks {what}: timed out; killing child process");
+        try
+        {
+            if (!proc.HasExited)
+                proc.Kill(entireProcessTree: true);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException
+            or System.ComponentModel.Win32Exception or NotSupportedException)
+        {
+            Logger.Debug($"schtasks child kill skipped: {ex.Message}");
+        }
+    }
+
     /// <summary>현재 사용자 컨텍스트에 <see cref="TaskName"/> 작업이 등록돼 있는지 확인.</summary>
     internal static bool IsStartupRegistered()
     {
@@ -96,7 +129,11 @@ internal static class StartupTaskManager
             // stdout/stderr 를 비동기로 흡수해 파이프 버퍼 포화 데드락 방지 (exit code 만 사용).
             _ = proc.StandardOutput.ReadToEndAsync();
             _ = proc.StandardError.ReadToEndAsync();
-            proc.WaitForExit(SchtasksQueryTimeoutMs);
+            if (!proc.WaitForExit(SchtasksQueryTimeoutMs))
+            {
+                KillTimedOutChild(proc, "/query");
+                return false;
+            }
             return proc.ExitCode == 0;
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
@@ -355,7 +392,11 @@ internal static class StartupTaskManager
             // 파이프 버퍼 포화로 데드락할 수 있다 (stdout ReadToEnd 가 EOF 대기 중 블록).
             Task<string> xmlTask = proc.StandardOutput.ReadToEndAsync();
             _ = proc.StandardError.ReadToEndAsync();
-            proc.WaitForExit(SchtasksQueryTimeoutMs);
+            if (!proc.WaitForExit(SchtasksQueryTimeoutMs))
+            {
+                KillTimedOutChild(proc, "/query /xml");
+                return (null, null, null);
+            }
             if (proc.ExitCode != 0) return (null, null, null);
             string xml = xmlTask.GetAwaiter().GetResult();
             return (ExtractTagFromXml(xml, "Command", unescape: true),
@@ -485,7 +526,8 @@ internal static class StartupTaskManager
         bool exited = proc.WaitForExit(SchtasksCommandTimeoutMs);
         if (!exited)
         {
-            Logger.Warning($"schtasks {arguments}: timed out after {SchtasksCommandTimeoutMs}ms");
+            // 이쪽은 반환값을 이미 확인하고 있었지만 자식을 남긴 채 돌아갔다 — 정리까지 함께 한다.
+            KillTimedOutChild(proc, arguments);
             return false;
         }
         string stdout = stdoutTask.GetAwaiter().GetResult();

@@ -1296,6 +1296,31 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 
 회귀 가드는 `IndicatorVisibilityTests`(G14 3케이스 — 래치 해제 + 반대 방향 가드 둘)와 위 invariant grep. **G14 의 모드 가드 경로는 `Dwmapi.TryGetVisibleFrame` 보다 앞이라 Win32 에 닿지 않아** 실제 창 없이 결정적으로 검증된다. G4 의 애니메이터 상태 조합과 G19 의 `ApplyConfigTransition` 은 실제 창을 요구해 단위 테스트가 불가능하다.
 
+### 트레이 아이콘 lifecycle — 무효 HICON + 블로킹 IPC 재진입 (bug-hunt 2026-08-02 G7·G8)
+
+`TrayIcon.CreateIcon` 은 GDI 실패 시 `new SafeIconHandle(IntPtr.Zero, ownsHandle: false)` 를 돌려준다. `UpdateState` 는 이를 `IsInvalid` 로 걸러 이전 아이콘을 유지하는 우아한 열화가 있었는데(`LayeredOverlayBase` 의 "이전 DIB 유지" 와 같은 패턴), **최초 등록 경로만 그 정책에서 빠져 있었다** — `Initialize` 가 무효 핸들을 `NIF_ICON` 과 함께 셸에 등록하면 빈 칸이 박히고, `HandleAddRetryTimer` 는 `_currentIcon is null` 만 확인해 **같은 무효 핸들로 30회를 반복**했다. 부팅 자동 시작(schtasks LogonTrigger)은 explorer 초기화 전이라 NIM_ADD 실패 구간과 GDI 압박 구간이 겹친다. 이제 무효면 등록을 건너뛰고, 재시도가 **매 회차 아이콘부터 다시 만든다** — 압박이 풀리는 시점이 곧 재시도가 의미를 갖는 시점이다.
+
+`Shell_NotifyIconW` 는 explorer 로 가는 **블로킹 크로스프로세스 SendMessage** 다. 호출 스레드는 그 동안 이 스레드로 들어온 *sent* 메시지를 계속 디스패치하고, `WM_SETTINGCHANGE`/`WM_THEMECHANGED` 는 시스템·다른 프로세스가 `SendMessageTimeout(HWND_BROADCAST, …)` 로 **보내는** 메시지라 정확히 그 구간에 배달된다 → `WndProcCore` → `HandleSettingChange` → `Tray.UpdateState` 재진입. `_currentIcon` 을 「셸에 넘기고 → 해제하고 → 재대입」 하는 세 걸음이 그 창에 뒤엉키면 **바깥 프레임이 셸이 지금 그리고 있는 HICON 을 파괴**한다.
+
+`_shellCallInProgress` 가드 + 보류 표식으로 닫는다. **재진입을 버리지 않는 이유**는 안쪽 호출이 더 **새로운** 상태(방금 바뀐 테마 색)를 들고 오기 때문이다 — 표시만 남기고 바깥 프레임이 끝날 때 그 값으로 한 번 더 갱신한다. `HandleAddRetryTimer` 도 같은 가드를 공유한다(NIM_ADD 역시 블로킹 IPC이고, WM_TIMER 는 posted 라 중첩 펌프에서 디스패치된다).
+
+### 종료 시퀀스의 스레드 친화성 — 미확인 (bug-hunt 2026-08-02 G18)
+
+`OnProcessExit` 안에 **양립 불가능한 두 전제**가 있다.
+
+- 단계 5 는 `DestroyWindow(_hwndOverlay/_hwndCursorOverlay/_hwndMain)` 를 수행한다 — Win32 는 **다른 스레드가 만든 창의 파괴를 거부**하므로, 이 코드가 의미를 가지려면 메인 스레드에서 돌아야 한다.
+- 단계 7 의 주석은 "ProcessExit 는 finalizer 스레드에서 돌아 메인 스레드의 apartment 와 매칭되지도 않는다" 고 **단언**했다. 이것이 참이면 위 `DestroyWindow` 3회가 전부 조용히 실패하고, §N-42 가 넣은 "파괴 직후 필드를 Zero" 라인은 살아 있는 창의 핸들을 지우는 셈이 된다. 단계 2·2a 의 `KillTimer` 도 같은 가정 위에 있다.
+
+**어느 쪽이든 한쪽은 결함이다.** 그런데 어느 쪽이 사실인지는 실측 없이 단정할 수 없어 — 이 프로젝트에서 "그럴 것이다" 로 고쳐 새 결함을 만든 전례가 반복됐다 — **수정 대신 계측을 넣었다**:
+
+- `ProcessExit` 등록 시점의 `Environment.CurrentManagedThreadId` 를 `_mainThreadId` 에 기록
+- 핸들러 진입 시 현재 스레드와 비교해 `sameThread=` 로 Debug 로그
+- `DestroyWindowLogged` 가 실패 시 `GetLastError` 를 함께 남김
+
+단계 7 주석의 단정은 **"미확인"** 으로 정정했다. 다음 실행에서 `log_level: debug` 로 `koenvue.log` 를 보면 확정된다.
+
+> **주의 — 이 계측을 손볼 때**: 세 핸들 필드는 감지 스레드가 읽는 `volatile` 이다. 헬퍼에 `ref IntPtr` 로 넘기면 **CS0420** 대로 volatile 보장이 사라져 §N-42 의 "다른 스레드가 즉시 Zero 를 관측한다" 는 전제가 깨진다(실제로 이 계측을 넣다가 한 번 걸렸고 컴파일러 경고가 잡았다). 헬퍼는 파괴·로그만 맡고 **필드 대입은 호출자가 직접** 한다.
+
 ### `InvariantGlobalization`
 
 Enabled in [KoEnVue.csproj](../KoEnVue.csproj) — strips ICU from the NativeAOT publish. Means no `CultureInfo` usage except for `CultureInfo.InvariantCulture`. IME language detection uses `GetUserDefaultUILanguage` P/Invoke instead of `CultureInfo.CurrentUICulture`.

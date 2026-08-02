@@ -81,7 +81,9 @@
 | N30 | N11 (`19f4ba5`) | `Logger.cs:138-139` 가 새 writer 대입 **전에** `_fileWriter?.Dispose()` 수행 |
 | N21 · N26 · N32 · N38 · N46 | N16 (`19f4ba5`) | `Tray.cs:310`(ScaleInputDialog 후) · `:689`(CleanupDialog 후) 둘 다 `config = currentConfig()` 재조회 |
 
-### 5.2 그룹 목록 — 20그룹 (**12그룹 26건 해결** · 8그룹 11건 미해결)
+### 5.2 그룹 목록 — 20그룹 **전부 처리 완료**
+
+**수정 18그룹 35건 · 계측 1그룹 1건(G18, 사실 확인 대기) · 오탐 1그룹 1건(G20).**
 
 **⚠ G6 은 새로 확인된 잔여 결함이다.** N28 · N31 · N47 을 "N15 수정으로 닫혔다" 로 처리하려다 코드를 열어 보니 절반만 닫혀 있었다. 병합 작업이 실제로 잡아낸 것이라 우선순위 최상단에 뒀고, **G11 과 함께 2026-08-02 에 수정 완료**했다(§5.5).
 
@@ -92,21 +94,21 @@
 | ~~**G4**~~ ✅ | `_indicatorVisible` 이 화면과 어긋난 채 `true` 로 박제 | N7 · N17 · N25 · N37 | 4 | 🟠 불필요 IPC + 재표시 불가 |
 | ~~**G5**~~ ✅ | `WM_CLOSE` 경로가 핸들 필드 리셋을 우회 | N10 · N40 · N43 | 3 | 🟠 죽은/재활용 HWND 에 post |
 | ~~**G2**~~ ✅ | `_drainThread` 가 non-volatile + 락 밖 변경 | N2 · N24 · N35 | 3 | 🟡 로그 유실 |
-| **G7** | 트레이 최초 등록만 무효 HICON 방어 누락 | N13 · N44 | 2 | 🟠 빈 트레이 아이콘 고착 |
-| **G8** | `Tray.UpdateState` 가 블로킹 IPC 중 재진입 | N8 · N42 | 2 | 🟠 살아있는 HICON 파괴 |
-| **G9** | 테마 변경이 커서 헤일로에만 전달 안 됨 | N33 · N49 | 2 | 🟠 색 불일치 영구 |
+| ~~**G7**~~ ✅ | 트레이 최초 등록만 무효 HICON 방어 누락 | N13 · N44 | 2 | 🟠 빈 트레이 아이콘 고착 |
+| ~~**G8**~~ ✅ | `Tray.UpdateState` 가 블로킹 IPC 중 재진입 | N8 · N42 | 2 | 🟠 살아있는 HICON 파괴 |
+| ~~**G9**~~ ✅ | 테마 변경이 커서 헤일로에만 전달 안 됨 | N33 · N49 | 2 | 🟠 색 불일치 영구 |
 | ~~**G10**~~ ✅ | 비가시 `_hwndMain` 을 포커스 복원 대상으로 사용 | N29 · N41 | 2 | 🟠 배지 영영 숨김 |
 | ~~**G3**~~ ✅ | 크래시 핸들러의 `StopDrainThread` 가 임의 스레드 재진입 | N23 | 1 | 🟠 크래시 로그 유실 |
 | ~~**G11**~~ ✅ | `Save` 의 `TryLoad` 실패 분기가 조용히 병합 전 값 반환 | N19 | 1 | 🔴 사용자 편집 되돌림 |
-| **G12** | `WaitForExit` 반환값 무시 → 미등록 오판 + 핸들 누수 | N12 | 1 | 🟠 중복 등록 |
-| **G13** | 필터 분기가 FG 캐시를 반만 갱신 | N5 | 1 | 🟡 프로필 오적용 |
+| ~~**G12**~~ ✅ | `WaitForExit` 반환값 무시 → 미등록 오판 + 핸들 누수 | N12 | 1 | 🟠 중복 등록 |
+| ~~**G13**~~ ✅ | 필터 분기가 FG 캐시를 반만 갱신 | N5 | 1 | 🟡 프로필 오적용 |
 | ~~**G14**~~ ✅ | `WindowMoving` 래치가 config 교체를 인지 못함 | N18 | 1 | 🟠 배지 영구 숨김 |
-| **G15** | DPI 변경 후 후속 Render 없이 빈 DIB 블리트 | N6 | 1 | 🟠 배지 소멸 |
+| ~~**G15**~~ ✅ | DPI 변경 후 후속 Render 없이 빈 DIB 블리트 | N6 | 1 | 🟠 배지 소멸 |
 | ~~**G16**~~ ✅ | `EnableWindow` 가 별도 top-level 배지를 막지 못함 | N39 | 1 | 🟠 모달 뒤 설정 변경 |
 | ~~**G17**~~ ✅ | 리로드 실패 MessageBox 안에서 `HandleConfigChanged` 재진입 | N34 | 1 | 🟠 안내 무한 누적 |
-| **G18** | `OnProcessExit` 의 스레드 친화성 전제가 자기모순 | N45 | 1 | 🟡 종료 정리 미수행 |
+| **G18** 🔍 | `OnProcessExit` 의 스레드 친화성 전제가 자기모순 | N45 | 1 | 🟡 종료 정리 미수행 |
 | ~~**G19**~~ ✅ | `user_hidden` true→false 핫리로드만 비대칭 | N48 | 1 | 🟠 배지 복원 안 됨 |
-| **G20** | `CleanupDialog` 선택 항목이 stale 스냅샷 기준 | N27 잔여 | 1 | 🟠 엉뚱한 위치 삭제 |
+| ~~**G20**~~ ❌ | `CleanupDialog` 선택 항목이 stale 스냅샷 기준 | N27 잔여 | 1 | **오탐 확정** |
 
 ### 5.3 그룹 상세
 
@@ -130,8 +132,16 @@
 **G2 ✅ — `_drainThread` 가시성** (N2 · N24 · N35)
 `Logger.cs:22` 는 여전히 `private static Thread? _drainThread;` — 같은 파일의 `_generation` 은 `Volatile.Read`/`Interlocked` 로 다루는데 이것만 누락이다. 라우팅 스위치로 모든 스레드가 읽고 메인이 `Initialize`/`StopDrainThread` 에서 **락 밖**으로 쓴다. `StopDrainThread`(:364-365)의 read-then-clear 도 비원자이며, G3 의 경로로 다른 스레드에서 진입 가능하다.
 
-**G20 — `CleanupDialog` 선택 항목 매핑** (N27 잔여)
-N16 수정으로 커밋 베이스는 `currentConfig()` 재조회(`Tray.cs:689`)로 닫혔으나, `displayItems`/`originalNames` 는 **다이얼로그 열기 전 스냅샷**에서 계산된 채 남는다. 코드 주석(:688)은 "사용자가 화면에서 고른 항목이라 그대로 쓴다" 로 의도적 선택임을 밝히지만, 그 사이 리로드가 `indicator_positions` 를 바꿨다면 선택이 더 이상 존재하지 않는 항목을 가리킬 수 있다. **의도적 결정이 옳은지 판단이 필요한 항목** — 오탐일 수도 있다.
+**G20 ❌ — `CleanupDialog` 선택 항목 매핑** (N27 잔여) — **오탐 확정 (2026-08-02)**
+N27 은 "리로드가 `indicator_positions` 를 바꿨다면 선택이 더 이상 대응하지 않는 항목에 매핑돼 **다른 프로세스의 저장 위치를 지우거나** 선택한 것을 놓칠 수 있다" 고 주장했다. 코드를 열어 확인한 결과 **성립하지 않는다.**
+
+`PositionCleanupService.RemoveSelected` 는 두 단계다 — ① `displayItems[i]` ↔ `originalNames[i]` 로 선택을 **이름**으로 환산하고(둘은 `Compute` 가 만든 짝이라 스냅샷 **내부에서** 항상 일관), ② 그 이름으로 `cleanedFixed.Remove(name)` / `cleanedRelative.Remove(name)` 를 수행한다. 인덱스는 스냅샷 밖으로 나가지 않고 **실제 제거는 전적으로 키 기반**이다. 따라서 그 사이 config 가 바뀌어도:
+
+- 사용자가 고른 이름이 새 config 에 없으면 → `Remove` 가 no-op (무해)
+- 리로드로 새로 생긴 항목은 → 선택되지 않았으므로 손대지 않음 (무해)
+- **엉뚱한 항목을 지울 경로 자체가 없다**
+
+코드 주석(`Tray.cs:688`)의 "displayItems/originalNames 는 사용자가 화면에서 고른 항목이라 그대로 쓴다" 는 판단이 옳았다. 07-30 감사의 §N-60(오탐)·§N-39(초벌 오판) 에 이어 세 번째로, **확정 판정이 finder 1 + 검증 렌즈 2표라는 사실이 그 자체로 근거가 되지 못한다**는 것을 다시 보여준다.
 
 나머지 그룹(G3 · G7 ~ G19)은 각 원본 항목이 §6 에 그대로 있고 병합으로 달라진 것이 없으므로 여기서 반복하지 않는다.
 
@@ -141,7 +151,9 @@ N16 수정으로 커밋 베이스는 `currentConfig()` 재조회(`Tray.cs:689`)�
 2. ~~**G1 · G2 · G3**~~ — ✅ **2026-08-02 수정 완료** (§5.5). 셋 다 `_drainThread` 필드 하나에 역할이 둘(Join 대상 + 라우팅 스위치) 얹혀 있던 데서 나왔다.
 3. ~~**G5 · G10 · G16 · G17**~~ — ✅ **2026-08-02 수정 완료** (§5.5). 창 lifecycle / 모달 계약. 넷 다 "정상 동작으로 타는 경로에 가드가 없다" 는 성질이었다.
 4. ~~**G4 · G14 · G19**~~ — ✅ **2026-08-02 수정 완료** (§5.5). 배지 가시성 상태 기계. 셋 다 "숨겨졌는데 복원 경로가 없다" 는 같은 축이었다.
-5. 나머지 8그룹 11건은 독립적이라 순서 무관 — **G7 · G8**(트레이 아이콘), **G9**(커서 테마), **G12**(schtasks), **G13**(FG 캐시), **G15**(DPI 빈 DIB), **G18**(종료 스레드 친화성), **G20**(정리 다이얼로그 매핑). ← **남은 전부**
+5. ~~나머지 8그룹 11건~~ — ✅ **2026-08-02 처리 완료** (§5.5). G7·G8(트레이 아이콘) · G9(커서 테마) · G12(schtasks) · G13(FG 캐시) · G15(DPI 빈 DIB) 수정, **G18 은 계측만**(사실 확인 대기), **G20 은 오탐 확정**.
+
+**§5 의 20그룹은 전부 처리됐다.** 남은 것은 실기 검증뿐이다 — 각 절의 「남은 검증」 참조.
 
 ### 5.5 수정 기록 (2026-08-02)
 
@@ -211,6 +223,29 @@ N16 수정으로 커밋 베이스는 `currentConfig()` 재조회(`Tray.cs:689`)�
 - 빌드 debug 경고 0 · AOT publish 성공.
 
 **남은 검증** — 실기 확인 미수행. ① 일본어/중국어 IME 환경에서 부팅 직후 배지가 숨겨진 채 로그에 `Filter triggered HIDE` 가 반복되지 않는지 ② 창을 드래그하는 중에 `position_mode` 를 `fixed` 로 바꾸고 드래그를 멈추면 배지가 돌아오는지 ③ `user_hidden: true` 로 숨긴 뒤 편집기에서 `false` 로 고쳐 저장하고 **포커스를 편집기에 그대로 둔 채** 배지가 나타나는지.
+
+#### 나머지 — G7 · G8 · G9 · G12 · G13 · G15 (+ G18 계측 · G20 오탐)
+
+서로 독립적이라 묶음이 아니다. 각각의 요지만 적는다.
+
+- **G7** (`App/UI/Tray`) — `Initialize` 가 `IsInvalid` HICON 을 셸에 등록하지 않고 재시도 경로로 보낸다. `HandleAddRetryTimer` 는 **매 회차 아이콘을 다시 만든다** — 최초 실패가 GDI 자원 고갈이었다면 핸들 자체가 무효라 같은 핸들로 30회를 반복해 봐야 전부 무의미하고, 설령 `Add` 가 성공해도 빈 칸이 박힌다. `UpdateState` 는 이미 `IsInvalid` 가드로 우아하게 열화하고 있었는데 **최초 등록 경로만 그 정책에서 빠져 있었다.**
+- **G8** (`App/UI/Tray`) — `Shell_NotifyIconW` 호출 구간에 재진입 가드(`_shellCallInProgress`) + 보류 표식. 그 호출은 explorer 로 가는 블로킹 크로스프로세스 SendMessage 라 호출 스레드가 sent 메시지를 계속 디스패치하고, 시스템이 `HWND_BROADCAST` 로 보내는 `WM_SETTINGCHANGE`/`WM_THEMECHANGED` 가 `HandleSettingChange` 를 거쳐 되돌아온다. 그러면 `_currentIcon` 을 「넘기고 → 해제하고 → 재대입」 하는 세 걸음이 뒤엉켜 **셸이 그리고 있는 HICON 을 파괴**했다. 재진입을 버리지 않는 이유는 안쪽이 **더 새로운** 상태(방금 바뀐 테마 색)를 들고 오기 때문이다. `HandleAddRetryTimer` 도 같은 가드를 공유한다(NIM_ADD 역시 블로킹 IPC).
+- **G9** (`Program.SystemEvents`) — `HandleSettingChange` 의 `theme: system` 분기에 `ApplyCursorConfigChange()` 추가. `CursorOverlay.BuildStyle` 이 `config.HangulBg/EnglishBg/NonKoreanBg` 에서 동심원 색을 뽑는데, `CursorOverlay` 는 자체 `_config` 스냅샷을 들고 있고 갱신 진입점이 `ApplyCursorConfigChange` 하나뿐이다. 배지와 트레이만 새 색으로 바뀌고 **헤일로만 영구히 옛 색**으로 남았다(인스턴스가 안 바뀌므로 자가치유도 없다).
+- **G12** (`App/Startup/StartupTaskManager`) — 조회 경로 둘이 `WaitForExit(timeout)` 반환값을 확인하고, 타임아웃이면 `KillTimedOutChild` 로 자식을 정리한다. 종전에는 반환값을 버리고 `ExitCode` 를 읽어 `InvalidOperationException` 이 났고 **catch 가 그것을 "미등록" 으로 삼켰다** — 메뉴 체크가 실제와 반대로 표시되고 그 상태에서 누르면 이미 있는 태스크를 다시 만든다. 동시에 자식 프로세스와 파이프 핸들 2개가 매 우클릭마다 고아로 쌓였다(`StandardOutput` 을 동기 모드로 만졌기 때문에 `Process.Dispose` 가 닫지 않는다). `RunSchtasks` 는 반환값은 이미 보고 있었으나 자식을 남긴 채 돌아갔다 — 함께 정리한다.
+- **G13** (`App/Detector/DetectionService`) — 두 필터 분기가 `LastHwndForeground` 를 앞당겨 세우기 **전에** `UpdateForegroundProcessCache` 를 호출한다. 그 함수는 hwnd 하나만 보고 조기 반환하므로, 종전에는 필터가 풀린 뒤에도 프로세스명과 창 프레임이 **영원히 이전 앱 값**으로 남아 per-app 프로필 매칭과 창 이동 추적이 엉뚱한 앱 기준으로 돌았다. 같은 hwnd 면 즉시 반환하므로 추가 비용은 없다.
+- **G15** (`Program.SystemEvents`) — `HandleDpiChanged` 와 `HandlePowerResume` 에 `RefreshVisibleIndicator()` 추가. `Overlay.HandleDpiChanged` 는 캐시를 무효화하고 `PrepareResources` 로 새 DIB 섹션을 만들지만 **그리지는 않아** 그 시점 `_memDC` 는 전 픽셀 0 이다. Render 없이 블리트만 하는 애니메이션 프레임이 먼저 돌면 빈 비트맵이 `UpdateLayeredWindow` 로 올라가 배지가 사라진다. 형제 경로 셋은 모두 후속 렌더가 있었는데 이 둘만 빠져 있었다.
+- **G18** 🔍 (`Program.Bootstrap`) — **수정하지 않았다.** 단계 5 의 `DestroyWindow` 와 단계 7 의 주석("finalizer 스레드에서 돈다")이 서로 다른 전제 위에 있고 둘 다 참일 수 없는데, 어느 쪽이 사실인지는 **실측 없이 단정할 수 없다.** 그래서 계측만 넣었다 — `ProcessExit` 등록 시점의 스레드 ID 를 기록해 두고, 핸들러 진입 시 현재 스레드와 비교해 Debug 로 남기며, `DestroyWindow` 실패 시 `GetLastError` 를 함께 찍는다. 단계 7 주석의 단정은 **"미확인"** 으로 정정했다. 다음 실행의 로그가 이를 가른다.
+- **G20** ❌ — 오탐 확정. 위 §5.3 참조.
+
+**검증**
+- `WindowLifecycleTests` 에 G8 재진입 케이스 1건 추가 (225 → **226**). 가드는 셸에 닿기 **전에** 반환하므로 GDI/셸 미접촉으로 검증된다. 더 새로운 상태를 보류에 싣는지(`Assert.Same`)까지 본다.
+- **대조군 실측** — 재진입 가드를 제거하자 그 케이스가 실패했다.
+- **나머지는 단위 테스트가 불가능하다** — G7(GDI 실패 유도) · G9·G15(실제 창) · G12(스케줄러 타임아웃 유도) · G13(`TryHandleFilter` 가 Win32 필터에 닿음) · G18(종료 시퀀스).
+- 빌드 debug 경고 0 · AOT publish 성공.
+
+> **작업 중 잡은 회귀** — G18 계측을 넣으며 `DestroyWindowLogged(ref IntPtr hwnd, …)` 로 리팩터링했다가 컴파일러 경고 **CS0420**(volatile 필드를 `ref` 로 넘기면 volatile 보장이 사라진다)에 걸렸다. 그 세 핸들은 감지 스레드가 읽는 volatile 이고 그것이 §N-42 의 전제 자체라, 그대로 뒀으면 이번 세션에서 다시 "수정이 새 결함을 만든" 사례가 됐을 것이다. 필드 대입을 호출자로 되돌리고 헬퍼는 파괴·로그만 맡게 했다.
+
+**남은 검증** — 실기 확인 미수행. ① 부팅 직후(explorer 초기화 전) 트레이 아이콘이 정상적으로 뜨는지 ② 라이트↔다크 전환 시 **커서 헤일로도** 새 색으로 바뀌는지 ③ 트레이 우클릭 시 「시작 프로그램」 체크가 실제 등록 상태와 맞는지 ④ 모니터 간 이동(DPI 변경)·절전 복귀 후 배지가 남아 있는지 ⑤ **G18 은 로그 확인이 곧 검증이다** — 종료 후 `koenvue.log` 에서 `OnProcessExit: threadId=… sameThread=…` 와 `DestroyWindow(...) failed` 유무를 보면 된다(`log_level: debug` 필요).
 
 ---
 

@@ -127,4 +127,49 @@ public class WindowLifecycleTests
     // 「보류된 변경이 실제로 재처리되는가」는 여기서 고정할 수 없다 — 재처리는 HandleConfigChangedCore
     // 를 타고 Settings.TryLoad(파일 I/O)와 Win32 전이 적용자로 이어진다. do/while 로 pending 을
     // 소비하는 구조라는 사실은 코드와 문서에만 남는다.
+
+    // ================================================================
+    // G7·G8 — 셸 호출 중 트레이 갱신 재진입 (확정 #8·#42)
+    // ================================================================
+
+    private static FieldInfo TrayField(string name) =>
+        typeof(KoEnVue.App.UI.Tray).GetField(name, PrivateStatic)
+        ?? throw new InvalidOperationException($"Tray.{name} not found — 필드명이 바뀌었으면 테스트도 갱신할 것.");
+
+    [Fact]
+    public void 셸_호출_중_트레이_갱신은_보류_표시만_남긴다()
+    {
+        // Shell_NotifyIconW 는 explorer 로 가는 **블로킹 크로스프로세스 SendMessage** 라, 그 동안
+        // 이 스레드로 들어온 sent 메시지가 계속 디스패치된다. 시스템이 HWND_BROADCAST 로 보내는
+        // WM_SETTINGCHANGE / WM_THEMECHANGED 가 Program.HandleSettingChange 를 거쳐 Tray.UpdateState 로
+        // 되돌아오면, _currentIcon 을 「셸에 넘기고 → 해제하고 → 재대입」 하는 세 걸음이 뒤엉켜
+        // **셸이 지금 그리고 있는 HICON 을 파괴**한다.
+        //
+        // 가드가 없으면 아래 호출이 곧바로 GDI/셸 경로로 들어간다 — 가드가 있어야만 셸에 닿지 않고
+        // 표시만 남기고 돌아온다.
+        object? savedInit = TrayField("_initialized").GetValue(null);
+        object? savedShell = TrayField("_shellCallInProgress").GetValue(null);
+        object? savedPending = TrayField("_updatePending").GetValue(null);
+        object? savedPendingCfg = TrayField("_pendingUpdateConfig").GetValue(null);
+        try
+        {
+            TrayField("_initialized").SetValue(null, true);
+            TrayField("_shellCallInProgress").SetValue(null, true);
+            TrayField("_updatePending").SetValue(null, false);
+
+            var config = new KoEnVue.App.Models.AppConfig();
+            KoEnVue.App.UI.Tray.UpdateState(KoEnVue.App.Models.ImeState.English, config);
+
+            Assert.True((bool)TrayField("_updatePending").GetValue(null)!, "재진입은 보류 표시를 남겨야 한다");
+            // 더 새로운 상태를 들고 와야 한다 — 버리면 방금 바뀐 테마 색이 반영되지 않는다.
+            Assert.Same(config, TrayField("_pendingUpdateConfig").GetValue(null));
+        }
+        finally
+        {
+            TrayField("_initialized").SetValue(null, savedInit);
+            TrayField("_shellCallInProgress").SetValue(null, savedShell);
+            TrayField("_updatePending").SetValue(null, savedPending);
+            TrayField("_pendingUpdateConfig").SetValue(null, savedPendingCfg);
+        }
+    }
 }

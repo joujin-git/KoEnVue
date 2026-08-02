@@ -104,6 +104,22 @@ internal static partial class Tray
     // 메인 스레드 전용 (Program.HandleUpdateFound → OnUpdateFound 경로) 이라 volatile 불필요.
     private static UpdateInfo? _pendingUpdate;
 
+    // Shell_NotifyIconW 재진입 가드 (UI 스레드 전용 — 락 불필요).
+    //
+    // Shell_NotifyIconW 는 explorer 로 가는 **블로킹 크로스프로세스 SendMessage** 라, 호출 스레드가
+    // 그 동안 이 스레드로 들어온 *sent* 메시지를 계속 디스패치한다. WM_SETTINGCHANGE /
+    // WM_THEMECHANGED 는 시스템·다른 프로세스가 SendMessageTimeout(HWND_BROADCAST, …) 로 **보내는**
+    // 메시지라 정확히 그 구간에 배달되고, Program.HandleSettingChange 가 다시 Tray.UpdateState 로
+    // 들어온다. 그러면 _currentIcon 을 「셸에 넘기고 → 해제하고 → 재대입」 하는 세 걸음이 뒤엉켜
+    // **셸이 지금 그리고 있는 HICON 을 파괴**한다 (bug-hunt 2026-08-02 확정 #8·#42).
+    //
+    // 재진입을 버리지 않는 이유: 안쪽 호출이 더 **새로운** 상태(방금 바뀐 테마 색)를 들고 온다.
+    // 표시만 남기고 바깥 프레임이 끝날 때 그 값으로 한 번 더 갱신한다.
+    private static bool _shellCallInProgress;
+    private static bool _updatePending;
+    private static ImeState _pendingUpdateState;
+    private static AppConfig? _pendingUpdateConfig;
+
     // ================================================================
     // Public API
     // ================================================================
@@ -127,7 +143,16 @@ internal static partial class Tray
         _currentIcon = TrayIcon.CreateIcon(initialState, config);
 
         _notifyIcon = new NotifyIconManager(hwndMain, AppMessages.WM_TRAY_CALLBACK, DefaultConfig.AppGuid);
-        bool added = _notifyIcon.Add(_currentIcon.DangerousGetHandle(), BuildTooltip(initialState, config));
+
+        // **무효 HICON 을 셸에 등록하지 않는다.** TrayIcon.CreateIcon 은 GDI 실패 시
+        // SafeIconHandle(IntPtr.Zero) 를 돌려주는데, 그것을 NIF_ICON 과 함께 NIM_ADD 하면 셸이 빈 칸을
+        // 그리고 아무도 재생성하지 않는다 — 다음 IME 전환이나 config 변경으로 UpdateState 가 불릴
+        // 때까지 그대로다. UpdateState 는 같은 상황을 IsInvalid 가드로 걸러 이전 아이콘을 유지하는데,
+        // **최초 등록 경로만 그 정책에서 빠져 있었다** (확정 #13·#44). 부팅 자동 시작(schtasks
+        // LogonTrigger)은 explorer 초기화 전이라 NIM_ADD 실패 구간과 GDI 압박 구간이 겹친다.
+        // 무효면 Add 를 건너뛰고 아래 재시도 경로로 보낸다 — 재시도가 아이콘부터 다시 만든다.
+        bool added = !_currentIcon.IsInvalid
+                     && _notifyIcon.Add(_currentIcon.DangerousGetHandle(), BuildTooltip(initialState, config));
 
         _initialized = true;
 
@@ -153,16 +178,49 @@ internal static partial class Tray
     /// </summary>
     internal static void HandleAddRetryTimer()
     {
-        if (!_addPending || _notifyIcon is null || _currentIcon is null || _pendingConfig is null)
+        if (!_addPending || _notifyIcon is null || _pendingConfig is null)
         {
             StopAddRetryTimer();
             return;
         }
 
+        // NIM_ADD 도 블로킹 크로스프로세스 SendMessage 다 — UpdateState 가 셸 호출 중이면 이번 틱은
+        // 건너뛴다. 타이머가 1초 뒤 다시 온다 (확정 #42 의 HandleAddRetryTimer 측 동형 패턴).
+        if (_shellCallInProgress) return;
+
         _addRetryCount++;
-        // _pendingConfig 는 Initialize 실패 경로에서 반드시 설정됨 — null 가능성은 위 가드가 차단.
-        bool added = _notifyIcon.Add(_currentIcon.DangerousGetHandle(),
-            BuildTooltip(_pendingInitialState, _pendingConfig!));
+
+        // **아이콘을 다시 만든다.** 최초 실패가 GDI 자원 고갈이었다면 핸들 자체가 무효라, 같은
+        // 핸들로 30회를 반복해 봐야 전부 무의미하고 설령 Add 가 성공해도 빈 칸이 박힌다. 압박이
+        // 풀리는 시점이 곧 재시도가 의미를 갖는 시점이다 (확정 #44).
+        if (_currentIcon is null or { IsInvalid: true })
+        {
+            _currentIcon?.Dispose();
+            _currentIcon = TrayIcon.CreateIcon(_pendingInitialState, _pendingConfig);
+        }
+
+        if (_currentIcon.IsInvalid)
+        {
+            // 아직 만들 수 없다 — NULL 을 넘기면 빈 칸이 고착되므로 이번 회차는 등록하지 않는다.
+            if (_addRetryCount >= TrayAddRetryMaxAttempts)
+            {
+                Logger.Warning($"Tray icon creation still failing after {_addRetryCount} retries; giving up");
+                StopAddRetryTimer();
+            }
+            return;
+        }
+
+        bool added;
+        _shellCallInProgress = true;
+        try
+        {
+            added = _notifyIcon.Add(_currentIcon.DangerousGetHandle(),
+                BuildTooltip(_pendingInitialState, _pendingConfig));
+        }
+        finally
+        {
+            _shellCallInProgress = false;
+        }
 
         if (added)
         {
@@ -191,6 +249,38 @@ internal static partial class Tray
     {
         if (!_initialized) return;
 
+        // 셸 호출 중 재진입 — 표시만 남기고 돌아간다. 자세한 이유는 _shellCallInProgress 선언부.
+        if (_shellCallInProgress)
+        {
+            _updatePending = true;
+            _pendingUpdateState = state;
+            _pendingUpdateConfig = config;
+            return;
+        }
+
+        _shellCallInProgress = true;
+        try
+        {
+            UpdateStateCore(state, config);
+
+            // 재진입이 들고 온 더 새로운 상태를 여기서 소비한다 (테마 색 변경 등).
+            while (_updatePending)
+            {
+                _updatePending = false;
+                AppConfig pending = _pendingUpdateConfig!;
+                UpdateStateCore(_pendingUpdateState, pending);
+            }
+        }
+        finally
+        {
+            _shellCallInProgress = false;
+            _updatePending = false;
+            _pendingUpdateConfig = null;
+        }
+    }
+
+    private static void UpdateStateCore(ImeState state, AppConfig config)
+    {
         var newIcon = TrayIcon.CreateIcon(state, config);
 
         // 생성 실패(NULL 핸들)면 직전 유효 아이콘을 유지한다 — NULL 을 NIM_MODIFY 로 넘기면 셸이

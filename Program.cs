@@ -385,6 +385,11 @@ internal static partial class Program
         }
 
         // 13. 종료 핸들러
+        //     등록 시점의 스레드를 기록해 둔다 — OnProcessExit 단계 5 의 DestroyWindow 는 창을 만든
+        //     스레드에서만 성공하는데, 같은 함수 단계 7 의 주석은 "ProcessExit 는 finalizer 스레드에서
+        //     돈다" 고 단언한다. 둘 다 참일 수 없어 한쪽이 결함이다 (bug-hunt 2026-08-02 확정 #45).
+        //     실측 없이 어느 쪽인지 단정할 수 없으므로 계측만 넣고 로그로 확정한다.
+        _mainThreadId = Environment.CurrentManagedThreadId;
         AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
 
         Logger.Info("Initialization complete, entering message loop");
