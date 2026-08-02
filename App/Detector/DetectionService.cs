@@ -25,6 +25,14 @@ internal static class DetectionService
         public RECT LastSystemInputFrame;
         public RECT LastWindowFrame;
         public bool WindowMoving;
+
+        /// <summary>
+        /// 이번 이동에 대해 <c>WM_HIDE_INDICATOR</c> 를 이미 보냈는가 (bug-hunt 3차 J).
+        /// <see cref="WindowMoving"/> 과 분리한 이유는 그 하나가 「이동 중」과 「HIDE 를 보냈다」를
+        /// 겸하면, 배지가 화면에 올라오는 찰나(플래그가 아직 false 인 구간)에 이동을 처음 관측한
+        /// 틱에서 <b>HIDE 없이 래치만 서고 재시도 경로가 사라지기</b> 때문이다.
+        /// </summary>
+        public bool HideSentForMove;
         public bool LastFiltered;
         public int FilteredStreak;   // 연속 filtered 폴링 수 — HIDE 디바운스(flip-flop 흡수)용
         public ImeState LastImeState;
@@ -313,6 +321,7 @@ internal static class DetectionService
             ? frame
             : default;
         state.WindowMoving = false;
+        state.HideSentForMove = false;
         return leavingSystemInput;
     }
 
@@ -409,6 +418,7 @@ internal static class DetectionService
             if (state.WindowMoving)
             {
                 state.WindowMoving = false;
+                state.HideSentForMove = false;
                 foregroundChanged = true;
             }
             return;
@@ -423,9 +433,18 @@ internal static class DetectionService
 
         if (rectChanged)
         {
-            if (host.IsIndicatorVisible() && !state.WindowMoving)
+            // **HIDE 전송 여부는 별도 래치다** (bug-hunt 3차 J). 종전에는 `!state.WindowMoving` 이
+            // 그 역할을 겸했는데, `IsIndicatorVisible()` 은 배지가 화면에 올라오는 동안 아직
+            // false 다 — G4 이후 그 플래그는 `Animation.TriggerShow` 가 **반환한 뒤에** 대입되기
+            // 때문이다. 그 찰나에 이동을 처음 관측하면 HIDE 를 건너뛴 채 래치만 서고, 다음 틱부터는
+            // `!WindowMoving` 이 false 라 **재시도 자체가 사라져** 드래그 내내 배지가 옛 좌표에
+            // 남았다. 이제 실제로 보낸 경우에만 래치가 서므로 다음 틱이 만회한다.
+            if (host.IsIndicatorVisible() && !state.HideSentForMove)
+            {
                 User32.PostMessageW(host.GetHwndMain(), AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
+                state.HideSentForMove = true;
+            }
             state.WindowMoving = true;
             state.LastWindowFrame = windowFrame;
         }
@@ -433,6 +452,7 @@ internal static class DetectionService
         {
             // 창 이동 멈춤 → 새 위치에서 배지 재표시
             state.WindowMoving = false;
+            state.HideSentForMove = false;
             foregroundChanged = true;
         }
     }

@@ -125,6 +125,35 @@ public class ConfigLoadFailureTests : IDisposable
         Assert.False(File.Exists(path));        // 디스크를 건드리지 않는다
     }
 
+    // ================================================================
+    // bug-hunt 3차 M — 마이그레이션도 정규 로드와 같은 관용도로 읽어야 한다
+    // ================================================================
+
+    [Fact]
+    public void 주석이_있어도_레거시_커서_설정을_마이그레이션한다()
+    {
+        // 이 프로젝트는 config.json 의 주석과 트레일링 콤마를 정상으로 취급한다(소스젠 컨텍스트와
+        // Core 양쪽 모두). 그런데 마이그레이션만 기본 JsonDocumentOptions 로 원본 파일을 다시
+        // 파싱해, **주석 한 줄만 있어도** 파싱에 실패했다.
+        string path = Write("legacy.json", "{\n  // 사용자 메모\n  \"cursor_motion_dim_enabled\": true,\n}");
+
+        bool migrated = CursorDisplayModeMigration.TryResolveFromUserFile(path, out CursorDisplayMode mode);
+
+        Assert.True(migrated);
+        Assert.Equal(CursorDisplayMode.Motion, mode);
+    }
+
+    [Fact]
+    public void 읽을_수_없는_파일은_커서_표시_모드를_덮어쓰지_않는다()
+    {
+        // 종전에는 파싱 실패에도 Soft + true 를 돌려줬고, PostDeserializeFixup 이 **매 로드마다**
+        // 이것을 불러 사용자의 cursor_display_mode 를 덮어썼다 — 다음 저장이 디스크에도 확정한다.
+        // 읽을 수 없는 파일은 판정의 근거가 될 수 없으므로 역직렬화된 값을 그대로 둬야 한다.
+        string path = Write("broken-cursor.json", "{ \"cursor_display_mode\": ");
+
+        Assert.False(CursorDisplayModeMigration.TryResolveFromUserFile(path, out _));
+    }
+
     [Fact]
     public void Load_는_파일이_없으면_디폴트를_생성한다()
     {
