@@ -77,16 +77,32 @@ internal static class Animation
     // TriggerShow — ImeState/NonKoreanImeMode 분기 후 엔진에 위임
     // ================================================================
 
-    public static void TriggerShow(int x, int y,
+    /// <summary>
+    /// 배지 표시를 요청한다.
+    /// </summary>
+    /// <returns>
+    /// <b>실제로 표시했으면 true.</b> NonKorean + <see cref="NonKoreanImeMode.Hide"/> 가드로 숨김
+    /// 처리했거나 엔진이 없으면 false.
+    ///
+    /// <para>
+    /// 호출자는 이 <b>결과</b>로 가시성 플래그를 세워야 한다 — 호출 전에 미리 true 로 세우면
+    /// 아래 Hide 가드 경로에서 화면과 어긋난 채 박제된다. 그 경로는 <c>TriggerHide</c> 로 위임하는데,
+    /// 애니메이터가 이미 <c>Hidden</c> phase 면 <c>OverlayAnimator.TriggerHide</c> 가 첫 줄에서
+    /// 즉시 return 하므로 <c>onHide</c> → <c>onHidden</c> 훅(= §N-34 가 놓은 안전망)이 발화하지
+    /// 않는다. <c>_phase</c> 초기값이 <c>Hidden</c> 이라 <b>부팅 후 첫 NonKorean 알림에서 바로</b>
+    /// 성립한다 (bug-hunt 2026-08-02 확정 #7·#17·#25·#37).
+    /// </para>
+    /// </returns>
+    public static bool TriggerShow(int x, int y,
         ImeState state, AppConfig config, bool imeChanged)
     {
-        if (_animator is null) return;
+        if (_animator is null) return false;
 
         // NonKoreanImeMode.Hide 가드 — 엔진은 ImeState를 모르므로 파사드가 처리
         if (state == ImeState.NonKorean && config.NonKoreanIme == NonKoreanImeMode.Hide)
         {
             TriggerHide(config, forceHidden: true);
-            return;
+            return false;
         }
 
         // AnimationConfig 스냅샷 갱신 (매 호출, 엔진 내부에서 값 동등성 비교)
@@ -117,6 +133,8 @@ internal static class Animation
             // 비-Hidden 분기에서 imeChanged면 UpdateColor로 비트맵 갱신 (원본 Holding/Idle/FadingOut 경로).
             Overlay.UpdateColor(state, config);
         }
+
+        return true;
     }
 
     // ================================================================

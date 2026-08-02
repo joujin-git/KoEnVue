@@ -386,8 +386,27 @@ internal static class DetectionService
     private static void TrackWindowMove(DetectionHost host, ref DetectionState state, IntPtr hwndForeground,
         AppConfig appConfig, ref bool foregroundChanged)
     {
-        if (appConfig.PositionMode != PositionMode.Window
-            || DefaultConfig.IsSystemInputProcess(state.LastForegroundProcessName)
+        // 창 기준 모드가 아니면 이동 추적은 무의미하다. 그러나 **래치는 반드시 풀고 나가야 한다** —
+        // 배지를 숨긴 뒤 복구 전에 position_mode 가 window→fixed 로 바뀌면, 복구 경로(아래 else if)가
+        // 이 가드 뒤에 있어 영영 실행되지 않고 WindowMoving 이 true 로 굳는다. 그 틱들에서
+        // foregroundChanged 는 false(같은 hwnd·미필터)라 EmitStateChanges 도 아무것도 post 하지 않고,
+        // 메인 쪽 자기치유도 막힌다 — RefreshVisibleIndicator 는 _indicatorVisible 이 false 라 no-op.
+        // 결과적으로 사용자가 창을 바꾸거나 한/영을 토글할 때까지 배지가 숨겨진 채 남는다
+        // (bug-hunt 2026-08-02 확정 #18).
+        //
+        // 나머지 가드 조건은 영구적이지 않다 — 시스템 입력 프로세스·foregroundChanged·프레임 조회
+        // 실패는 모두 다음 틱에 정상 경로로 돌아와 래치를 푼다. 모드 전환만 복구 경로 자체를 없앤다.
+        if (appConfig.PositionMode != PositionMode.Window)
+        {
+            if (state.WindowMoving)
+            {
+                state.WindowMoving = false;
+                foregroundChanged = true;
+            }
+            return;
+        }
+
+        if (DefaultConfig.IsSystemInputProcess(state.LastForegroundProcessName)
             || foregroundChanged
             || !Dwmapi.TryGetVisibleFrame(hwndForeground, out RECT windowFrame))
             return;

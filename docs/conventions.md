@@ -93,6 +93,7 @@ git grep -n "ApplyConfigTransition(" Program.cs   # bug-hunt 확정 #28·#47: **
 git grep -nE "if \(_drainThread is null\)" Core/Logging/   # bug-hunt G1 (확정 #3·#9·#20·#36·#50): 0 — 로그 라우팅 판정은 `_route`(FileLogRoute) 단독. 스레드 필드로 되돌아가면 "아직 부팅 중" 과 "파일 로깅 꺼짐" 과 "초기화 실패" 가 다시 한 조건에 뭉쳐, 뒤의 둘이 아무도 비우지 않는 pre-init 버퍼로 샌다
 git grep -n "RunExternal(_hwndMain" App/   # bug-hunt G10 (확정 #41): 0 — 외부 모달(MessageBoxW)의 표식은 **센티넬**이어야 한다(IntPtr.Zero 전달). `_hwndMain` 을 넘기면 RejectReentry 가 그것을 진짜 다이얼로그로 오인해 보이지 않는 0×0 메시지 창으로 포커스를 옮기고, 감지 루프가 self-HWND 가드에 매 틱 걸려 배지가 되살아나지 않는다
 git grep -n "IsWindowVisible(hwndOwner)" Core/Windowing/ModalDialogLoop.cs   # bug-hunt G10 (확정 #29): **1** — 모달 종료 시 포커스 복원은 **가시 소유자에 한한다**. KoEnVue 의 소유자는 0×0 스타일 0 메시지 창이라 무조건 복원하면 위와 같은 상태가 된다
+git grep -n "_indicatorVisible = true" -- '*.cs'   # bug-hunt G4 (확정 #7·#17·#25·#37): 0 — 가시성 플래그는 **요청이 아니라 결과**로만 세운다(`_indicatorVisible = Animation.TriggerShow(...)`). 선-대입하면 NonKorean+Hide 가드가 표시 없이 숨김으로 빠질 때 true 로 박제되고, 애니메이터가 이미 Hidden 이면 onHidden 훅조차 발화하지 않아 되돌릴 기회가 없다. 이 플래그는 감지 스레드가 읽는 유일한 가시성 계약이다
 ```
 
 > `RunLevel.*HighestAvailable` 의 기존 0-매치 가드는 PR-15 에서 무효화됨 — `BuildStartupTaskXml` 가 config 분기로 `HighestAvailable` 을 정당하게 emit. 대체 invariant 는 위 `PR-15` / `PR-15 후속 fix` 주석이 붙은 grep 묶음이고, **기대값은 각 grep 우측 주석이 단일 진실원** — 1+ / ≥1 / 3 / 4 로 서로 다르며 "각 1매치" 가 아니다. PR-18 의 가드 4개는 overlay/cursor 두 엔진이 `UpdateLayeredWindow` / `CreateDIBSection` 을 직접 호출하지 않고 `LayeredWindowBlit` / `DibSectionFactory` helper 에 위임함을 검증 (호출 단일화) — `ApplyPremultipliedAlpha` 는 의미 차이로 의도적 분기 보존이라 동일 가드 미적용.
@@ -318,7 +319,7 @@ The `SafeFontHandle` `using` pattern is critical — early release would crash `
 [tests/KoEnVue.Tests/](../tests/KoEnVue.Tests/) xUnit project (PR-10, dev-only — release exe 미포함 → P1 예외). `InternalsVisibleTo("KoEnVue.Tests")` 가 KoEnVue.csproj 에 박혀 internal API 접근 가능. 검증 매트릭스:
 
 - **Debug + Release build both clean** (0 warnings, 0 errors). A debug-only build leaves the release exe outdated
-- **`dotnet test tests/KoEnVue.Tests/`** — 현재 baseline **222 PASS** / Unit/ **26 파일** (2026-08-02). ⚠️ **테스트 csproj/디렉토리 명시 필수** — repo 루트에서 인자 없이 `dotnet test` 하면 cwd 의 메인 `KoEnVue.csproj`(테스트 0개)를 잡아 **0개 실행 후 exit 0** 으로 통과처럼 보이는 착시. 반드시 `dotnet test tests/KoEnVue.Tests/` 또는 `tests\KoEnVue.Tests\KoEnVue.Tests.csproj` 로 실행:
+- **`dotnet test tests/KoEnVue.Tests/`** — 현재 baseline **225 PASS** / Unit/ **27 파일** (2026-08-02). ⚠️ **테스트 csproj/디렉토리 명시 필수** — repo 루트에서 인자 없이 `dotnet test` 하면 cwd 의 메인 `KoEnVue.csproj`(테스트 0개)를 잡아 **0개 실행 후 exit 0** 으로 통과처럼 보이는 착시. 반드시 `dotnet test tests/KoEnVue.Tests/` 또는 `tests\KoEnVue.Tests\KoEnVue.Tests.csproj` 로 실행:
   - **PR-10** (G1): `ColorHelperTests` / `DpiHelperTests` / `SettingsValidateTests`
   - **PR-20**: `StartupTaskXmlTests` / `XmlEntityCodecTests` / `SanitizeLogPathTests` (문자열 traversal + reparse/junction 거부)
   - **config 머지 P0**: `JsonSettingsMergeTests`

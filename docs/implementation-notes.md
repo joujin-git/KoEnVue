@@ -1278,6 +1278,24 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 
 회귀 가드는 `WindowLifecycleTests`(G5 세 창 × 필드 리셋 + 다른 필드 보존, G17 보류 표식)와 invariant grep 2줄(`RunExternal(_hwndMain` = 0, `IsWindowVisible(hwndOwner)` = 1). **G10·G16 은 실제 창과 메시지 루프가 필요해 단위 테스트가 불가능하다.** G17 의 대조군도 가드 전체가 아니라 보류 표식만 되돌려 확인했다 — 가드를 통째로 빼면 파일 I/O 와 안내 박스가 실제로 실행되기 때문이다.
 
+### 배지 가시성 상태 기계 (bug-hunt 2026-08-02 G4·G14·G19)
+
+세 결함의 축이 같다 — **배지가 숨겨졌는데 되돌아올 경로가 없다.** 막히는 지점만 다르다.
+
+**`_indicatorVisible` 은 요청이 아니라 결과다 (G4).** 이 플래그는 감지 스레드가 `DetectionHost.IsIndicatorVisible` 로 읽는 **유일한 가시성 계약**이라, 화면과 어긋나면 두 방향으로 손해다 — 거짓 true 는 감지 루프의 레벨 트리거가 매 틱 불필요한 `WM_HIDE_INDICATOR` 를 쏘게 하고, `HandlePositionUpdated` 의 `wasHidden = !_indicatorVisible` 재표시 판정을 무력화한다.
+
+종전에는 `ShowIndicatorAtForeground` 가 `TriggerShow` **전에** true 로 선-대입했다. 그런데 `Animation.TriggerShow` 는 `state == NonKorean && config.NonKoreanIme == Hide`(기본값)면 렌더 없이 `TriggerHide(forceHidden: true)` 로 빠지고, `OverlayAnimator.TriggerHide` 의 첫 줄이 `if (_phase == AnimPhase.Hidden) return;` 이라 **`_onHide()` 가 호출되지 않는다** — 그러면 `Animation.Initialize` 가 배선한 `onHidden` 훅(§N-34 가 놓은 안전망)도 발화하지 않아 플래그를 되돌릴 기회가 사라진다. `_phase` 초기값이 `Hidden` 이므로 **부팅 후 첫 NonKorean 알림에서 바로** 성립했다.
+
+수정은 `Animation.TriggerShow` 가 `bool`(실제로 표시했는지)을 반환하고 호출자가 그 결과를 대입하는 것이다. 회귀 가드는 invariant grep — `_indicatorVisible = true` 가 **0 매치**여야 한다. 대입 지점은 이제 넷뿐이다(`= Animation.TriggerShow(...)` 둘, `= false` 둘).
+
+**tick 간 래치는 config 교체를 인지해야 한다 (G14).** `DetectionService.TrackWindowMove` 의 `state.WindowMoving` 은 창 이동을 감지하면 서고 이동이 멎으면 풀리는데, **푸는 쪽이 `PositionMode == Window` 가드 뒤**에 있었다. 「숨김」과 「복구」 사이에 `position_mode` 가 `window → fixed` 로 바뀌면 매 틱 조기 return 하면서 래치가 영구 true 로 굳고 복구 경로 자체가 사라진다. 그 틱들에서 `foregroundChanged` 는 false(같은 hwnd·미필터)라 `EmitStateChanges` 도 아무것도 post 하지 않고, 메인 쪽 자기치유(`RefreshVisibleIndicator`)는 `_indicatorVisible` 이 false 라 no-op 이다.
+
+가드를 둘로 쪼개 모드 검사에서 래치를 풀고 나간다. **나머지 가드 조건은 영구적이지 않다** — 시스템 입력 프로세스·`foregroundChanged`·프레임 조회 실패는 모두 다음 틱에 정상 경로로 돌아와 래치를 푼다. 모드 전환만 복구 경로를 없앤다.
+
+**전이 처리는 세 경로가 같아야 한다 (G19).** `user_hidden` 을 되돌리는 경로는 셋이다 — 트레이 좌클릭, 메뉴 토글, config 리로드. 앞의 둘은 `ApplyUserHiddenTransition` → `TryShowIndicatorIfForegroundAllowed` 로 정상 복원하는데, 리로드만 `RefreshVisibleIndicator` 로 떨어졌다. 그 헬퍼는 `if (_indicatorVisible && _lastForegroundHwnd != Zero)` 가드가 있어 **숨김 상태에서 항상 no-op** 이고, true→false 전이의 출발점이 정확히 그 상태다. 감지 스레드도 구제하지 못한다 — `WM_POSITION_UPDATED` 는 `foregroundChanged` 일 때만 post 되는데 편집기에 포커스를 둔 채 저장하면 포그라운드가 바뀌지 않는다. 리로드도 같은 헬퍼를 쓰게 하고(P4), 전이가 없을 때만 `RefreshVisibleIndicator` 로 스타일을 갱신한다.
+
+회귀 가드는 `IndicatorVisibilityTests`(G14 3케이스 — 래치 해제 + 반대 방향 가드 둘)와 위 invariant grep. **G14 의 모드 가드 경로는 `Dwmapi.TryGetVisibleFrame` 보다 앞이라 Win32 에 닿지 않아** 실제 창 없이 결정적으로 검증된다. G4 의 애니메이터 상태 조합과 G19 의 `ApplyConfigTransition` 은 실제 창을 요구해 단위 테스트가 불가능하다.
+
 ### `InvariantGlobalization`
 
 Enabled in [KoEnVue.csproj](../KoEnVue.csproj) — strips ICU from the NativeAOT publish. Means no `CultureInfo` usage except for `CultureInfo.InvariantCulture`. IME language detection uses `GetUserDefaultUILanguage` P/Invoke instead of `CultureInfo.CurrentUICulture`.

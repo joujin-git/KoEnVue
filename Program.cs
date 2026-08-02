@@ -630,13 +630,21 @@ internal static partial class Program
     /// + <see cref="Animation.TriggerShow"/> 를 한 곳에 모은다. IME/Focus/Activate/UserHidden 해제/
     /// Config 리프레시 등 여러 경로가 공유하던 3줄 패턴의 단일 진실원. 호출 전 <c>_lastForegroundHwnd</c>
     /// 유효성(대부분 <c>!= IntPtr.Zero</c> 가드)은 호출자가 보장한다.
+    ///
+    /// <para>
+    /// <c>_indicatorVisible</c> 은 <b>요청이 아니라 결과</b>로 세운다. 선-대입하면 <c>TriggerShow</c> 의
+    /// NonKorean + Hide 가드가 표시 없이 숨김으로 빠질 때 플래그만 true 로 박제된다 — 그 경로는
+    /// 애니메이터가 이미 <c>Hidden</c> phase 면 <c>onHidden</c> 훅조차 발화하지 않아 되돌릴 기회가 없다.
+    /// 이 플래그는 감지 스레드가 <c>DetectionHost.IsIndicatorVisible</c> 로 읽는 <b>유일한 가시성 계약</b>
+    /// 이라, 거짓 true 는 매 틱 불필요한 <c>WM_HIDE_INDICATOR</c> 를 유발하고 <c>HandlePositionUpdated</c>
+    /// 의 재표시 판정(<c>wasHidden</c>)을 무력화한다 (bug-hunt 2026-08-02 확정 #7·#17·#25·#37).
+    /// </para>
     /// </summary>
     private static void ShowIndicatorAtForeground(ImeState state, AppConfig resolved, bool imeChanged)
     {
         _clickDismissed = false;
-        _indicatorVisible = true;
         var (x, y) = GetAppPosition();
-        Animation.TriggerShow(x, y, state, resolved, imeChanged);
+        _indicatorVisible = Animation.TriggerShow(x, y, state, resolved, imeChanged);
     }
 
     private static void HandleImeStateChanged(ImeState newState)
@@ -709,7 +717,6 @@ internal static partial class Program
 
         if (foregroundChanged || wasHidden || sysInput)
         {
-            _indicatorVisible = true;
             var (x, y) = GetAppPosition();
             // hwnd/class 를 함께 남긴다 — 한 프로세스가 top-level 창을 여러 개 쓰는 앱(파일 관리자의
             // 내장 뷰어 등)에서 프로세스명만으로는 어느 창에 인디가 붙었는지 구분할 수 없어 진단이 막힌다.
@@ -718,7 +725,8 @@ internal static partial class Program
                 Logger.Debug($"PositionUpdated: process={_currentProcessName}, hwnd=0x{hwndForeground.ToInt64():X}, " +
                              $"class={WindowProcessInfo.GetClassName(hwndForeground)}, pos=({x},{y}), saved={_config.IndicatorPositions.Count}");
             // PR-13: per-app resolved (theme/색/투명도/폰트/라벨 등 시각 override 반영)
-            Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
+            // 플래그는 **결과**로 세운다 — 선-대입 금지 이유는 ShowIndicatorAtForeground 참조 (확정 #7).
+            _indicatorVisible = Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
         }
         // 같은 앱 내 윈도우 이동 — 플로팅 배지는 위치 고정이므로 무시
     }
@@ -1037,13 +1045,17 @@ internal static partial class Program
         // 커서 헤일로 lifecycle.
         ApplyCursorConfigChange();
 
-        // PR-26: user_hidden false→true 시 즉시 숨김 (이전엔 가시 인디가 동결).
-        if (!prev.UserHidden && next.UserHidden)
-        {
-            if (_indicatorVisible)
-                HideOverlay("config UserHidden");
-        }
-        else if (!next.UserHidden)
+        // user_hidden 전이는 트레이 좌클릭·메뉴와 **같은 헬퍼**로 처리한다 (P4).
+        // 종전에는 리로드만 RefreshVisibleIndicator 로 떨어졌는데, 그 헬퍼에는 `_indicatorVisible`
+        // 가드가 걸려 있어 **숨김 상태에서 항상 no-op** 이다 — true→false 전이의 출발점이 바로 그
+        // 상태이므로, 파일에서 user_hidden 을 false 로 되돌려도 배지가 나타나지 않았다. 감지 스레드도
+        // 구제하지 못한다: WM_POSITION_UPDATED 는 foregroundChanged 일 때만 post 되는데, 편집기에
+        // 포커스를 둔 채 저장하면 포그라운드가 바뀌지 않는다. 세 경로(좌클릭·메뉴·리로드) 중 리로드만
+        // 비대칭이었다 (bug-hunt 2026-08-02 확정 #48).
+        ApplyUserHiddenTransition(prev.UserHidden, next.UserHidden);
+
+        // 전이가 없었고 계속 보이는 상태면 스타일만 갱신한다 (색·크기·폰트 변경 반영).
+        if (prev.UserHidden == next.UserHidden && !next.UserHidden)
             RefreshVisibleIndicator();
 
         ApplyTrayEnabledTransition(prev.TrayEnabled, next.TrayEnabled);

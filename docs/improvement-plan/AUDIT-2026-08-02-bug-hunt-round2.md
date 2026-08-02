@@ -81,7 +81,7 @@
 | N30 | N11 (`19f4ba5`) | `Logger.cs:138-139` 가 새 writer 대입 **전에** `_fileWriter?.Dispose()` 수행 |
 | N21 · N26 · N32 · N38 · N46 | N16 (`19f4ba5`) | `Tray.cs:310`(ScaleInputDialog 후) · `:689`(CleanupDialog 후) 둘 다 `config = currentConfig()` 재조회 |
 
-### 5.2 그룹 목록 — 20그룹 (**9그룹 20건 해결** · 11그룹 17건 미해결)
+### 5.2 그룹 목록 — 20그룹 (**12그룹 26건 해결** · 8그룹 11건 미해결)
 
 **⚠ G6 은 새로 확인된 잔여 결함이다.** N28 · N31 · N47 을 "N15 수정으로 닫혔다" 로 처리하려다 코드를 열어 보니 절반만 닫혀 있었다. 병합 작업이 실제로 잡아낸 것이라 우선순위 최상단에 뒀고, **G11 과 함께 2026-08-02 에 수정 완료**했다(§5.5).
 
@@ -89,7 +89,7 @@
 |---|---|---|---|---|
 | ~~**G6**~~ ✅ | 저장 병합 후 **전이 적용자**가 재실행되지 않음 | N28 · N31 · N47 | 3 | 🔴 설정 유실·불일치 |
 | ~~**G1**~~ ✅ | `log_to_file=false` 면 로그가 소비자 없는 버퍼에 무한 적재 | N3 · N9 · N20 · N36 · N50 | 5 | 🔴 메모리 상주 + 핫패스 비용 |
-| **G4** | `_indicatorVisible` 이 화면과 어긋난 채 `true` 로 박제 | N7 · N17 · N25 · N37 | 4 | 🟠 불필요 IPC + 재표시 불가 |
+| ~~**G4**~~ ✅ | `_indicatorVisible` 이 화면과 어긋난 채 `true` 로 박제 | N7 · N17 · N25 · N37 | 4 | 🟠 불필요 IPC + 재표시 불가 |
 | ~~**G5**~~ ✅ | `WM_CLOSE` 경로가 핸들 필드 리셋을 우회 | N10 · N40 · N43 | 3 | 🟠 죽은/재활용 HWND 에 post |
 | ~~**G2**~~ ✅ | `_drainThread` 가 non-volatile + 락 밖 변경 | N2 · N24 · N35 | 3 | 🟡 로그 유실 |
 | **G7** | 트레이 최초 등록만 무효 HICON 방어 누락 | N13 · N44 | 2 | 🟠 빈 트레이 아이콘 고착 |
@@ -100,12 +100,12 @@
 | ~~**G11**~~ ✅ | `Save` 의 `TryLoad` 실패 분기가 조용히 병합 전 값 반환 | N19 | 1 | 🔴 사용자 편집 되돌림 |
 | **G12** | `WaitForExit` 반환값 무시 → 미등록 오판 + 핸들 누수 | N12 | 1 | 🟠 중복 등록 |
 | **G13** | 필터 분기가 FG 캐시를 반만 갱신 | N5 | 1 | 🟡 프로필 오적용 |
-| **G14** | `WindowMoving` 래치가 config 교체를 인지 못함 | N18 | 1 | 🟠 배지 영구 숨김 |
+| ~~**G14**~~ ✅ | `WindowMoving` 래치가 config 교체를 인지 못함 | N18 | 1 | 🟠 배지 영구 숨김 |
 | **G15** | DPI 변경 후 후속 Render 없이 빈 DIB 블리트 | N6 | 1 | 🟠 배지 소멸 |
 | ~~**G16**~~ ✅ | `EnableWindow` 가 별도 top-level 배지를 막지 못함 | N39 | 1 | 🟠 모달 뒤 설정 변경 |
 | ~~**G17**~~ ✅ | 리로드 실패 MessageBox 안에서 `HandleConfigChanged` 재진입 | N34 | 1 | 🟠 안내 무한 누적 |
 | **G18** | `OnProcessExit` 의 스레드 친화성 전제가 자기모순 | N45 | 1 | 🟡 종료 정리 미수행 |
-| **G19** | `user_hidden` true→false 핫리로드만 비대칭 | N48 | 1 | 🟠 배지 복원 안 됨 |
+| ~~**G19**~~ ✅ | `user_hidden` true→false 핫리로드만 비대칭 | N48 | 1 | 🟠 배지 복원 안 됨 |
 | **G20** | `CleanupDialog` 선택 항목이 stale 스냅샷 기준 | N27 잔여 | 1 | 🟠 엉뚱한 위치 삭제 |
 
 ### 5.3 그룹 상세
@@ -119,7 +119,7 @@
 `Logger.cs:228` 의 `if (_drainThread is null)` 이 **pre-init 과 로깅 비활성을 구분하지 못한다.** `_drainThread` 가 영구 null 이 되는 경로가 셋: `Initialize(enabled:false)` 조기 반환(:103), writer 락 타임아웃(:113-118), `StreamWriter` 생성 실패(:144-151). 이후 모든 스레드의 모든 로그가 `_preInitBuffer` 로 가는데 소비자는 `Initialize` 성공 끝의 `FlushPreInitBuffer` 뿐이다. 감지 루프가 80ms 주기라 `log_level=debug` 조합에서 수십 초 만에 상한(10,000)에 닿고, 이후 호출마다 축출 루프를 돈다.
 *방향*: "파일 로깅 비활성" 을 별도 상태로 두고 그 경우 큐에 넣지 않고 버린다.
 
-**G4 — `_indicatorVisible` 거짓 true** (N7 · N17 · N25 · N37)
+**G4 ✅ — `_indicatorVisible` 거짓 true** (N7 · N17 · N25 · N37)
 `ShowIndicatorAtForeground`(`Program.cs:599`)가 `_indicatorVisible = true` 를 **먼저** 세우고 `Animation.TriggerShow` 를 부르는데, NonKorean + `NonKoreanImeMode.Hide`(기본값) 가드(`Animation.cs:86-89`)가 `TriggerHide(forceHidden:true)` 로 빠지고, `OverlayAnimator.TriggerHide` 첫 줄(`:296`)이 `_phase == Hidden` 이면 즉시 return 해 `_onHide()` → `onHidden` 훅이 발화하지 않는다. `_phase` 초기값이 `Hidden` 이라 **부팅 후 첫 NonKorean 알림에서 바로 성립**한다. `HandlePositionUpdated`(`:674`)도 같은 선-대입 패턴이다. 이 플래그는 감지 스레드가 읽는 유일한 가시성 계약이라, 거짓 true 는 매 틱 불필요한 `WM_HIDE_INDICATOR` 를 유발하고 `wasHidden` 재표시 판정을 무력화한다.
 *방향*: 플래그를 `onHidden`/`onShown` 훅에서만 갱신하도록 단일화하거나, `TriggerShow` 의 Hide 가드 경로가 훅을 반드시 발화시키게 한다.
 
@@ -140,8 +140,8 @@ N16 수정으로 커밋 베이스는 `currentConfig()` 재조회(`Tray.cs:689`)�
 1. ~~**G6 · G11**~~ — ✅ **2026-08-02 수정 완료** (§5.5). 둘 다 저장 경로이고 사용자 편집 유실 계열이라 같이 다뤘다 — 이 자리는 한 세션에 네 번 고쳐진 곳이라 개별 수정이 또 서로의 구멍을 만들 위험이 가장 컸다.
 2. ~~**G1 · G2 · G3**~~ — ✅ **2026-08-02 수정 완료** (§5.5). 셋 다 `_drainThread` 필드 하나에 역할이 둘(Join 대상 + 라우팅 스위치) 얹혀 있던 데서 나왔다.
 3. ~~**G5 · G10 · G16 · G17**~~ — ✅ **2026-08-02 수정 완료** (§5.5). 창 lifecycle / 모달 계약. 넷 다 "정상 동작으로 타는 경로에 가드가 없다" 는 성질이었다.
-4. **G4 · G14 · G19** — 배지 가시성 상태 기계. 셋 다 "숨겨졌는데 복원 경로가 없다" 는 같은 축이다. ← **다음 후보**
-5. 나머지는 독립적이라 순서 무관.
+4. ~~**G4 · G14 · G19**~~ — ✅ **2026-08-02 수정 완료** (§5.5). 배지 가시성 상태 기계. 셋 다 "숨겨졌는데 복원 경로가 없다" 는 같은 축이었다.
+5. 나머지 8그룹 11건은 독립적이라 순서 무관 — **G7 · G8**(트레이 아이콘), **G9**(커서 테마), **G12**(schtasks), **G13**(FG 캐시), **G15**(DPI 빈 DIB), **G18**(종료 스레드 친화성), **G20**(정리 다이얼로그 매핑). ← **남은 전부**
 
 ### 5.5 수정 기록 (2026-08-02)
 
@@ -194,6 +194,23 @@ N16 수정으로 커밋 베이스는 `currentConfig()` 재조회(`Tray.cs:689`)�
 - 빌드 debug 경고 0 · AOT publish 성공.
 
 **남은 검증** — 실기 확인 미수행. ① 트레이 「관리자 권한」 토글 후 종료가 깔끔한지 ② 상세 설정을 닫은 뒤 배지가 정상 복귀하는지 ③ 다이얼로그가 열린 동안 배지 드래그가 막히는지 ④ 잘못된 `config.json` 안내 박스를 띄워 둔 채 파일을 고쳤을 때 박스가 하나만 뜨고 수정이 반영되는지.
+
+#### 배지 가시성 상태 기계 — G4 · G14 · G19
+
+셋 다 같은 축이다 — **배지가 숨겨졌는데 되돌아올 경로가 없다.** 다만 막히는 지점이 서로 다르다: G4 는 플래그가 거짓으로 서고, G14 는 래치가 굳고, G19 는 복원 헬퍼가 no-op 이다.
+
+- **G4** (`App/UI/Animation`, `Program`) — `Animation.TriggerShow` 가 **실제로 표시했는지**를 반환하고, 호출자가 그 결과로 `_indicatorVisible` 을 세운다. 종전에는 호출 **전에** true 로 선-대입했는데, NonKorean + `Hide` 가드(기본값)가 표시 없이 `TriggerHide` 로 빠지고 애니메이터가 이미 `Hidden` phase 면 `OverlayAnimator.TriggerHide` 가 첫 줄에서 즉시 return 해 `onHide` → `onHidden` 훅(§N-34 의 안전망)이 발화하지 않는다. `_phase` 초기값이 `Hidden` 이라 **부팅 후 첫 NonKorean 알림에서 바로** 성립했다. 이 플래그는 감지 스레드가 읽는 **유일한 가시성 계약**이라, 거짓 true 는 매 틱 불필요한 `WM_HIDE_INDICATOR` 왕복을 만들고 `HandlePositionUpdated` 의 `wasHidden` 재표시 판정을 무력화한다.
+- **G14** (`App/Detector/DetectionService`) — `PositionMode != Window` 가드에서 **래치를 풀고 나간다.** 종전에는 복구 경로가 그 가드 뒤에 있어, 「숨김」과 「복구」 사이에 `position_mode` 가 `window → fixed` 로 바뀌면 `WindowMoving` 이 영구 true 로 굳었다. 그 틱들에서 `foregroundChanged` 는 false 라 아무것도 post 되지 않고, 메인 쪽 자기치유도 막힌다(`RefreshVisibleIndicator` 는 `_indicatorVisible` 이 false 라 no-op). 나머지 가드 조건(시스템 입력 프로세스·`foregroundChanged`·프레임 조회 실패)은 다음 틱에 정상 경로로 돌아오므로 영구적이지 않다 — **모드 전환만 복구 경로 자체를 없앤다.**
+- **G19** (`Program.ApplyConfigTransition`) — `user_hidden` 전이를 트레이 좌클릭·메뉴와 **같은 헬퍼**(`ApplyUserHiddenTransition`)로 처리한다(P4). 종전에는 리로드만 `RefreshVisibleIndicator` 로 떨어졌는데 그 헬퍼는 `_indicatorVisible` 가드 때문에 **숨김 상태에서 항상 no-op** 이다 — true→false 전이의 출발점이 정확히 그 상태다. 감지 스레드도 구제하지 못한다: `WM_POSITION_UPDATED` 는 `foregroundChanged` 일 때만 post 되는데, 편집기에 포커스를 둔 채 저장하면 포그라운드가 바뀌지 않는다. 세 경로 중 리로드만 비대칭이었다.
+
+**검증**
+- `IndicatorVisibilityTests` 신설 (222 → **225**) — G14 3케이스. **이 경로는 Win32 에 닿지 않는다**: 모드 가드가 `Dwmapi.TryGetVisibleFrame` 보다 앞이라 실제 창 없이 결정적으로 돌릴 수 있다. 반대 방향 가드 2개 포함(래치가 없으면 복구를 유발하지 않는가 · 호출자가 세운 `foregroundChanged` 를 덮지 않는가).
+- **대조군 실측** — 래치 해제를 되돌리자 정확히 1개 실패(래치가 true 로 남고 복구 미유발), 반대 방향 가드 2개는 양쪽 통과.
+- **G4 는 invariant grep 이 실질적 가드다** — `_indicatorVisible = true` 가 **0 매치**여야 한다. 이제 대입 지점은 넷뿐이고(`= Animation.TriggerShow(...)` 2 · `= false` 2) 선-대입 패턴이 되살아나면 게이트가 잡는다. 애니메이터 상태 조합은 실제 창을 요구해 단위 테스트가 불가능하다.
+- **G19 는 단위 테스트가 불가능하다** — `ApplyConfigTransition` 전체가 Win32 전이 적용자로 이어진다.
+- 빌드 debug 경고 0 · AOT publish 성공.
+
+**남은 검증** — 실기 확인 미수행. ① 일본어/중국어 IME 환경에서 부팅 직후 배지가 숨겨진 채 로그에 `Filter triggered HIDE` 가 반복되지 않는지 ② 창을 드래그하는 중에 `position_mode` 를 `fixed` 로 바꾸고 드래그를 멈추면 배지가 돌아오는지 ③ `user_hidden: true` 로 숨긴 뒤 편집기에서 `false` 로 고쳐 저장하고 **포커스를 편집기에 그대로 둔 채** 배지가 나타나는지.
 
 ---
 
