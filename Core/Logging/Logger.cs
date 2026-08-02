@@ -192,7 +192,7 @@ internal static class Logger
             // 파일 로깅 OFF 는 "보류" 가 아니라 **드롭**이다. 비우는 주체가 없는 버퍼에 쌓으면
             // 1만 개 문자열을 상주시킨 채 결국 버리게 되고, 상한 도달 후에는 로그 호출마다
             // 축출 루프가 도는 트레드밀이 된다 (확정 #9·#20·#50).
-            _route = FileLogRoute.Drop;
+            RouteToDrop();
             return;
         }
 
@@ -211,7 +211,7 @@ internal static class Logger
             // 초기화 실패도 드롭이다 — 다음 리로드가 재시도할 때까지 소비자 없는 버퍼에 쌓아 둘
             // 이유가 없다. 종전에는 이 경로가 _drainThread 를 null 로 남겨 무한 보류로 빠졌다
             // (확정 #3·#36).
-            _route = FileLogRoute.Drop;
+            RouteToDrop();
             return;
         }
 
@@ -248,7 +248,7 @@ internal static class Logger
                 _fileWriter = null;
                 // writer 가 없으면 drain 스레드를 띄우지 않는다 — 큐로 보내 봐야 소비자가 없다.
                 // 종전에는 여기서도 무한 보류로 빠졌다 (확정 #3·#36).
-                _route = FileLogRoute.Drop;
+                RouteToDrop();
                 return;
             }
         }
@@ -273,6 +273,32 @@ internal static class Logger
         // Pre-Initialize 버퍼를 큐로 옮긴 뒤 drain 신호 — 부트 초반의 Logger.X 메시지가
         // koenvue.log 에 정상 기록되도록 한다.
         FlushPreInitBuffer();
+    }
+
+    /// <summary>
+    /// 라우팅을 <see cref="FileLogRoute.Drop"/> 으로 확정하면서 pre-init 버퍼를 비운다.
+    ///
+    /// <para>
+    /// 비우지 않으면 <b>소비자가 사라진 채</b> 최대 <see cref="MaxQueueSize"/> 개 문자열이 프로세스
+    /// 수명 내내 상주한다 — G1 이 닫은 것과 같은 트레드밀이 전이 구간의 잔여분으로 되살아나는
+    /// 형태다(bug-hunt 3차 D). <see cref="StopDrainThread"/> 가 락을 잡은 경우에는 그쪽이 이미
+    /// 파일로 배수했고, 잡지 못한 경우의 잔여분이 여기서 정리된다. 파일 로깅이 꺼진 상태라
+    /// breadcrumb 은 <c>Trace</c> 로만 남긴다.
+    /// </para>
+    /// </summary>
+    private static void RouteToDrop()
+    {
+        _route = FileLogRoute.Drop;
+
+        int stranded = 0;
+        while (_preInitBuffer.TryDequeue(out _)) stranded++;
+        stranded += Interlocked.Exchange(ref _preInitDroppedCount, 0);
+
+        if (stranded > 0)
+        {
+            Trace.WriteLine(FormatBreadcrumb(
+                $"Logger discarded {stranded} buffered messages when file logging went off"));
+        }
     }
 
     private static void FlushPreInitBuffer()
@@ -313,7 +339,7 @@ internal static class Logger
         {
             StopDrainThread();
             // 종료 뒤의 로그는 기록할 곳이 없다 — 버퍼에 쌓아 두면 아무도 비우지 않는다.
-            _route = FileLogRoute.Drop;
+            RouteToDrop();
         }
         finally
         {
@@ -569,6 +595,13 @@ internal static class Logger
                     Console.Error.WriteLine(
                         FormatBreadcrumb($"Logger drain thread join timed out after {ShutdownJoinTimeoutMs}ms"));
                 }
+
+                // **전이 구간에 갇힌 줄까지 배수한다** (bug-hunt 3차 D). 위에서 _route 를 PreInit 로
+                // 되돌렸으므로, Join(최대 3s) + 락 대기(최대 1s) 동안 다른 스레드가 낸 로그는
+                // _preInitBuffer 로 들어간다 — 감지 루프가 80ms 주기라 debug 레벨에서는 수십 줄이다.
+                // 큐만 비우면 그것들은 파일에 닿지 못한 채 남고, 뒤이어 Drop 이 확정되면 아무도
+                // 비우지 않는다. 먼저 큐로 옮긴 뒤 한 번에 쓴다.
+                FlushPreInitBuffer();
 
                 // 잔여 메시지 동기 flush — 락을 이미 쥐고 있으므로 세대 가드를 우회한 내부 경로 사용.
                 FlushQueueLocked();

@@ -150,10 +150,32 @@ public class LoggerReinitTests : IDisposable
     // 파일 로깅 OFF = 드롭 (bug-hunt 2026-08-02 G1 — 확정 #3·#9·#20·#36·#50)
     // ================================================================
 
-    private static int PreInitBufferCount() =>
-        ((ConcurrentQueue<string>)typeof(Logger)
+    private static ConcurrentQueue<string> PreInitBuffer() =>
+        (ConcurrentQueue<string>)typeof(Logger)
             .GetField("_preInitBuffer", BindingFlags.NonPublic | BindingFlags.Static)!
-            .GetValue(null)!).Count;
+            .GetValue(null)!;
+
+    private static int PreInitBufferCount() => PreInitBuffer().Count;
+
+    [Fact]
+    public void 파일_로깅을_끄면_전이_구간에_갇힌_버퍼도_비운다()
+    {
+        // StopDrainThread 는 _route 를 PreInit 로 되돌린 뒤 Join(최대 3s) + 락 대기(최대 1s) 를
+        // 지난다. 그 구간에 다른 스레드가 낸 로그는 _preInitBuffer 로 들어가는데, 종전에는 최종
+        // flush 가 _logQueue 만 비우고 곧이어 Drop 이 확정돼 **아무도 비우지 않는 채** 남았다 —
+        // G1 이 닫은 트레드밀이 전이 구간의 잔여분으로 되살아나는 형태다 (bug-hunt 3차 D).
+        //
+        // 그 타이밍은 결정적으로 재현할 수 없으므로(3초 이상 걸리는 파일 잠금이 필요) 갇힌 줄을
+        // 버퍼에 직접 넣어 **Drop 확정이 그것을 비우는지**만 고정한다.
+        Logger.Initialize(true, PathFor("transition.log"), 1);
+
+        PreInitBuffer().Enqueue("stranded-during-transition");
+        Assert.True(PreInitBufferCount() > 0, "전제: 버퍼에 갇힌 줄이 있다");
+
+        Logger.Initialize(false, null, 1);
+
+        Assert.Equal(0, PreInitBufferCount());
+    }
 
     [Fact]
     public void 파일_로깅이_꺼져_있는_동안의_로그는_버려진다()
