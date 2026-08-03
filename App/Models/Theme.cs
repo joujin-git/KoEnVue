@@ -4,7 +4,7 @@ namespace KoEnVue.App.Models;
 
 /// <summary>
 /// 테마 프리셋.
-/// config.json의 "theme" 키에 대응.
+/// koenvue_config.json의 "theme" 키에 대응.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<Theme>))]
 internal enum Theme

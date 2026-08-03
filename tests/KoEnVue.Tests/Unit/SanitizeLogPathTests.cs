@@ -6,7 +6,7 @@ namespace KoEnVue.Tests.Unit;
 
 /// <summary>
 /// <see cref="PortablePath.SanitizeLogPath"/> 의 PR-03 B1 보안 표면 박제.
-/// asInvoker (admin 토큰 0) 가 1차 방어이지만 사용자가 <c>config.json:log_file_path</c> 에
+/// asInvoker (admin 토큰 0) 가 1차 방어이지만 사용자가 <c>koenvue_config.json:log_file_path</c> 에
 /// 시스템 폴더를 지정해도 거부되도록 본 함수가 2차 방어.
 /// </summary>
 public class SanitizeLogPathTests

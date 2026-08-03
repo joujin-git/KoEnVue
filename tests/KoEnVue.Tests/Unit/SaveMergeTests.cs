@@ -11,7 +11,7 @@ namespace KoEnVue.Tests.Unit;
 ///
 /// <para>
 /// 저장은 메모리 인스턴스를 통째로 직렬화해 파일을 덮으므로, 앱이 마지막으로 읽은 뒤 사용자가
-/// <c>config.json</c> 에 넣은 편집은 <b>앱이 손대지도 않은 필드까지</b> 사라졌다. 5초 폴링이 그 편집을
+/// <c>koenvue_config.json</c> 에 넣은 편집은 <b>앱이 손대지도 않은 필드까지</b> 사라졌다. 5초 폴링이 그 편집을
 /// 읽어가기 전에 트레이 토글 한 번이면 충분하다. §B 는 "창이 열려 있는 동안" 만 닫았고 이건 더 넓다.
 /// </para>
 ///
@@ -30,7 +30,7 @@ public class SaveMergeTests : IDisposable
     {
         _dir = Path.Combine(Path.GetTempPath(), "koenvue-savemerge-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_dir);
-        _path = Path.Combine(_dir, "config.json");
+        _path = Path.Combine(_dir, "koenvue_config.json");
     }
 
     public void Dispose()
@@ -240,7 +240,7 @@ public class SaveMergeTests : IDisposable
     [Fact]
     public void 병합_후에도_파일이_들여쓰기를_유지한다()
     {
-        // 원래 결함: 병합 출력이 non-indented 라 config.json 이 한 줄로 붕괴했다. 손으로 편집하는
+        // 원래 결함: 병합 출력이 non-indented 라 koenvue_config.json 이 한 줄로 붕괴했다. 손으로 편집하는
         // 포터블 설정 파일이 사실상 편집 불가가 되고, 그 압축본이 기준선이 되어 다음 비교까지
         // 어긋났다 (확정 #2·#6).
         var manager = NewManager();

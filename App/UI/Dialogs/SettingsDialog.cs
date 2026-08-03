@@ -98,7 +98,7 @@ internal static partial class SettingsDialog
     /// <param name="config">컨트롤 초기값을 채울 스냅샷 (다이얼로그를 연 시점의 설정).</param>
     /// <param name="currentConfig">
     /// 커밋 시점의 <b>현재</b> 설정 공급자. 확인 시 합성 베이스로 쓴다 — 다이얼로그가 떠 있는 동안
-    /// config.json 이 외부에서 바뀌면 <paramref name="config"/> 는 이미 stale 이고, 그것을 베이스로
+    /// koenvue_config.json 이 외부에서 바뀌면 <paramref name="config"/> 는 이미 stale 이고, 그것을 베이스로
     /// 삼으면 다이얼로그가 <b>다루지도 않는 필드</b>(위치 기록·앱 프로필 등)까지 옛 값으로 되돌아간
     /// 뒤 디스크에 저장된다 (AUDIT-2026-07-30 §B).
     /// </param>

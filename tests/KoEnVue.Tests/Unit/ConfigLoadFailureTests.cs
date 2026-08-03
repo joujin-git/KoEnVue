@@ -12,7 +12,7 @@ namespace KoEnVue.Tests.Unit;
 /// 원래 결함은 "파싱에 실패하면 디폴트를 쓴다"가 아니라 <b>호출자가 그 사실을 알 수 없다</b>는 것이었다.
 /// <c>Load()</c> 는 성공이든 실패든 <c>T</c> 하나만 돌려주므로, 핫리로드 경로가 실패분 디폴트를
 /// 그대로 <c>_config</c> 에 대입하고 → 이후 아무 저장(트레이 토글·드래그 종료)이나 한 번 일어나면
-/// 그 디폴트가 디스크에 확정돼 <b>사용자 설정이 전멸</b>했다. config.json 은 편집 중 한순간만
+/// 그 디폴트가 디스크에 확정돼 <b>사용자 설정이 전멸</b>했다. koenvue_config.json 은 편집 중 한순간만
 /// 파싱 불가여도 이 경로를 탄다.
 /// </para>
 ///
@@ -56,9 +56,9 @@ public class ConfigLoadFailureTests : IDisposable
     public void TryLoad_깨진_JSON_이면_false()
     {
         // 편집 중 저장으로 흔히 나오는 상태 — 닫히지 않은 객체.
-        Write("config.json", """{ "opacity": 0.8 """);
+        Write("koenvue_config.json", """{ "opacity": 0.8 """);
 
-        bool ok = ManagerFor("config.json").TryLoad(out AppConfig config);
+        bool ok = ManagerFor("koenvue_config.json").TryLoad(out AppConfig config);
 
         Assert.False(ok);
         Assert.NotNull(config); // 실패해도 non-null 계약 (호출자가 역참조해도 안전)
@@ -74,9 +74,9 @@ public class ConfigLoadFailureTests : IDisposable
         // 병합 단계가 최상위를 객체로 가정하고 TryGetProperty 를 부르므로, 이 입력들은
         // JsonElementWrongTypeException(InvalidOperationException)을 냈고 그 타입은 로드 예외 필터
         // **밖**이라 그대로 전파돼 프로세스를 종료시켰다. 손상으로 분류돼야 한다.
-        Write("config.json", content);
+        Write("koenvue_config.json", content);
 
-        Assert.False(ManagerFor("config.json").TryLoad(out AppConfig config));
+        Assert.False(ManagerFor("koenvue_config.json").TryLoad(out AppConfig config));
         Assert.NotNull(config);
     }
 
@@ -84,9 +84,9 @@ public class ConfigLoadFailureTests : IDisposable
     public void TryLoad_실패시_사용자_파일을_덮어쓰지_않는다()
     {
         const string broken = """{ "opacity": 0.8 """;
-        string path = Write("config.json", broken);
+        string path = Write("koenvue_config.json", broken);
 
-        ManagerFor("config.json").TryLoad(out _);
+        ManagerFor("koenvue_config.json").TryLoad(out _);
 
         // 복구 가능성 보존 — 실패분 디폴트가 디스크로 나가면 사용자 편집분이 사라진다.
         Assert.Equal(broken, File.ReadAllText(path));
@@ -99,9 +99,9 @@ public class ConfigLoadFailureTests : IDisposable
     [Fact]
     public void TryLoad_정상_파일이면_true_이고_값이_반영된다()
     {
-        Write("config.json", """{ "opacity": 0.42 }""");
+        Write("koenvue_config.json", """{ "opacity": 0.42 }""");
 
-        bool ok = ManagerFor("config.json").TryLoad(out AppConfig config);
+        bool ok = ManagerFor("koenvue_config.json").TryLoad(out AppConfig config);
 
         Assert.True(ok);
         Assert.Equal(0.42, config.Opacity, precision: 6);
@@ -132,7 +132,7 @@ public class ConfigLoadFailureTests : IDisposable
     [Fact]
     public void 주석이_있어도_레거시_커서_설정을_마이그레이션한다()
     {
-        // 이 프로젝트는 config.json 의 주석과 트레일링 콤마를 정상으로 취급한다(소스젠 컨텍스트와
+        // 이 프로젝트는 koenvue_config.json 의 주석과 트레일링 콤마를 정상으로 취급한다(소스젠 컨텍스트와
         // Core 양쪽 모두). 그런데 마이그레이션만 기본 JsonDocumentOptions 로 원본 파일을 다시
         // 파싱해, **주석 한 줄만 있어도** 파싱에 실패했다.
         string path = Write("legacy.json", "{\n  // 사용자 메모\n  \"cursor_motion_dim_enabled\": true,\n}");
@@ -172,10 +172,10 @@ public class ConfigLoadFailureTests : IDisposable
     public void Load_는_TryLoad_와_같은_값을_돌려준다()
     {
         // Load 는 TryLoad 위임으로 바뀌었다. 부팅 경로가 계속 이 API 를 쓰므로 동작 동일성을 고정.
-        Write("config.json", """{ "opacity": 0.31 }""");
+        Write("koenvue_config.json", """{ "opacity": 0.31 }""");
 
-        AppConfig viaLoad = ManagerFor("config.json").Load();
-        ManagerFor("config.json").TryLoad(out AppConfig viaTryLoad);
+        AppConfig viaLoad = ManagerFor("koenvue_config.json").Load();
+        ManagerFor("koenvue_config.json").TryLoad(out AppConfig viaTryLoad);
 
         Assert.Equal(viaTryLoad.Opacity, viaLoad.Opacity, precision: 6);
     }

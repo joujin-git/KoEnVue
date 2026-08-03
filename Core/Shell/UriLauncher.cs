@@ -25,7 +25,7 @@ internal static class UriLauncher
         => Open(uriOrPath, parameters: null, label: uriOrPath);
 
     /// <summary>
-    /// 실행 파일 + 인자 형태로 호출한다 (예: <c>notepad.exe "C:\path\config.json"</c>).
+    /// 실행 파일 + 인자 형태로 호출한다 (예: <c>notepad.exe "C:\path\koenvue_config.json"</c>).
     /// 인자에 공백이 있으면 호출자가 사전에 따옴표로 감싸 전달.
     /// </summary>
     internal static bool Open(string file, string parameters)

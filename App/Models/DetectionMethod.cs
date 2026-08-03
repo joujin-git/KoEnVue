@@ -4,7 +4,7 @@ namespace KoEnVue.App.Models;
 
 /// <summary>
 /// IME 상태 감지 방식.
-/// config.json의 "detection_method" 키에 대응.
+/// koenvue_config.json의 "detection_method" 키에 대응.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<DetectionMethod>))]
 internal enum DetectionMethod

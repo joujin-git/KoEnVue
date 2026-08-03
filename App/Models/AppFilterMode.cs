@@ -4,7 +4,7 @@ namespace KoEnVue.App.Models;
 
 /// <summary>
 /// 앱별 필터링 모드.
-/// config.json의 "app_filter_mode" 키에 대응.
+/// koenvue_config.json의 "app_filter_mode" 키에 대응.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<AppFilterMode>))]
 internal enum AppFilterMode

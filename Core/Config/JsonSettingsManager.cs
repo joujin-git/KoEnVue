@@ -82,7 +82,7 @@ internal class JsonSettingsManager<T>
     ///
     /// <para>
     /// <see cref="Save"/> 의 3-way 병합 기준선이다 (AUDIT-2026-07-30 §N-48). 저장은 메모리 인스턴스를
-    /// 통째로 직렬화해 파일을 덮으므로, 그 사이 사용자가 <c>config.json</c> 에 넣은 편집이
+    /// 통째로 직렬화해 파일을 덮으므로, 그 사이 사용자가 <c>koenvue_config.json</c> 에 넣은 편집이
     /// <b>앱이 손대지도 않은 필드까지</b> 사라졌다 — 5초 폴링이 그 편집을 읽어가기 전에 트레이 토글 한
     /// 번이면 충분하다. 이 기준선이 있으면 "앱이 이번에 바꾼 필드" 를 알 수 있고, 나머지는 디스크
     /// 값을 살릴 수 있다.
@@ -138,7 +138,7 @@ internal class JsonSettingsManager<T>
     /// <para>
     /// 반환값을 무시하고 디폴트를 그대로 채택하면 안 된다 — 핫리로드 호출자(<c>HandleConfigChanged</c>)가
     /// 그렇게 대입하면 이후 <b>어떤</b> 저장 경로(트레이 토글·드래그 종료)든 그 디폴트를 디스크에 확정해
-    /// 사용자 설정이 전멸한다. config.json 은 편집 중 한순간만 파싱 불가여도 이 경로를 탄다
+    /// 사용자 설정이 전멸한다. koenvue_config.json 은 편집 중 한순간만 파싱 불가여도 이 경로를 탄다
     /// (AUDIT-2026-07-30 §G). 부팅 경로처럼 "비교할 기존 인스턴스가 없는" 호출자만 <see cref="Load"/> 로
     /// 디폴트를 받아도 된다.
     /// </para>
@@ -361,7 +361,7 @@ internal class JsonSettingsManager<T>
 
             using var ms = new MemoryStream();
             // **Indented 필수** — 앱 직렬화기가 WriteIndented=true 라, 여기서 압축본을 만들면
-            // (1) 사용자가 손으로 편집하는 config.json 이 한 줄로 붕괴하고 (2) 그 압축본이
+            // (1) 사용자가 손으로 편집하는 koenvue_config.json 이 한 줄로 붕괴하고 (2) 그 압축본이
             // _lastPersistedJson 기준선이 되어 다음 SameJson 비교가 전부 어긋난다
             // (릴리즈 리뷰 2026-08-01 확정 #2·#6, 실측 재현).
             using (var writer = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = true }))
@@ -613,7 +613,7 @@ internal class JsonSettingsManager<T>
         // 설정 파일의 최상위는 반드시 객체다. null / 배열 / 스칼라가 오면 MergeObjects 의
         // TryGetProperty·EnumerateObject 가 JsonElementWrongTypeException(InvalidOperationException)
         // 을 던지는데, 이 타입은 IsExpectedLoadException 필터 **밖**이라 Load 를 뚫고 WndProc
-        // 최상위까지 전파된다 — config.json 에 `null` 한 줄만 남겨도 앱이 죽던 경로.
+        // 최상위까지 전파된다 — koenvue_config.json 에 `null` 한 줄만 남겨도 앱이 죽던 경로.
         // 손상으로 분류해 정상 실패 경로(덮어쓰지 않고 이전 설정 유지)로 보낸다.
         if (userDoc.RootElement.ValueKind != JsonValueKind.Object)
         {

@@ -4,7 +4,7 @@ namespace KoEnVue.App.Models;
 
 /// <summary>
 /// 앱별 프로필 매칭 기준.
-/// config.json의 "app_profile_match" 키에 대응.
+/// koenvue_config.json의 "app_profile_match" 키에 대응.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<AppProfileMatch>))]
 internal enum AppProfileMatch

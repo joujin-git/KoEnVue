@@ -6,7 +6,7 @@ namespace KoEnVue.Tests.Unit;
 
 /// <summary>
 /// <see cref="Settings.Validate"/> 의 clamp + enum-fallback 회귀 가드.
-/// config.json 은 user-writable 이고 STJ 소스 생성기는 integer enum 을 범위 체크 없이 캐스트하므로
+/// koenvue_config.json 은 user-writable 이고 STJ 소스 생성기는 integer enum 을 범위 체크 없이 캐스트하므로
 /// Validate 가 silent 보정의 단일 진실원 — 본 테스트가 그 보정 동작을 박제한다.
 /// </summary>
 public class SettingsValidateTests

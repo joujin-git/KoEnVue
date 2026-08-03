@@ -1,8 +1,8 @@
-# `config.json` 전체 키 레퍼런스
+# `koenvue_config.json` 전체 키 레퍼런스
 
-KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — **99 항목** (top-level 89 + 중첩 10). 중첩 10 은 `event_triggers.*` 2 + `advanced.*` 2 + `default_indicator_position.*` 3 + `default_indicator_position_relative.*` 3 이다 (`app_profiles` 는 값이 자유형 override 객체라 그 자체가 top-level 1행). 실측 invariant: `grep -cE '^\| \`[a-z_0-9.]+\`' docs/config-reference.md` → **99**. (2026-07-29 정정: 종전 서술은 "101" 이었으나 실제는 줄곧 99 로 2 과다 표기였다.) 내역: 커서 헤일로 16 키 = 동심원 10 + 표시모드·안개 3 + 전환 효과 3, PR-15 `admin_elevation` 포함. 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
+KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 — **99 항목** (top-level 89 + 중첩 10). 중첩 10 은 `event_triggers.*` 2 + `advanced.*` 2 + `default_indicator_position.*` 3 + `default_indicator_position_relative.*` 3 이다 (`app_profiles` 는 값이 자유형 override 객체라 그 자체가 top-level 1행). 실측 invariant: `grep -cE '^\| \`[a-z_0-9.]+\`' docs/config-reference.md` → **99**. (2026-07-29 정정: 종전 서술은 "101" 이었으나 실제는 줄곧 99 로 2 과다 표기였다.) 내역: 커서 헤일로 16 키 = 동심원 10 + 표시모드·안개 3 + 전환 효과 3, PR-15 `admin_elevation` 포함. 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
 
-`config.json` 의 위치: `%LOCALAPPDATA%\KoEnVue\config.json` (기본) 또는 exe 폴더 (writable 일 때). 자세한 결정 절차는 [README §다운로드](../README.md) 의 권장 설치 위치 절을 참고하세요. 저장 즉시 **핫 리로드** 됩니다 (메인 스레드 mtime 폴링, ~5초 간격).
+`koenvue_config.json` 의 위치: `%LOCALAPPDATA%\KoEnVue\koenvue_config.json` (기본) 또는 exe 폴더 (writable 일 때). 자세한 결정 절차는 [README §다운로드](../README.md) 의 권장 설치 위치 절을 참고하세요. 저장 즉시 **핫 리로드** 됩니다 (메인 스레드 mtime 폴링, ~5초 간격).
 
 > 키 표기: JSON 은 `snake_case`, C# 소스 (`AppConfig`) 는 `PascalCase`. 본 문서는 JSON 표기 기준. 클램프 범위는 [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) 의 `Min/MaxX` const 16쌍이 단일 진실원 — [App/Config/Settings.cs:107](../App/Config/Settings.cs#L107) `Validate` 가 범위를 벗어나면 silent 보정합니다.
 
@@ -105,7 +105,7 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — **99
 
 | 키 | 타입 | 기본값 | 설명 |
 |---|---|---|---|
-| `app_profiles` | object | `{}` | 프로세스명 (또는 정규식, `app_profile_match` 에 따라) 키 → 부분 AppConfig override 값. 매칭 시 글로벌 `AppConfig` 와 deep merge 후 적용. GUI 미노출 — config.json 직접 편집. 사용 예: `{"chrome": {"opacity": 0.5, "theme": "dark"}, "notepad": {"enabled": false}}` |
+| `app_profiles` | object | `{}` | 프로세스명 (또는 정규식, `app_profile_match` 에 따라) 키 → 부분 AppConfig override 값. 매칭 시 글로벌 `AppConfig` 와 deep merge 후 적용. GUI 미노출 — koenvue_config.json 직접 편집. 사용 예: `{"chrome": {"opacity": 0.5, "theme": "dark"}, "notepad": {"enabled": false}}` |
 | `app_profile_match` | enum | `"process"` | `process` / `title` / `class_name`. 매칭 키 종류 |
 | `app_filter_mode` | enum | `"blacklist"` | `blacklist` / `whitelist`. `app_filter_list` 의 의미 결정 |
 | `app_filter_list` | string[] | `[]` | 프로세스명 리스트. blacklist 모드: 리스트의 앱에서 숨김. whitelist 모드: 리스트의 앱에서만 표시 |
@@ -114,7 +114,7 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — **99
 
 | 키 | 타입 | 기본값 | 범위 | 설명 |
 |---|---|---|---|---|
-| `tray_enabled` | bool | `true` | ✅ | 트레이 아이콘 표시. **런타임 반영** (2026-08-01, AUDIT §K) — 상세 설정이나 config.json 편집으로 끄면 아이콘이 즉시 사라지고, 켜면 즉시 생긴다. 다만 `false` 인 동안에는 우클릭 메뉴가 없으므로 되돌리려면 config.json 을 직접 편집해야 한다 |
+| `tray_enabled` | bool | `true` | ✅ | 트레이 아이콘 표시. **런타임 반영** (2026-08-01, AUDIT §K) — 상세 설정이나 koenvue_config.json 편집으로 끄면 아이콘이 즉시 사라지고, 켜면 즉시 생긴다. 다만 `false` 인 동안에는 우클릭 메뉴가 없으므로 되돌리려면 koenvue_config.json 을 직접 편집해야 한다 |
 | `tray_tooltip` | bool | `true` | — | 트레이 아이콘 호버 시 툴팁 표시 |
 | `tray_click_action` | enum | `"toggle"` | `toggle` / `settings` / `none` | 트레이 좌클릭 동작. `toggle` = **표시 상태 4단계 순환** — 둘 다 보임 → 배지만 → 헤일로만 → 모두 숨김 → (다시) 둘 다 보임. `user_hidden` + `cursor_indicator_enabled` 조합이 곧 현재 단계다. `settings` = 설정 파일 열기, `none` = 좌클릭 무시 |
 | `tray_quick_opacity_presets` | double[] | `[0.95, 0.85, 0.6]` | 0.1 ~ 1.0 | 트레이 메뉴 "빠른 투명도" 서브메뉴에 노출할 프리셋 3개. 기본값은 `DefaultConfig.TrayQuickOpacity1/2/3` const + `TrayQuickOpacityPresets` property 단일 진실원에서 derive (감사 High ④, 2026-06-01 — 값 불변) |
@@ -167,7 +167,7 @@ KoEnVue 의 `config.json` 에서 사용 가능한 **모든** 설정 키 — **99
 
 색상 정책: Inner/Middle 은 현재 IME 색상 (한글/영문/비한국어 중 하나). CAPS LOCK ON 시 보이는 Outer 원은 "영문 IME → 한글 색상, 한글/비한글 IME → 영문 색상" — CAPS 토글이 한 눈에 보이도록.
 
-아래 10 키는 트레이 메뉴 "상세 설정" 다이얼로그의 **"커서 헤일로 — 동심원"** 섹션 (PR-21 재배치 후 12 번째) 에서도 GUI 로 노출됩니다 — config.json 직접 편집 / GUI 편집 둘 다 가능. Min/Max 는 두 경로 모두 `DefaultConfig.MinCursor*` / `MaxCursor*` 상수 단일 진실원에서 클램프. IME 전환 스케일 팝 3 키는 아래 [전환 효과](#전환-효과-cursor-transition) 절 참조.
+아래 10 키는 트레이 메뉴 "상세 설정" 다이얼로그의 **"커서 헤일로 — 동심원"** 섹션 (PR-21 재배치 후 12 번째) 에서도 GUI 로 노출됩니다 — koenvue_config.json 직접 편집 / GUI 편집 둘 다 가능. Min/Max 는 두 경로 모두 `DefaultConfig.MinCursor*` / `MaxCursor*` 상수 단일 진실원에서 클램프. IME 전환 스케일 팝 3 키는 아래 [전환 효과](#전환-효과-cursor-transition) 절 참조.
 
 | 키 | 타입 | 기본값 | 범위 | 설명 |
 |---|---|---|---|---|

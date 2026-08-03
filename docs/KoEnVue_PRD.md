@@ -22,7 +22,7 @@ Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관�
 | **외부 패키지 제로** | .NET 10 BCL + Windows API 만 사용. NativeAOT 단일 exe (~4.9 MB) |
 | **한글 우선 표시** | UI 텍스트는 한글 기본, 영어 시스템에서는 영어 fallback. 로그/config 키는 영문 |
 | **최소 기능 집합** | 필요한 기능만 구현. 인디케이터 스타일/도형 선택 없음 |
-| **완전 포터블** | exe 한 개로 동작. 첫 실행 시 같은 폴더에 `config.json` 과 `koenvue.log` 자동 생성. 지울 때는 폴더 통째로 삭제 |
+| **완전 포터블** | exe 한 개로 동작. 첫 실행 시 같은 폴더에 `koenvue_config.json` 과 `koenvue.log` 자동 생성. 지울 때는 폴더 통째로 삭제 |
 
 ---
 
@@ -31,7 +31,7 @@ Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관�
 ### 2.1 표시 형태
 - **텍스트 라벨**: "한" (한글), "En" (영문), "EN" (비한국어 IME)
 - **도형**: RoundedRect 고정 (설정 불가)
-- **색상**: `config.json` 으로 배경/전경 색상 지정 가능. 상태별 (한글/영문/비한국어) 로 따로 지정
+- **색상**: `koenvue_config.json` 으로 배경/전경 색상 지정 가능. 상태별 (한글/영문/비한국어) 로 따로 지정
 - **CAPS LOCK 보조 표시**: CAPS LOCK 이 켜져 있으면 라벨 좌우 수직 가장자리에 현재 상태의 `fg` 색상과 동일한 얇은 세로 막대가 함께 그려져, 타이핑 중 시선 이동 없이 한/영 상태와 CAPS LOCK 상태를 동시에 확인할 수 있다. 꺼지면 막대도 자동으로 사라진다. 상태별 색상과 무관하게 동작하므로 한/영/비한국어 어느 모드에서도 유지된다
 
 ### 2.2 위치
@@ -45,7 +45,7 @@ Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관�
 
 - **2단계 위치 기억 (고정 모드)**
   - **런타임**: hwnd 별 위치 (세션 내 창별 구분 — 여러 개의 메모장·크롬 창 각각 다른 위치 유지)
-  - **영구**: 프로세스 이름별 위치 (`config.json → indicator_positions`). UWP 앱(설정, Microsoft Store 등)은 `ApplicationFrameHost.exe` 가 윈도우 프레임을 소유하므로 `EnumChildWindows` 로 자식 윈도우를 탐색해 실제 앱 프로세스 이름을 식별한다
+  - **영구**: 프로세스 이름별 위치 (`koenvue_config.json → indicator_positions`). UWP 앱(설정, Microsoft Store 등)은 `ApplicationFrameHost.exe` 가 윈도우 프레임을 소유하므로 `EnumChildWindows` 로 자식 윈도우를 탐색해 실제 앱 프로세스 이름을 식별한다
   - 포그라운드 전환 시 조회 순서는 hwnd 런타임 → 프로세스명 config → 기본 위치
 
 - **창 기준 위치 기억 (창 기준 모드)**
@@ -101,7 +101,7 @@ Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관�
 - **형태**: 라벨 좌우 수직 가장자리에 세로 막대 두 개. 막대 색상은 현재 상태(한/영/비한국어)의 `fg` 를 그대로 재사용해 테마와 자연스럽게 어울림
 - **동작**: 켜지면 즉시 막대 그리기, 꺼지면 즉시 사라짐. 한/영 상태 변경과 독립적으로 동작하므로 어떤 IME 모드에서도 토글 표시가 유지된다
 - **감지 방식**: `GetKeyState(VK_CAPITAL)` 은 호출 스레드의 입력 상태를 읽으므로 감지 스레드(80 ms 폴러)에서는 신뢰할 수 없다. 대신 메인 스레드 `WM_TIMER` (주기 200 ms, `DefaultConfig.CapsLockPollMs`) 로 폴링한다. 부팅 시 초기값은 `Overlay.Initialize` 와 `Program.Main` 에서 같은 함수를 호출해 주입해 — 사용자가 CAPS LOCK 이 켜진 상태로 앱을 시작해도 첫 렌더부터 올바르게 표시된다
-- **설정 필드 없음**: 토글 표시는 시스템 CAPS LOCK 상태를 그대로 반영하므로 사용자가 별도로 켜고 끌 필요가 없다(원하지 않으면 CAPS LOCK 을 끄면 된다). `config.json` 에 관련 키 없음
+- **설정 필드 없음**: 토글 표시는 시스템 CAPS LOCK 상태를 그대로 반영하므로 사용자가 별도로 켜고 끌 필요가 없다(원하지 않으면 CAPS LOCK 을 끄면 된다). `koenvue_config.json` 에 관련 키 없음
 
 ### 2.7 텍스트 수직 정렬 보정
 `DT_VCENTER` 는 폰트 셀(`tmAscent + tmDescent`) 중앙을 사각형 중앙에 맞춘다. 한글 폰트(맑은 고딕 등)는 라틴 액센트용 상단 reserved 영역(`tmInternalLeading`) 이 있는데 한글·대문자 영문은 이 영역을 사용하지 않으므로, `tmInternalLeading > tmDescent` 인 폰트에서는 글리프 시각 중심이 셀 중심보다 `(tmInternalLeading - tmDescent) / 2` 픽셀만큼 아래쪽에 위치한다. 결과적으로 라벨이 라운드 배경 안에서 살짝 아래로 치우쳐 보인다.
@@ -145,12 +145,12 @@ Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관�
 
 ### 4.1a 좌클릭 동작 (`tray_click_action`)
 
-세 가지 값을 지원하며 SettingsDialog "좌클릭 동작" 콤보박스에서 선택하거나 `config.json` 에서 직접 지정한다.
+세 가지 값을 지원하며 SettingsDialog "좌클릭 동작" 콤보박스에서 선택하거나 `koenvue_config.json` 에서 직접 지정한다.
 
 | 값 | 동작 |
 |----|------|
 | `"toggle"` (기본) | **표시 상태 4단계 순환** — 플로팅 배지·커서 헤일로의 보임/숨김 조합을 한 칸씩 넘긴다 |
-| `"settings"` | `config.json` 을 메모장(`notepad.exe`)으로 연다 |
+| `"settings"` | `koenvue_config.json` 을 메모장(`notepad.exe`)으로 연다 |
 | `"none"` | 좌클릭 무시 |
 
 **순환 동작 세부 (`"toggle"`)** — 누를 때마다 다음 단계로 넘어가고, 마지막에서 처음으로 돌아온다.
@@ -164,13 +164,13 @@ Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관�
 
 현재 단계는 `config.user_hidden` + `config.cursor_indicator_enabled` **조합에서 그대로 읽힌다**(`Tray.GetVisibility`). 그래서 별도의 복원 기록을 저장하지 않으며, 우클릭 메뉴에서 개별 토글해 만든 상태에서 좌클릭해도 그 상태의 다음 단계로 자연스럽게 이어진다. 상태 전이 계산은 `Tray.ComputeLeftClickCycle` 이 단일 진실원이고 부수효과가 없어 단위 테스트로 고정돼 있다.
 
-계산 결과는 `config.json` 에 즉시 영구 저장되므로 앱 재기동·포그라운드 전환·세션 종료에도 유지된다. `user_hidden = true` 일 때는 감지 스레드의 IME/포커스/포그라운드 이벤트 5종이 인디를 다시 띄우지 않는다 — 사용자가 명시적으로 숨겼다는 의도를 모든 자동 복원 경로보다 우선 적용. 커서 헤일로 쪽은 `ApplyCursorConfigChange` 가 오버레이 윈도우를 생성/파괴한다.
+계산 결과는 `koenvue_config.json` 에 즉시 영구 저장되므로 앱 재기동·포그라운드 전환·세션 종료에도 유지된다. `user_hidden = true` 일 때는 감지 스레드의 IME/포커스/포그라운드 이벤트 5종이 인디를 다시 띄우지 않는다 — 사용자가 명시적으로 숨겼다는 의도를 모든 자동 복원 경로보다 우선 적용. 커서 헤일로 쪽은 `ApplyCursorConfigChange` 가 오버레이 윈도우를 생성/파괴한다.
 
 **트레이 메뉴 반영** — 우클릭 메뉴의 「플로팅 배지 숨김」·「커서 헤일로 숨김」 체크 상태는 메뉴가 열릴 때마다 현재 config 로 구성되므로 좌클릭 직후 즉시 반영된다.
 
 **설정 파일 열기 (`"settings"`)** — 메모장 고정 (시스템 기본 `.json` 핸들러가 없어 "앱 선택" 다이얼로그가 뜨는 일반 사용자 환경을 회피). 경로에 공백이 있어도 안전하도록 `lpParameters` 를 따옴표로 감싸 `ShellExecuteW(0, "open", "notepad.exe", "\"{path}\"", ...)` 로 호출. 반환값 ≤ 32 는 `Logger.Warning` 으로만 기록 (사용자에게 알려도 대응 방법이 없음).
 
-**`user_hidden` 리셋 경로** — `"toggle"` 이 아닌 값을 쓰는 환경에서도 dead-end 에 빠지지 않도록 트레이 우클릭 메뉴에 체크 토글 항목 **"플로팅 배지 숨김"** 을 메인 블록 말미에 배치한다 (4.2 참조). 그 외 리셋 경로로 `config.json` 삭제 시 STJ 의 기본 unmapped-member handling 이 `user_hidden = false` 를 자연 복원하며, 필드를 수동 편집해도 hot reload + 다음 IME/포커스 이벤트로 표시가 돌아온다.
+**`user_hidden` 리셋 경로** — `"toggle"` 이 아닌 값을 쓰는 환경에서도 dead-end 에 빠지지 않도록 트레이 우클릭 메뉴에 체크 토글 항목 **"플로팅 배지 숨김"** 을 메인 블록 말미에 배치한다 (4.2 참조). 그 외 리셋 경로로 `koenvue_config.json` 삭제 시 STJ 의 기본 unmapped-member handling 이 `user_hidden = false` 를 자연 복원하며, 필드를 수동 편집해도 hot reload + 다음 IME/포커스 이벤트로 표시가 돌아온다.
 
 ### 4.2 메뉴
 
@@ -204,7 +204,7 @@ KoEnVue v0.9.2.5 — GitHub              ← 항상 최상단 헤더 (MF_DEFAULT
 
 - **헤더 라인 (KoEnVue v… — GitHub / → v… — 다운로드)** 은 항상 메뉴 최상단에 노출되는 단일 라인이며 두 모드로 동작한다. 평소엔 `KoEnVue v{DefaultConfig.AppVersion} — GitHub` 라벨에 `MF_DEFAULT` 플래그를 부여해 시스템이 자동 볼드로 그리고 (팝업 메뉴당 1개만 가능), 바로 아래 separator 가 메뉴 구조를 분할 — 위치(최상단) + 볼드 + 분리선 3종이 합쳐져 "메뉴 헤더" 역할을 명시한다. `_pendingUpdate is not null` 일 때 라벨이 `KoEnVue v{cur} → {newTag} — 다운로드` 로 자동 전환되어 같은 헤더 위치에서 새 버전 가용을 알린다 (별도 알림 블록 없음). 클릭 시 `IDM_HOMEPAGE` 단일 진입점이 `_pendingUpdate` 유무로 분기 — `OpenUpdatePage()` (`info.HtmlUrl` prefix 검증 후 릴리스 페이지) 또는 `OpenHomepage()` (`https://github.com/{UpdateRepoOwner}/{UpdateRepoName}` 컴파일 타임 합성, 외부 입력 검증 불필요). 라벨의 한·영 분기는 마지막 행위 단어(`I18n.MenuDownload` = "다운로드"/"Download") 만, 브랜드명·버전 숫자·화살표 부분은 공통. `_pendingUpdate.Version` 이 GitHub release `tag_name` 형식("v1.0.1") 이라 `→ {tag}` 로 합성해야 v 가 중복되지 않음. 자동 업데이트는 아니며 사용자가 직접 새 exe 를 받아 교체. `config.update_check_enabled = false` 로 GitHub 조회 자체를 비활성화 가능 (이때 헤더는 평소 모드만 노출)
 - **블록 순서**: 메인(투명도·크기·스냅·변경강조·위치·모드·드래그·정리·숨김) → 커서(표시·변경강조·숨김) → 공통(애니메이션 마스터) → 앱(시작·관리자) → 상세설정 → 종료. 자석 스냅·애니메이션·변경 강조는 기본 켜짐
-- **플로팅 배지 숨김**은 `config.user_hidden` 체크 토글 — 좌클릭 동작을 `"settings"`/`"none"` 으로 바꾸어 좌클릭 토글 경로가 막힌 경우에도 우클릭 메뉴로 항상 숨김 해제가 가능하도록 4.1a 의 dead-end 방지용. 내부적으로 `HandleTrayToggle` 과 동일한 `ApplyUserHiddenTransition` 헬퍼로 오버레이/트레이 아이콘 상태를 즉시 동기화하며, 토글 즉시 `Settings.Save` 로 config.json 에 영구 저장
+- **플로팅 배지 숨김**은 `config.user_hidden` 체크 토글 — 좌클릭 동작을 `"settings"`/`"none"` 으로 바꾸어 좌클릭 토글 경로가 막힌 경우에도 우클릭 메뉴로 항상 숨김 해제가 가능하도록 4.1a 의 dead-end 방지용. 내부적으로 `HandleTrayToggle` 과 동일한 `ApplyUserHiddenTransition` 헬퍼로 오버레이/트레이 아이콘 상태를 즉시 동기화하며, 토글 즉시 `Settings.Save` 로 koenvue_config.json 에 영구 저장
 - **상세 설정**은 구분선으로 묶어 종료 바로 위에 배치 — 트레이 메뉴로 노출되지 않는 나머지 필드를 편집하는 진입점. 색상 섹션 제목은 **"공통 — 색상"** (`Shared — Colors`) — 메인/커서 배경색·테마 공용
 
 ### 4.3 시작 프로그램 등록
@@ -249,8 +249,8 @@ KoEnVue v0.9.2.5 — GitHub              ← 항상 최상단 헤더 (MF_DEFAULT
 - 룩앤필은 "위치 기록 정리" / "직접 지정" 대화상자와 동일 (맑은 고딕 9 pt, 시스템 버튼 배경, DPI 스케일, 중첩 메시지 루프 모달, Tab/Enter/ESC 키 처리)
 - **제외 항목**
   - 트레이 메뉴로 이미 조작 가능한 항목: 투명도, 크기 배율, 기본 위치, 시작 프로그램 등록, 자석 스냅, 애니메이션 사용, 플로팅 배지·커서 헤일로 변경 강조, 위치 데이터, 위치 모드, 드래그 활성 키
-  - **`config.json` 직접 편집 전용 컬렉션 필드**: `app_profiles` (앱 프로필 맵 — 사용 예시는 [User_Guide.md](User_Guide.md)), `app_filter_mode` + `app_filter_list` (앱 화이트/블랙리스트), `system_hide_classes_user` / `system_hide_processes_user` (시스템 숨김 목록 사용자 확장)
-  - **`config.json` 직접 편집 전용 hidden 옵션**: `tray_enabled` (트레이 아이콘 자체 켜고 끔 — OFF 시 우클릭 메뉴가 사라지므로 이후 변경은 `config.json` 재편집 또는 앱 재시작 필요), `advanced.overlay_class_name` (윈도우 클래스명, 내부 디버깅용)
+  - **`koenvue_config.json` 직접 편집 전용 컬렉션 필드**: `app_profiles` (앱 프로필 맵 — 사용 예시는 [User_Guide.md](User_Guide.md)), `app_filter_mode` + `app_filter_list` (앱 화이트/블랙리스트), `system_hide_classes_user` / `system_hide_processes_user` (시스템 숨김 목록 사용자 확장)
+  - **`koenvue_config.json` 직접 편집 전용 hidden 옵션**: `tray_enabled` (트레이 아이콘 자체 켜고 끔 — OFF 시 우클릭 메뉴가 사라지므로 이후 변경은 `koenvue_config.json` 재편집 또는 앱 재시작 필요), `advanced.overlay_class_name` (윈도우 클래스명, 내부 디버깅용)
 
 ### 4.8 업데이트 알림
 
@@ -267,20 +267,20 @@ KoEnVue v0.9.2.5 — GitHub              ← 항상 최상단 헤더 (MF_DEFAULT
 - **크로스 스레드 마샬링**: 백그라운드 스레드의 `onUpdateFound` 콜백 → `Program.OnUpdateCheckResult` 에서 `Program._pendingUpdate` (`private static volatile UpdateInfo?`) 에 쓰고 `User32.PostMessageW(hwndMain, WM_APP_UPDATE_FOUND, 0, 0)` 호출. 메인 스레드의 WndProc 가 메시지를 받아 `HandleUpdateFound` → `Tray.OnUpdateFound(info)` 를 호출. 감지 스레드와 동일한 `WM_APP+N` 패턴을 재사용해 크로스 스레드 신호 경로를 일관되게 유지
 - **트레이 메뉴 헤더 라인 라벨 전환**: `Tray._pendingUpdate` (비 volatile — WM_APP_UPDATE_FOUND 처리 이후는 메인 스레드 단독 접근) 가 non-null 이면 `ShowMenu` 가 헤더 라인의 라벨을 `KoEnVue v{cur} → {newTag} — 다운로드` 로 합성, null 이면 평소 라벨 `KoEnVue v{cur} — GitHub`. 별도 메뉴 항목·구분선 추가 없이 같은 `IDM_HOMEPAGE = 4010` 항목 한 줄에서 라벨만 전환되므로 메뉴 시각 구조가 두 모드 사이에 변하지 않는다 (v0.9.2.6 에서 v0.8.9.0 의 별도 `IDM_UPDATE_DOWNLOAD = 4008` 블록을 통합)
 - **다른 알림 수단을 의도적으로 선택 안 함**: (a) balloon `NIIF_INFO` — 침해적, (b) Windows Toast — `AppUserModelID` + Start 메뉴 바로가기 필요해 포터블 단일 exe 배포 모델과 충돌, (c) 트레이 툴팁 접두 "⚡ Update available — ..." — 너무 은은해서 발견성 낮음. 통합 헤더 라인은 메뉴 최상단 + `MF_DEFAULT` 볼드 + 라벨 변형(`→ {tag} — 다운로드`) 으로 발견성·침해성 균형. 우클릭만 하면 첫 줄에서 즉시 인지
-- **토글**: `config.update_check_enabled` (기본 `true`). Program 부팅 시 `if (_config.UpdateCheckEnabled)` 체크로 감싸진다. 상세 설정 다이얼로그 "[시스템]" 섹션의 **"부팅 시 업데이트 확인"** 체크박스로 on/off 가능(`config.json` 직접 편집도 지원). OFF 로 두면 `WinHttpOpen` 자체가 호출되지 않아 WPAD 탐지·DNS 질의·TCP 연결 등 어떠한 네트워크 트래픽도 발생하지 않는다 — 폐쇄망 친화
+- **토글**: `config.update_check_enabled` (기본 `true`). Program 부팅 시 `if (_config.UpdateCheckEnabled)` 체크로 감싸진다. 상세 설정 다이얼로그 "[시스템]" 섹션의 **"부팅 시 업데이트 확인"** 체크박스로 on/off 가능(`koenvue_config.json` 직접 편집도 지원). OFF 로 두면 `WinHttpOpen` 자체가 호출되지 않아 WPAD 탐지·DNS 질의·TCP 연결 등 어떠한 네트워크 트래픽도 발생하지 않는다 — 폐쇄망 친화
 
 ---
 
-## 5. 설정 (config.json)
+## 5. 설정 (koenvue_config.json)
 
 ### 5.1 파일 위치
-- **기본은 exe 디렉토리의 `config.json`** — 포터블 정책. exe 만 있으면 첫 실행 시 자동 생성된다
-- **v0.9.3.0 (PR-03) 부터 `%LOCALAPPDATA%\KoEnVue\` 로 자동 fallback** — `app.manifest` 를 `asInvoker` 로 전환하면서 exe 폴더가 user-non-writable 한 경우(예: `Program Files` 설치)를 [App/Config/PortablePath](../App/Config/PortablePath.cs) 가 결정. 결정 우선순위: `BaseDirectory\config.json` 이 이미 있으면 그 경로(v0.9.2.x → v0.9.3.x 마이그레이션) → BaseDirectory writable 이면 BaseDirectory → `%LOCALAPPDATA%\KoEnVue\config.json`
-- `koenvue.log` 도 동일 fallback. `config.json:log_file_path` 사용자 지정 값은 `PortablePath.SanitizeLogPath` 가 허용 루트(BaseDirectory / `%LOCALAPPDATA%\KoEnVue`) 하위인지 검증해 위반 시 기본 경로로 폴백 + `Logger.Warning`
+- **기본은 exe 디렉토리의 `koenvue_config.json`** — 포터블 정책. exe 만 있으면 첫 실행 시 자동 생성된다
+- **v0.9.3.0 (PR-03) 부터 `%LOCALAPPDATA%\KoEnVue\` 로 자동 fallback** — `app.manifest` 를 `asInvoker` 로 전환하면서 exe 폴더가 user-non-writable 한 경우(예: `Program Files` 설치)를 [App/Config/PortablePath](../App/Config/PortablePath.cs) 가 결정. 결정 우선순위: `BaseDirectory\koenvue_config.json` 이 이미 있으면 그 경로(v0.9.2.x → v0.9.3.x 마이그레이션) → BaseDirectory writable 이면 BaseDirectory → `%LOCALAPPDATA%\KoEnVue\koenvue_config.json`
+- `koenvue.log` 도 동일 fallback. `koenvue_config.json:log_file_path` 사용자 지정 값은 `PortablePath.SanitizeLogPath` 가 허용 루트(BaseDirectory / `%LOCALAPPDATA%\KoEnVue`) 하위인지 검증해 위반 시 기본 경로로 폴백 + `Logger.Warning`
 - **첫 실행**: 파일이 없으면 기본 `AppConfig` 를 즉시 디스크에 저장해 사용자 눈에 바로 보이게 한다
-- **원자적 저장**: `JsonSettingsFile.WriteAllText` 는 `path + ".tmp"` 로 먼저 쓴 뒤 `File.Move(tmp, path, overwrite: true)` — 내부적으로 `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` 이므로 같은 볼륨에서 원자적 교체가 보장된다. 저장 중 크래시 / 전원 차단이 일어나도 잘린 `config.json` 이 남지 않으며, 핫 리로드의 "삭제 감지" 가드와 호환된다
+- **원자적 저장**: `JsonSettingsFile.WriteAllText` 는 `path + ".tmp"` 로 먼저 쓴 뒤 `File.Move(tmp, path, overwrite: true)` — 내부적으로 `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` 이므로 같은 볼륨에서 원자적 교체가 보장된다. 저장 중 크래시 / 전원 차단이 일어나도 잘린 `koenvue_config.json` 이 남지 않으며, 핫 리로드의 "삭제 감지" 가드와 호환된다
 - **파싱 실패**: 기본값을 메모리에서만 사용하고 디스크는 덮어쓰지 않는다(수동 복구 여지 보존). 동시에 손상된 파일의 mtime 을 캐시에 반영해 5 초 폴링이 `WM_CONFIG_CHANGED` 를 무한 재발송하지 않도록 한다
-- **완전 삭제**: 포터블 경로면 exe 폴더만 지우면 끝. fallback 경로를 쓴 경우 `%LOCALAPPDATA%\KoEnVue\` 도 함께 지워야 `config.json` + `koenvue.log` 가 모두 제거된다 (§ 9 참고)
+- **완전 삭제**: 포터블 경로면 exe 폴더만 지우면 끝. fallback 경로를 쓴 경우 `%LOCALAPPDATA%\KoEnVue\` 도 함께 지워야 `koenvue_config.json` + `koenvue.log` 가 모두 제거된다 (§ 9 참고)
 
 ### 5.2 주요 설정 카테고리
 
@@ -324,10 +324,10 @@ KoEnVue v0.9.2.5 — GitHub              ← 항상 최상단 헤더 (MF_DEFAULT
 - **글로벌-only 키** — `Tray.*` / `update_check_enabled` / `language` / `log_*` / `default_indicator_position*` / `snap_to_windows` / `snap_gap_px` / `drag_modifier` / `poll_interval_ms` 등은 프로세스-단위 의미가 약하거나(트레이 아이콘 1개, 언어 1개) 시스템-단위 인터랙션(드래그 모디파이어) 이라 현재 구조상 글로벌만 사용한다. 프로필에서 override 해도 효과 없음
 - **PollIntervalMs 의 한계** — 감지 루프(`DetectionService.RunLoop`) 는 `_config.PollIntervalMs` 글로벌 값만 사용하므로 프로필에서 이 키를 override 해도 실효 변화 없다
 - **LRU 캐시** — 매칭 결과는 프로세스명/클래스명/타이틀 키 기준 LRU(최대 50개)로 캐시되어 80ms 폴링 핫패스의 JSON roundtrip 비용을 흡수한다. 글로벌 인스턴스가 교체(핫 리로드 / 트레이 저장) 되면 자동 무효화되고, 시스템 비주얼 스타일 변경(`WM_SETTINGCHANGE` · `WM_THEMECHANGED`) 시에도 캐시가 클리어되어 `Theme.System` 을 상속한 프로필이 옛 강조색을 박제하지 않는다
-- **타이틀 모드의 ReDoS 가드** — `title` 모드는 각 프로필 키를 정규식으로 평가하며 100ms 매칭 타임아웃을 적용한다. `config.json` 이 user-writable 이라 악의적 패턴의 지수 백트래킹이 들어와도 한 틱 안에서 컷오프된다
+- **타이틀 모드의 ReDoS 가드** — `title` 모드는 각 프로필 키를 정규식으로 평가하며 100ms 매칭 타임아웃을 적용한다. `koenvue_config.json` 이 user-writable 이라 악의적 패턴의 지수 백트래킹이 들어와도 한 틱 안에서 컷오프된다
 
 ### 5.5 핫 리로드
-- 감지 스레드가 ~5 초마다 `config.json` mtime 체크
+- 감지 스레드가 ~5 초마다 `koenvue_config.json` mtime 체크
 - 변경 감지 시 `WM_CONFIG_CHANGED` → 자동 리로드
 - **삭제 안전**: mtime 체크 전에 `File.Exists` 가드를 통과해야 한다. 파일이 삭제된 상태에서는 `GetLastWriteTimeUtc` 가 `1601-01-01` 센티널을 반환해 "변경됨" 으로 오인되는데, 이를 통과시키면 `Load()` 가 기본값으로 리셋하고 다음 `Save()` 가 파일을 재생성하면서 사용자 설정을 덮어써 버린다. 에디터의 원자적 교체(`delete → rename`) 저장 방식과도 호환되어야 하므로 파일 잠금이 아닌 읽기 측 가드로 해결
 
@@ -436,7 +436,7 @@ dotnet publish -r win-x64 -c Release  # NativeAOT 릴리스 퍼블리시
 
 1. 트레이 메뉴에서 **시작 프로그램 등록** 해제 (이미 해제 상태면 생략)
 2. KoEnVue 종료
-3. exe 폴더 삭제 — 포터블 경로(BaseDirectory)면 `config.json` 과 `koenvue.log` 도 exe 옆에 있으므로 함께 제거된다
+3. exe 폴더 삭제 — 포터블 경로(BaseDirectory)면 `koenvue_config.json` 과 `koenvue.log` 도 exe 옆에 있으므로 함께 제거된다
 4. **fallback 경로를 쓴 경우** (Program Files 등 user-non-writable 위치 설치) `%LOCALAPPDATA%\KoEnVue\` 폴더도 함께 삭제
 
 레지스트리 변경은 전혀 없다. schtasks 시작 등록을 사전에 해제했다면 폴더 삭제로 흔적이 완전히 사라진다.
@@ -448,7 +448,7 @@ dotnet publish -r win-x64 -c Release  # NativeAOT 릴리스 퍼블리시
 | 문서 | 내용 |
 |------|------|
 | **[../CLAUDE.md](../CLAUDE.md)** | 프로젝트 진입점, 기술 스택, P1–P6, 빌드 |
-| **[../README.md](../README.md)** | 다운로드, 빌드, 릴리즈 절차, `config.json` 키 |
+| **[../README.md](../README.md)** | 다운로드, 빌드, 릴리즈 절차, `koenvue_config.json` 키 |
 | **[User_Guide.md](User_Guide.md)** | 최종 사용자 매뉴얼 |
 | **[architecture.md](architecture.md)** | Core / App 모듈 상세, 재사용 계약, 파사드 패턴 |
 | **[implementation-notes.md](implementation-notes.md)** | 렌더 파이프라인, 드래그/스냅, 애니메이션, CAPS LOCK, 핫 리로드, 다이얼로그, 업데이트 체크 |

@@ -4,7 +4,7 @@ namespace KoEnVue.App.Models;
 
 /// <summary>
 /// 플로팅 배지 드래그 활성 키 — 드래그 개시 게이트.
-/// config.json의 "drag_modifier" 키에 대응.
+/// koenvue_config.json의 "drag_modifier" 키에 대응.
 ///
 /// <para>
 /// 좌클릭 동작(2026-07): 짧은 좌클릭 = 일시 숨김(포커스·IME 변경 시 재표시).

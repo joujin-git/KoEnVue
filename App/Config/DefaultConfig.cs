@@ -6,7 +6,7 @@ namespace KoEnVue.App.Config;
 
 /// <summary>
 /// 기본 상수값. 코드 전체에서 매직 넘버 대신 이 상수를 참조한다.
-/// config.json에서 오버라이드 가능한 값은 AppConfig 기본값에 정의하고,
+/// koenvue_config.json에서 오버라이드 가능한 값은 AppConfig 기본값에 정의하고,
 /// 여기에는 코드 레벨 픽셀 오프셋/간격/타이밍 상수만 정의한다.
 ///
 /// <para>
@@ -383,7 +383,7 @@ internal static partial class DefaultConfig
     // === 설정 파일 ===
 
     /// <summary>설정 파일명 (exe 디렉토리에 생성됨 — 완전 포터블).</summary>
-    public const string ConfigFileName = "config.json";
+    public const string ConfigFileName = "koenvue_config.json";
 
     /// <summary>설정 파일 변경 감지 간격 (약 5초 = 62폴링 x 80ms)</summary>
     public const int ConfigCheckIntervalPolls = 62;

@@ -92,7 +92,7 @@ internal static partial class Program
     // 실제 상태와 우연히 같을 수 있어, 첫 메시지를 중복으로 오인해 버리지 않도록 하는 래치 (§N-55).
     private static bool _imeStateReceived;
 
-    // config.json 핫리로드가 파싱 실패 중인지 (메인 스레드 전용 — HandleConfigChanged).
+    // koenvue_config.json 핫리로드가 파싱 실패 중인지 (메인 스레드 전용 — HandleConfigChanged).
     // 안내 박스를 연속 실패당 1회로 제한하는 래치. 정상 로드 시 해제되므로, 사용자가 파일을 고친 뒤
     // 다시 깨뜨리면 새로 한 번 더 안내한다.
     private static bool _configReloadFailed;
@@ -982,7 +982,7 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// config.json 핫리로드 진입점. <b>재진입 가드를 포함한다.</b>
+    /// koenvue_config.json 핫리로드 진입점. <b>재진입 가드를 포함한다.</b>
     ///
     /// <para>
     /// 리로드가 실패하면 안내 <c>MessageBoxW</c> 를 띄우는데, 그것은 Win32 자체 모달 루프라
@@ -1029,7 +1029,7 @@ internal static partial class Program
 
         // 파싱 실패를 성공과 구분한다 (AUDIT-2026-07-30 §G). 실패 시 Load 가 돌려주는 전 필드 디폴트를
         // 채택하면, 그 뒤 어떤 저장 경로(트레이 토글·드래그 종료)든 그 디폴트를 디스크에 확정해
-        // **사용자 설정이 전멸**한다. config.json 은 편집 중 한순간만 파싱 불가여도 이 경로를 탄다.
+        // **사용자 설정이 전멸**한다. koenvue_config.json 은 편집 중 한순간만 파싱 불가여도 이 경로를 탄다.
         // 기존 인스턴스를 그대로 두고 물러나면, 파일이 고쳐지는 순간 다음 mtime 변화가 정상 리로드한다.
         if (!Settings.TryLoad(out AppConfig loaded))
         {
@@ -1057,7 +1057,7 @@ internal static partial class Program
     /// <see cref="ApplyTrayEnabledTransition"/> 이 필드를 직접 읽는다.
     ///
     /// <para>
-    /// 진입점이 <b>둘</b>이다. (1) config.json 핫리로드(<see cref="HandleConfigChanged"/>),
+    /// 진입점이 <b>둘</b>이다. (1) koenvue_config.json 핫리로드(<see cref="HandleConfigChanged"/>),
     /// (2) 저장 중 3-way 병합으로 디스크의 사용자 편집이 들어온 경우(<see cref="SaveAndSync"/>).
     /// 후자를 여기로 모으지 않으면 <b>어디서도 처리되지 않는다</b> — <c>Settings.Save</c> 의 mtime
     /// self-bump 가 핫리로드를 차단하기 때문이다.
@@ -1275,7 +1275,7 @@ internal static partial class Program
     /// 트레이 좌클릭: 표시 상태 4단계를 순환한다 —
     /// <b>둘 다 보임 → 배지만 → 헤일로만 → 모두 숨김 → (다시) 둘 다 보임</b>.
     /// 전이 계산의 단일 진실원은 <see cref="Tray.ComputeLeftClickCycle"/> 이고, 여기서는 그
-    /// 결과를 오버레이·트레이 아이콘·config.json 에 반영하는 부수효과만 담당한다.
+    /// 결과를 오버레이·트레이 아이콘·koenvue_config.json 에 반영하는 부수효과만 담당한다.
     /// <para>
     /// 커서 헤일로 윈도우 lifecycle 은 <see cref="ApplyCursorConfigChange"/> 가 담당하며, 메뉴
     /// 경로(HandleMenuCommand 람다)와 마찬가지로 <b>직접 호출해야 한다</b> — Settings.Save 의
@@ -1286,7 +1286,7 @@ internal static partial class Program
     /// 트레이 메뉴의 체크 상태는 <see cref="Tray.ShowMenu"/> 가 열릴 때마다 현재 <c>_config</c> 로
     /// 새로 구성하므로(Tray.Menu.cs 의 MF_CHECKED 분기), config 갱신만으로 즉시 반영된다.
     /// </para>
-    /// config.json 에 즉시 저장 — 재기동/포그라운드 전환에도 현재 단계가 유지된다.
+    /// koenvue_config.json 에 즉시 저장 — 재기동/포그라운드 전환에도 현재 단계가 유지된다.
     /// </summary>
     private static void HandleTrayToggle()
     {

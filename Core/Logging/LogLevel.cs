@@ -1,7 +1,7 @@
 namespace KoEnVue.Core.Logging;
 
 /// <summary>
-/// 로그 출력 레벨. <c>config.json</c> 의 <c>"log_level"</c> 키에 대응.
+/// 로그 출력 레벨. <c>koenvue_config.json</c> 의 <c>"log_level"</c> 키에 대응.
 ///
 /// <para>
 /// 본 Core enum 은 STJ 의존이 없다 — JSON 표현(<c>"DEBUG"/"INFO"/"WARNING"/"ERROR"</c>) 매핑은 App

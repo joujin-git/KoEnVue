@@ -8,7 +8,7 @@ namespace KoEnVue.Tests.Unit;
 
 /// <summary>
 /// <see cref="JsonSettingsManager{T}.MergeWithDefaults"/> 의 병합 회귀 가드.
-/// config.json 은 user-writable 이고 NativeAOT STJ 소스 생성기는 reflection off 상태에서
+/// koenvue_config.json 은 user-writable 이고 NativeAOT STJ 소스 생성기는 reflection off 상태에서
 /// JSON 에 없는 <c>init</c> 기본값을 드롭한다. 따라서 병합 단계가 "사용자가 명시하지 않은
 /// 필드는 기본값 유지" 의 단일 진실원 — 본 테스트가 두 회귀를 박제한다:
 /// <list type="bullet">

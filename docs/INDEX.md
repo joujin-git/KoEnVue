@@ -8,7 +8,7 @@ KoEnVue 문서 전체 인덱스. [CLAUDE.md](../CLAUDE.md) 는 가장 기본적�
 |------|------|
 | [User_Guide.md](User_Guide.md) | 최종 사용자 매뉴얼 (한국어) |
 | [KoEnVue_PRD.md](KoEnVue_PRD.md) | 제품 요구사항 — 기능 스펙, 동작, config |
-| [config-reference.md](config-reference.md) | `config.json` 전체 키 레퍼런스 |
+| [config-reference.md](config-reference.md) | `koenvue_config.json` 전체 키 레퍼런스 |
 
 ## 개발 / 기여
 

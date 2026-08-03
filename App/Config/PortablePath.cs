@@ -6,13 +6,13 @@ using KoEnVue.Core.Native;
 namespace KoEnVue.App.Config;
 
 /// <summary>
-/// asInvoker 전환 (PR-03) 후 config.json / koenvue.log 경로 결정 + log_file_path sanitize.
+/// asInvoker 전환 (PR-03) 후 koenvue_config.json / koenvue.log 경로 결정 + log_file_path sanitize.
 /// 기본은 exe 디렉토리 (완전 포터블). exe 위치가 user-non-writable 인 경우 (Program Files 등)
 /// %LOCALAPPDATA%\KoEnVue\ 로 자동 fallback.
 /// <para>
 /// asInvoker 채택 시 Admin 토큰을 전제로 했던 보안 표면 (B1 LogFilePath 임의 write,
 /// B2 schtasks symlink, B5 elevated notepad) 이 자연 해소된다. 그러나 사용자가
-/// <c>config.json:log_file_path</c> 에 시스템 폴더를 지정하는 등 경계 외 write 시도는
+/// <c>koenvue_config.json:log_file_path</c> 에 시스템 폴더를 지정하는 등 경계 외 write 시도는
 /// 여전히 가능하므로 <see cref="SanitizeLogPath"/> 가 허용 루트 하위인지 검증한다.
 /// <b>admin_elevation</b> 옵트인 시에는 문자열 접두만으로는 junction 탈출을 막지 못하므로
 /// <see cref="Kernel32.GetFinalPathNameByHandleW"/> 로 최종 경로를 재검증한다 (오딧 H1).
@@ -35,18 +35,18 @@ internal static class PortablePath
     private static readonly IntPtr InvalidHandleValue = new(-1);
 
     /// <summary>
-    /// 활성 <c>config.json</c> 경로. 결정 우선순위:
+    /// 활성 <c>koenvue_config.json</c> 경로. 결정 우선순위:
     /// <list type="number">
-    /// <item><c>BaseDirectory\config.json</c> 가 이미 있으면 그 경로 (v0.9.2.x → v0.9.3.x 마이그레이션).</item>
-    /// <item>BaseDirectory 가 writable 이면 <c>BaseDirectory\config.json</c>.</item>
-    /// <item>아니면 <c>FallbackRoot\config.json</c> (디렉토리 자동 생성).</item>
+    /// <item><c>BaseDirectory\koenvue_config.json</c> 가 이미 있으면 그 경로 (v0.9.2.x → v0.9.3.x 마이그레이션).</item>
+    /// <item>BaseDirectory 가 writable 이면 <c>BaseDirectory\koenvue_config.json</c>.</item>
+    /// <item>아니면 <c>FallbackRoot\koenvue_config.json</c> (디렉토리 자동 생성).</item>
     /// </list>
     /// </summary>
     public static string ResolveConfigPath() => ResolveFile(DefaultConfig.ConfigFileName);
 
     /// <summary>
     /// 기본 <c>koenvue.log</c> 경로. <see cref="ResolveConfigPath"/> 와 동일 결정 로직.
-    /// 사용자가 <c>config.json:log_file_path</c> 를 비워두거나 sanitize 에 실패한 경우 폴백.
+    /// 사용자가 <c>koenvue_config.json:log_file_path</c> 를 비워두거나 sanitize 에 실패한 경우 폴백.
     /// </summary>
     public static string ResolveLogPath() => ResolveFile("koenvue.log");
 

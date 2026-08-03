@@ -143,7 +143,7 @@ fix:
 
 이전 안전망 `BootGracePeriodMs (500→1500ms)` 는 z-order fix 가 진짜 원인 차단 후 불요 — 제거. cursor 첫 표시는 `idle_delay_ms` (100ms) 후 정상 등장.
 
-**topmost 주기 재적용 (2026-06-01 후속 fix)** — 위 첫 표시 `SetWindowPos` 는 **1회**라, 다른 topmost 창 (풀스크린 게임 / 알림 토스트 / UAC) 이 위로 올라오면 cursor 인디가 그 아래 깔린 채 복구되지 않던 누락 (사용자 보고 "잘 동작하다가 갑자기 안 보임"). `ApplyTopmost()` (첫 표시 + 주기 재적용 단일 경로) 와 `MaybeReassertTopmost()` (`Environment.TickCount64` 게이트로 `DefaultConfig.CursorForceTopmostIntervalMs` 경과 시에만 `ApplyTopmost` (기본 5초) — 매 tick 호출되나 실제 `SetWindowPos` 는 5초당 1회) 헬퍼 신규. `HandleCursorMotionTimer` 의 **항상 표시 모드 + 정지 검출 모드 (가시 상태)** 양쪽 분기에서 `MaybeReassertTopmost()` 호출 — 두 모드 모두 보강 (정지 검출 모드도 가시 상태로 정지 중 다른 창에 가려질 수 있음). `CursorForceTopmostIntervalMs` 는 내부 const (AppConfig 키 아님 — config.json 오버라이드 불가, 플로팅 배지 `ForceTopmostIntervalMs` 와 같은 기본값이나 의미 분리, 0 이면 비활성). 가설 CC 회귀는 첫 표시와 동일한 `SWP_NOSENDCHANGING` 플래그 세트 + 주기 빈도 제어로 차단 (생성 시 `WS_EX_TOPMOST` 재도입 안 함). cursor 전용 게이트 1줄 재사용으로 메인 `TopmostWatchdog` 미재사용 (P4 예외) — 옵션 A/B 비교 + 가설 CC 차단 메커니즘: [dev-notes/2026-05-27-cursor-indicator.md "topmost 유실 후속 fix (주기 재적용)"](dev-notes/2026-05-27-cursor-indicator.md). 본 재적용은 무로깅이라 육안 검증에만 의존했으나 (2026-06-01) `MaybeReassertTopmost` 의 실제 `ApplyTopmost` 호출 시 `Cursor halo topmost reasserted (interval=...ms)` Debug 로그를 추가 — 표시/숨김 전환·IME/CAPS 변경·config 반영·dispose 까지 상태 전환 엣지 7곳에 로그를 넣어 (핫패스 본문 제외, 스팸 0) 동작을 로그로 추적 가능하게 했다.
+**topmost 주기 재적용 (2026-06-01 후속 fix)** — 위 첫 표시 `SetWindowPos` 는 **1회**라, 다른 topmost 창 (풀스크린 게임 / 알림 토스트 / UAC) 이 위로 올라오면 cursor 인디가 그 아래 깔린 채 복구되지 않던 누락 (사용자 보고 "잘 동작하다가 갑자기 안 보임"). `ApplyTopmost()` (첫 표시 + 주기 재적용 단일 경로) 와 `MaybeReassertTopmost()` (`Environment.TickCount64` 게이트로 `DefaultConfig.CursorForceTopmostIntervalMs` 경과 시에만 `ApplyTopmost` (기본 5초) — 매 tick 호출되나 실제 `SetWindowPos` 는 5초당 1회) 헬퍼 신규. `HandleCursorMotionTimer` 의 **항상 표시 모드 + 정지 검출 모드 (가시 상태)** 양쪽 분기에서 `MaybeReassertTopmost()` 호출 — 두 모드 모두 보강 (정지 검출 모드도 가시 상태로 정지 중 다른 창에 가려질 수 있음). `CursorForceTopmostIntervalMs` 는 내부 const (AppConfig 키 아님 — koenvue_config.json 오버라이드 불가, 플로팅 배지 `ForceTopmostIntervalMs` 와 같은 기본값이나 의미 분리, 0 이면 비활성). 가설 CC 회귀는 첫 표시와 동일한 `SWP_NOSENDCHANGING` 플래그 세트 + 주기 빈도 제어로 차단 (생성 시 `WS_EX_TOPMOST` 재도입 안 함). cursor 전용 게이트 1줄 재사용으로 메인 `TopmostWatchdog` 미재사용 (P4 예외) — 옵션 A/B 비교 + 가설 CC 차단 메커니즘: [dev-notes/2026-05-27-cursor-indicator.md "topmost 유실 후속 fix (주기 재적용)"](dev-notes/2026-05-27-cursor-indicator.md). 본 재적용은 무로깅이라 육안 검증에만 의존했으나 (2026-06-01) `MaybeReassertTopmost` 의 실제 `ApplyTopmost` 호출 시 `Cursor halo topmost reasserted (interval=...ms)` Debug 로그를 추가 — 표시/숨김 전환·IME/CAPS 변경·config 반영·dispose 까지 상태 전환 엣지 7곳에 로그를 넣어 (핫패스 본문 제외, 스팸 0) 동작을 로그로 추적 가능하게 했다.
 
 **시스템 UI z-order — 셸 UI 위에서 cursor 인디 숨김 (2026-06-01 추가 후속, 시행착오 → 재반전)** — 작업 표시줄 / 시작 버튼 / 검색 박스 / 트레이 아이콘 위에서 cursor 인디가 그 아래로 가려지던 문제. **초기 시도** (정지 주기 5초→1초 단축 + 항상 표시 모드 이동 중 매 tick 즉시 재적용 `ApplyTopmostNow`) 로 **작업 표시줄/트레이는 해결** (같은 `WS_EX_TOPMOST` 밴드라 재적용 빈도를 높이면 위로 올라감) 됐으나, **시작 메뉴/검색은 미해결** — 이들은 Windows immersive z-band (일반 topmost 위 계층) 라 `SetWindowPos(HWND_TOPMOST)` 빈도를 아무리 높여도 위로 못 올라간다 (게임 오버레이도 시작 메뉴 위엔 안 그려지는 알려진 OS 한계; `CreateWindowInBand` 비공개 API 만 가능 — P1/안정성 부적합). **사용자 결정** — z-order 싸움을 포기하고 **셸 UI 영역 위에서는 cursor 인디를 일관되게 숨긴다** (가려진 채 어색하게 두지 않음). 초기 시도의 즉시 재적용/1초 단축은 목적 소멸로 **롤백** (`ApplyTopmostNow` 제거, `CursorForceTopmostIntervalMs` 5초 원복) — `MaybeReassertTopmost` 5초 주기만 유지 (풀스크린/토스트/UAC 대비, 셸 UI 와 무관). 구현: `HandleCursorMotionTimer` 가 매 tick `IsOverShellUi(cursor)` 판정 → 셸·메뉴 면 `Hide()` + return. `IsOverShellUi` = `WindowFromPoint` (WS_EX_TRANSPARENT 통과 → cursor 인디 자체 미감지, dev-notes F2) → `GetAncestor(GA_ROOT)` → **(PR-32)** [`OverlaySuppressProbe.IsSuppressRoot`](../App/Detector/OverlaySuppressProbe.cs)(`includeSystemInputProcesses: true`) — `#32768`(`PopupMenuClass`) ∪ `SystemHideClasses`/`SystemHideProcesses` ∪ Start/Search. 메인 Pointer 축과 단일 진실원(P4); 루트 hwnd 캐시 (`_lastShellHwnd`/`_lastShellResult`) 로 같은 창 호버 중 `GetProcessName` 반복 회피. **캐시 무효화 (2026-06-01 감사 Medium ⑧)**: `HandleConfigChanged` 가 `_lastShellHwnd = IntPtr.Zero` 로 캐시를 리셋 — hide 목록 hot-reload 직후 stale 판정 차단 (`Initialize` 는 이미 0). 이전 인라인 `MatchesAny`+`IsSystemInputProcess` 판정은 프로브로 이전 (`06d0d3f` 도입 → `cc25bf6` '일관 표시' revert → 2026-06-01 재반전 → PR-32 공유).
 
@@ -153,13 +153,13 @@ fix:
 
 ### 트레이 메뉴 lazy 생성 / dispose 흐름
 
-디폴트 (`CursorIndicatorEnabled = true`) 에서는 부팅 시 윈도우/엔진/타이머가 정상 생성. 사용자가 트레이 "커서 헤일로 숨김" 체크박스를 클릭해 `CursorIndicatorEnabled = false` 로 끈 동안에는 윈도우/엔진/타이머 **모두 해제** — 메모리/CPU 비용 0. 다시 켜면 트레이 메뉴 클릭 → `IDM_CURSOR_TOGGLE` → `updateConfig(config with { CursorIndicatorEnabled = true })` → `HandleConfigChanged` OFF→ON 분기 → `Program.EnableCursorOverlay()` 가 (1) `CreateCursorOverlayWindow` (별도 HWND, `WS_EX_TRANSPARENT` 영구 ON) → (2) `CursorOverlay.Initialize(hwnd, config, _lastImeState, _lastCapsLockState)` 가 엔진 + 첫 DIB 사전 생성 → (3) `SetTimer(TIMER_ID_CURSOR_MOTION, CursorMotionPollMs or CursorAlwaysPollMs)`. config.json 으로 `cursor_indicator_enabled = false` 를 명시 저장한 채 부팅하면 lazy 게이트가 동일하게 작동해 비용 0 보장.
+디폴트 (`CursorIndicatorEnabled = true`) 에서는 부팅 시 윈도우/엔진/타이머가 정상 생성. 사용자가 트레이 "커서 헤일로 숨김" 체크박스를 클릭해 `CursorIndicatorEnabled = false` 로 끈 동안에는 윈도우/엔진/타이머 **모두 해제** — 메모리/CPU 비용 0. 다시 켜면 트레이 메뉴 클릭 → `IDM_CURSOR_TOGGLE` → `updateConfig(config with { CursorIndicatorEnabled = true })` → `HandleConfigChanged` OFF→ON 분기 → `Program.EnableCursorOverlay()` 가 (1) `CreateCursorOverlayWindow` (별도 HWND, `WS_EX_TRANSPARENT` 영구 ON) → (2) `CursorOverlay.Initialize(hwnd, config, _lastImeState, _lastCapsLockState)` 가 엔진 + 첫 DIB 사전 생성 → (3) `SetTimer(TIMER_ID_CURSOR_MOTION, CursorMotionPollMs or CursorAlwaysPollMs)`. koenvue_config.json 으로 `cursor_indicator_enabled = false` 를 명시 저장한 채 부팅하면 lazy 게이트가 동일하게 작동해 비용 0 보장.
 
 메뉴 체크 의미는 플로팅 배지 `IDM_USER_HIDDEN` 과 동일 — 라벨 "커서 헤일로 숨김" + `MF_CHECKED` = **현재 숨김 상태** (= `CursorIndicatorEnabled = false`). 클릭 시 enabled 반전.
 
 OFF 토글 시 `DisableCursorOverlay()` 가 역순으로 `KillTimer` → `CursorOverlay.Dispose()` (엔진/DIB/GDI 핸들 해제) → `DestroyWindow(_hwndCursorOverlay)` → `_hwndCursorOverlay = IntPtr.Zero` (lazy 재생성 게이트 복귀). `OnProcessExit` 도 동일 cleanup 을 명시적으로 호출.
 
-3 분기 (OFF→ON / ON→OFF / 값 변경) 는 `Program.ApplyCursorConfigChange()` 헬퍼로 추출되어 **두 경로**에서 호출된다: (1) `HandleConfigChanged()` — `config.json` 직접 편집의 mtime 폴러 리로드 경로, (2) `HandleMenuCommand` 람다 — 트레이 메뉴 즉시 적용 경로. 후자가 헬퍼를 직접 호출하지 않으면 트레이 토글이 작동 안 한다 — 람다 내부 `Settings.Save` 는 mtime self-bump 로 `WM_CONFIG_CHANGED` 를 차단 (감지 스레드 폴러가 본인 변경을 다시 알리지 않게 막는 의도된 정책) 하므로 `HandleConfigChanged` 가 호출되지 않음.
+3 분기 (OFF→ON / ON→OFF / 값 변경) 는 `Program.ApplyCursorConfigChange()` 헬퍼로 추출되어 **두 경로**에서 호출된다: (1) `HandleConfigChanged()` — `koenvue_config.json` 직접 편집의 mtime 폴러 리로드 경로, (2) `HandleMenuCommand` 람다 — 트레이 메뉴 즉시 적용 경로. 후자가 헬퍼를 직접 호출하지 않으면 트레이 토글이 작동 안 한다 — 람다 내부 `Settings.Save` 는 mtime self-bump 로 `WM_CONFIG_CHANGED` 를 차단 (감지 스레드 폴러가 본인 변경을 다시 알리지 않게 막는 의도된 정책) 하므로 `HandleConfigChanged` 가 호출되지 않음.
 
 별도 HWND 선택 이유: 메인 `_hwndOverlay` 는 사용자 드래그 (HTCAPTION) 와 hit-test 가 필요해 `WS_EX_TRANSPARENT` 를 켤 수 없는데, cursor 인디는 마우스를 절대 가로채면 안 되므로 영구 클릭 통과가 필수. [dev-notes/2026-05-15-click-through-attempts.md](dev-notes/2026-05-15-click-through-attempts.md) F2 (WS_EX_TRANSPARENT 영구 ON) 패턴 재사용.
 
@@ -281,7 +281,7 @@ Clamp bounds use `Math.Max(workArea.Left, workArea.Right - w)` as the upper limi
 
 **Window read path** clamps both tiers: saved relative resolve (`ResolveRelativePosition` → clamp) and **default** relative (`GetDefaultRelativePosition` → clamp). Fixed Path 3 (default) is not clamped because `GetDefaultPosition` already computes against the live foreground monitor's work area (`MonitorFromWindow` + `MONITOR_DEFAULTTONEAREST`). System input processes bypass mode branching and route straight to `GetDefaultPosition`.
 
-**Write path — Fixed clamps before persistence.** `HandleOverlayDragEnd` (Fixed mode branch) applies `ClampToVisibleArea` to the drag-end coordinate before writing to `_hwndPositions` and `config.IndicatorPositions`. Normal drag produces in-screen coordinates because the OS drag loop keeps the cursor on screen, so this is a no-op in the common case — the guard exists for edge conditions such as monitor unplug mid-drag or work-area reduction between drag start and drag end. Keeps `config.json` free of off-screen coordinates even at these boundaries; does not mutate pre-existing entries (see read-path invariant above).
+**Write path — Fixed clamps before persistence.** `HandleOverlayDragEnd` (Fixed mode branch) applies `ClampToVisibleArea` to the drag-end coordinate before writing to `_hwndPositions` and `config.IndicatorPositions`. Normal drag produces in-screen coordinates because the OS drag loop keeps the cursor on screen, so this is a no-op in the common case — the guard exists for edge conditions such as monitor unplug mid-drag or work-area reduction between drag start and drag end. Keeps `koenvue_config.json` free of off-screen coordinates even at these boundaries; does not mutate pre-existing entries (see read-path invariant above).
 
 **Write path — Window stores relative unclamped; Show is clamped.** Relative offsets stay frame-relative (clamping before save would corrupt the offset). After the relative save, `HandleOverlayDragEnd` applies `ClampToVisibleArea` to the absolute `(x,y)` passed to `Overlay.Show` so the immediate post-drag frame stays on-screen (same guard Fixed already had via its pre-save clamp). System-input early-return (below) skips this Show clamp — intentional.
 
@@ -512,7 +512,7 @@ Detection loop only updates `lastHwndForeground` **after** `ShouldHide` passes. 
 
 #### WinEvent hook honors `detection_method`
 
-IME 감지 경로는 두 가지다 — (1) 디텍션 스레드 80ms 폴링 (`DetectionService.RunLoop`), (2) 메인 스레드 `EVENT_OBJECT_IME_CHANGE` WinEvent 훅 (`ImeStatus.OnImeChange`). 둘 다 사용자가 `config.json` 의 `"detection_method"` 로 선택한 단일-tier 경로(`ime_default` / `ime_context` / `keyboard_layout`) 를 따라야 하지만, 훅은 `WINEVENT_OUTOFCONTEXT` 콜백이라 `AppConfig` 인스턴스에 직접 접근할 수 없다. 해결: `ImeStatus` 가 `volatile DetectionMethod _detectionMethod` 정적 필드를 보유하고, 메인 스레드가 `RegisterHook(hwndMain, config.DetectionMethod)` 로 초기값 주입 + `UpdateDetectionMethod(config.DetectionMethod)` 로 핫 리로드 갱신(설정 다이얼로그 저장 + `config.json` 외부 편집 + 트레이 메뉴 전환 3경로). `OnImeChange` 가 `Detect(hwndFg, threadId, _detectionMethod)` 3-파라미터 오버로드를 호출해 폴링 경로와 동일한 분기. `volatile` 은 메인 스레드가 쓰고 동일 스레드의 콜백이 읽어 현재 구조에서는 불필요하지만 향후 스레드 변경 방어.
+IME 감지 경로는 두 가지다 — (1) 디텍션 스레드 80ms 폴링 (`DetectionService.RunLoop`), (2) 메인 스레드 `EVENT_OBJECT_IME_CHANGE` WinEvent 훅 (`ImeStatus.OnImeChange`). 둘 다 사용자가 `koenvue_config.json` 의 `"detection_method"` 로 선택한 단일-tier 경로(`ime_default` / `ime_context` / `keyboard_layout`) 를 따라야 하지만, 훅은 `WINEVENT_OUTOFCONTEXT` 콜백이라 `AppConfig` 인스턴스에 직접 접근할 수 없다. 해결: `ImeStatus` 가 `volatile DetectionMethod _detectionMethod` 정적 필드를 보유하고, 메인 스레드가 `RegisterHook(hwndMain, config.DetectionMethod)` 로 초기값 주입 + `UpdateDetectionMethod(config.DetectionMethod)` 로 핫 리로드 갱신(설정 다이얼로그 저장 + `koenvue_config.json` 외부 편집 + 트레이 메뉴 전환 3경로). `OnImeChange` 가 `Detect(hwndFg, threadId, _detectionMethod)` 3-파라미터 오버로드를 호출해 폴링 경로와 동일한 분기. `volatile` 은 메인 스레드가 쓰고 동일 스레드의 콜백이 읽어 현재 구조에서는 불필요하지만 향후 스레드 변경 방어.
 
 ### System filter (8 conditions)
 
@@ -603,7 +603,7 @@ Catch intentionally does NOT `Save()` — the user's broken file stays on disk s
 
 ### 저장은 디스크와 3-way 병합한다 (AUDIT-2026-07-30 §N-48, 2026-08-01)
 
-`Save` 는 메모리 인스턴스를 통째로 직렬화해 파일을 덮으므로, 앱이 마지막으로 읽은 뒤 사용자가 `config.json` 에 넣은 편집은 **앱이 손대지도 않은 필드까지** 사라졌다. 5초 폴링이 그 편집을 읽어가기 전에 트레이 토글 한 번이면 충분하다 — §B 는 "창이 열려 있는 동안" 만 닫았고 이건 그보다 넓다.
+`Save` 는 메모리 인스턴스를 통째로 직렬화해 파일을 덮으므로, 앱이 마지막으로 읽은 뒤 사용자가 `koenvue_config.json` 에 넣은 편집은 **앱이 손대지도 않은 필드까지** 사라졌다. 5초 폴링이 그 편집을 읽어가기 전에 트레이 토글 한 번이면 충분하다 — §B 는 "창이 열려 있는 동안" 만 닫았고 이건 그보다 넓다.
 
 - **기준선** `_lastPersistedJson` — 앱이 마지막으로 디스크와 동기화된 시점의 설정을 **앱의 표현으로** 직렬화한 것(파일 원문이 아니다. 주석·포맷 차이가 diff 를 오염시킨다). `TryLoad` 성공과 `Save` 성공이 갱신한다.
 - **트리거** — 저장 시 디스크 mtime 이 `_syncedMtime` 과 다르면 병합 경로. 같으면 파싱 비용 없이 그대로 쓴다(흔한 경로). **`_lastMtime` 을 보면 안 된다** — 그쪽은 감지 스레드가 "변경을 눈치챘다" 는 뜻으로 올리는 폴링 기준이라, 파일이 바뀐 것을 알았지만 읽지는 못한 상태에서도 같아져 가드가 무장 해제된다 (bug-hunt 2026-08-02 확정 #1·#14).
@@ -644,26 +644,26 @@ Catch intentionally does NOT `Save()` — the user's broken file stays on disk s
 
 ### 파싱 실패는 `TryLoad` 로 호출자에게 전달한다 (AUDIT-2026-07-30 §G, 2026-08-01)
 
-`Load()` 는 성공이든 실패든 `T` 하나만 돌려주므로, 호출자는 받은 값이 **정상 로드분인지 실패분 디폴트인지 구분할 수 없었다.** 핫리로드 경로(`HandleConfigChanged`)가 그 디폴트를 `_config` 에 대입하면 이후 **어떤** 저장 경로(트레이 토글·드래그 종료)든 그것을 디스크에 확정해 사용자 설정이 전멸한다. 위 "Corrupted config spam prevention" 이 파일을 지켜도 **메모리 쪽에서 무너지는** 구멍이었다 — config.json 은 편집 중 한순간만 파싱 불가여도 이 경로를 탄다.
+`Load()` 는 성공이든 실패든 `T` 하나만 돌려주므로, 호출자는 받은 값이 **정상 로드분인지 실패분 디폴트인지 구분할 수 없었다.** 핫리로드 경로(`HandleConfigChanged`)가 그 디폴트를 `_config` 에 대입하면 이후 **어떤** 저장 경로(트레이 토글·드래그 종료)든 그것을 디스크에 확정해 사용자 설정이 전멸한다. 위 "Corrupted config spam prevention" 이 파일을 지켜도 **메모리 쪽에서 무너지는** 구멍이었다 — koenvue_config.json 은 편집 중 한순간만 파싱 불가여도 이 경로를 탄다.
 
 - `JsonSettingsManager<T>.TryLoad(out T)` 가 성공 여부를 반환하고, `Load()` 는 그 위임이 되었다(부팅처럼 유지할 기존 인스턴스가 없는 경로는 계속 `Load()` 사용).
 - 실패 시 `HandleConfigChanged` 는 **기존 `_config` 를 그대로 두고 물러난다.** 파일이 고쳐지는 순간 다음 mtime 변화가 정상 리로드한다.
 - 안내는 `_configReloadFailed` 래치로 **연속 실패당 1회** — 5초 폴링이라 매번 띄우면 편집을 방해한다. 정상 로드 시 해제되므로 다시 깨뜨리면 한 번 더 알린다.
 - 문구(`I18n.ConfigReloadFailed`)는 "지금 앱에서 설정을 바꾸면 편집 중인 내용이 덮어써진다"까지 알린다 — `_config` 유지는 *디폴트 전멸*만 막을 뿐, 그 상태에서 저장하면 사용자가 편집 중이던 파일은 여전히 앱 값으로 덮인다(§N-48 read-modify-write 와 같은 뿌리).
 
-**최상위 타입 가드** — 같은 작업의 회귀 테스트가 별건을 드러냈다. `MergeWithDefaults` 는 사용자 JSON 의 최상위를 객체로 가정하고 `TryGetProperty` 를 부르는데, `null`·배열·스칼라가 오면 `JsonElementWrongTypeException`(= `InvalidOperationException`)이 나고 이 타입은 `IsExpectedLoadException` 필터 **밖**이라 `Load` 를 뚫고 `WndProc` 최상위까지 전파됐다 — config.json 에 `null` 한 줄만 남겨도 프로세스가 종료되던 경로다. 이제 병합 진입점이 최상위 `ValueKind` 를 검사해 객체가 아니면 `JsonException` 으로 바꿔 던지므로 정상 실패 경로를 탄다.
+**최상위 타입 가드** — 같은 작업의 회귀 테스트가 별건을 드러냈다. `MergeWithDefaults` 는 사용자 JSON 의 최상위를 객체로 가정하고 `TryGetProperty` 를 부르는데, `null`·배열·스칼라가 오면 `JsonElementWrongTypeException`(= `InvalidOperationException`)이 나고 이 타입은 `IsExpectedLoadException` 필터 **밖**이라 `Load` 를 뚫고 `WndProc` 최상위까지 전파됐다 — koenvue_config.json 에 `null` 한 줄만 남겨도 프로세스가 종료되던 경로다. 이제 병합 진입점이 최상위 `ValueKind` 를 검사해 객체가 아니면 `JsonException` 으로 바꿔 던지므로 정상 실패 경로를 탄다.
 
 ### Auto-create config on first run
 
-`Settings.Load()` writes a freshly constructed default `AppConfig` to disk immediately when the file is missing, rather than deferring creation to the next `Save()`. Ensures the exe-only distribution UX matches expectations — drop the exe, launch, `config.json` materializes next to it on the first run.
+`Settings.Load()` writes a freshly constructed default `AppConfig` to disk immediately when the file is missing, rather than deferring creation to the next `Save()`. Ensures the exe-only distribution UX matches expectations — drop the exe, launch, `koenvue_config.json` materializes next to it on the first run.
 
 ### Config file location
 
-[`App/Config/PortablePath`](../App/Config/PortablePath.cs) resolves the active path with a write-probe (`File.Create` + `Delete`) cached for the process lifetime. Priority order: (1) if `BaseDirectory\config.json` already exists, use it (v0.9.2.x → v0.9.3.x migration); (2) if BaseDirectory is writable, use `BaseDirectory\config.json` (portable default); (3) otherwise fall back to `%LOCALAPPDATA%\KoEnVue\config.json`. `koenvue.log` follows the same path resolution.
+[`App/Config/PortablePath`](../App/Config/PortablePath.cs) resolves the active path with a write-probe (`File.Create` + `Delete`) cached for the process lifetime. Priority order: (1) if `BaseDirectory\koenvue_config.json` already exists, use it (v0.9.2.x → v0.9.3.x migration); (2) if BaseDirectory is writable, use `BaseDirectory\koenvue_config.json` (portable default); (3) otherwise fall back to `%LOCALAPPDATA%\KoEnVue\koenvue_config.json`. `koenvue.log` follows the same path resolution.
 
 P5 (`app.manifest asInvoker`, PR-03, v0.9.3.0) intentionally drops the `requireAdministrator` guarantee — the BaseDirectory might be `Program Files` and unwritable. The fallback root is the user's `%LOCALAPPDATA%\KoEnVue\` (created if missing). Complete uninstall is now "delete the exe folder *and* `%LOCALAPPDATA%\KoEnVue\` if you used the fallback path".
 
-`config.json:log_file_path` is sanitized by [`PortablePath.SanitizeLogPath`](../App/Config/PortablePath.cs) — paths outside the two allowed roots (`BaseDirectory` / `%LOCALAPPDATA%\KoEnVue`) are rejected with a `Logger.Warning` and the default `koenvue.log` location is used. **admin_elevation hardening (감사 H1)**: 허용 루트 *안* 조상에 reparse(junction/symlink)가 있으면 `Kernel32.GetFileAttributesW` + `GetFinalPathNameByHandleW` 로 최종 경로를 구해 다시 허용 루트 접두를 검증 — 문자열 접두만으로는 junction 탈출을 막지 못함. 최종 경로 해석 실패·루트 밖이면 동일하게 기본 경로 폴백. This defends against config.json mis-edits like `"log_file_path": "C:\\Windows\\evil.log"` even after Admin token surface is gone.
+`koenvue_config.json:log_file_path` is sanitized by [`PortablePath.SanitizeLogPath`](../App/Config/PortablePath.cs) — paths outside the two allowed roots (`BaseDirectory` / `%LOCALAPPDATA%\KoEnVue`) are rejected with a `Logger.Warning` and the default `koenvue.log` location is used. **admin_elevation hardening (감사 H1)**: 허용 루트 *안* 조상에 reparse(junction/symlink)가 있으면 `Kernel32.GetFileAttributesW` + `GetFinalPathNameByHandleW` 로 최종 경로를 구해 다시 허용 루트 접두를 검증 — 문자열 접두만으로는 junction 탈출을 막지 못함. 최종 경로 해석 실패·루트 밖이면 동일하게 기본 경로 폴백. This defends against koenvue_config.json mis-edits like `"log_file_path": "C:\\Windows\\evil.log"` even after Admin token surface is gone.
 
 ### Self-triggered reload prevention
 
@@ -671,7 +671,7 @@ P5 (`app.manifest asInvoker`, PR-03, v0.9.3.0) intentionally drops the `requireA
 
 ### STJ source-gen init default workaround
 
-`MergeWithDefaults()` serializes a freshly constructed default `AppConfig` to JSON, overlays the user's loaded keys, then deserializes the result. Required because STJ source generation drops `init` defaults for properties absent from JSON under NativeAOT — if the user's `config.json` omits `Opacity`, the deserialized object has `Opacity == 0.0` instead of `0.85`.
+`MergeWithDefaults()` serializes a freshly constructed default `AppConfig` to JSON, overlays the user's loaded keys, then deserializes the result. Required because STJ source generation drops `init` defaults for properties absent from JSON under NativeAOT — if the user's `koenvue_config.json` omits `Opacity`, the deserialized object has `Opacity == 0.0` instead of `0.85`.
 
 **재귀 머지 (P0 fix, 2026-06-01).** 초기 구현은 *최상위 키만* 순회해 사용자 JSON 에 있는 키는 객체째 통째 교체했다. 이 때문에 사용자가 중첩 객체를 **부분만** 지정하면 — 예: `"event_triggers":{"on_ime_change":false}` — 누락된 형제 필드 (`on_focus_change` true→false), `"advanced"` 부분지정 시 `force_topmost_interval_ms` 5000→0 — 가 STJ source-gen 의 init-default 드롭으로 `default(T)` 가 되어 사용자가 건드리지 않은 설정이 조용히 리셋됐다. 신규 `MergeObjects(writer, defaultObj, userObj)` 재귀 헬퍼가 **양쪽 모두 객체인 키만** 내려가 머지하므로 누락 형제는 기본 객체의 값을 유지한다. 배열·Dictionary 는 의도적으로 통째 교체한다 — 인덱스/키 단위 머지는 사용자가 리스트 (`system_hide_processes` 등) 나 dict (`app_profiles`/`indicator_positions`) 의 항목을 **줄이려는** 의도를 막기 때문. `default_indicator_position` (기본 `null`) 만은 머지 기준 객체가 없어 부분지정 보존이 불가능 — 본질적 한계이며 재귀화로 악화되지는 않는다.
 
@@ -696,7 +696,7 @@ P5 (`app.manifest asInvoker`, PR-03, v0.9.3.0) intentionally drops the `requireA
 
 ### Window class name validation
 
-`Settings.Validate.ValidateAdvanced` 가 `AppConfig.Advanced.OverlayClassName` 을 영문/숫자/언더스코어 + 길이 1-255 로 검증해 위반 시 `"KoEnVueOverlay"` 기본값으로 폴백한다. 이 문자열은 `Program.Bootstrap.RegisterWindowClasses` / `CreateOverlayWindow` 의 `RegisterClassExW` / `CreateWindowExW` 에 그대로 흘러가므로 비정상 값(빈 문자열·과도한 길이·제어문자·공백/슬래시 등 ASCII 외 문자) 이 들어오면 등록 자체가 실패해 부팅이 침묵 종료된다. 사용자가 `config.json` 을 손으로 편집해도 부팅 경로가 끊기지 않도록 단일 폴백 경로로 흡수. 검증 실패 시 `Logger.Warning` 1회만 남기고 정상 부팅을 보장.
+`Settings.Validate.ValidateAdvanced` 가 `AppConfig.Advanced.OverlayClassName` 을 영문/숫자/언더스코어 + 길이 1-255 로 검증해 위반 시 `"KoEnVueOverlay"` 기본값으로 폴백한다. 이 문자열은 `Program.Bootstrap.RegisterWindowClasses` / `CreateOverlayWindow` 의 `RegisterClassExW` / `CreateWindowExW` 에 그대로 흘러가므로 비정상 값(빈 문자열·과도한 길이·제어문자·공백/슬래시 등 ASCII 외 문자) 이 들어오면 등록 자체가 실패해 부팅이 침묵 종료된다. 사용자가 `koenvue_config.json` 을 손으로 편집해도 부팅 경로가 끊기지 않도록 단일 폴백 경로로 흡수. 검증 실패 시 `Logger.Warning` 1회만 남기고 정상 부팅을 보장.
 
 ---
 
@@ -737,7 +737,7 @@ The menu path (`IDM_USER_HIDDEN` → `updateConfig(config with { UserHidden = !c
 
 Five event handlers gate on `_config.UserHidden` to prevent detection-thread events from re-showing a user-hidden indicator: `HandleImeStateChanged`, `HandleFocusChanged`, `HandlePositionUpdated`, `HandleConfigChanged` (skips the refresh/`TriggerShow` branch when still hidden — tray icon still rebuilds so a hot-edited `user_hidden` / `cursor_indicator_enabled` renders the right shapes; false→true hide is handled above), and `HandleActivateRequest`. The detection thread itself does **not** read `UserHidden` — `_indicatorVisible = false` is sufficient to suppress the `TriggerShow` path in main-thread handlers, and cost of the `_config.UserHidden` check is trivial compared to the `WindowProcessInfo.GetProcessName` P/Invoke chain in the detection tick.
 
-Reset paths: (1) right-click tray → "플로팅 배지 숨김" menu toggle (flips the bit directly), (2) left-click tray when `tray_click_action = "toggle"` — reaches `false` by advancing the cycle, so it can take up to two clicks from a hidden stage (`CursorOnly` → `None` → `Both`), (3) delete `config.json` (STJ's default unmapped-member handling reinstates `user_hidden = false`), (4) hand-edit the field — mtime polling reapplies the new config at the next detection event. Persisting the state in config deliberately makes it "sticky" — restart/resume preserves the user's explicit hide intent.
+Reset paths: (1) right-click tray → "플로팅 배지 숨김" menu toggle (flips the bit directly), (2) left-click tray when `tray_click_action = "toggle"` — reaches `false` by advancing the cycle, so it can take up to two clicks from a hidden stage (`CursorOnly` → `None` → `Both`), (3) delete `koenvue_config.json` (STJ's default unmapped-member handling reinstates `user_hidden = false`), (4) hand-edit the field — mtime polling reapplies the new config at the next detection event. Persisting the state in config deliberately makes it "sticky" — restart/resume preserves the user's explicit hide intent.
 
 ### Tray icon hidden-state rendering (`TrayIcon.PaintIcon`)
 
@@ -927,7 +927,7 @@ The tray menu item is discoverable (user sees it when they right-click to exit o
 
 ### Config toggle
 
-`AppConfig.UpdateCheckEnabled : bool = true` lives in the `[시스템]` section next to `LogMaxSizeMb`. Not exposed in the tray menu (low-frequency toggle) — users who want to disable it edit `config.json` directly. Adding a row to [SettingsDialog.Fields.cs](../App/UI/Dialogs/SettingsDialog.Fields.cs) is a 3-line addition if needed later.
+`AppConfig.UpdateCheckEnabled : bool = true` lives in the `[시스템]` section next to `LogMaxSizeMb`. Not exposed in the tray menu (low-frequency toggle) — users who want to disable it edit `koenvue_config.json` directly. Adding a row to [SettingsDialog.Fields.cs](../App/UI/Dialogs/SettingsDialog.Fields.cs) is a 3-line addition if needed later.
 
 ### End-to-end validation
 
@@ -984,7 +984,7 @@ catch narrowing 4 타입 (`ArgumentException or InvalidOperationException or Win
 
 case 4 만 신규 분기 (`isDowngrade = !newAdminConfig.AdminElevation && AdminElevation.IsCurrentProcessElevated()` → `true` 면 `User32.MessageBoxW(I18n.AdminElevationDowngradeNotice, Win32Constants.MB_OK) + break`). case 1/2/3 의 기존 자동 spawn 흐름 (`ClearReentryGuard` → `SetRelaunchParentPidForTrayRestart` → `UriLauncher.Open` → `PostMessageW(WM_CLOSE)`) 은 한 줄도 변경 안 됨.
 
-**보완 동작**: 분기 직전 이미 `updateConfig` + `StartupTaskManager.ReregisterIfAdminChanged` 가 실행됨 — config.json 의 `admin_elevation: false` 즉시 저장 + schtasks `<RunLevel>LeastPrivilege</RunLevel>` 재등록. case 4 의 사용자 수동 종료/재실행은 **"지금 즉시 적용" 만의 비용** — 다음 부팅부터는 schtasks 가 무조건 일반 권한으로 자동 시작.
+**보완 동작**: 분기 직전 이미 `updateConfig` + `StartupTaskManager.ReregisterIfAdminChanged` 가 실행됨 — koenvue_config.json 의 `admin_elevation: false` 즉시 저장 + schtasks `<RunLevel>LeastPrivilege</RunLevel>` 재등록. case 4 의 사용자 수동 종료/재실행은 **"지금 즉시 적용" 만의 비용** — 다음 부팅부터는 schtasks 가 무조건 일반 권한으로 자동 시작.
 
 **메시지 액션 단어 일관성**: `I18n.AdminElevationDowngradeNotice` 의 한국어 '종료' / 영어 'Exit' 단어가 `I18n.MenuExit` 라벨과 정확 일치해야 한다 — 사용자가 안내 메시지의 "트레이 메뉴의 '종료'" 를 읽고 트레이 메뉴를 열었을 때 정확히 동일 단어를 찾을 수 있게. 메시지 안 액션 단어 ↔ 메뉴 라벨 일관성은 silent fail 정책 정신과 정합 (UI 마찰 silent 회피).
 
@@ -1329,7 +1329,7 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 
 ### 설정 전이 적용자 — 진입점 셋 (bug-hunt 3차 C)
 
-`ApplyConfigTransition(prev, next)` 의 진입점은 **셋**이다: ① config.json 핫리로드 ② 저장 중 3-way 병합 ③ **트레이/상세 설정의 `updateConfig` 람다**. ③ 이 3차에서 추가됐다.
+`ApplyConfigTransition(prev, next)` 의 진입점은 **셋**이다: ① koenvue_config.json 핫리로드 ② 저장 중 3-way 병합 ③ **트레이/상세 설정의 `updateConfig` 람다**. ③ 이 3차에서 추가됐다.
 
 종전에 ③ 은 적용자를 자체 나열했고 — 프로필 캐시·I18n·감지 방식·오버레이·커서 헤일로·UserHidden·트레이 전이 — **그 목록에서 로거만 빠져 있었다.** `Settings.Save` 의 mtime self-bump 가 핫리로드를 막고, `SaveAndSync` 는 병합이 실제로 일어난 경우에만 ② 로 들어가므로, 상세 설정에서 바꾼 `log_level`/`log_to_file` 은 **어느 경로로도 적용되지 않았다**(재시작까지).
 
@@ -1404,10 +1404,10 @@ Enabled in [KoEnVue.csproj](../KoEnVue.csproj) — strips ICU from the NativeAOT
 
 [app.manifest](../app.manifest) 는 다음 4가지 선언을 합쳐 한 리소스로 임베드한다:
 
-1. **`asInvoker` (`trustInfo`)** — P5 (PR-03, v0.9.3.0). 사용자 권한으로 충분(IME 감지·WinEventHook·인디케이터 렌더링·`WTSRegisterSessionNotification`·schtasks `LeastPrivilege`·user-writable config.json 모두 elevation 불요). v0.9.x 의 `requireAdministrator` 가 만들던 보안 표면(B1 write-anywhere log path, B2 schtasks symlink TOCTOU, B5 Admin-elevated notepad on config 편집) 이 자연 해소된다. exe 가 user-non-writable 위치(Program Files 등)에 있을 때는 [`App/Config/PortablePath`](../App/Config/PortablePath.cs) 가 `%LOCALAPPDATA%\KoEnVue\` 로 config/log 를 자동 fallback. 사용자별 격리 + Admin 토큰 불요. Tray.cs 의 `OpenUpdatePage` URL prefix 화이트리스트는 asInvoker 후에도 유지(외부 응답을 그대로 ShellExecute 에 넘기면 사용자 컨텍스트 임의 핸들러 실행으로 번질 수 있음).
+1. **`asInvoker` (`trustInfo`)** — P5 (PR-03, v0.9.3.0). 사용자 권한으로 충분(IME 감지·WinEventHook·인디케이터 렌더링·`WTSRegisterSessionNotification`·schtasks `LeastPrivilege`·user-writable koenvue_config.json 모두 elevation 불요). v0.9.x 의 `requireAdministrator` 가 만들던 보안 표면(B1 write-anywhere log path, B2 schtasks symlink TOCTOU, B5 Admin-elevated notepad on config 편집) 이 자연 해소된다. exe 가 user-non-writable 위치(Program Files 등)에 있을 때는 [`App/Config/PortablePath`](../App/Config/PortablePath.cs) 가 `%LOCALAPPDATA%\KoEnVue\` 로 config/log 를 자동 fallback. 사용자별 격리 + Admin 토큰 불요. Tray.cs 의 `OpenUpdatePage` URL prefix 화이트리스트는 asInvoker 후에도 유지(외부 응답을 그대로 ShellExecute 에 넘기면 사용자 컨텍스트 임의 핸들러 실행으로 번질 수 있음).
 2. **`supportedOS` (`compatibility.v1`)** — Win10/11 단일 GUID `{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}`. 이 블록이 없으면 Windows 가 `GetVersionEx`/`RtlGetVersion` 등 일부 API 에 legacy compatibility shim 을 적용해 Win8 로 자기 신원을 위장한다. 본 앱은 `DwmGetColorizationColor` / personalization accent / Win11 Snap Layout 인지 등 Win10 1607+ API 만 사용하므로 더 오래된 OS 는 명시적으로 unsupported.
 3. **`dpiAwareness` (`SMI/2016/WindowsSettings`) + `dpiAware` (`SMI/2005/WindowsSettings`) 페어** — `PerMonitorV2` 우선, fallback `true/pm`. Windows 10 1703 이전에선 `dpiAwareness` 가 무시되고 `dpiAware` 의 `true/pm` 이 PerMonitor V1 으로 동작. 모든 GDI / `GetSystemMetricsForDpi` / `AdjustWindowRectExForDpi` 호출은 `Core/Dpi/DpiHelper` 를 통해 per-monitor DPI 를 받는다.
-4. **`longPathAware` (`SMI/2016/WindowsSettings`)** — `windowsSettings` 블록 내에 위치. 사용자가 `config.json` / `koenvue.log` 를 매우 깊은 디렉토리(>260 chars) 에 두는 시나리오 방어. **실제 활성 조건**: 시스템 레지스트리 `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1` 이 별도 필요. manifest 의 `longPathAware` 는 "이 프로세스는 long path 를 받아도 안전" 이라는 *수용성* 선언일 뿐이고, 시스템 차원의 OFF 면 여전히 MAX_PATH 가 적용된다. 따라서 만 명시했다 해서 코드 측 path 처리가 변경되어야 하는 건 아니다 — `Path.Combine` + `AppContext.BaseDirectory` 기반 portable 정책은 그대로 유효.
+4. **`longPathAware` (`SMI/2016/WindowsSettings`)** — `windowsSettings` 블록 내에 위치. 사용자가 `koenvue_config.json` / `koenvue.log` 를 매우 깊은 디렉토리(>260 chars) 에 두는 시나리오 방어. **실제 활성 조건**: 시스템 레지스트리 `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1` 이 별도 필요. manifest 의 `longPathAware` 는 "이 프로세스는 long path 를 받아도 안전" 이라는 *수용성* 선언일 뿐이고, 시스템 차원의 OFF 면 여전히 MAX_PATH 가 적용된다. 따라서 만 명시했다 해서 코드 측 path 처리가 변경되어야 하는 건 아니다 — `Path.Combine` + `AppContext.BaseDirectory` 기반 portable 정책은 그대로 유효.
 
 **의도적 미선언**: `gdiScaling` (`SMI/2017/WindowsSettings`). 본 앱은 PerMonitorV2 인지 + 자체 DPI 스케일링 핸들링이라 GDI auto-scaling 은 무의미하며, `gdiScaling=true` 는 legacy unaware/system-aware 프로세스용 옵션이다. 혼선 회피 목적으로 manifest 에서 명시적으로 빼둔다.
 

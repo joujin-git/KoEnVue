@@ -195,10 +195,10 @@ internal static class I18n
         // 경로라 "지금 앱이 쓰면 편집분이 덮인다"는 점까지 안내해야 실제 손실을 막는다.
         [I18nKey.ConfigReloadFailed]        = (
             "설정 파일을 읽지 못해 이전 설정을 그대로 사용합니다.\n\n"
-                + "config.json 을 편집 중이라면 저장을 마쳐 주세요 — 그 전에 앱에서 설정을 바꾸면 "
+                + "koenvue_config.json 을 편집 중이라면 저장을 마쳐 주세요 — 그 전에 앱에서 설정을 바꾸면 "
                 + "편집 중인 내용이 덮어써집니다.",
             "Could not read the settings file; keeping the previous settings.\n\n"
-                + "If you are editing config.json, finish saving it first — changing settings in the app "
+                + "If you are editing koenvue_config.json, finish saving it first — changing settings in the app "
                 + "before then will overwrite your edits."),
 
         // 트레이 툴팁
@@ -341,7 +341,7 @@ internal static class I18n
     public static string TrayPositionHistoryEmpty => Get(I18nKey.TrayPositionHistoryEmpty);
 
     /// <summary>
-    /// config.json 핫리로드가 파싱 실패했을 때 1회 노출되는 안내. 연속 실패 중에는 재노출하지 않는다
+    /// koenvue_config.json 핫리로드가 파싱 실패했을 때 1회 노출되는 안내. 연속 실패 중에는 재노출하지 않는다
     /// (편집 중 저장이 반복되면 매번 뜨는 것이 더 방해가 된다).
     /// </summary>
     public static string ConfigReloadFailed       => Get(I18nKey.ConfigReloadFailed);

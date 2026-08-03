@@ -4,7 +4,7 @@ namespace KoEnVue.App.Models;
 
 /// <summary>
 /// 비한국어 IME 감지 시 동작.
-/// config.json의 "non_korean_ime" 키에 대응.
+/// koenvue_config.json의 "non_korean_ime" 키에 대응.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<NonKoreanImeMode>))]
 internal enum NonKoreanImeMode

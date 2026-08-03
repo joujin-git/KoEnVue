@@ -85,7 +85,7 @@ internal sealed record AppConfig
     public string[] SystemHideProcesses { get; init; } = DefaultConfig.DefaultSystemHideProcesses;
     public string[] SystemHideProcessesUser { get; init; } = [];
 
-    // [앱별 프로필] -- config.json 직접 편집 전용 (사용 예시: docs/User_Guide.md)
+    // [앱별 프로필] -- koenvue_config.json 직접 편집 전용 (사용 예시: docs/User_Guide.md)
     public Dictionary<string, JsonElement> AppProfiles { get; init; } = new();
     public AppProfileMatch AppProfileMatch { get; init; } = AppProfileMatch.Process;
     public AppFilterMode AppFilterMode { get; init; } = AppFilterMode.Blacklist;

@@ -4,7 +4,7 @@ namespace KoEnVue.App.Models;
 
 /// <summary>
 /// UI 표시 언어 — 트레이 메뉴/다이얼로그/툴팁 문자열에 적용된다.
-/// config.json 의 <c>"language"</c> 키에 대응.
+/// koenvue_config.json 의 <c>"language"</c> 키에 대응.
 ///
 /// <para>
 /// Auto = Windows 시스템 UI 언어가 한국어이면 ko, 아니면 en (P2: 기본 한국어 fallback).

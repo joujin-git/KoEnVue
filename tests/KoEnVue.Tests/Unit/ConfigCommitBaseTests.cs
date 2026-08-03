@@ -41,7 +41,7 @@ public class ConfigCommitBaseTests
     {
         // 메뉴를 띄울 때의 스냅샷.
         var snapshot = new AppConfig() with { SnapToWindows = false, Opacity = 0.9 };
-        // 메뉴가 열려 있는 동안 config.json 이 외부에서 편집돼 핫리로드된 상태.
+        // 메뉴가 열려 있는 동안 koenvue_config.json 이 외부에서 편집돼 핫리로드된 상태.
         var current = new AppConfig() with { SnapToWindows = false, Opacity = 0.25 };
 
         AppConfig? committed = null;

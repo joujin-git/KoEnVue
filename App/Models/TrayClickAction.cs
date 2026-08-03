@@ -4,7 +4,7 @@ namespace KoEnVue.App.Models;
 
 /// <summary>
 /// 트레이 아이콘 좌클릭 동작.
-/// config.json의 "tray_click_action" 키에 대응.
+/// koenvue_config.json의 "tray_click_action" 키에 대응.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<TrayClickAction>))]
 internal enum TrayClickAction

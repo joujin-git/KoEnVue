@@ -4,7 +4,7 @@ namespace KoEnVue.App.Models;
 
 /// <summary>
 /// 라벨 텍스트 굵기.
-/// config.json의 "font_weight" 키에 대응.
+/// koenvue_config.json의 "font_weight" 키에 대응.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<FontWeight>))]
 internal enum FontWeight

@@ -3,7 +3,7 @@ namespace KoEnVue.Core.Color;
 /// <summary>
 /// 색상 변환 유틸리티.
 /// P4 원칙: HEX -> COLORREF 변환은 이 1곳에서만 구현.
-/// config.json 색상 문자열을 Win32 GDI가 요구하는 COLORREF 형식으로 변환한다.
+/// koenvue_config.json 색상 문자열을 Win32 GDI가 요구하는 COLORREF 형식으로 변환한다.
 /// </summary>
 internal static class ColorHelper
 {
@@ -45,7 +45,7 @@ internal static class ColorHelper
         return (r, g, b);
     }
 
-    // config.json은 사용자 편집 가능한 시스템 경계이므로 잘못된 16진 문자열(예: "#GGHHII")이
+    // koenvue_config.json은 사용자 편집 가능한 시스템 경계이므로 잘못된 16진 문자열(예: "#GGHHII")이
     // 들어올 수 있다. byte.Parse는 FormatException을 던져 GDI 리소스 생성 후의 렌더 경로에서
     // 핸들 누수를 유발하므로 TryParse로 경계 방어.
     private static bool TryParseHexRgb(string hex, out byte r, out byte g, out byte b)

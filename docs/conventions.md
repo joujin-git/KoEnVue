@@ -12,9 +12,9 @@ Related: [architecture.md](architecture.md) (structural rules), [implementation-
 |------|-------------|
 | **P1** | Zero external NuGet packages. .NET 10 BCL + Windows API only |
 | **P2** | UI text defaults to Korean. Log messages and config keys in English |
-| **P3** | No magic numbers → `const`/`enum`/config. No string comparisons → `enum`. config.json 의 3-상태 이상 키는 enum + `[JsonStringEnumMemberName]` (PR-06 D4) |
+| **P3** | No magic numbers → `const`/`enum`/config. No string comparisons → `enum`. koenvue_config.json 의 3-상태 이상 키는 enum + `[JsonStringEnumMemberName]` (PR-06 D4) |
 | **P4** | No duplicate implementations — the same functionality must never be re-implemented in a second location; always reach for the shared module |
-| **P5** | `app.manifest` UAC `asInvoker` (PR-03, v0.9.3.0) — **invariant 유지** (런타임/매니페스트 둘 다 admin 전제 금지). exe 폴더가 user-non-writable 인 경우 `%LOCALAPPDATA%\KoEnVue\` 로 config.json/koenvue.log 자동 fallback ([App/Config/PortablePath](../App/Config/PortablePath.cs)). schtasks 시작 등록은 기본 `LeastPrivilege`. **PR-15 (v0.9.4.0)** — 사용자 선택적 `admin_elevation: bool` (default `false`) 옵션 도입: ON 시 (a) 단일 실행은 [App/Bootstrap/AdminElevation](../App/Bootstrap/AdminElevation.cs) 가 `ShellExecuteW("runas")` 로 자기 재실행 (UAC 1회), (b) 부팅 자동 시작은 schtasks `<RunLevel>HighestAvailable</RunLevel>` 분기 (UAC 등록 시 1회, 부팅마다 0). 매니페스트는 `asInvoker` 그대로 — PR-03 의 default UAC 0 정책 보존 (옵션 비활성이 default) |
+| **P5** | `app.manifest` UAC `asInvoker` (PR-03, v0.9.3.0) — **invariant 유지** (런타임/매니페스트 둘 다 admin 전제 금지). exe 폴더가 user-non-writable 인 경우 `%LOCALAPPDATA%\KoEnVue\` 로 koenvue_config.json/koenvue.log 자동 fallback ([App/Config/PortablePath](../App/Config/PortablePath.cs)). schtasks 시작 등록은 기본 `LeastPrivilege`. **PR-15 (v0.9.4.0)** — 사용자 선택적 `admin_elevation: bool` (default `false`) 옵션 도입: ON 시 (a) 단일 실행은 [App/Bootstrap/AdminElevation](../App/Bootstrap/AdminElevation.cs) 가 `ShellExecuteW("runas")` 로 자기 재실행 (UAC 1회), (b) 부팅 자동 시작은 schtasks `<RunLevel>HighestAvailable</RunLevel>` 분기 (UAC 등록 시 1회, 부팅마다 0). 매니페스트는 `asInvoker` 그대로 — PR-03 의 default UAC 0 정책 보존 (옵션 비활성이 default) |
 | **P6** | One-way layer dependency: `App/` may import `Core/`, but `Core/` must not import `App/` |
 
 ### P4 in practice

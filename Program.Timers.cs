@@ -61,7 +61,7 @@ internal static partial class Program
 
     /// <summary>
     /// 커서 헤일로 lifecycle 3 분기 (OFF→ON / ON→OFF / ON 유지 + 값 변경). HandleConfigChanged
-    /// (config.json 리로드 경로) + HandleMenuCommand 람다 (트레이 메뉴 즉시 적용 경로) 양쪽에서
+    /// (koenvue_config.json 리로드 경로) + HandleMenuCommand 람다 (트레이 메뉴 즉시 적용 경로) 양쪽에서
     /// 공유. <c>_config</c> 는 호출 전 새 값으로 갱신돼 있어야 한다.
     /// <para>
     /// HandleMenuCommand 람다가 직접 본 헬퍼를 호출해야 하는 이유: 람다 내부의 Settings.Save 는

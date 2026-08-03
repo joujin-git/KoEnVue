@@ -12,7 +12,7 @@ using KoEnVue.Core.Windowing;
 namespace KoEnVue.App.Config;
 
 /// <summary>
-/// config.json 로드/저장/핫 리로드/마이그레이션/검증 + 앱별 프로필.
+/// koenvue_config.json 로드/저장/핫 리로드/마이그레이션/검증 + 앱별 프로필.
 /// 파이프라인 본체(MergeWithDefaults → Deserialize → EnsureSubObjects →
 /// EnsureIndicatorPositions → Migrate → Validate → ApplyTheme)는
 /// <see cref="JsonSettingsManager{T}"/> 가 Core 레벨에서 수행하고,
@@ -29,7 +29,7 @@ internal static class Settings
 
     /// <summary>
     /// title 매칭 모드에서 앱 프로필 키(Regex 패턴) 평가 타임아웃.
-    /// config.json 이 user-writable 이라 악의적 패턴으로 ReDoS 공격이 가능하므로 상한을 둔다.
+    /// koenvue_config.json 이 user-writable 이라 악의적 패턴으로 ReDoS 공격이 가능하므로 상한을 둔다.
     /// 100 ms 면 정상 패턴에는 충분히 여유가 있고 지수 백트래킹은 금방 컷오프된다.
     /// </summary>
     private static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromMilliseconds(100);
@@ -77,7 +77,7 @@ internal static class Settings
 
     /// <summary>
     /// 현재 활성 config 파일 경로. <see cref="PortablePath.ResolveConfigPath"/> 가 결정 — exe 폴더가
-    /// writable 이면 <c>BaseDirectory\config.json</c>, 아니면 <c>%LOCALAPPDATA%\KoEnVue\config.json</c>.
+    /// writable 이면 <c>BaseDirectory\koenvue_config.json</c>, 아니면 <c>%LOCALAPPDATA%\KoEnVue\koenvue_config.json</c>.
     /// </summary>
     public static string? ConfigFilePath => _manager?.FilePath;
 
@@ -86,10 +86,10 @@ internal static class Settings
     // ================================================================
 
     /// <summary>
-    /// config.json 을 로드. 경로 결정은 <see cref="PortablePath.ResolveConfigPath"/>.
+    /// koenvue_config.json 을 로드. 경로 결정은 <see cref="PortablePath.ResolveConfigPath"/>.
     /// - 파일 존재 + 정상: 로드
     /// - 파일 존재 + 파싱 실패: 덮어쓰지 않고 기본값 반환 (복구 가능성 보존). mtime 갱신으로 폴링 스팸 차단.
-    /// - 파일 없음: 기본값을 즉시 디스크에 생성 (포터블 UX: exe만 있어도 config.json이 바로 나타남).
+    /// - 파일 없음: 기본값을 즉시 디스크에 생성 (포터블 UX: exe만 있어도 koenvue_config.json이 바로 나타남).
     /// </summary>
     public static AppConfig Load()
     {
@@ -116,7 +116,7 @@ internal static class Settings
     // ================================================================
 
     /// <summary>
-    /// config.json 저장. path 미지정 시 현재 활성 경로 또는 <see cref="PortablePath.ResolveConfigPath"/>
+    /// koenvue_config.json 저장. path 미지정 시 현재 활성 경로 또는 <see cref="PortablePath.ResolveConfigPath"/>
     /// 가 결정한 기본 경로 사용.
     /// </summary>
     /// <returns>
@@ -194,7 +194,7 @@ internal static class Settings
             // 시스템
             LogMaxSizeMb = Math.Clamp(config.LogMaxSizeMb, DefaultConfig.MinLogMaxSizeMb, DefaultConfig.MaxLogMaxSizeMb),
 
-            // Enum — config.json 수작업 편집이나 구버전 스키마로 정의되지 않은 정수가 들어오면
+            // Enum — koenvue_config.json 수작업 편집이나 구버전 스키마로 정의되지 않은 정수가 들어오면
             // 기본값으로 폴백. STJ 소스 생성기가 integer enum 을 (EnumType)raw 캐스트로
             // 역직렬화하므로 BCL 레벨 범위 체크가 부재한다.
             DisplayMode = EnumOrDefault(config.DisplayMode, DisplayMode.Always),
@@ -271,7 +271,7 @@ internal static class Settings
     // ================================================================
 
     /// <summary>
-    /// config.json mtime 변경 감지. 변경 시 WM_CONFIG_CHANGED PostMessage.
+    /// koenvue_config.json mtime 변경 감지. 변경 시 WM_CONFIG_CHANGED PostMessage.
     /// 감지 스레드에서 ~5초마다 호출.
     /// </summary>
     public static void CheckConfigFileChange(IntPtr hwndMain)
@@ -425,7 +425,7 @@ internal static class Settings
         {
             // title 모드: 각 프로필 키를 Regex 패턴으로 매칭
             // NativeAOT: RegexOptions.Compiled 금지 (Reflection.Emit 불가)
-            // 타임아웃: config.json 이 user-writable 일 때 악의적 패턴(지수 백트래킹)으로 매칭이
+            // 타임아웃: koenvue_config.json 이 user-writable 일 때 악의적 패턴(지수 백트래킹)으로 매칭이
             // 고착되는 ReDoS 를 방지. 기본값 Regex.InfiniteMatchTimeout 은 catch 블록을 무력화한다.
             foreach (var (pattern, profile) in global.AppProfiles)
             {
@@ -685,7 +685,7 @@ internal sealed partial class AppSettingsManager : JsonSettingsManager<AppConfig
     // ================================================================
 
     /// <summary>
-    /// 숫자 배열을 한 줄로 압축하여 config.json 가독성 향상.
+    /// 숫자 배열을 한 줄로 압축하여 koenvue_config.json 가독성 향상.
     /// <code>
     /// "TOTALCMD64": [        →  "TOTALCMD64": [ 2511, 1334 ]
     ///   2511,

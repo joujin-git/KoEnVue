@@ -110,7 +110,7 @@ internal static class ImeStatus
 
     /// <summary>
     /// WinEvent 콜백이 참조하는 감지 방식을 갱신한다.
-    /// config.json 핫 리로드 또는 설정 다이얼로그 저장 시 메인 스레드에서 호출.
+    /// koenvue_config.json 핫 리로드 또는 설정 다이얼로그 저장 시 메인 스레드에서 호출.
     /// </summary>
     public static void UpdateDetectionMethod(DetectionMethod method) => _detectionMethod = method;
 

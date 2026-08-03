@@ -136,7 +136,7 @@ internal static partial class Program
         }
         else
         {
-            // 고정 모드: 저장 전 work area 로 클램프 — config.json 에 off-screen 좌표가
+            // 고정 모드: 저장 전 work area 로 클램프 — koenvue_config.json 에 off-screen 좌표가
             // 영구 기록되지 않도록 방어. 읽기 경로(GetAppPositionFixed)도 클램프하지만
             // 저장 시점에 정제해 두면 설정 파일 값 품질이 보장된다.
             (x, y) = ClampToVisibleArea(x, y);

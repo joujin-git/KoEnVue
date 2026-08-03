@@ -647,7 +647,7 @@ internal static partial class Tray
             // --- 상세 설정 ---
             case IDM_SETTINGS:
                 // currentConfig 를 그대로 넘긴다 — 다이얼로그는 며칠이고 열려 있을 수 있고,
-                // 그 사이 config.json 이 외부에서 바뀌면 커밋 베이스가 달라져야 한다 (§B).
+                // 그 사이 koenvue_config.json 이 외부에서 바뀌면 커밋 베이스가 달라져야 한다 (§B).
                 SettingsDialog.Show(hwndMain, config, currentConfig, updateConfig);
                 break;
 
@@ -713,7 +713,7 @@ internal static partial class Tray
         UriLauncher.Open($"https://github.com/{DefaultConfig.UpdateRepoOwner}/{DefaultConfig.UpdateRepoName}");
 
     /// <summary>
-    /// 현재 활성 config.json 을 연다 (트레이 좌클릭 "설정 파일 열기").
+    /// 현재 활성 koenvue_config.json 을 연다 (트레이 좌클릭 "설정 파일 열기").
     /// <para>
     /// <b>비 elevated</b> — 메모장. 일반 PC 에 <c>.json</c> 연결 앱이 없어 shell open 이
     /// "앱 선택"/무반응이 되기 쉽고, 메모장은 UTF-8 + hot reload 에 적합.
@@ -803,7 +803,7 @@ internal static partial class Tray
         => ShowMessage(I18n.TrayPositionUnavailable);
 
     /// <summary>
-    /// config.json 을 읽지 못해 이전 설정을 유지했음을 알린다. 호출자
+    /// koenvue_config.json 을 읽지 못해 이전 설정을 유지했음을 알린다. 호출자
     /// (<c>Program.HandleConfigChanged</c>)가 연속 실패 중 <b>1회만</b> 부른다 — 편집 중 저장이
     /// 반복되면 5초 폴링마다 박스가 떠 오히려 방해가 되기 때문 (AUDIT-2026-07-30 §G).
     /// </summary>

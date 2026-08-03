@@ -117,7 +117,7 @@ internal static class DetectionService
 
         state.PollCount++;
 
-        // 0. config.json 변경 감지 (~5초마다)
+        // 0. koenvue_config.json 변경 감지 (~5초마다)
         if (state.PollCount % DefaultConfig.ConfigCheckIntervalPolls == 0)
             Settings.CheckConfigFileChange(host.GetHwndMain());
 

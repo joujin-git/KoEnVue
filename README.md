@@ -22,9 +22,9 @@ Windows 한/영 IME 상태 인디케이터 — 드래그 가능한 플로팅 오
 
 [Releases](../../releases) 에서 `KoEnVue.exe` 를 받아 원하는 폴더에 두고 실행하면 됩니다. Windows 10/11 x64. v0.9.3.0 부터 관리자 권한이 필요 없습니다 (`app.manifest asInvoker`) — UAC 프롬프트 없이 바로 실행됩니다.
 
-**권장 설치 위치**: `%USERPROFILE%` 하위(예: 바탕화면, 문서 폴더), 또는 USB 같은 사용자가 쓰기 가능한 위치. `Program Files` 처럼 사용자 쓰기 불가 위치에 두면 `config.json` 과 `koenvue.log` 가 자동으로 `%LOCALAPPDATA%\KoEnVue\` 로 fallback 합니다(완전 포터블 시나리오를 원하면 user-writable 위치 권장).
+**권장 설치 위치**: `%USERPROFILE%` 하위(예: 바탕화면, 문서 폴더), 또는 USB 같은 사용자가 쓰기 가능한 위치. `Program Files` 처럼 사용자 쓰기 불가 위치에 두면 `koenvue_config.json` 과 `koenvue.log` 가 자동으로 `%LOCALAPPDATA%\KoEnVue\` 로 fallback 합니다(완전 포터블 시나리오를 원하면 user-writable 위치 권장).
 
-첫 공개 릴리스는 **v0.8.9.0** (2026-04-14) 입니다. 이 빌드부터 부팅 시 GitHub Releases 에서 새 버전을 1회 자동 확인해, 새 버전이 있으면 트레이 메뉴 최상단 헤더 라벨이 평소 `KoEnVue v{ver} — GitHub` 에서 `KoEnVue v{cur} → v{new} — 다운로드` 로 자동 전환됩니다(자동 설치는 아니며 사용자가 직접 새 exe 로 교체). 싫으면 `config.json` 에서 `update_check_enabled: false`.
+첫 공개 릴리스는 **v0.8.9.0** (2026-04-14) 입니다. 이 빌드부터 부팅 시 GitHub Releases 에서 새 버전을 1회 자동 확인해, 새 버전이 있으면 트레이 메뉴 최상단 헤더 라벨이 평소 `KoEnVue v{ver} — GitHub` 에서 `KoEnVue v{cur} → v{new} — 다운로드` 로 자동 전환됩니다(자동 설치는 아니며 사용자가 직접 새 exe 로 교체). 싫으면 `koenvue_config.json` 에서 `update_check_enabled: false`.
 
 ### 다운로드 검증 (SHA256)
 
@@ -87,9 +87,9 @@ dotnet publish -r win-x64 -c Release
 
 ---
 
-## `config.json` 주요 키
+## `koenvue_config.json` 주요 키
 
-exe 폴더 또는 `%LOCALAPPDATA%\KoEnVue\` 의 `config.json` 을 직접 편집하거나 트레이 **상세 설정** 대화상자를 사용하세요. 저장 즉시 핫 리로드됩니다.
+exe 폴더 또는 `%LOCALAPPDATA%\KoEnVue\` 의 `koenvue_config.json` 을 직접 편집하거나 트레이 **상세 설정** 대화상자를 사용하세요. 저장 즉시 핫 리로드됩니다.
 
 아래는 가장 자주 만지는 키만 추렸습니다. **전체 84개 키의 완전한 레퍼런스** — 타입·범위·기본값·섹션별 분류는 **[docs/config-reference.md](docs/config-reference.md)** 에 있습니다.
 
@@ -107,9 +107,9 @@ exe 폴더 또는 `%LOCALAPPDATA%\KoEnVue\` 의 `config.json` 을 직접 편집�
 | `hide_on_lock_screen` | `true` | 잠금 화면에서 인디 숨김 |
 | `tray_click_action` | `"toggle"` | 트레이 좌클릭 동작 (`toggle`/`settings`) |
 | `update_check_enabled` | `true` | 부팅 시 GitHub Releases 새 버전 1회 확인 |
-| `app_profiles` | `{}` | 앱별 override (GUI 미노출 — config.json 직접 편집). 자세히는 [docs/config-reference.md §앱별 프로필](docs/config-reference.md) |
+| `app_profiles` | `{}` | 앱별 override (GUI 미노출 — koenvue_config.json 직접 편집). 자세히는 [docs/config-reference.md §앱별 프로필](docs/config-reference.md) |
 
-트레이 "상세 설정" 대화상자는 12 섹션 (표시 모드 · 외관 · 애니메이션 · 감지 · 앱별 프로필 · 트레이 · 시스템 · 업데이트 · 인디케이터 조작 · 위치 · 단축 작업 · 고급) 으로 대부분의 키를 GUI 로 제공합니다. `app_profiles` 같은 GUI 미노출 키만 config.json 을 직접 편집해 주세요.
+트레이 "상세 설정" 대화상자는 12 섹션 (표시 모드 · 외관 · 애니메이션 · 감지 · 앱별 프로필 · 트레이 · 시스템 · 업데이트 · 인디케이터 조작 · 위치 · 단축 작업 · 고급) 으로 대부분의 키를 GUI 로 제공합니다. `app_profiles` 같은 GUI 미노출 키만 koenvue_config.json 을 직접 편집해 주세요.
 
 ---
 

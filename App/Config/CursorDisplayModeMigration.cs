@@ -14,7 +14,7 @@ internal static class CursorDisplayModeMigration
     public const string LegacyKey = "cursor_motion_dim_enabled";
 
     /// <summary>
-    /// **정규 로드 경로와 같은 관용도**로 읽어야 한다 (bug-hunt 3차 M). 이 프로젝트는 config.json 의
+    /// **정규 로드 경로와 같은 관용도**로 읽어야 한다 (bug-hunt 3차 M). 이 프로젝트는 koenvue_config.json 의
     /// 주석과 트레일링 콤마를 정상으로 취급하는데(<c>AppConfigJsonContext</c> · <c>Core</c> 양쪽 모두),
     /// 여기만 기본 <see cref="JsonDocumentOptions"/> 를 써서 그런 파일을 파싱 실패로 처리했다.
     /// </summary>

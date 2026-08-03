@@ -40,7 +40,7 @@ internal static class AppMessages
     public const uint WM_HIDE_INDICATOR = Win32Constants.WM_APP + 4;
 
     /// <summary>
-    /// 설정 변경 감지 (config.json 리로드 또는 트레이 메뉴 변경).
+    /// 설정 변경 감지 (koenvue_config.json 리로드 또는 트레이 메뉴 변경).
     /// wParam: 0
     /// lParam: 0
     /// </summary>
