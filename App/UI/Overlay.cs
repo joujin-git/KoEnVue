@@ -67,7 +67,7 @@ internal static class Overlay
     // ================================================================
 
     /// <summary>
-    /// 지정 좌표에 플로팅 배지 렌더 + UpdateLayeredWindow.
+    /// 지정 좌표에 한/영 배지 렌더 + UpdateLayeredWindow.
     /// 좌표가 속한 모니터 DPI로 리소스 갱신.
     /// PR-13 이후 <paramref name="config"/> 는 호출자가 per-app resolved AppConfig 를
     /// 전달한다 (글로벌 _config 대신) — `app_profiles` 의 시각 필드 override 가 본 렌더까지 도달.

@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace KoEnVue.App.Models;
 
 /// <summary>
-/// 플로팅 배지 표시 모드.
+/// 한/영 배지 표시 모드.
 /// koenvue_config.json의 "display_mode" 키에 대응.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<DisplayMode>))]

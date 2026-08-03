@@ -7,7 +7,7 @@ using KoEnVue.Core.Native;
 namespace KoEnVue;
 
 /// <summary>
-/// 플로팅 배지 좌클릭 일시 숨김 · 드래그 승격 · 위치 저장.
+/// 한/영 배지 좌클릭 일시 숨김 · 드래그 승격 · 위치 저장.
 /// </summary>
 internal static partial class Program
 {

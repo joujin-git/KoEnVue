@@ -158,7 +158,7 @@ public sealed class OverlayAnimator : IDisposable
     // ================================================================
 
     /// <summary>
-    /// 새 위치/상태로 플로팅 배지 표시. 파사드가 <c>Overlay.Show(x, y, state)</c>를 호출하기 전/후에
+    /// 새 위치/상태로 한/영 배지 표시. 파사드가 <c>Overlay.Show(x, y, state)</c>를 호출하기 전/후에
     /// 필요한 작업(prev 좌표 기록, 슬라이드 시작, 하이라이트, 알파 목표 전이)을 수행한다.
     ///
     /// prev 좌표는 파사드가 <c>Overlay.GetLastPosition()</c>으로 먼저 조회하여 넘겨준다.

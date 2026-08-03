@@ -45,7 +45,7 @@ internal static class ModalDialogLoop
     ///
     /// <para>
     /// 필요한 이유: <c>EnableWindow(owner, false)</c> 는 <b>소유자 하나만</b> 막는데, 소유자를 갖지
-    /// 않는 별도 최상위 창은 그 대상이 아니다. KoEnVue 의 플로팅 배지가 그런 창이라(WS_EX_TOPMOST,
+    /// 않는 별도 최상위 창은 그 대상이 아니다. KoEnVue 의 한/영 배지가 그런 창이라(WS_EX_TOPMOST,
     /// hWndParent=NULL) 다이얼로그가 떠 있는 동안에도 드래그되고, 드래그 종료가 <c>Settings.Save</c>
     /// 까지 수행해 <b>열려 있는 다이얼로그 뒤에서 설정이 갈아치워진다</b>. 그 뒤 「확인」 을 누르면
     /// 다이얼로그의 커밋 베이스가 방금 저장한 값을 되돌린다 (bug-hunt 2026-08-02 확정 #39).
@@ -119,7 +119,7 @@ internal static class ModalDialogLoop
         Volatile.Write(ref s_activeDialog, hwndDialog);
         User32.EnableWindow(hwndOwner, false);
 
-        // 소유자 밖의 최상위 창(플로팅 배지 등)도 함께 막는다 — 자세한 이유는
+        // 소유자 밖의 최상위 창(한/영 배지 등)도 함께 막는다 — 자세한 이유는
         // <see cref="ExtraModalWindows"/>. 진입 시 한 번 조회해 finally 에서 같은 목록을 되살린다
         // (그 사이 창이 파괴되면 EnableWindow 가 무해하게 실패할 뿐이다).
         IntPtr[] extraDisabled = ExtraModalWindows?.Invoke() ?? [];

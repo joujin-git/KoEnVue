@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace KoEnVue.App.Models;
 
 /// <summary>
-/// 플로팅 배지 드래그 활성 키 — 드래그 개시 게이트.
+/// 한/영 배지 드래그 활성 키 — 드래그 개시 게이트.
 /// koenvue_config.json의 "drag_modifier" 키에 대응.
 ///
 /// <para>

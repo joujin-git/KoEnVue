@@ -8,7 +8,7 @@ namespace KoEnVue.App.UI;
 /// </summary>
 internal enum IndicatorVisibility
 {
-    /// <summary>플로팅 배지 + 커서 헤일로 둘 다 보임.</summary>
+    /// <summary>한/영 배지 + 커서 헤일로 둘 다 보임.</summary>
     Both = 0,
     /// <summary>배지만 보임 (헤일로 숨김).</summary>
     BadgeOnly = 1,

@@ -9,7 +9,7 @@ namespace KoEnVue.App.Models;
 [JsonConverter(typeof(JsonStringEnumConverter<TrayClickAction>))]
 internal enum TrayClickAction
 {
-    /// <summary>플로팅 배지 표시/숨기기 토글 (기본값).</summary>
+    /// <summary>한/영 배지 표시/숨기기 토글 (기본값).</summary>
     [JsonStringEnumMemberName("toggle")]
     Toggle,
 

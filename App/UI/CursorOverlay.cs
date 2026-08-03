@@ -52,7 +52,7 @@ internal static class CursorOverlay
     // 항상 표시 + 정지 검출(가시) 모드 양쪽의 주기 재적용 게이트 기준점.
     private static long _lastTopmostTick;
 
-    // IME 전환 스케일 팝 (플로팅 배지 ChangeHighlight 와 동형). 별도 엔진(P4 예외)이라 OverlayAnimator 미재사용 —
+    // IME 전환 스케일 팝 (한/영 배지 ChangeHighlight 와 동형). 별도 엔진(P4 예외)이라 OverlayAnimator 미재사용 —
     // 경량 상태(_popActive + tick)로 구현. _hwndTimer 에 TIMER_ID_CURSOR_POP(16ms) 등록.
     private static IntPtr _hwndTimer;     // 팝 WM_TIMER 등록 대상 (= 메인 윈도우). Initialize 에서 주입.
     private static bool _popActive;       // 팝 진행 중 여부.
@@ -213,7 +213,7 @@ internal static class CursorOverlay
         {
             // 가시 상태에서 IME 가 실제로 바뀜 — 마스터(AnimationEnabled) + CursorChangeHighlight 면 스케일 팝
             // (첫 프레임이 새 색 + 시작 배율로 렌더하므로 별도 색 갱신 Render 불요), 아니면 색만 즉시 갱신.
-            // 플로팅 배지 Animation.BuildAnimationConfig 의 `AnimationEnabled && ChangeHighlight` 마스터 게이팅과 동형 (PR-22 후속).
+            // 한/영 배지 Animation.BuildAnimationConfig 의 `AnimationEnabled && ChangeHighlight` 마스터 게이팅과 동형 (PR-22 후속).
             if (_config.AnimationEnabled && _config.CursorChangeHighlight)
                 TriggerPop();
             else
@@ -340,7 +340,7 @@ internal static class CursorOverlay
     /// <para>
     /// cursor 윈도우는 생성 시 <c>WS_EX_TOPMOST</c> 없이 일반 z-order 로 시작 (Program.Bootstrap —
     /// cursor 첫 UpdateLayeredWindow 가 DWM 합성에서 다른 topmost (Shell_TrayWnd) 재정렬 → foreground
-    /// 잠시 변경 → 플로팅 배지 SystemFilter hide 회귀 방지). <c>SWP_NOSENDCHANGING</c> 으로 다른 윈도우에
+    /// 잠시 변경 → 한/영 배지 SystemFilter hide 회귀 방지). <c>SWP_NOSENDCHANGING</c> 으로 다른 윈도우에
     /// <c>WM_WINDOWPOSCHANGING</c> 알림 차단 — Shell_TrayWnd 등 z-order 재정렬 trigger 없음.
     /// </para>
     /// </summary>
@@ -372,7 +372,7 @@ internal static class CursorOverlay
     }
 
     /// <summary>
-    /// IME 전환 스케일 팝 시작 — 플로팅 배지 <c>OverlayAnimator</c> Highlight 와 동형. 별도 엔진(P4 예외)
+    /// IME 전환 스케일 팝 시작 — 한/영 배지 <c>OverlayAnimator</c> Highlight 와 동형. 별도 엔진(P4 예외)
     /// 이라 OverlayAnimator 를 재사용하지 않고 경량 상태(<see cref="_popActive"/> + tick)로 구현한다.
     /// 첫 프레임을 즉시 렌더해 16ms 지연 없이 시작 배율(<see cref="AppConfig.CursorHighlightScale"/>)로 팝.
     /// </summary>

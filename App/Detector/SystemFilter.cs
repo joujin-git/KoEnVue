@@ -11,7 +11,7 @@ using KoEnVue.App.Localization;
 namespace KoEnVue.App.Detector;
 
 /// <summary>
-/// 시스템 필터. 8-조건 단락 평가로 플로팅 배지 숨김 여부를 판정한다.
+/// 시스템 필터. 8-조건 단락 평가로 한/영 배지 숨김 여부를 판정한다.
 /// </summary>
 internal static class SystemFilter
 {
@@ -72,7 +72,7 @@ internal static class SystemFilter
     // ================================================================
 
     /// <summary>
-    /// 8-조건 단락 평가. 하나라도 true면 플로팅 배지를 숨긴다.
+    /// 8-조건 단락 평가. 하나라도 true면 한/영 배지를 숨긴다.
     /// </summary>
     public static bool ShouldHide(IntPtr hwnd, IntPtr hwndFocus, AppConfig config)
     {
@@ -144,7 +144,7 @@ internal static class SystemFilter
     /// <summary>
     /// name 이 두 배열(기본 + 사용자) 중 하나라도 대소문자 무시하여 일치하면 true.
     /// SystemHideClasses/SystemHideProcesses 등 "기본 + 사용자 추가" 2-리스트 조회를 단일화한다.
-    /// <para>커서·플로팅 배지의 포인터 suppress(<see cref="OverlaySuppressProbe"/>)도 같은 2-리스트 매칭을
+    /// <para>커서·한/영 배지의 포인터 suppress(<see cref="OverlaySuppressProbe"/>)도 같은 2-리스트 매칭을
     /// 재사용하므로 <c>internal</c> 노출 — P4 단일 구현.</para>
     /// </summary>
     internal static bool MatchesAny(string name, string[] baseList, string[] userList)

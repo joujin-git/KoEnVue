@@ -533,7 +533,7 @@ internal static partial class Tray
 
                     ShowMessage(I18n.AdminElevationChangeNotice);
 
-                    // "확인" 후 자동 종료 — 플로팅 배지 잔존 회귀 차단 + 사용자 mental model 정합.
+                    // "확인" 후 자동 종료 — 한/영 배지 잔존 회귀 차단 + 사용자 mental model 정합.
                     User32.PostMessageW(hwndMain, Win32Constants.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
                 }
                 break;
@@ -605,7 +605,7 @@ internal static partial class Tray
                 CleanupPositions(config, currentConfig, updateConfig);
                 break;
 
-            // --- 플로팅 배지 숨김 토글 ---
+            // --- 한/영 배지 숨김 토글 ---
             // 좌클릭 동작이 Settings/None 이라 좌클릭 토글이 막혀 있어도 숨김 해제 경로를 보장.
             case IDM_USER_HIDDEN:
                 updateConfig(config with { UserHidden = !config.UserHidden });
@@ -613,7 +613,7 @@ internal static partial class Tray
                 break;
 
             // --- 커서 헤일로 숨김 토글 (메뉴 체크박스 — MF_CHECKED = 현재 숨김 상태) ---
-            // 플로팅 배지 IDM_USER_HIDDEN 과 같은 패턴. 라벨 "커서 헤일로 숨김" + 체크 = 안 보임.
+            // 한/영 배지 IDM_USER_HIDDEN 과 같은 패턴. 라벨 "커서 헤일로 숨김" + 체크 = 안 보임.
             // 클릭 시 enabled 반전 (체크 ON → enabled=true → 표시, 체크 OFF → enabled=false → 숨김).
             case IDM_CURSOR_TOGGLE:
                 updateConfig(config with { CursorIndicatorEnabled = !config.CursorIndicatorEnabled });
@@ -747,7 +747,7 @@ internal static partial class Tray
     // ================================================================
 
     /// <summary>
-    /// 현재 플로팅 배지 위치를 가장 가까운 모서리 기준으로 환산하여 기본 위치로 저장.
+    /// 현재 한/영 배지 위치를 가장 가까운 모서리 기준으로 환산하여 기본 위치로 저장.
     /// 고정 모드 → work area 기준, 창 기준 모드 → 포그라운드 창 기준.
     /// 인디가 한 번도 표시된 적이 없으면 경고.
     /// </summary>

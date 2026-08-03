@@ -262,7 +262,7 @@ internal static class DetectionService
 
             // flip-flop 디바운스: 일부 창(파일 탐색기 CabinetWClass 등)은 포커스 직후 hwndFocus 가
             // 0↔정상 으로 진동해 매 폴링 filtered↔non-filtered 가 뒤집힌다. 연속 HideHysteresisPolls
-            // 회 filtered 일 때만 HIDE 를 확정 — 단발 진동은 흡수해 플로팅 배지 깜박임/사라짐(애니 ON 시
+            // 회 filtered 일 때만 HIDE 를 확정 — 단발 진동은 흡수해 한/영 배지 깜박임/사라짐(애니 ON 시
             // FadingOut race 박제)을 막는다. 잠정 구간엔 상태를 갱신하지 않아(LastFiltered/LastHwnd 불변)
             // 현 배지 상태를 유지하고, 다음 틱이 진동의 반대 위상이면 Show 가 자연 복원한다.
             if (state.FilteredStreak < DefaultConfig.HideHysteresisPolls)
@@ -328,7 +328,7 @@ internal static class DetectionService
     /// <summary>
     /// 시스템 입력 프로세스 닫힘 감지.
     /// 시작 메뉴(StartMenuExperienceHost)와 검색 창(SearchHost)은 SystemFilter 블랙리스트에
-    /// 없어 플로팅 배지를 표시하지만, ESC로 닫힌 뒤에도 숨김 전환이 발생하지 않는 문제가 있다.
+    /// 없어 한/영 배지를 표시하지만, ESC로 닫힌 뒤에도 숨김 전환이 발생하지 않는 문제가 있다.
     /// 두 프로세스의 ESC 후 동작이 다르므로 두 가지 체크가 필요하다:
     /// <para>
     /// (A) SMEH: ESC 후 foreground를 유지한 채 DWM cloaked 상태가 됨 (수 초간 지속).

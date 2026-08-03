@@ -7,7 +7,7 @@ namespace KoEnVue.App.Detector;
 
 /// <summary>
 /// 포인터 아래 창이 셸·컨텍스트 메뉴 suppress 표면인지 판정 (PR-32).
-/// 플로팅 배지는 FG <see cref="SystemFilter"/> 와 직교하는 WFP 축으로 쓰고,
+/// 한/영 배지는 FG <see cref="SystemFilter"/> 와 직교하는 WFP 축으로 쓰고,
 /// 커서 헤일로는 기존 셸 UI 숨김을 이 헬퍼로 단일화한다 (P4).
 /// </summary>
 internal static class OverlaySuppressProbe

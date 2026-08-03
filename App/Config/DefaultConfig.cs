@@ -48,7 +48,7 @@ internal static partial class DefaultConfig
 
     /// <summary>
     /// 드래그 중 창 엣지 스냅 임계값 (DPI 스케일링 전 px).
-    /// 플로팅 배지 엣지와 타겟 엣지의 거리가 이 값 이하면 스냅.
+    /// 한/영 배지 엣지와 타겟 엣지의 거리가 이 값 이하면 스냅.
     /// </summary>
     public const int SnapThresholdPx = 10;
 
@@ -225,7 +225,7 @@ internal static partial class DefaultConfig
     public const string DefaultNonKoreanFg         = "#FFFFFF";
     public const string DefaultBorderColor         = "#000000";
 
-    // 플로팅 배지 라벨 폰트/텍스트. DefaultDialogFontFamily 와 값은 같으나 의미 독립 (배지 폰트 vs 다이얼로그 폰트).
+    // 한/영 배지 라벨 폰트/텍스트. DefaultDialogFontFamily 와 값은 같으나 의미 독립 (배지 폰트 vs 다이얼로그 폰트).
     public const string DefaultIndicatorFontFamily = "맑은 고딕";
     public const string DefaultHangulLabel         = "한";
     public const string DefaultEnglishLabel        = "En";
@@ -290,7 +290,7 @@ internal static partial class DefaultConfig
     public const int    CursorIdleDelayMs          = 100;
     public const int    CursorMotionThresholdPx    = 5;
 
-    // 전환 효과 (IME 한↔영 변경 시 스케일 팝) — 플로팅 배지 ChangeHighlight/HighlightScale/HighlightDurationMs 와 평행.
+    // 전환 효과 (IME 한↔영 변경 시 스케일 팝) — 한/영 배지 ChangeHighlight/HighlightScale/HighlightDurationMs 와 평행.
     public const bool   CursorChangeHighlight      = true;
     public const double CursorHighlightScale       = 1.3;
     public const int    CursorHighlightDurationMs  = 300;
@@ -373,7 +373,7 @@ internal static partial class DefaultConfig
     /// <summary>
     /// 커서 헤일로 HWND_TOPMOST 재적용 주기 (ms). 항상 표시 모드 + 정지 검출 모드(가시 상태)
     /// 양쪽에서 다른 topmost 창(풀스크린/토스트/UAC)이 위로 올라와도 복구하도록 주기 재적용.
-    /// 플로팅 배지의 <see cref="ForceTopmostIntervalMs"/>(5000) 와 같은 기본값이나 의미 분리 —
+    /// 한/영 배지의 <see cref="ForceTopmostIntervalMs"/>(5000) 와 같은 기본값이나 의미 분리 —
     /// 커서/메인 주기를 독립 조정 가능. 0 이면 주기 재적용 비활성 (첫 표시 set 만 유지).
     /// <para>셸 UI(작업 표시줄/시작/검색) 위에서는 커서 헤일로를 아예 숨기므로(<c>CursorOverlay.IsOverShellUi</c>),
     /// 그 영역 가려짐 대응으로 짧게 둘 필요가 없다 — 풀스크린/토스트/UAC 복구 목적의 5초가 적합.</para>

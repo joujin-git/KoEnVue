@@ -24,7 +24,7 @@ namespace KoEnVue;
 /// <list type="bullet">
 ///   <item><c>Program.cs</c> — 진입점, MainImpl, 메시지 루프, WndProc, 표시/IME/포커스, 감지 스레드 기동(<see cref="DetectionService"/> 위임)</item>
 ///   <item><c>Program.Bootstrap.cs</c> — 다중 인스턴스, 윈도우 클래스/생성, ProcessExit</item>
-///   <item><c>Program.OverlayDrag.cs</c> — 플로팅 배지 클릭 숨김·드래그 승격·위치 저장</item>
+///   <item><c>Program.OverlayDrag.cs</c> — 한/영 배지 클릭 숨김·드래그 승격·위치 저장</item>
 ///   <item><c>Program.SystemEvents.cs</c> — 전원/디스플레이/테마/DPI/세션/TaskbarCreated</item>
 ///   <item><c>Program.Timers.cs</c> — WM_TIMER 위임, CAPS 폴링, 커서 헤일로 lifecycle</item>
 /// </list>
@@ -52,7 +52,7 @@ internal static partial class Program
     private static volatile ImeState _lastImeState = ImeState.English;
     private static volatile bool _indicatorVisible;
 
-    // 플로팅 배지 좌클릭 일시 숨김 — UserHidden 과 무관. 포커스 변경 / 한·영(IME) 변경 시
+    // 한/영 배지 좌클릭 일시 숨김 — UserHidden 과 무관. 포커스 변경 / 한·영(IME) 변경 시
     // HandleFocusChanged·HandleImeStateChanged 가 클리어하며 재표시. 메인 스레드 전용.
     private static bool _clickDismissed;
 
@@ -637,7 +637,7 @@ internal static partial class Program
     // ================================================================
 
     /// <summary>
-    /// 현재 포그라운드 앱에 플로팅 배지를 표시한다 — <c>_indicatorVisible</c> 설정 + per-app 위치 계산
+    /// 현재 포그라운드 앱에 한/영 배지를 표시한다 — <c>_indicatorVisible</c> 설정 + per-app 위치 계산
     /// + <see cref="Animation.TriggerShow"/> 를 한 곳에 모은다. IME/Focus/Activate/UserHidden 해제/
     /// Config 리프레시 등 여러 경로가 공유하던 3줄 패턴의 단일 진실원. 호출 전 <c>_lastForegroundHwnd</c>
     /// 유효성(대부분 <c>!= IntPtr.Zero</c> 가드)은 호출자가 보장한다.
@@ -739,7 +739,7 @@ internal static partial class Program
             // 플래그는 **결과**로 세운다 — 선-대입 금지 이유는 ShowIndicatorAtForeground 참조 (확정 #7).
             _indicatorVisible = Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
         }
-        // 같은 앱 내 윈도우 이동 — 플로팅 배지는 위치 고정이므로 무시
+        // 같은 앱 내 윈도우 이동 — 한/영 배지는 위치 고정이므로 무시
     }
 
     /// <summary>
@@ -1183,7 +1183,7 @@ internal static partial class Program
 
     /// <summary>
     /// 중복 실행된 두 번째 인스턴스의 WM_APP_ACTIVATE 수신 핸들러.
-    /// 현재 포그라운드 앱 기준으로 플로팅 배지를 즉시 표시해 "이미 실행 중" 이라는 시각 피드백을 준다.
+    /// 현재 포그라운드 앱 기준으로 한/영 배지를 즉시 표시해 "이미 실행 중" 이라는 시각 피드백을 준다.
     /// DisplayMode / EventTriggers 설정과 무관하게 강제 표시 — 사용자의 명시적 재실행 행위에 대한 응답.
     /// </summary>
     private static void HandleActivateRequest()
@@ -1197,7 +1197,7 @@ internal static partial class Program
     private static void HideOverlay(string source = "?")
     {
         // 숨김 경로 추적 — source 로 호출자(시스템 필터 / 트레이 토글 / 세션 잠금)를 식별해
-        // "플로팅 배지가 안 보인다" 류 문제의 원인 경로를 로그만으로 좁힌다.
+        // "한/영 배지가 안 보인다" 류 문제의 원인 경로를 로그만으로 좁힌다.
         Logger.Info($"HideOverlay called: source={source}");
         // PR-26 (c): 숨김 시 시스템 입력 패널 프레임 캐시 무효화.
         // SearchHost→StartMenu 전환은 Hide 없이 가시 유지하므로 보정 캐시는 그 경로에서 보존됨.
@@ -1312,7 +1312,7 @@ internal static partial class Program
 
     /// <summary>
     /// UserHidden 전환을 오버레이에 반영한다. HandleTrayToggle(좌클릭) 과
-    /// HandleMenuCommand 의 updateConfig 람다(메뉴 "플로팅 배지 숨김" 토글 + 향후
+    /// HandleMenuCommand 의 updateConfig 람다(메뉴 "한/영 배지 숨김" 토글 + 향후
     /// SettingsDialog 등) 양 경로에서 공유. 호출 전 <c>_config.UserHidden</c> 은 이미 새 값으로
     /// 갱신돼 있어야 한다.
     /// </summary>

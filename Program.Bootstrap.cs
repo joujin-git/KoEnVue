@@ -87,7 +87,7 @@ internal static partial class Program
     /// 중복 실행 시 기존(실행 중) 인스턴스를 찾아 활성화 신호를 전송한다.
     /// 메인 윈도우 클래스명으로 <c>FindWindowW</c> 탐색 → <c>PostMessageW</c> 로
     /// <see cref="AppMessages.WM_APP_ACTIVATE"/> 게시. 기존 인스턴스는 WndProc 에서 이를 받아
-    /// 플로팅 배지를 즉시 표시한다.
+    /// 한/영 배지를 즉시 표시한다.
     /// 탐색 실패(기존 창이 막 파괴 중이거나 클래스명이 달라진 경우)는 조용히 무시한다.
     /// </summary>
     private static void NotifyExistingInstance()
@@ -184,7 +184,7 @@ internal static partial class Program
     /// <para>
     /// <b>WS_EX_TOPMOST 생성 시 제거</b> — 진단 결과 cursor 윈도우 첫 UpdateLayeredWindow 가 DWM 합성
     /// 시 다른 topmost 윈도우 (Shell_TrayWnd 도 topmost) 재정렬 trigger → Shell_TrayWnd 잠시
-    /// foreground → 플로팅 배지 SystemFilter hide 회귀. cursor 윈도우는 생성 시 일반 z-order 로 시작,
+    /// foreground → 한/영 배지 SystemFilter hide 회귀. cursor 윈도우는 생성 시 일반 z-order 로 시작,
     /// 첫 표시 (RenderAtCursor) 시점에 명시 SetWindowPos(HWND_TOPMOST, SWP_NOSENDCHANGING) 으로
     /// topmost 진입 — 다른 윈도우에 z-order 변경 알림 차단.
     /// </para>
