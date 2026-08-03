@@ -75,8 +75,8 @@ dotnet publish -r win-x64 -c Release
    ```
    `publish/KoEnVue.exe` 옆에 `KoEnVue.exe.sha256.txt` 가 자동 생성됩니다 (PR-11 G4, `Directory.Build.targets` 의 `EmitSha256` Target).
 3. **GitHub 릴리스 작성** — 웹 UI `Releases → Draft a new release`
-   - Tag: `vX.Y.Z[.W]` (예: `v0.9.3.0`) — 태그에 `v` 접두어 필수 (`UpdateChecker.NormalizeVersion` 이 벗겨냄)
-   - Title: 자유 (예: `KoEnVue v0.9.3.0`)
+   - Tag: `vX.Y.Z.W` (예: `v1.0.0.2`) — 4-part 필수(숫자 4개, 점 3개, 1번 항목과 동일 컨벤션) + `v` 접두어 필수 (`UpdateChecker.NormalizeVersion` 이 벗겨냄)
+   - Title: 자유 (예: `KoEnVue v1.0.0.2`)
    - Attach: `publish/KoEnVue.exe` + `publish/KoEnVue.exe.sha256.txt`
    - Body 에 SHA256 hash 값 인용 (사용자가 다운로드 후 `Get-FileHash` 로 비교)
    - **"Set as a pre-release" 체크 해제** — 0.x.x 버전이라고 GitHub 가 자동으로 권장하지만, 체크하면 `release.prerelease=true` 로 `UpdateChecker` 가 건너뛰어 사용자에게 노출되지 않음. 정식 릴리스로 내보낼 때는 반드시 해제

@@ -33,7 +33,7 @@ KoEnVue 문서 전체 인덱스. [CLAUDE.md](../CLAUDE.md) 는 가장 기본적�
 |------|------|
 | [improvement-plan/INDEX.md](improvement-plan/INDEX.md) | PR-XX 형식 개선 계획 인덱스 |
 | [improvement-plan/DECISIONS.md](improvement-plan/DECISIONS.md) | 누적된 설계 결정 |
-| [improvement-plan/MANUAL-VERIFICATION.md](improvement-plan/MANUAL-VERIFICATION.md) | **실기 검증 체크리스트** — 단위 테스트로 잡을 수 없는 항목(실제 창·GDI·IME·셸)의 재현 절차. v1.0.0.0 릴리즈 전 필수 |
+| [improvement-plan/MANUAL-VERIFICATION.md](improvement-plan/MANUAL-VERIFICATION.md) | **실기 검증 체크리스트** — 단위 테스트로 잡을 수 없는 항목(실제 창·GDI·IME·셸)의 재현 절차. v1.0.0.0 릴리즈 전 완주(2026-08-03), 이후 릴리즈에서도 재사용 |
 | [dev-notes/](dev-notes/) | 실패한 구현 시도의 postmortem (같은 함정 재방문 방지) |
 
 ## 변경 이력
