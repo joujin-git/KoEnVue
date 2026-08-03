@@ -10,3 +10,4 @@
 - [규범 문서의 일괄 서술 = 반례 의심 + 사본 전수 grep](normative-doc-blanket-claims.md) — "전부 0" 류는 자기 예외와 모순되기 쉽고 hook·에이전트 사본으로 전파. conventions.md invariant 헤더 6곳 사례.
 - [부정적 관측은 계측기부터 의심](negative-result-verify-instrument.md) — "로그에 없다/값이 같다/한 번 해보니 안 된다" 는 측정 쪽 결함일 수 있다. 부정 결론 전 계측 전제 확인 + 양성 대조군. 2026-08-03 한 세션에 3회 사례.
 - [수정→검증 반복은 신뢰도 신호](fix-verify-loop-signal.md) — 같은 자리 수정의 결함이 검증마다 또 나오면 개별 건보다 그 패턴을 먼저 보고. 자기가 쓴 테스트는 근거가 못 된다.
+- [검증한 것만 검증했다고 적기](record-only-what-was-verified.md) — 「완료로 표시」 지시는 검증 완료 ≠ 추적 종료. 새기기 전 확인, 후자는 `⊘ 생략`. 상위 인덱스 「완주」와 동시 모순.
