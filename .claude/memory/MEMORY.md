@@ -8,4 +8,5 @@
 - [근거가 되는 정량 주장은 직접 재현](verify-load-bearing-claims.md) — 서브에이전트 실측·코드 주석이 권고를 떠받치면 메인이 조건 바꿔 재측정. SetTimer 16ms≈60fps 오전제 사례.
 - [설정 검증은 런타임 부산물로](verify-with-runtime-artifacts.md) — 내가 만든 산출물은 증거가 아니다(순환논법). 런타임이 새긴 필드·타임스탬프 + 대조군. autoMemoryDirectory 5주 유보 사례.
 - [규범 문서의 일괄 서술 = 반례 의심 + 사본 전수 grep](normative-doc-blanket-claims.md) — "전부 0" 류는 자기 예외와 모순되기 쉽고 hook·에이전트 사본으로 전파. conventions.md invariant 헤더 6곳 사례.
+- [부정적 관측은 계측기부터 의심](negative-result-verify-instrument.md) — "로그에 없다/값이 같다/한 번 해보니 안 된다" 는 측정 쪽 결함일 수 있다. 부정 결론 전 계측 전제 확인 + 양성 대조군. 2026-08-03 한 세션에 3회 사례.
 - [수정→검증 반복은 신뢰도 신호](fix-verify-loop-signal.md) — 같은 자리 수정의 결함이 검증마다 또 나오면 개별 건보다 그 패턴을 먼저 보고. 자기가 쓴 테스트는 근거가 못 된다.
