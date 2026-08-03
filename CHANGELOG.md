@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [1.0.0.0] — 2026-08-03 — 첫 정식 릴리즈 · 트레이 4단계 순환 · 아이콘 재디자인 · bug-hunt 2·3차
+
 ### Changed
 
 - **트레이 좌클릭 = 표시 상태 4단계 순환** — 기존에는 좌클릭이 `user_hidden`(배지)만 토글했다. 이제 누를 때마다 **둘 다 보임 → 배지만 → 헤일로만 → 모두 숨김 → (다시) 둘 다 보임** 순으로 넘어간다. 현재 단계는 `user_hidden` + `cursor_indicator_enabled` **조합에서 그대로 읽히므로**(`Tray.GetVisibility`) 별도의 복원 기록을 저장하지 않으며, 우클릭 메뉴로 개별 토글해 만든 상태에서 좌클릭해도 그 상태의 다음 단계로 자연스럽게 이어진다. 전이 계산은 `Tray.ComputeLeftClickCycle` 단일 진실원(`IndicatorVisibility` enum)이고 `TrayLeftClickToggleTests` 23케이스로 고정. 트레이 메뉴의 「플로팅 배지 숨김」·「커서 헤일로 숨김」 체크 상태는 메뉴가 열릴 때마다 현재 config 로 구성되므로 즉시 반영된다.
