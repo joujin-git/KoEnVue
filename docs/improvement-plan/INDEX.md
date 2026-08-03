@@ -6,7 +6,7 @@
 
 **활성: [AUDIT-2026-08-02 bug-hunt 3차](AUDIT-2026-08-02-bug-hunt-round3.md)** — 162 에이전트 · 3라운드 완주 · 확정 37건 → 고유 18그룹, **18그룹 전량 처리 완료**(수정 10 · 감수 4 · 오탐 2 · 부분오탐 2). **확정 37건 중 27건이 2차 수정이 만든 것**이었다 — "수정 → 검증 → 그 수정의 결함" 네 번째 반복. 테스트 226 → **235**.
 
-**실기 검증 완료 → 릴리즈됨 (2026-08-03)** — [MANUAL-VERIFICATION.md](MANUAL-VERIFICATION.md) 의 A~F 6묶음(단위 테스트로 잡을 수 없는 실제 창·GDI·IME·셸 경로)을 사용자가 실기 수행. **v1.0.0.0** 정식 배포 후 검증에서 나온 후속 2건을 같은 날 이어서 릴리즈 — **v1.0.0.1** (B-2 후속: `TrayRemoveReason` 로 트레이 제거 로그 경로 분리 + `koenvue_crash.txt` → `koenvue_diagnostics.txt` 개명) · **v1.0.0.2** (`config.json` → `koenvue_config.json`, BREAKING — 마이그레이션 없음). 현재 버전 `1.0.0.2`, CHANGELOG `[Unreleased]` 비어 있음. 테스트 235 → **236**.
+**실기 검증 14/19 실시 → 릴리즈됨 (2026-08-03)** — [MANUAL-VERIFICATION.md](MANUAL-VERIFICATION.md) 의 A~F 6묶음(단위 테스트로 잡을 수 없는 실제 창·GDI·IME·셸 경로)을 사용자가 실기 수행. **실시분 실패 0.** 남은 5항목은 B-1(부분 관찰) + D-5·E-2·F-1·F-2(**2026-08-04 ⊘ 생략 결정** — 실시 비용이 커서 추적 종료. 통과가 아니라 **확인된 바 없음**). **v1.0.0.0** 정식 배포 후 검증에서 나온 후속 2건을 같은 날 이어서 릴리즈 — **v1.0.0.1** (B-2 후속: `TrayRemoveReason` 로 트레이 제거 로그 경로 분리 + `koenvue_crash.txt` → `koenvue_diagnostics.txt` 개명) · **v1.0.0.2** (`config.json` → `koenvue_config.json`, BREAKING — 마이그레이션 없음). 현재 버전 `1.0.0.2`, CHANGELOG `[Unreleased]` 비어 있음. 테스트 235 → **236**.
 
 ## Progress matrix
 
