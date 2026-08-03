@@ -102,7 +102,9 @@
 
 **2026-08-03 결과** — 통과(2회). 로그: `TaskbarCreated broadcast received, recreating tray icon` → `Tray icon removed` → `Tray icon initialized` → `Tray icon recreated`.
 
-> **📌 후속 과제** — 이 경로에서 매번 `[WARN] Failed to remove tray icon on shutdown` 이 찍힌다([Tray.cs:409](../../App/UI/Tray.cs)). 두 가지가 어긋나 있다: ⓐ **종료 중이 아닌데 "on shutdown"** — 재생성 경로가 같은 `RemoveIcon` 을 공유한다, ⓑ **실패가 당연한 상황에 WARN** — 탐색기가 방금 죽어 아이콘을 지울 셸이 없다. 기능 문제는 없고 로그 노이즈다.
+> **📌 후속 과제 — 해결됨 (2026-08-03)** — 이 경로에서 매번 `[WARN] Failed to remove tray icon on shutdown` 이 찍혔다. 두 가지가 어긋나 있었다: ⓐ **종료 중이 아닌데 "on shutdown"** — 재생성 경로가 같은 `Remove` 를 공유한다, ⓑ **실패가 당연한 상황에 WARN** — 탐색기가 방금 죽어 아이콘을 지울 셸이 없다. `TrayRemoveReason`(종료·재생성·트레이 해제) 도입으로 정리했다.
+>
+> **재검증 시 기대 로그가 바뀐다** — 위 103줄의 시퀀스는 수정 **전** 실측이다. 이제는 재생성 경로가 `Tray icon removed (recreate)` 이고, 삭제 실패는 WARN 이 아니라 `[DEBUG] Tray icon delete skipped — no shell registration (Explorer restarted)` 로 나온다. 종료 경로는 `Tray icon removed (shutdown)`, 설정에서 트레이를 끄면 `Tray icon removed (tray disabled)`.
 
 ### B-3. 「시작 프로그램」 체크가 실제와 맞는가 — 2차 G12 🟠 ✅
 

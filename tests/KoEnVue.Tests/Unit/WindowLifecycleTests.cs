@@ -280,7 +280,7 @@ public class WindowLifecycleTests
             TrayField("_updatePending").SetValue(null, true);
             TrayField("_pendingUpdateConfig").SetValue(null, newer);
 
-            KoEnVue.App.UI.Tray.Remove();
+            KoEnVue.App.UI.Tray.Remove(KoEnVue.App.UI.TrayRemoveReason.Recreate);
 
             Assert.True((bool)TrayField("_updatePending").GetValue(null)!,
                 "제거 구간의 보류 표식은 뒤따르는 Initialize 가 소비하도록 남아야 한다");
@@ -296,5 +296,34 @@ public class WindowLifecycleTests
             TrayField("_updatePending").SetValue(null, savedPending);
             TrayField("_pendingUpdateConfig").SetValue(null, savedPendingCfg);
         }
+    }
+
+    // ================================================================
+    // Remove 경로별 로그 문구 (2026-08-03 B-2 후속)
+    // ================================================================
+
+    /// <summary>
+    /// 종전에는 종료·재생성·트레이 해제 세 경로가 <c>"on shutdown"</c> 문구 하나를 공유해,
+    /// 탐색기 재시작만 해도 종료 실패처럼 읽히는 WARN 이 나갔다. 문구가 다시 통합되거나
+    /// 새 <see cref="KoEnVue.App.UI.TrayRemoveReason"/> 값이 매핑 없이 추가되면 같은 오보가 되살아난다.
+    /// </summary>
+    [Fact]
+    public void 트레이_제거_로그_문구는_경로마다_고유해야_한다()
+    {
+        MethodInfo describe = typeof(KoEnVue.App.UI.Tray).GetMethod("DescribeRemoveReason", PrivateStatic)
+            ?? throw new InvalidOperationException(
+                "Tray.DescribeRemoveReason 을 찾지 못했다 — 이름이 바뀌었으면 테스트도 갱신할 것.");
+
+        string[] labels = Enum.GetValues<KoEnVue.App.UI.TrayRemoveReason>()
+            .Select(r => (string)describe.Invoke(null, [r])!)
+            .ToArray();
+
+        Assert.All(labels, l => Assert.False(string.IsNullOrWhiteSpace(l),
+            "모든 제거 경로는 로그에 쓸 이름을 가져야 한다"));
+
+        // switch 의 fallback 으로 샌 값 — enum 에 값을 추가하고 매핑을 빠뜨리면 여기서 걸린다.
+        Assert.DoesNotContain("unknown", labels);
+
+        Assert.Equal(labels.Length, labels.Distinct(StringComparer.Ordinal).Count());
     }
 }

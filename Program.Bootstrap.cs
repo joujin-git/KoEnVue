@@ -297,7 +297,7 @@ internal static partial class Program
         // 3. 트레이 아이콘 제거 — 내부의 StopAddRetryTimer 가 KillTimer(_hwndMain, …) 를 호출하므로
         //    DestroyWindow 전에 실행해 죽은 hwnd 에 Win32 호출이 나가는 걸 방지.
         //    NIM_DELETE 자체는 NIF_GUID 기반이라 hwnd 유효성과 무관하지만 타이머 정리 경로가 있음.
-        Tray.Remove();
+        Tray.Remove(TrayRemoveReason.Shutdown);
 
         // 4. 애니메이션 + 렌더링 리소스 해제 (윈도우 파괴 전)
         Animation.Dispose();

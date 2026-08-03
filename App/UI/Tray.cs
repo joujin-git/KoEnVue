@@ -15,6 +15,23 @@ using KoEnVue.Core.Windowing;
 namespace KoEnVue.App.UI;
 
 /// <summary>
+/// <see cref="Tray.Remove"/> 호출 맥락. 셸 등록 삭제(NIM_DELETE) 실패의 의미가 경로마다 달라
+/// 로그 문구와 레벨을 이 값으로 가른다 — 종료 경로 문구를 전 경로가 공유하면 재생성·비활성화에서
+/// "on shutdown" 오보가 나가고, 실패가 정상인 경로까지 WARN 으로 올라간다.
+/// </summary>
+internal enum TrayRemoveReason
+{
+    /// <summary>앱 종료. 셸이 살아 있는 것이 정상이라 삭제 실패 = 좀비 아이콘 잔존 — WARN.</summary>
+    Shutdown,
+    /// <summary>
+    /// Explorer 재시작 복구(TaskbarCreated). 셸이 등록 정보를 이미 잃은 뒤라 삭제 실패가 정상 — DEBUG.
+    /// </summary>
+    Recreate,
+    /// <summary>config 리로드로 tray_enabled 가 꺼짐. 앱은 계속 살아 있고 셸도 정상 — WARN.</summary>
+    Disabled,
+}
+
+/// <summary>
 /// Shell_NotifyIconW 기반 시스템 트레이 아이콘 관리 + 팝업 메뉴 + 메뉴 커맨드 디스패치.
 /// WinForms NotifyIcon 사용 금지 (P1). PR-04 분해 후 시작 프로그램 등록 →
 /// <see cref="StartupTaskManager"/>, 위치 정리 → <see cref="PositionCleanupService"/>,
@@ -379,15 +396,17 @@ internal static partial class Tray
         if (_hwndMain == IntPtr.Zero || !_initialized) return;
 
         IntPtr hwndMain = _hwndMain;
-        Remove();
+        Remove(TrayRemoveReason.Recreate);
         Initialize(hwndMain, state, config);
         Logger.Info("Tray icon recreated (TaskbarCreated or recovery)");
     }
 
     /// <summary>
-    /// 트레이 아이콘 제거 (NIM_DELETE). 앱 종료 시 호출.
+    /// 트레이 아이콘 제거 (NIM_DELETE). 종료 · Explorer 재시작 복구 · tray_enabled 해제 세 경로가 공유하므로
+    /// 호출자는 <paramref name="reason"/> 으로 맥락을 명시한다 (기본값 없음 — 새 호출부가 무심코 종료 문구를
+    /// 물려받지 않도록).
     /// </summary>
-    internal static void Remove()
+    internal static void Remove(TrayRemoveReason reason)
     {
         if (!_initialized) return;
 
@@ -406,14 +425,31 @@ internal static partial class Tray
         RunShellCall(() => removed = notify?.Remove() ?? true, drainPending: false);
 
         if (!removed)
-            Logger.Warning("Failed to remove tray icon on shutdown");
+        {
+            // Recreate 는 Explorer 가 방금 죽어 셸 측 등록이 이미 사라진 뒤다 — NIM_DELETE 실패가 정상이고
+            // (Recreate 요약 참조) 복구는 뒤따르는 Initialize 가 한다. 나머지 두 경로는 셸이 살아 있어야
+            // 정상이라 실패 = 지워지지 않은 좀비 아이콘.
+            if (reason == TrayRemoveReason.Recreate)
+                Logger.Debug("Tray icon delete skipped — no shell registration (Explorer restarted)");
+            else
+                Logger.Warning($"Failed to remove tray icon ({DescribeRemoveReason(reason)})");
+        }
 
         _currentIcon?.Dispose();
         _currentIcon = null;
         _notifyIcon = null;
 
-        Logger.Info("Tray icon removed");
+        Logger.Info($"Tray icon removed ({DescribeRemoveReason(reason)})");
     }
+
+    /// <summary>제거 경로의 로그용 이름 (P2: 로그는 영어).</summary>
+    private static string DescribeRemoveReason(TrayRemoveReason reason) => reason switch
+    {
+        TrayRemoveReason.Shutdown => "shutdown",
+        TrayRemoveReason.Recreate => "recreate",
+        TrayRemoveReason.Disabled => "tray disabled",
+        _ => "unknown",
+    };
 
     // ShowMenu(메뉴 빌더) 는 partial 분할 — App/UI/Tray.Menu.cs 참조.
 

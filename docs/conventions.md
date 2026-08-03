@@ -96,6 +96,7 @@ git grep -n "Tray.RunShellCall\|private static void RunShellCall" App/UI/   # bu
 git grep -nE "if \(_drainThread is null\)" Core/Logging/   # bug-hunt G1 (확정 #3·#9·#20·#36·#50): 0 — 로그 라우팅 판정은 `_route`(FileLogRoute) 단독. 스레드 필드로 되돌아가면 "아직 부팅 중" 과 "파일 로깅 꺼짐" 과 "초기화 실패" 가 다시 한 조건에 뭉쳐, 뒤의 둘이 아무도 비우지 않는 pre-init 버퍼로 샌다
 git grep -n "RunExternal(_hwndMain" App/   # bug-hunt G10 (확정 #41): 0 — 외부 모달(MessageBoxW)의 표식은 **센티넬**이어야 한다(IntPtr.Zero 전달). `_hwndMain` 을 넘기면 RejectReentry 가 그것을 진짜 다이얼로그로 오인해 보이지 않는 0×0 메시지 창으로 포커스를 옮기고, 감지 루프가 self-HWND 가드에 매 틱 걸려 배지가 되살아나지 않는다
 git grep -n "IsWindowVisible(hwndOwner)" Core/Windowing/ModalDialogLoop.cs   # bug-hunt G10 (확정 #29): **1** — 모달 종료 시 포커스 복원은 **가시 소유자에 한한다**. KoEnVue 의 소유자는 0×0 스타일 0 메시지 창이라 무조건 복원하면 위와 같은 상태가 된다
+git grep -nE "Remove\(TrayRemoveReason [A-Za-z_]+\s*=" -- '*.cs'   # B-2 후속(2026-08-03): 0 — `Tray.Remove` 의 맥락 인자에 **기본값을 두지 않는다**. 기본값이 생기는 순간 새 호출부가 종료 문구를 조용히 물려받아, 재생성·트레이 해제 경로가 다시 `on shutdown` 으로 보고된다. 문구의 고유성 자체는 `WindowLifecycleTests` 가 고정하고, 이 grep 은 **호출부가 맥락을 명시하도록 강제하는 컴파일 타임 계약**이 유지되는지만 본다
 git grep -n "_indicatorVisible = true" -- '*.cs'   # bug-hunt G4 (확정 #7·#17·#25·#37): 0 — 가시성 플래그는 **요청이 아니라 결과**로만 세운다(`_indicatorVisible = Animation.TriggerShow(...)`). 선-대입하면 NonKorean+Hide 가드가 표시 없이 숨김으로 빠질 때 true 로 박제되고, 애니메이터가 이미 Hidden 이면 onHidden 훅조차 발화하지 않아 되돌릴 기회가 없다. 이 플래그는 감지 스레드가 읽는 유일한 가시성 계약이다
 ```
 
@@ -126,7 +127,7 @@ If the `try` body is a single P/Invoke or COM call and expected exception types 
 ### 3. Log level
 
 - Hot-path / modal-internal swallowing → `Logger.Debug`
-- Rare catastrophic paths (`CleanupPositions` `Process.GetProcesses` failure, `Tray.Remove` `NIM_DELETE` failure on shutdown) → `Logger.Warning`
+- Rare catastrophic paths (`CleanupPositions` `Process.GetProcesses` failure, `Tray.Remove` 의 `NIM_DELETE` failure) → `Logger.Warning` — **단, 실패가 정상인 경로는 뺀다**: `Tray.Remove(TrayRemoveReason.Recreate)` 는 Explorer 가 방금 죽어 지울 셸 등록이 애초에 없으므로 `Logger.Debug`. 심각도는 *호출이 실패했는가* 가 아니라 **그 경로에서 실패가 이상한가**로 가른다 (2026-08-03 B-2 후속)
 - Silent failures that will propagate to users if ignored → `Logger.Error`
 
 ### 4. Intentionally empty catches
@@ -336,6 +337,7 @@ The `SafeFontHandle` `using` pattern is critical — early release would crash `
   - **트레이 좌클릭 순환** (2026-07-29): `TrayLeftClickToggleTests` — 4단계 전이(`ComputeLeftClickCycle`) + 단계별 도형(`Tray.GetShapes`) 대응
   - **AUDIT-2026-07-30 동시성 bug-hunt**: `ModalReentryGuardTests`(§A 재진입 가드 위치) / `ConfigCommitBaseTests`(§B 커밋 베이스 = 지금 값) / `ProfileCacheTests`(§D LRU 불변식 + 무효화 세대) / `ConfigLoadFailureTests`(§G 파싱 실패의 호출자 전달) / `DragHideDeferralTests`(§M 드래그 중 숨김 보류) / `LoggerReinitTests`(§C 세대 단조성 + 재초기화 라운드트립) / `SaveMergeTests`(§N-48 3-way 병합)
   - **bug-hunt 2026-08-02 2차**: `WindowLifecycleTests`(G5 창별 hwnd 필드 리셋 + 다른 필드 보존, G17 핫리로드 재진입 보류 표식) / `IndicatorVisibilityTests`(G14 `PositionMode` 전환 시 이동 래치 해제 3케이스) + `SaveMergeTests`(G11 되읽기 실패 롤백) · `LoggerReinitTests`(G1 OFF·초기화 실패 시 드롭) 확장. **G2·G3·G10·G16 은 스레드 타이밍/실제 창 의존이라 단위 테스트가 불가능** — invariant grep 이 대신 고정
+  - **B-2 후속 (2026-08-03)**: `WindowLifecycleTests` — 트레이 제거 경로별 로그 문구 고유성(`DescribeRemoveReason` × `TrayRemoveReason` 전 값). 종료 문구를 세 경로가 공유해 **탐색기 재시작이 종료 실패처럼 읽히던** 것을 고정하고, `switch` fallback(`"unknown"`) 누출 — enum 에 값을 추가하고 매핑을 빠뜨리는 경로 — 까지 함께 잡는다
 - **Smoke gate matrix** exercised manually: boot → tray icon appears → indicator follows foreground → IME toggle changes color → drag works → drag with Shift locks axis → drag with snap sticks to edges → CAPS LOCK toggles bars → config hot-reload → corrupted config spam check → update check (both branches: no update / new version) → Start Menu ESC dismissal hides indicator → Search bar ESC dismissal hides indicator
 - **`git grep` invariants** (listed above) each match their annotated expected count — unannotated = 0 matches
 - **Byte-size tracking** against the previous stage's baseline

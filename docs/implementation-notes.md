@@ -1177,7 +1177,9 @@ if (msg != 0 && msg == _taskbarCreatedMsgId && hwnd == _hwndMain)
 
 `hwnd == _hwndMain` 체크는 오버레이 창도 최상위라 같은 브로드캐스트를 받는 문제를 피하기 위함 — 메인 창에서만 한 번 처리한다.
 
-`HandleTaskbarCreated` 는 `config.TrayEnabled` 확인 후 `Tray.Recreate(_lastImeState, _config)` 를 호출한다. `Recreate` 는 `Remove` (내부 상태 초기화, `NIM_DELETE` 는 셸 측 등록이 없으므로 실패해도 무해) → `Initialize` (`NotifyIconManager` 재생성 + `NIM_ADD` + `NIM_SETVERSION`) 순서로 아이콘을 복구한다.
+`HandleTaskbarCreated` 는 `config.TrayEnabled` 확인 후 `Tray.Recreate(_lastImeState, _config)` 를 호출한다. `Recreate` 는 `Remove(TrayRemoveReason.Recreate)` (내부 상태 초기화, `NIM_DELETE` 는 셸 측 등록이 없으므로 실패해도 무해) → `Initialize` (`NotifyIconManager` 재생성 + `NIM_ADD` + `NIM_SETVERSION`) 순서로 아이콘을 복구한다.
+
+`Remove` 는 **종료 · 재생성 · `tray_enabled` 해제** 세 경로가 공유하므로 호출자가 `TrayRemoveReason` 으로 맥락을 명시한다(기본값 없음 — 새 호출부가 종료 문구를 조용히 물려받지 않도록). 로그가 이 값으로 갈린다: 문구는 `Tray icon removed (shutdown|recreate|tray disabled)`, `NIM_DELETE` 실패 심각도는 재생성만 `Logger.Debug` 이고 나머지 둘은 `Logger.Warning` 이다 — 위 "실패해도 무해" 가 바로 재생성 경로를 낮추는 근거다. 종전에는 셋이 종료 문구 하나를 공유해 **탐색기를 재시작할 때마다 `Failed to remove tray icon on shutdown` 이 찍혀 앱이 종료에 실패한 것처럼 읽혔다** (2026-08-03 B-2 후속).
 
 `RegisterWindowMessageW` 등록 실패(매우 드묾) 시에는 `Logger.Warning` 만 남기고 복구 기능만 비활성화된다 — 앱 자체 동작엔 영향 없음.
 

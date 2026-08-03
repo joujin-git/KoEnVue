@@ -1135,7 +1135,7 @@ internal static partial class Program
     {
         if (wasEnabled && !isEnabled)
         {
-            Tray.Remove();
+            Tray.Remove(TrayRemoveReason.Disabled);
             Logger.Info("Tray disabled by config reload");
             return;
         }
