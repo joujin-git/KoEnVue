@@ -28,7 +28,7 @@ namespace KoEnVue.App.Bootstrap;
 /// <para>
 /// 로깅: <see cref="LogProvider"/> Sink 가 pre-Init 버퍼 (PR-09) 에 적재하지만,
 /// elevation 성공 시 원본은 <see cref="Result.ExitForChild"/> 로 즉시 종료 → Logger.Initialize
-/// 안 됨 → 버퍼 flush 안 됨. 따라서 <c>Program.AppendCrashFile</c> 의 koenvue_crash.txt
+/// 안 됨 → 버퍼 flush 안 됨. 따라서 <c>Program.AppendDiagnosticsFile</c> 의 koenvue_diagnostics.txt
 /// 도 동시 기록 (ELEVATION / ELEVATION-ERR 태그). 결정 #5 — 별도 elevation.txt 대신 재사용.
 /// </para>
 ///
@@ -47,11 +47,11 @@ internal static class AdminElevation
     /// <summary>UAC 다이얼로그에서 "아니요" 거부 시 GetLastError = 1223.</summary>
     private const int    ErrorCancelled        = 1223;
 
-    /// <summary>koenvue_crash.txt 의 elevation INFO 태그.</summary>
-    private const string CrashTagInfo          = "ELEVATION";
+    /// <summary>koenvue_diagnostics.txt 의 elevation INFO 태그.</summary>
+    private const string DiagTagInfo           = "ELEVATION";
 
-    /// <summary>koenvue_crash.txt 의 elevation ERROR 태그.</summary>
-    private const string CrashTagError         = "ELEVATION-ERR";
+    /// <summary>koenvue_diagnostics.txt 의 elevation ERROR 태그.</summary>
+    private const string DiagTagError          = "ELEVATION-ERR";
 
     /// <summary>
     /// Tray 메뉴 재시작 + self-elevation spawn 시 자식이 부모 종료를 명시 대기하도록 PID 를
@@ -191,21 +191,21 @@ internal static class AdminElevation
             uType: Win32Constants.MB_OK);
     }
 
-    // === 로깅 — pre-Init 버퍼 + crash.txt 두 채널 ===
+    // === 로깅 — pre-Init 버퍼 + koenvue_diagnostics.txt 두 채널 ===
 
     private static void Log(string msg)
     {
         // LogProvider.Sink (PR-09) 가 Logger.Initialize 전이면 pre-Init 버퍼.
         // ExitForChild 흐름에서는 Logger.Initialize 안 됨 → buffer flush 안 됨 → log 손실.
-        // 그래서 crash.txt 도 동시 기록 (결정 #5 — 별도 elevation.txt 대신 재사용 + 태그 분리).
+        // 그래서 진단 파일에도 동시 기록 (결정 #5 — 별도 elevation.txt 대신 재사용 + 태그 분리).
         LogProvider.Sink?.Info($"AdminElevation: {msg}");
-        Program.AppendCrashFile(CrashTagInfo, msg);
+        Program.AppendDiagnosticsFile(DiagTagInfo, msg);
     }
 
     private static void LogError(string msg)
     {
         LogProvider.Sink?.Error($"AdminElevation: {msg}");
-        Program.AppendCrashFile(CrashTagError, msg);
+        Program.AppendDiagnosticsFile(DiagTagError, msg);
     }
 
     /// <summary>

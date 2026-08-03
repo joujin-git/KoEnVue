@@ -954,7 +954,7 @@ Mutex 획득 성공은 "이전 인스턴스가 존재하지 않는다" 는 보�
 
 ### Self-relaunch race blocking — KOENVUE_RELAUNCH_PARENT_PID + WaitForExit
 
-PR-15 의 부팅 시점 self-elevation 경로는 "원본이 mutex 안 잡은 상태에서 자식 spawn → 자식이 깨끗하게 createdNew=true" 흐름이라 race 0. 하지만 **트레이 메뉴 "관리자 권한으로 실행" 토글 재시작 경로** ([`Tray.cs`](../App/UI/Tray.cs) `IDM_ADMIN_ELEVATION` YES 분기) 는 원본이 mutex + trayicon GUID + WTS notification + IME hook + log file lock 등 모든 리소스를 보유한 정상 실행 상태에서 자식을 spawn 한다. 원본의 `OnProcessExit` cleanup 시퀀스 (PR-19 step 0~7) 가 `_mutex?.Dispose()` 까지 수백 ms 소요되어 자식이 그 사이 mutex `createdNew=false` + 부가 리소스 race 에 빠진다 — `Logger.Initialize` 도달 전 종료라 `koenvue.log` 의 starting 라인이 없고 `koenvue_crash.txt` 만 남는 진단 패턴.
+PR-15 의 부팅 시점 self-elevation 경로는 "원본이 mutex 안 잡은 상태에서 자식 spawn → 자식이 깨끗하게 createdNew=true" 흐름이라 race 0. 하지만 **트레이 메뉴 "관리자 권한으로 실행" 토글 재시작 경로** ([`Tray.cs`](../App/UI/Tray.cs) `IDM_ADMIN_ELEVATION` YES 분기) 는 원본이 mutex + trayicon GUID + WTS notification + IME hook + log file lock 등 모든 리소스를 보유한 정상 실행 상태에서 자식을 spawn 한다. 원본의 `OnProcessExit` cleanup 시퀀스 (PR-19 step 0~7) 가 `_mutex?.Dispose()` 까지 수백 ms 소요되어 자식이 그 사이 mutex `createdNew=false` + 부가 리소스 race 에 빠진다 — `Logger.Initialize` 도달 전 종료라 `koenvue.log` 의 starting 라인이 없고 `koenvue_diagnostics.txt` 만 남는 진단 패턴. (~v1.0.0.0 에서는 이 파일이 `koenvue_crash.txt` 였다 — 크래시 전용이라는 오해를 없애려고 개명했다. 과거 세션 기록·dev-notes 의 옛 이름은 당시 실제 파일명이라 그대로 둔다.)
 
 fix (PR-15 후속, 2026-05-28) — **자식이 mutex 시도 전 부모 종료를 명시 wait** 하는 환경변수 패턴:
 

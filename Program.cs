@@ -139,14 +139,14 @@ internal static partial class Program
         }
         catch (Exception ex)
         {
-            AppendCrashFile("FATAL", ex);
+            AppendDiagnosticsFile("FATAL", ex);
             Logger.Error($"Fatal: {ex}");
             Logger.Shutdown();
         }
     }
 
     /// <summary>
-    /// PR-10 (G5): 메인 스레드 외 unhandled / unobserved 예외를 흡수해 <c>koenvue_crash.txt</c> +
+    /// PR-10 (G5): 메인 스레드 외 unhandled / unobserved 예외를 흡수해 <c>koenvue_diagnostics.txt</c> +
     /// <c>koenvue.log</c> 양쪽에 흔적을 남기고 종료한다. <c>AppDomain.UnhandledException</c> 은
     /// CLR 이 프로세스를 죽이기 직전 호출되며 (<c>IsTerminating=true</c>), 핸들러 안에서 GUI 호출은
     /// thread affinity 문제로 금지 — <c>Logger.Error</c> 와 파일 write 만 사용. AppDomain 핸들러는
@@ -157,7 +157,7 @@ internal static partial class Program
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
             object exObj = e.ExceptionObject;
-            AppendCrashFile("UNHANDLED", exObj);
+            AppendDiagnosticsFile("UNHANDLED", exObj);
             Logger.Error($"UnhandledException (terminating={e.IsTerminating}): {exObj}");
             // FailFast / AVE 등으로 ProcessExit 가 발화하지 않는 경로에서 트레이 좀비 아이콘이
             // 남는 회귀를 차단. NIM_DELETE 는 NIF_GUID 기반이라 hwnd / 스레드 affinity 무관 +
@@ -168,30 +168,36 @@ internal static partial class Program
         };
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {
-            AppendCrashFile("UNOBSERVED", e.Exception);
+            AppendDiagnosticsFile("UNOBSERVED", e.Exception);
             Logger.Error($"UnobservedTaskException: {e.Exception}");
             e.SetObserved();  // finalizer 가 프로세스를 죽이지 않도록 관측 표시.
         };
     }
 
     /// <summary>
-    /// 비상 크래시 로그 파일에 한 줄 append. Logger 초기화 전에도 동작한다.
+    /// <c>koenvue_diagnostics.txt</c> 에 한 줄 append — **<c>koenvue.log</c> 에 남길 수 없는 것들의
+    /// 최후 기록 채널**이다. Logger 초기화 전에도 동작한다.
     /// I/O · 권한 · 보안 실패는 흡수 — 이미 종료 경로라 추가 복구 불가. 로직 버그는 전파.
     ///
     /// <para>
-    /// PR-15: <c>internal</c> 로 노출 — <c>App/Bootstrap/AdminElevation</c> 가
-    /// pre-Init elevation 로그 (Logger.Initialize 전 ShellExecute+Exit 흐름에서
-    /// pre-Init 버퍼가 flush 안 되는 경우) 의 crash.txt fallback 채널로 재사용.
-    /// 태그는 elevation 흐름의 의미 (ELEVATION / ELEVATION-ERR) — 본래 크래시용
-    /// 태그 (FATAL / UNHANDLED / UNOBSERVED) 와 grep 으로 분리 가능.
+    /// 진입은 둘이고 태그로 갈린다 — ⓐ 크래시 (FATAL / UNHANDLED / UNOBSERVED): Logger 가 이미
+    /// 죽었거나 프로세스가 죽기 직전, ⓑ 승격 (ELEVATION / ELEVATION-ERR, PR-15): <c>Logger.Initialize</c>
+    /// **전에** 원본 프로세스가 ShellExecute+Exit 로 종료돼 pre-Init 버퍼가 flush 되지 않는 경로라
+    /// <c>App/Bootstrap/AdminElevation</c> 이 <c>internal</c> 로 재사용한다 (결정 #5 — 별도 파일 신설 대신).
+    /// </para>
+    ///
+    /// <para>
+    /// **파일명이 <c>koenvue_crash.txt</c> 였다** (~v1.0.0.0). 정상 승격 기록이 "crash" 파일에 쌓여
+    /// 사용자가 크래시로 오인하기 쉬웠다 — 이름은 ⓐ 만 가리키는데 실제 내용은 ⓑ 가 대부분이다.
+    /// 옛 파일은 자동 이관하지 않으므로 업데이트 후 두 파일이 나란히 남을 수 있다.
     /// </para>
     /// </summary>
-    internal static void AppendCrashFile(string tag, object payload)
+    internal static void AppendDiagnosticsFile(string tag, object payload)
     {
         try
         {
             File.AppendAllText(
-                Path.Combine(AppContext.BaseDirectory, "koenvue_crash.txt"),
+                Path.Combine(AppContext.BaseDirectory, "koenvue_diagnostics.txt"),
                 $"[{DateTime.Now:HH:mm:ss.fff}] {tag}: {payload}\n");
         }
         catch (Exception inner) when (inner is IOException
@@ -213,7 +219,7 @@ internal static partial class Program
         // 0a. AppDomain unhandled + Task unobserved 예외 핸들러 (PR-10, G5).
         //     background 스레드 (DetectionService.RunLoop / Logger drain / UpdateChecker / StartupTaskManager)
         //     의 outer catch 가 흡수하지 못한 예외 — 주로 NullReferenceException 등 로직 버그 —
-        //     를 koenvue_crash.txt 에 박제. Logger.Error 도 pre-Init 버퍼 경유로 안전.
+        //     를 koenvue_diagnostics.txt 에 박제. Logger.Error 도 pre-Init 버퍼 경유로 안전.
         RegisterCrashHandlers();
 
         // 0b. 설정 로드 — mutex 획득 전 (PR-15). admin_elevation 옵션을 자기 IL / 재진입 가드
