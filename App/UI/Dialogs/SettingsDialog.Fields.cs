@@ -11,7 +11,7 @@ namespace KoEnVue.App.UI.Dialogs;
 /// <summary>
 /// SettingsDialog 의 필드 정의/팩토리/빌더 분할.
 /// FieldDef/RowDef 메타데이터, 6개 팩토리(Bool/Int/Dbl/Str/ColorField/Combo),
-/// BuildRowDefs(14 섹션 — 일반/공통 색상/플로팅 배지·커서 헤일로 대분류), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
+/// BuildRowDefs(14 섹션 — 일반/공통 색상/한/영 배지·커서 헤일로 대분류), 헬퍼(ReadEdit/GetPresetAt/SetPresetAt/언어 매핑).
 /// </summary>
 internal static partial class SettingsDialog
 {
@@ -71,7 +71,7 @@ internal static partial class SettingsDialog
     // ================================================================
 
     /// <summary>
-    /// 14개 섹션(일반/공통 색상/플로팅 배지·커서 헤일로 대분류)의 RowDef 리스트를 빌드하며 _fields를 채운다.
+    /// 14개 섹션(일반/공통 색상/한/영 배지·커서 헤일로 대분류)의 RowDef 리스트를 빌드하며 _fields를 채운다.
     /// 각 섹션 제목, 라벨, 검증 범위는 언어(I18n.IsKorean)에 따라 결정된다.
     /// </summary>
     private static List<RowDef> BuildRowDefs()
@@ -89,7 +89,7 @@ internal static partial class SettingsDialog
             rows.Add(new RowDef { IsSection = false, Field = f });
         }
 
-        // 섹션은 일반 / 공통 색상 / 플로팅 배지 / 커서 헤일로 로 묶고 고급은 말미에 둔다. 각 FieldDef 의
+        // 섹션은 일반 / 공통 색상 / 한/영 배지 / 커서 헤일로 로 묶고 고급은 말미에 둔다. 각 FieldDef 의
         // get/Commit 람다는 독립적이라 순서가 바뀌어도 정상 — _fields 인덱스와 컨트롤 짝만 Add 가 보장.
 
         // ================================================================
@@ -143,11 +143,11 @@ internal static partial class SettingsDialog
             (c, v) => c with { TrayQuickOpacityPresets = SetPresetAt(c.TrayQuickOpacityPresets, 2, v) }));
 
         // ================================================================
-        // 3. 공통 — 색상 (플로팅 배지/커서 헤일로)
+        // 3. 공통 — 색상 (한/영 배지/커서 헤일로)
         // ================================================================
         // 배경색은 CursorOverlay.BuildStyle 이 커서 동심원 색으로도 그대로 사용한다 (메인·커서 공용).
         // 테마는 이 배경색(+글자색)을 일괄 지정/복원하는 프리셋이라 같은 섹션에 둔다. 메인·커서 공용이라
-        // 플로팅 배지 섹션들 맨 앞에 배치. 섹션 접두 "공통" = 트레이 메뉴 공통 블록과 용어 정합.
+        // 한/영 배지 섹션들 맨 앞에 배치. 섹션 접두 "공통" = 트레이 메뉴 공통 블록과 용어 정합.
         Sec("공통 — 색상", "Shared — Colors");
         Add(Combo("테마", "Theme",
             ko ? ["사용자 지정", "미니멀", "비비드", "파스텔", "다크", "시스템"]
@@ -162,9 +162,9 @@ internal static partial class SettingsDialog
             c => c.NonKoreanBg, (c, v) => c with { NonKoreanBg = v }));
 
         // ================================================================
-        // 4. 플로팅 배지 — 표시 모드
+        // 4. 한/영 배지 — 표시 모드
         // ================================================================
-        Sec("플로팅 배지 — 표시 모드", "Floating badge — Display Mode");
+        Sec("한/영 배지 — 표시 모드", "Badge — Display Mode");
         Add(Combo("표시 방식", "Display mode",
             ko ? ["이벤트 시", "항상"] : ["On Event", "Always"],
             c => (int)c.DisplayMode,
@@ -185,9 +185,9 @@ internal static partial class SettingsDialog
             (c, v) => c with { EventTriggers = c.EventTriggers with { OnImeChange = v } }));
 
         // ================================================================
-        // 5. 플로팅 배지 — 크기·테두리
+        // 5. 한/영 배지 — 크기·테두리
         // ================================================================
-        Sec("플로팅 배지 — 크기·테두리", "Floating badge — Size & Border");
+        Sec("한/영 배지 — 크기·테두리", "Badge — Size & Border");
         Add(Int("라벨 너비 (px)", "Label width (px)",
             DefaultConfig.MinLabelWidth, DefaultConfig.MaxLabelWidth,
             c => c.LabelWidth, (c, v) => c with { LabelWidth = v }));
@@ -204,11 +204,11 @@ internal static partial class SettingsDialog
             c => c.BorderColor, (c, v) => c with { BorderColor = v }));
 
         // ================================================================
-        // 6. 플로팅 배지 — 글자색·투명도
+        // 6. 한/영 배지 — 글자색·투명도
         // ================================================================
         // 글자색은 메인 라벨 텍스트 전용 (커서는 글자가 없어 헤일로 흰색 고정). 투명도도 메인 전용
         // (커서 본체는 항상 불투명, 헤일로 투명도는 동심원 섹션의 CursorHaloOpacity 별도).
-        Sec("플로팅 배지 — 글자색·투명도", "Floating badge — Foreground & Opacity");
+        Sec("한/영 배지 — 글자색·투명도", "Badge — Foreground & Opacity");
         Add(ColorField("한글 글자색", "Hangul foreground",
             c => c.HangulFg, (c, v) => c with { HangulFg = v }));
         Add(ColorField("영문 글자색", "English foreground",
@@ -223,9 +223,9 @@ internal static partial class SettingsDialog
             c => c.ActiveOpacity, (c, v) => c with { ActiveOpacity = v }));
 
         // ================================================================
-        // 7. 플로팅 배지 — 텍스트
+        // 7. 한/영 배지 — 텍스트
         // ================================================================
-        Sec("플로팅 배지 — 텍스트", "Floating badge — Text");
+        Sec("한/영 배지 — 텍스트", "Badge — Text");
         Add(Str("글꼴", "Font family",
             c => c.FontFamily, (c, v) => c with { FontFamily = v }, allowEmpty: false));
         Add(Int("글꼴 크기", "Font size",
@@ -243,10 +243,10 @@ internal static partial class SettingsDialog
             c => c.NonKoreanLabel, (c, v) => c with { NonKoreanLabel = v }, allowEmpty: false));
 
         // ================================================================
-        // 8. 플로팅 배지 — 애니메이션
+        // 8. 한/영 배지 — 애니메이션
         // ================================================================
         // AnimationEnabled / ChangeHighlight는 트레이 메뉴에서 토글 가능하므로 여기서 제외.
-        Sec("플로팅 배지 — 애니메이션", "Floating badge — Animation");
+        Sec("한/영 배지 — 애니메이션", "Badge — Animation");
         Add(Int("페이드 인 (ms)", "Fade in (ms)",
             DefaultConfig.MinFadeMs, DefaultConfig.MaxFadeMs,
             c => c.FadeInMs, (c, v) => c with { FadeInMs = v }));
@@ -266,9 +266,9 @@ internal static partial class SettingsDialog
             c => c.SlideSpeedMs, (c, v) => c with { SlideSpeedMs = v }));
 
         // ================================================================
-        // 9. 플로팅 배지 — 감지·숨김
+        // 9. 한/영 배지 — 감지·숨김
         // ================================================================
-        Sec("플로팅 배지 — 감지·숨김", "Floating badge — Detection & Hiding");
+        Sec("한/영 배지 — 감지·숨김", "Badge — Detection & Hiding");
         Add(Int("감지 주기 (ms)", "Poll interval (ms)",
             DefaultConfig.MinPollMs, DefaultConfig.MaxPollMs,
             c => c.PollIntervalMs, (c, v) => c with { PollIntervalMs = v }));
@@ -289,9 +289,9 @@ internal static partial class SettingsDialog
             c => c.HideOnLockScreen, (c, v) => c with { HideOnLockScreen = v }));
 
         // ================================================================
-        // 10. 플로팅 배지 — 앱별 프로필
+        // 10. 한/영 배지 — 앱별 프로필
         // ================================================================
-        Sec("플로팅 배지 — 앱별 프로필", "Floating badge — App Profiles");
+        Sec("한/영 배지 — 앱별 프로필", "Badge — App Profiles");
         Add(Combo("매칭 기준", "Match by",
             ko ? ["프로세스", "윈도우 클래스", "윈도우 타이틀"]
                : ["Process", "Window class", "Window title"],
@@ -304,9 +304,9 @@ internal static partial class SettingsDialog
             (c, i) => c with { AppFilterMode = (AppFilterMode)i }));
 
         // ================================================================
-        // 11. 플로팅 배지 — 조작
+        // 11. 한/영 배지 — 조작
         // ================================================================
-        Sec("플로팅 배지 — 조작", "Floating badge — Interaction");
+        Sec("한/영 배지 — 조작", "Badge — Interaction");
         Add(Int("창 스냅 간격 (px)", "Snap gap (px)",
             DefaultConfig.MinSnapGapPx, DefaultConfig.MaxSnapGapPx,
             c => c.SnapGapPx, (c, v) => c with { SnapGapPx = v }));
@@ -324,7 +324,8 @@ internal static partial class SettingsDialog
             c => c.CursorIndicatorEnabled, (c, v) => c with { CursorIndicatorEnabled = v }));
         Add(Bool("항상 표시 (마우스 추종)", "Always show (follow cursor)",
             c => c.CursorAlwaysShow, (c, v) => c with { CursorAlwaysShow = v }));
-        Add(Combo("커서 헤일로 표시", "Cursor halo display",
+        // 트레이의 같은 설정과 이름을 맞춘다 — "표시" 는 켜고 끄는 스위치로 읽혔다.
+        Add(Combo("선명도", "Sharpness",
             ko ? ["흐릿하게", "선명하게", "이동 중 흐릿하게"]
                : ["Soft", "Sharp", "Soft while moving"],
             c => (int)c.CursorDisplayMode,

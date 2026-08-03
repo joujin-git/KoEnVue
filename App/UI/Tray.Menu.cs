@@ -131,44 +131,7 @@ internal static partial class Tray
         User32.CheckMenuRadioItem(hDragModMenu, (uint)IDM_DRAG_MOD_NONE,
             (uint)IDM_DRAG_MOD_CTRL_ALT, dragModCheckId, Win32Constants.MF_BYCOMMAND);
 
-        // --- 메인 메뉴 ---
-        IntPtr hMenu = User32.CreatePopupMenu();
-
-        // 헤더 라인 — 메뉴 최상단 단일 진입점. _pendingUpdate 따라 "v{ver} — GitHub" 또는
-        // "v{cur} → {newTag} — 다운로드". 볼드 렌더 위해 MF_DEFAULT 플래그 + SetMenuDefaultItem
-        // 둘 다 적용 (Win11 일부 환경에서 플래그만으로 시각 적용 안 되는 케이스 보강).
-        // _pendingUpdate.Version 은 release tag (v1.0.1) 라 prefix 가 이미 포함됨.
-        string headerLabel = _pendingUpdate is not null
-            ? $"KoEnVue v{DefaultConfig.AppVersion} → {_pendingUpdate.Version} — {I18n.MenuDownload}"
-            : $"KoEnVue v{DefaultConfig.AppVersion} — GitHub";
-        User32.AppendMenuW(hMenu,
-            Win32Constants.MF_STRING | Win32Constants.MF_DEFAULT,
-            (nuint)IDM_HOMEPAGE, headerLabel);
-        User32.SetMenuDefaultItem(hMenu, (uint)IDM_HOMEPAGE, 0); // 0 = by command ID (not position)
-        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
-
-        // 블록 순서: 메인 → 커서 → 공통(애니메이션) → 앱(시작/관리자) → 상세설정 → 종료.
-        // AnimationEnabled 는 메인 fade/highlight/slide + 커서 팝의 마스터 스위치 — 커서 블록 직후에 둔다.
-
-        // --- 플로팅 배지 ---
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hOpacityMenu, I18n.MenuOpacity);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP, (nuint)(nint)hSizeMenu, I18n.MenuSize);
-        uint snapFlags = config.SnapToWindows ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
-        User32.AppendMenuW(hMenu, snapFlags, (nuint)IDM_SNAP_TO_WINDOWS, I18n.MenuSnapToWindows);
-        uint highlightFlags = config.ChangeHighlight ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
-        User32.AppendMenuW(hMenu, highlightFlags, (nuint)IDM_CHANGE_HIGHLIGHT, I18n.MenuChangeHighlight);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
-            (nuint)(nint)hDefaultPosMenu, I18n.MenuDefaultPosition);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
-            (nuint)(nint)hPositionModeMenu, I18n.MenuPositionMode);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
-            (nuint)(nint)hDragModMenu, I18n.MenuDragModifier);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_CLEANUP, I18n.MenuCleanup);
-        uint userHiddenFlags = config.UserHidden ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
-        User32.AppendMenuW(hMenu, userHiddenFlags, (nuint)IDM_USER_HIDDEN, I18n.MenuUserHidden);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
-
-        // --- 커서 헤일로 ---
+        // --- 서브메뉴: 커서 선명도 ---
         IntPtr hCursorDisplayMenu = User32.CreatePopupMenu();
         User32.AppendMenuW(hCursorDisplayMenu, Win32Constants.MF_STRING,
             (nuint)IDM_CURSOR_DISPLAY_SOFT, I18n.MenuCursorDisplaySoft);
@@ -185,17 +148,71 @@ internal static partial class Tray
         User32.CheckMenuRadioItem(hCursorDisplayMenu,
             (uint)IDM_CURSOR_DISPLAY_SOFT, (uint)IDM_CURSOR_DISPLAY_MOTION,
             cursorDisplayCheckId, Win32Constants.MF_BYCOMMAND);
-        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
+
+        // --- 대분류 서브메뉴: 한/영 배지 ---
+        // 부모가 대상을 밝히므로 자식 라벨에는 "한/영 배지" 접두를 두지 않는다.
+        IntPtr hBadgeMenu = User32.CreatePopupMenu();
+        User32.AppendMenuW(hBadgeMenu, Win32Constants.MF_POPUP,
+            (nuint)(nint)hOpacityMenu, I18n.MenuOpacity);
+        User32.AppendMenuW(hBadgeMenu, Win32Constants.MF_POPUP,
+            (nuint)(nint)hSizeMenu, I18n.MenuSize);
+        uint snapFlags = config.SnapToWindows ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
+        User32.AppendMenuW(hBadgeMenu, snapFlags, (nuint)IDM_SNAP_TO_WINDOWS, I18n.MenuSnapToWindows);
+        uint highlightFlags = config.ChangeHighlight ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
+        User32.AppendMenuW(hBadgeMenu, highlightFlags, (nuint)IDM_CHANGE_HIGHLIGHT, I18n.MenuChangeHighlight);
+        User32.AppendMenuW(hBadgeMenu, Win32Constants.MF_POPUP,
+            (nuint)(nint)hDefaultPosMenu, I18n.MenuDefaultPosition);
+        User32.AppendMenuW(hBadgeMenu, Win32Constants.MF_POPUP,
+            (nuint)(nint)hPositionModeMenu, I18n.MenuPositionMode);
+        User32.AppendMenuW(hBadgeMenu, Win32Constants.MF_POPUP,
+            (nuint)(nint)hDragModMenu, I18n.MenuDragModifier);
+        User32.AppendMenuW(hBadgeMenu, Win32Constants.MF_STRING, (nuint)IDM_CLEANUP, I18n.MenuCleanup);
+
+        // --- 대분류 서브메뉴: 커서 헤일로 ---
+        IntPtr hCursorMenu = User32.CreatePopupMenu();
+        User32.AppendMenuW(hCursorMenu, Win32Constants.MF_POPUP,
             (nuint)(nint)hCursorDisplayMenu, I18n.MenuCursorDisplay);
         uint cursorHighlightFlags = config.CursorChangeHighlight ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
-        User32.AppendMenuW(hMenu, cursorHighlightFlags, (nuint)IDM_CURSOR_HIGHLIGHT, I18n.MenuCursorHighlight);
-        // "커서 헤일로 숨김" — 메인 "플로팅 배지 숨김" 과 같은 패턴 (MF_CHECKED = 현재 숨김 상태).
-        // 라벨이 "숨김" 이므로 체크 = "현재 숨김 중" = CursorIndicatorEnabled false. 클릭 시 enabled 반전.
+        User32.AppendMenuW(hCursorMenu, cursorHighlightFlags, (nuint)IDM_CURSOR_HIGHLIGHT, I18n.MenuCursorHighlight);
+
+        // --- 메인 메뉴 ---
+        IntPtr hMenu = User32.CreatePopupMenu();
+
+        // 헤더 라인 — 메뉴 최상단 단일 진입점. _pendingUpdate 따라 "v{ver} — GitHub" 또는
+        // "v{cur} → {newTag} — 다운로드". 볼드 렌더 위해 MF_DEFAULT 플래그 + SetMenuDefaultItem
+        // 둘 다 적용 (Win11 일부 환경에서 플래그만으로 시각 적용 안 되는 케이스 보강).
+        // _pendingUpdate.Version 은 release tag (v1.0.1) 라 prefix 가 이미 포함됨.
+        string headerLabel = _pendingUpdate is not null
+            ? $"KoEnVue v{DefaultConfig.AppVersion} → {_pendingUpdate.Version} — {I18n.MenuDownload}"
+            : $"KoEnVue v{DefaultConfig.AppVersion} — GitHub";
+        User32.AppendMenuW(hMenu,
+            Win32Constants.MF_STRING | Win32Constants.MF_DEFAULT,
+            (nuint)IDM_HOMEPAGE, headerLabel);
+        User32.SetMenuDefaultItem(hMenu, (uint)IDM_HOMEPAGE, 0); // 0 = by command ID (not position)
+        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
+
+        // 블록 순서: 숨김 토글 2종 → 대분류 2종 → 공통(애니메이션) → 앱(시작/관리자) → 상세설정 → 종료.
+        // 설정 항목은 대상별 서브메뉴로 접어 최상위를 짧게 유지하되, 숨김 토글만은 접지 않고 맨 위에
+        // 남긴다 — 가장 자주 쓰는 항목이고, 좌클릭 순환을 끈 환경에서는 유일한 숨김 해제 경로다.
+        // AnimationEnabled 는 배지 fade/highlight/slide + 커서 팝의 마스터 스위치 — 두 대분류 직후에 둔다.
+
+        // --- 숨김 토글 (MF_CHECKED = 현재 숨김 상태) ---
+        // 라벨이 "숨김" 이므로 체크 = "지금 안 보임". 배지는 UserHidden 이 그대로 숨김 여부인 반면
+        // 커서는 CursorIndicatorEnabled 가 "보임" 이라 부정이 붙는다 — 클릭 시 각각 반전.
+        uint userHiddenFlags = config.UserHidden ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
+        User32.AppendMenuW(hMenu, userHiddenFlags, (nuint)IDM_USER_HIDDEN, I18n.MenuUserHidden);
         uint cursorToggleFlags = !config.CursorIndicatorEnabled ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
         User32.AppendMenuW(hMenu, cursorToggleFlags, (nuint)IDM_CURSOR_TOGGLE, I18n.MenuCursorIndicator);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
 
-        // --- 공통 (메인·커서 애니메이션 마스터) ---
+        // --- 대분류 (설정 항목은 여기로 접힌다) ---
+        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
+            (nuint)(nint)hBadgeMenu, I18n.MenuBadgeGroup);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_POPUP,
+            (nuint)(nint)hCursorMenu, I18n.MenuCursorGroup);
+        User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
+
+        // --- 공통 (배지·커서 애니메이션 마스터) ---
         uint animationFlags = config.AnimationEnabled ? Win32Constants.MF_CHECKED : Win32Constants.MF_UNCHECKED;
         User32.AppendMenuW(hMenu, animationFlags, (nuint)IDM_ANIMATION_ENABLED, I18n.MenuAnimation);
         User32.AppendMenuW(hMenu, Win32Constants.MF_SEPARATOR, 0, null);
@@ -236,8 +253,9 @@ internal static partial class Tray
             pt.X, pt.Y, 0, hwndMain, IntPtr.Zero);
         User32.PostMessageW(hwndMain, Win32Constants.WM_NULL, IntPtr.Zero, IntPtr.Zero);
 
-        // DestroyMenu 는 MF_POPUP 로 부착된 서브메뉴를 자동 파괴. AppendMenuW(MF_POPUP) 가 모두 성공한
-        // 전제이고 P/Invoke 는 BOOL 만 반환해 중단 경로가 없어 누수가 없다.
+        // DestroyMenu 는 MF_POPUP 로 부착된 서브메뉴를 **재귀적으로** 파괴한다 — 대분류 도입으로
+        // 중첩이 2단(hMenu → hBadgeMenu → hOpacityMenu 등)이 됐지만 해제는 이 한 줄로 끝난다.
+        // AppendMenuW(MF_POPUP) 가 모두 성공한 전제이고 P/Invoke 는 BOOL 만 반환해 중단 경로가 없다.
         User32.DestroyMenu(hMenu);
     }
 }

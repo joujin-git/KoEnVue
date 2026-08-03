@@ -60,6 +60,9 @@ internal static class I18n
         // 트레이 메뉴 — 투명도
         OpacityHigh, OpacityNormal, OpacityLow,
 
+        // 트레이 메뉴 — 대분류 서브메뉴 (두 인디를 각각 접는 부모 항목)
+        MenuBadgeGroup, MenuCursorGroup,
+
         // 트레이 메뉴 — 메인
         MenuOpacity, MenuSize, MenuStartup,
         MenuDefaultPosition, MenuDefaultPosSetCurrent, MenuDefaultPosReset,
@@ -116,6 +119,11 @@ internal static class I18n
         [I18nKey.OpacityNormal]            = ("보통", "Normal"),
         [I18nKey.OpacityLow]               = ("연하게", "Low"),
 
+        // 트레이 메뉴 — 대분류 서브메뉴. 부모가 대상을 밝히므로 자식 라벨에는 접두를 두지 않는다
+        // ("한/영 배지 ▸ 전환 강조"). 최상위에 남는 숨김 토글 2종만 접두를 유지한다.
+        [I18nKey.MenuBadgeGroup]           = ("한/영 배지", "Hangul/English badge"),
+        [I18nKey.MenuCursorGroup]          = ("커서 헤일로", "Cursor halo"),
+
         // 트레이 메뉴 — 메인
         [I18nKey.MenuOpacity]              = ("투명도", "Opacity"),
         [I18nKey.MenuSize]                 = ("크기", "Size"),
@@ -125,8 +133,12 @@ internal static class I18n
         [I18nKey.MenuDefaultPosReset]      = ("초기화", "Reset"),
         [I18nKey.MenuSnapToWindows]        = ("창에 자석처럼 붙이기", "Snap to Windows"),
         [I18nKey.MenuAnimation]            = ("애니메이션 사용", "Animations enabled"),
-        [I18nKey.MenuChangeHighlight]      = ("플로팅 배지 변경 강조", "Floating badge highlight"),
-        [I18nKey.MenuPositionMode]         = ("위치 모드", "Position Mode"),
+        // MenuChangeHighlight / MenuCursorHighlight 는 값이 같지만 키를 합치지 않는다 — 서로 다른
+        // 서브메뉴에 속한 별개 설정이라, 한쪽 문구만 바꿔야 할 때 키가 하나면 손댈 수 없다.
+        [I18nKey.MenuChangeHighlight]      = ("전환 강조", "Transition highlight"),
+        // 영어 "Mode" 는 오해가 없어 그대로 둔다. 한국어 "모드" 만 하위 항목(고정 위치/창 기준)이
+        // 무엇을 고르는 것인지 드러나도록 "기준" 으로 바꿨다.
+        [I18nKey.MenuPositionMode]         = ("위치 기준", "Position Mode"),
         [I18nKey.MenuPositionFixed]        = ("고정 위치", "Fixed Position"),
         [I18nKey.MenuPositionWindow]       = ("창 기준", "Relative to Window"),
         [I18nKey.MenuDragModifier]         = ("드래그 활성 키", "Drag Modifier"),
@@ -135,10 +147,12 @@ internal static class I18n
         [I18nKey.MenuDragModifierAlt]      = ("Alt", "Alt"),
         [I18nKey.MenuDragModifierCtrlAlt]  = ("Ctrl + Alt", "Ctrl + Alt"),
         [I18nKey.MenuCleanup]              = ("위치 기록 정리...", "Clean position history..."),
-        [I18nKey.MenuUserHidden]           = ("플로팅 배지 숨김", "Hide floating badge"),
+        // 숨김 2종은 최상위에 남으므로 부모 문맥이 없다 — 대상을 라벨에 유지한다.
+        [I18nKey.MenuUserHidden]           = ("한/영 배지 숨김", "Hide badge"),
         [I18nKey.MenuCursorIndicator]      = ("커서 헤일로 숨김", "Hide cursor halo"),
-        [I18nKey.MenuCursorHighlight]      = ("커서 헤일로 변경 강조", "Cursor halo highlight"),
-        [I18nKey.MenuCursorDisplay]        = ("커서 헤일로 표시", "Cursor halo display"),
+        [I18nKey.MenuCursorHighlight]      = ("전환 강조", "Transition highlight"),
+        // "표시" 는 켜고 끄는 스위치로 읽혔다 — 실제로는 아래 3종 선명도 선택이라 이름을 맞췄다.
+        [I18nKey.MenuCursorDisplay]        = ("선명도", "Sharpness"),
         [I18nKey.MenuCursorDisplaySoft]    = ("흐릿하게", "Soft"),
         [I18nKey.MenuCursorDisplaySharp]   = ("선명하게", "Sharp"),
         [I18nKey.MenuCursorDisplayMotion]  = ("이동 중 흐릿하게", "Soft while moving"),
@@ -183,8 +197,8 @@ internal static class I18n
 
         // 트레이 메시지 박스
         [I18nKey.TrayPositionUnavailable]   = (
-            "플로팅 배지 위치를 확인할 수 없습니다. 잠시 후 다시 시도하세요.",
-            "Cannot determine current floating badge position. Please try again shortly."),
+            "한/영 배지 위치를 확인할 수 없습니다. 잠시 후 다시 시도하세요.",
+            "Cannot determine current badge position. Please try again shortly."),
         [I18nKey.TrayPositionHistoryEmpty]  = ("저장된 위치 기록이 없습니다.", "No saved position history."),
         // 부팅 직후 배경 schtasks 동기화(~8초)와 겹쳐 토글이 무시된 경우. 조용히 넘어가면
         // "눌렀는데 아무 일도 안 일어난다" 가 되므로 재시도를 안내한다.
@@ -252,6 +266,8 @@ internal static class I18n
     public static string OpacityLow    => Get(I18nKey.OpacityLow);
 
     // 트레이 메뉴 — 메인
+    public static string MenuBadgeGroup           => Get(I18nKey.MenuBadgeGroup);
+    public static string MenuCursorGroup          => Get(I18nKey.MenuCursorGroup);
     public static string MenuOpacity              => Get(I18nKey.MenuOpacity);
     public static string MenuSize                 => Get(I18nKey.MenuSize);
     public static string MenuStartup              => Get(I18nKey.MenuStartup);

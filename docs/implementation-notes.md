@@ -67,11 +67,11 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 ## Cursor halo rendering
 
-> 본 섹션은 PR-B (커서 추종 인디케이터) 의 렌더 + 정지 검출 + 파사드 통합 파이프라인. 플로팅 배지와는 별도 엔진 (`LayeredCursorBase`) + 별도 HWND (`_hwndCursorOverlay`) 로 처리된다. PR-B 완료 — 사용자가 트레이 메뉴 "커서 헤일로" 체크박스로 활성화 가능.
+> 본 섹션은 PR-B (커서 추종 인디케이터) 의 렌더 + 정지 검출 + 파사드 통합 파이프라인. 한/영 배지와는 별도 엔진 (`LayeredCursorBase`) + 별도 HWND (`_hwndCursorOverlay`) 로 처리된다. PR-B 완료 — 사용자가 트레이 메뉴 "커서 헤일로" 체크박스로 활성화 가능.
 
 ### 별도 엔진 사용 (P4 예외)
 
-`Core/Windowing/LayeredCursorBase` 는 `LayeredOverlayBase` 와 책임이 겹치는 ~120 LOC (DIB 생성 / premultiply / `UpdateLayeredWindow`) 를 의도적으로 중복 보유한다. P4 ("하나의 구현만") 예외 정당화: 플로팅 배지 알파 race 미해결 영역에 변경면을 추가하지 않기 위한 의도적 분리. 메인 엔진은 폰트 / 드래그 / 라벨 측정 / `WindowSnapHelper` 책임이 있어 콜백 시그니처가 `Func<IntPtr hdc, OverlayStyle, OverlayMetrics, (int w, int h)>` (hdc 전달, DIB ppvBits 는 내부에서 `GetCurrentObject` + `GetObjectDibSection` 으로 재추출) 인 반면, cursor 엔진은 GDI 그리기 사용 없이 픽셀 셰이딩만 수행하므로 `Func<IntPtr ppvBits, CursorStyle, CursorMetrics, (int w, int h)>` 로 ppvBits 를 직접 전달 — main 의 `Gdi32.cs` 의 `GetCurrentObject` / `GetObjectDibSection` 헤더 변경 0. 자세한 결정 근거 + cursor-tray 학습 결과는 [dev-notes/2026-05-27-cursor-indicator.md](dev-notes/2026-05-27-cursor-indicator.md).
+`Core/Windowing/LayeredCursorBase` 는 `LayeredOverlayBase` 와 책임이 겹치는 ~120 LOC (DIB 생성 / premultiply / `UpdateLayeredWindow`) 를 의도적으로 중복 보유한다. P4 ("하나의 구현만") 예외 정당화: 한/영 배지 알파 race 미해결 영역에 변경면을 추가하지 않기 위한 의도적 분리. 메인 엔진은 폰트 / 드래그 / 라벨 측정 / `WindowSnapHelper` 책임이 있어 콜백 시그니처가 `Func<IntPtr hdc, OverlayStyle, OverlayMetrics, (int w, int h)>` (hdc 전달, DIB ppvBits 는 내부에서 `GetCurrentObject` + `GetObjectDibSection` 으로 재추출) 인 반면, cursor 엔진은 GDI 그리기 사용 없이 픽셀 셰이딩만 수행하므로 `Func<IntPtr ppvBits, CursorStyle, CursorMetrics, (int w, int h)>` 로 ppvBits 를 직접 전달 — main 의 `Gdi32.cs` 의 `GetCurrentObject` / `GetObjectDibSection` 헤더 변경 0. 자세한 결정 근거 + cursor-tray 학습 결과는 [dev-notes/2026-05-27-cursor-indicator.md](dev-notes/2026-05-27-cursor-indicator.md).
 
 ### Distance-field 분석적 AA 픽셀 셰이딩
 
@@ -98,28 +98,28 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 - **셰이더 가드** (`App/UI/CursorRenderer.cs`): `MinVisibleAlpha = 1.0 / 255.0` 상수를 두고 `ShadeDib` 픽셀 출력 분기를 `avgAlpha > 0.0` → `avgAlpha >= MinVisibleAlpha` 로 강화 — round-down 부산 픽셀 자체를 출력에서 제외
 - **엔진 가드** (`Core/Windowing/LayeredCursorBase.cs`): `ApplyPremultipliedAlpha` 의 `a == 0 && (r | g | b) != 0` 분기에서 메인 `LayeredOverlayBase` 동명 가드 (GDI AA 엣지 보존 — `a = 255` 복구) 와 **의미가 다르게** RGB 도 0 으로 정리. cursor 셰이더는 GDI 그리기를 안 쓰고 alpha 를 명시적으로 쓰므로, 그 패턴의 픽셀은 GDI AA 엣지가 아니라 셰이더의 round-down 부산물이라 fully-opaque 점으로 복구하면 안 됨
 
-두 가드는 중복 방어 — 셰이더 가드가 1차 차단, 엔진 가드가 셰이더 외 경로에서도 안전망. 플로팅 배지는 `DrawTextW` AA 가 alpha=0 RGB!=0 픽셀을 유효 엣지로 출력하므로 동명 가드의 의미가 정반대. 동일 이름 함수의 의미 차이가 cursor 도입 시 메인 가드의 무의식적 복사로 외곽 잡티 회귀를 만들었던 학습 — [dev-notes/2026-05-27-cursor-indicator.md "잠재 버그 fix — 외곽 잡티"](dev-notes/2026-05-27-cursor-indicator.md). PR-18 이 DIB 생성 + `UpdateLayeredWindow` 블리트 ~50 LOC 를 공유 helper 로 추출할 때 본 `ApplyPremultipliedAlpha` 는 의미 차이로 의도적 분기 보존 — 자세한 결정 근거 (옵션 A enum 전달 / 옵션 B 콜백 디스패치 양쪽의 거부 이유): [dev-notes/2026-05-28-pr-18-core-windowing.md](dev-notes/2026-05-28-pr-18-core-windowing.md).
+두 가드는 중복 방어 — 셰이더 가드가 1차 차단, 엔진 가드가 셰이더 외 경로에서도 안전망. 한/영 배지는 `DrawTextW` AA 가 alpha=0 RGB!=0 픽셀을 유효 엣지로 출력하므로 동명 가드의 의미가 정반대. 동일 이름 함수의 의미 차이가 cursor 도입 시 메인 가드의 무의식적 복사로 외곽 잡티 회귀를 만들었던 학습 — [dev-notes/2026-05-27-cursor-indicator.md "잠재 버그 fix — 외곽 잡티"](dev-notes/2026-05-27-cursor-indicator.md). PR-18 이 DIB 생성 + `UpdateLayeredWindow` 블리트 ~50 LOC 를 공유 helper 로 추출할 때 본 `ApplyPremultipliedAlpha` 는 의미 차이로 의도적 분기 보존 — 자세한 결정 근거 (옵션 A enum 전달 / 옵션 B 콜백 디스패치 양쪽의 거부 이유): [dev-notes/2026-05-28-pr-18-core-windowing.md](dev-notes/2026-05-28-pr-18-core-windowing.md).
 
 ### 색상 합성 (App 측 책임)
 
 `CursorStyle` 의 3 색상 (`InnerColorArgb` / `MiddleColorArgb` / `OuterColorArgb`) 합성은 App 측 파사드 [`CursorOverlay.BuildStyle`](../App/UI/CursorOverlay.cs) 의 책임. Inner/Middle 은 현재 IME 색상 (`config.HangulBg` / `EnglishBg` / `NonKoreanBg` 중 하나). Outer (CAPS LOCK ON 시 표시) 는 "한글/비한글을 같은 카테고리로 묶고 영문만 반대편 카테고리" 정책 — 영문 IME → 한글 색상, 한글/비한글 IME → 영문 색상 (사용자 인터뷰 결정). Core 는 IME 상태를 모르므로 primitive `uint` (ARGB) 만 받는다. ARGB 조립 자체는 [`ColorHelper.HexToArgb`](../Core/Color/ColorHelper.cs) (`0xFFRRGGBB` — 기존 `HexToColorRef` BGR 의 형제, P4 색상 변환 단일 진실원) 에 위임하며 파사드는 IME→색상 라우팅만 담당한다.
 
-**상태 배경색은 플로팅 배지 + 커서 헤일로 공용 단일 진실원**: `BuildStyle` 이 IME 상태별 배경색 (`HangulBg` / `EnglishBg` / `NonKoreanBg`) 을 **그대로** 커서 동심원 색 (`innerArgb` = Inner/Middle, `outerArgb` = CAPS Outer) 으로 라우팅하므로, 메인 라벨 배경에 쓰이는 동일 3 색이 커서 동심원에도 동시에 적용된다. 커서 전용 색 config 키는 없다 (의도 — 두 인디의 IME 색 정체성을 한 곳에서 관리). 이 공용성이 SettingsDialog 색상 섹션 구성의 근거다 ([Settings 다이얼로그 노출](#settings-다이얼로그-노출-pr-c--pr-21) 의 **"공통 — 색상"** (`Shared — Colors`) 섹션 = 배경색 3 + 테마 → 메인·커서 공용이라 트레이 메뉴 공통 블록과 같은 접두 "공통" + 메인·커서 모든 인디 섹션보다 앞에 배치, 글자색·투명도는 메인 전용이라 "플로팅 배지 — 글자색·투명도" 로 분리). 반면 글자색 (`*Fg`) 은 메인 라벨 텍스트 전용 — 커서는 글자가 없어 헤일로를 흰색 고정으로 그리고, 투명도도 메인 전용 (커서 본체는 항상 불투명, 커서 헤일로 투명도는 `CursorHaloOpacity` 별도 키).
+**상태 배경색은 한/영 배지 + 커서 헤일로 공용 단일 진실원**: `BuildStyle` 이 IME 상태별 배경색 (`HangulBg` / `EnglishBg` / `NonKoreanBg`) 을 **그대로** 커서 동심원 색 (`innerArgb` = Inner/Middle, `outerArgb` = CAPS Outer) 으로 라우팅하므로, 메인 라벨 배경에 쓰이는 동일 3 색이 커서 동심원에도 동시에 적용된다. 커서 전용 색 config 키는 없다 (의도 — 두 인디의 IME 색 정체성을 한 곳에서 관리). 이 공용성이 SettingsDialog 색상 섹션 구성의 근거다 ([Settings 다이얼로그 노출](#settings-다이얼로그-노출-pr-c--pr-21) 의 **"공통 — 색상"** (`Shared — Colors`) 섹션 = 배경색 3 + 테마 → 메인·커서 공용이라 트레이 메뉴 공통 블록과 같은 접두 "공통" + 메인·커서 모든 인디 섹션보다 앞에 배치, 글자색·투명도는 메인 전용이라 "한/영 배지 — 글자색·투명도" 로 분리). 반면 글자색 (`*Fg`) 은 메인 라벨 텍스트 전용 — 커서는 글자가 없어 헤일로를 흰색 고정으로 그리고, 투명도도 메인 전용 (커서 본체는 항상 불투명, 커서 헤일로 투명도는 `CursorHaloOpacity` 별도 키).
 
 ### IME 전환 스케일 팝 (PR-21)
 
-IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 강조 효과 — 플로팅 배지 `OverlayAnimator` 의 Highlight 서브페이즈와 **동형이되 별도 구현**. config 키 3종 (`cursor_change_highlight` on/off 기본 ON / `cursor_highlight_scale` 시작 배율 1.3 / `cursor_highlight_duration_ms` 복귀 시간 300) 은 메인의 `change_highlight` / `highlight_scale` / `highlight_duration_ms` 와 평행.
+IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 강조 효과 — 한/영 배지 `OverlayAnimator` 의 Highlight 서브페이즈와 **동형이되 별도 구현**. config 키 3종 (`cursor_change_highlight` on/off 기본 ON / `cursor_highlight_scale` 시작 배율 1.3 / `cursor_highlight_duration_ms` 복귀 시간 300) 은 메인의 `change_highlight` / `highlight_scale` / `highlight_duration_ms` 와 평행.
 
 **bbox 고정 → 팝 중 DIB 재생성 0**: `CursorStyle` 에 `HighlightScale` (매 프레임 배율, 기본 1.0) 필드 + `public const double MaxHighlightScale = 2.0` (팝 상한) 추가. `BoundingBoxLogicalPx` 가 매 프레임 변동하는 `HighlightScale` 이 아닌 **고정 상수 `MaxHighlightScale` 기준** 으로 DIB 한 변을 `Math.Ceiling((maxRadius + outsideMargin) * MaxHighlightScale)` 로 확대 계산한다. 그래서 `HighlightScale` 이 1.0↔`CursorHighlightScale` 사이에서 매 `AnimationFrameMs`(15) 프레임마다 바뀌어도 DIB 크기는 불변 — CAPS 토글 시 DIB 재생성 0 과 동일 원리 (외측 반지름 기준 고정 bbox 안에서 픽셀만 재계산). App 측 `DefaultConfig.MaxCursorHighlightScale = CursorStyle.MaxHighlightScale` 로 clamp 상한이 Core bbox 상한을 참조 (App→Core 단일 진실원, P6 정방향) — 사용자가 `cursor_highlight_scale` 를 2.0 까지 올려도 정점이 항상 bbox 안. `App/UI/CursorRenderer.Render` 는 반지름 3종 + 두께 2종에 `style.HighlightScale` 을 곱해 동심원을 통째로 확대 (평상시 1.0 → 셰이더 무변화).
 
 **경량 상태머신 (메인 `OverlayAnimator` 비재사용)**: 커서 헤일로는 별도 엔진 (P4 예외 영역) 이라 메인 `OverlayAnimator` (4-state + 5 트랙) 를 재사용하지 않고 `CursorOverlay` 내부 경량 상태 (`_popActive` + `_popStartTick` + `_hwndTimer`) 로 구현. 3 헬퍼:
 - **`TriggerPop()`** — `SetImeState` 가 가시 상태 + **`AnimationEnabled && CursorChangeHighlight`** 일 때 호출 (마스터 게이팅 — 아래 PR-22 항목 참조). `_popActive=true` + `_popStartTick=TickCount64` + `SetTimer(_hwndTimer, TIMER_ID_CURSOR_POP, AnimationFrameMs=15)` + **즉시 `HandleCursorPopTimer()` 1회 호출** (한 프레임 대기 없이 시작 배율로 첫 프레임 렌더). 가시 상태에서 IME 가 실제로 바뀌면 첫 프레임이 새 색 + 시작 배율로 렌더되므로 별도 색 갱신 `Render` 불요 — 마스터 OFF 또는 `CursorChangeHighlight` OFF 일 때만 색만 즉시 `Render`.
 
-**IME-전환 한정 트리거 (앱 포커스 변경으로는 강조 없음 — BEH-2 방향 A, 2026-07-24)**: 팝은 `SetImeState` 에서만 시작되고, `SetImeState` 는 (a) `Program.cs` 의 `HandleImeStateChanged` (= IME 상태 변경 통지) 에서만 호출 + (b) 진입부 `if (_lastImeState == state) return;` early-return 으로 **실제 IME 변경 시에만** 본문 진입한다. 앱 포커스 변경(`HandleFocusChanged`)은 커서 헤일로를 거치지 않으므로 **동일 IME 앱 사이 전환(한글앱→한글앱)은 강조 없음이 정상**, 다른 IME 앱 전환(한글↔영문)만 강조가 뜬다. 플로팅 배지와 일관 — 메인도 포커스 변경엔 `imeChanged:false` 라 highlight 안 함.
+**IME-전환 한정 트리거 (앱 포커스 변경으로는 강조 없음 — BEH-2 방향 A, 2026-07-24)**: 팝은 `SetImeState` 에서만 시작되고, `SetImeState` 는 (a) `Program.cs` 의 `HandleImeStateChanged` (= IME 상태 변경 통지) 에서만 호출 + (b) 진입부 `if (_lastImeState == state) return;` early-return 으로 **실제 IME 변경 시에만** 본문 진입한다. 앱 포커스 변경(`HandleFocusChanged`)은 커서 헤일로를 거치지 않으므로 **동일 IME 앱 사이 전환(한글앱→한글앱)은 강조 없음이 정상**, 다른 IME 앱 전환(한글↔영문)만 강조가 뜬다. 한/영 배지와 일관 — 메인도 포커스 변경엔 `imeChanged:false` 라 highlight 안 함.
 - **`HandleCursorPopTimer()`** (public — `Program.cs` WM_TIMER 분기에서 디스패치) — `AnimationFrameMs`(15) 프레임. `ratio = clamp(elapsed / durationMs, 0, 1)` (durationMs=0 이면 ratio=1 즉시 종료), `scale = CursorHighlightScale + (1.0 - CursorHighlightScale) * ratio` (메인 Highlight 와 동일 선형식 — 시작 배율에서 1.0 으로 수렴) → `_currentStyle with { HighlightScale = scale }` 재렌더. `ratio >= 1.0` 도달 시 `StopPop()`.
 - **`StopPop()`** — `KillTimer` + `HighlightScale` 1.0 복원. 팝 자연 완료 (ratio 1.0) + 숨김 (셸 UI / 이동) + `HandleConfigChanged` (스타일 재합성 전 정리) + `Dispose` 에서 호출. `_popActive` 가드로 멱등 (이미 정지면 no-op).
 
-`TIMER_ID_CURSOR_POP = 9` 는 `TIMER_ID_CURSOR_MOTION = 8` (모션 폴링) 과 별개 타이머 — 둘 다 메인 윈도우 (`_hwndTimer` = `_hwndMain`, `Program.EnableCursorOverlay` 가 `CursorOverlay.Initialize` 두 번째 인자로 주입) 에 걸린다. 트레이 메뉴 "커서 헤일로 변경 강조" (`IDM_CURSOR_HIGHLIGHT = 4013`) 토글이 `CursorChangeHighlight` on/off 를 제어 — 플로팅 배지 `IDM_CHANGE_HIGHLIGHT` 와 동형 (`MF_CHECKED` = ON). 설계 단일 진실원: [improvement-plan/PR-21-cursor-pop-animation.md](improvement-plan/PR-21-cursor-pop-animation.md).
+`TIMER_ID_CURSOR_POP = 9` 는 `TIMER_ID_CURSOR_MOTION = 8` (모션 폴링) 과 별개 타이머 — 둘 다 메인 윈도우 (`_hwndTimer` = `_hwndMain`, `Program.EnableCursorOverlay` 가 `CursorOverlay.Initialize` 두 번째 인자로 주입) 에 걸린다. 트레이 메뉴 "커서 헤일로 ▸ 전환 강조" (`IDM_CURSOR_HIGHLIGHT = 4013`) 토글이 `CursorChangeHighlight` on/off 를 제어 — 한/영 배지 `IDM_CHANGE_HIGHLIGHT` 와 동형 (`MF_CHECKED` = ON). 설계 단일 진실원: [improvement-plan/PR-21-cursor-pop-animation.md](improvement-plan/PR-21-cursor-pop-animation.md).
 
 ### 정지 검출 FSM + 항상 표시 모드
 
@@ -134,7 +134,7 @@ IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 강조 �
 
 ### cursor 윈도우 z-order 정책 — `WS_EX_TOPMOST` 생성 시 제거 + 첫 표시 시 명시 set + 주기 재적용
 
-cursor 인디 enable 부팅 + 탐색기 실행 시 플로팅 배지가 ~2.5초 후 사라지던 회귀의 **진짜 원인** — cursor 윈도우의 첫 `UpdateLayeredWindow(alpha=255)` 가 DWM 합성 단계에서 `WS_EX_TOPMOST` z-band 의 다른 윈도우 (`Shell_TrayWnd` 도 topmost) 재정렬 trigger → ~1초 후 `Shell_TrayWnd` 가 잠시 foreground 변경 → detection thread `SystemFilter` 매칭 → `WM_HIDE_INDICATOR` → 플로팅 배지 hide. **explorer.exe** 가 shell process 라 `Shell_TrayWnd` 와 메시지 큐 공유 → race 빈도 높음. **Total Commander** 등 일반 third-party launcher 에서는 race 없음 (사용자 진단 확정).
+cursor 인디 enable 부팅 + 탐색기 실행 시 한/영 배지가 ~2.5초 후 사라지던 회귀의 **진짜 원인** — cursor 윈도우의 첫 `UpdateLayeredWindow(alpha=255)` 가 DWM 합성 단계에서 `WS_EX_TOPMOST` z-band 의 다른 윈도우 (`Shell_TrayWnd` 도 topmost) 재정렬 trigger → ~1초 후 `Shell_TrayWnd` 가 잠시 foreground 변경 → detection thread `SystemFilter` 매칭 → `WM_HIDE_INDICATOR` → 한/영 배지 hide. **explorer.exe** 가 shell process 라 `Shell_TrayWnd` 와 메시지 큐 공유 → race 빈도 높음. **Total Commander** 등 일반 third-party launcher 에서는 race 없음 (사용자 진단 확정).
 
 fix:
 - [`Program.Bootstrap.CreateCursorOverlayWindow`](../Program.Bootstrap.cs) 에서 `WS_EX_TOPMOST` **제거** — cursor 윈도우 생성 시 일반 z-order 로 시작. 부팅 sequence 동안 다른 topmost 윈도우 영향 0.
@@ -143,7 +143,7 @@ fix:
 
 이전 안전망 `BootGracePeriodMs (500→1500ms)` 는 z-order fix 가 진짜 원인 차단 후 불요 — 제거. cursor 첫 표시는 `idle_delay_ms` (100ms) 후 정상 등장.
 
-**topmost 주기 재적용 (2026-06-01 후속 fix)** — 위 첫 표시 `SetWindowPos` 는 **1회**라, 다른 topmost 창 (풀스크린 게임 / 알림 토스트 / UAC) 이 위로 올라오면 cursor 인디가 그 아래 깔린 채 복구되지 않던 누락 (사용자 보고 "잘 동작하다가 갑자기 안 보임"). `ApplyTopmost()` (첫 표시 + 주기 재적용 단일 경로) 와 `MaybeReassertTopmost()` (`Environment.TickCount64` 게이트로 `DefaultConfig.CursorForceTopmostIntervalMs` 경과 시에만 `ApplyTopmost` (기본 5초) — 매 tick 호출되나 실제 `SetWindowPos` 는 5초당 1회) 헬퍼 신규. `HandleCursorMotionTimer` 의 **항상 표시 모드 + 정지 검출 모드 (가시 상태)** 양쪽 분기에서 `MaybeReassertTopmost()` 호출 — 두 모드 모두 보강 (정지 검출 모드도 가시 상태로 정지 중 다른 창에 가려질 수 있음). `CursorForceTopmostIntervalMs` 는 내부 const (AppConfig 키 아님 — koenvue_config.json 오버라이드 불가, 플로팅 배지 `ForceTopmostIntervalMs` 와 같은 기본값이나 의미 분리, 0 이면 비활성). 가설 CC 회귀는 첫 표시와 동일한 `SWP_NOSENDCHANGING` 플래그 세트 + 주기 빈도 제어로 차단 (생성 시 `WS_EX_TOPMOST` 재도입 안 함). cursor 전용 게이트 1줄 재사용으로 메인 `TopmostWatchdog` 미재사용 (P4 예외) — 옵션 A/B 비교 + 가설 CC 차단 메커니즘: [dev-notes/2026-05-27-cursor-indicator.md "topmost 유실 후속 fix (주기 재적용)"](dev-notes/2026-05-27-cursor-indicator.md). 본 재적용은 무로깅이라 육안 검증에만 의존했으나 (2026-06-01) `MaybeReassertTopmost` 의 실제 `ApplyTopmost` 호출 시 `Cursor halo topmost reasserted (interval=...ms)` Debug 로그를 추가 — 표시/숨김 전환·IME/CAPS 변경·config 반영·dispose 까지 상태 전환 엣지 7곳에 로그를 넣어 (핫패스 본문 제외, 스팸 0) 동작을 로그로 추적 가능하게 했다.
+**topmost 주기 재적용 (2026-06-01 후속 fix)** — 위 첫 표시 `SetWindowPos` 는 **1회**라, 다른 topmost 창 (풀스크린 게임 / 알림 토스트 / UAC) 이 위로 올라오면 cursor 인디가 그 아래 깔린 채 복구되지 않던 누락 (사용자 보고 "잘 동작하다가 갑자기 안 보임"). `ApplyTopmost()` (첫 표시 + 주기 재적용 단일 경로) 와 `MaybeReassertTopmost()` (`Environment.TickCount64` 게이트로 `DefaultConfig.CursorForceTopmostIntervalMs` 경과 시에만 `ApplyTopmost` (기본 5초) — 매 tick 호출되나 실제 `SetWindowPos` 는 5초당 1회) 헬퍼 신규. `HandleCursorMotionTimer` 의 **항상 표시 모드 + 정지 검출 모드 (가시 상태)** 양쪽 분기에서 `MaybeReassertTopmost()` 호출 — 두 모드 모두 보강 (정지 검출 모드도 가시 상태로 정지 중 다른 창에 가려질 수 있음). `CursorForceTopmostIntervalMs` 는 내부 const (AppConfig 키 아님 — koenvue_config.json 오버라이드 불가, 한/영 배지 `ForceTopmostIntervalMs` 와 같은 기본값이나 의미 분리, 0 이면 비활성). 가설 CC 회귀는 첫 표시와 동일한 `SWP_NOSENDCHANGING` 플래그 세트 + 주기 빈도 제어로 차단 (생성 시 `WS_EX_TOPMOST` 재도입 안 함). cursor 전용 게이트 1줄 재사용으로 메인 `TopmostWatchdog` 미재사용 (P4 예외) — 옵션 A/B 비교 + 가설 CC 차단 메커니즘: [dev-notes/2026-05-27-cursor-indicator.md "topmost 유실 후속 fix (주기 재적용)"](dev-notes/2026-05-27-cursor-indicator.md). 본 재적용은 무로깅이라 육안 검증에만 의존했으나 (2026-06-01) `MaybeReassertTopmost` 의 실제 `ApplyTopmost` 호출 시 `Cursor halo topmost reasserted (interval=...ms)` Debug 로그를 추가 — 표시/숨김 전환·IME/CAPS 변경·config 반영·dispose 까지 상태 전환 엣지 7곳에 로그를 넣어 (핫패스 본문 제외, 스팸 0) 동작을 로그로 추적 가능하게 했다.
 
 **시스템 UI z-order — 셸 UI 위에서 cursor 인디 숨김 (2026-06-01 추가 후속, 시행착오 → 재반전)** — 작업 표시줄 / 시작 버튼 / 검색 박스 / 트레이 아이콘 위에서 cursor 인디가 그 아래로 가려지던 문제. **초기 시도** (정지 주기 5초→1초 단축 + 항상 표시 모드 이동 중 매 tick 즉시 재적용 `ApplyTopmostNow`) 로 **작업 표시줄/트레이는 해결** (같은 `WS_EX_TOPMOST` 밴드라 재적용 빈도를 높이면 위로 올라감) 됐으나, **시작 메뉴/검색은 미해결** — 이들은 Windows immersive z-band (일반 topmost 위 계층) 라 `SetWindowPos(HWND_TOPMOST)` 빈도를 아무리 높여도 위로 못 올라간다 (게임 오버레이도 시작 메뉴 위엔 안 그려지는 알려진 OS 한계; `CreateWindowInBand` 비공개 API 만 가능 — P1/안정성 부적합). **사용자 결정** — z-order 싸움을 포기하고 **셸 UI 영역 위에서는 cursor 인디를 일관되게 숨긴다** (가려진 채 어색하게 두지 않음). 초기 시도의 즉시 재적용/1초 단축은 목적 소멸로 **롤백** (`ApplyTopmostNow` 제거, `CursorForceTopmostIntervalMs` 5초 원복) — `MaybeReassertTopmost` 5초 주기만 유지 (풀스크린/토스트/UAC 대비, 셸 UI 와 무관). 구현: `HandleCursorMotionTimer` 가 매 tick `IsOverShellUi(cursor)` 판정 → 셸·메뉴 면 `Hide()` + return. `IsOverShellUi` = `WindowFromPoint` (WS_EX_TRANSPARENT 통과 → cursor 인디 자체 미감지, dev-notes F2) → `GetAncestor(GA_ROOT)` → **(PR-32)** [`OverlaySuppressProbe.IsSuppressRoot`](../App/Detector/OverlaySuppressProbe.cs)(`includeSystemInputProcesses: true`) — `#32768`(`PopupMenuClass`) ∪ `SystemHideClasses`/`SystemHideProcesses` ∪ Start/Search. 메인 Pointer 축과 단일 진실원(P4); 루트 hwnd 캐시 (`_lastShellHwnd`/`_lastShellResult`) 로 같은 창 호버 중 `GetProcessName` 반복 회피. **캐시 무효화 (2026-06-01 감사 Medium ⑧)**: `HandleConfigChanged` 가 `_lastShellHwnd = IntPtr.Zero` 로 캐시를 리셋 — hide 목록 hot-reload 직후 stale 판정 차단 (`Initialize` 는 이미 0). 이전 인라인 `MatchesAny`+`IsSystemInputProcess` 판정은 프로브로 이전 (`06d0d3f` 도입 → `cc25bf6` '일관 표시' revert → 2026-06-01 재반전 → PR-32 공유).
 
@@ -155,7 +155,7 @@ fix:
 
 디폴트 (`CursorIndicatorEnabled = true`) 에서는 부팅 시 윈도우/엔진/타이머가 정상 생성. 사용자가 트레이 "커서 헤일로 숨김" 체크박스를 클릭해 `CursorIndicatorEnabled = false` 로 끈 동안에는 윈도우/엔진/타이머 **모두 해제** — 메모리/CPU 비용 0. 다시 켜면 트레이 메뉴 클릭 → `IDM_CURSOR_TOGGLE` → `updateConfig(config with { CursorIndicatorEnabled = true })` → `HandleConfigChanged` OFF→ON 분기 → `Program.EnableCursorOverlay()` 가 (1) `CreateCursorOverlayWindow` (별도 HWND, `WS_EX_TRANSPARENT` 영구 ON) → (2) `CursorOverlay.Initialize(hwnd, config, _lastImeState, _lastCapsLockState)` 가 엔진 + 첫 DIB 사전 생성 → (3) `SetTimer(TIMER_ID_CURSOR_MOTION, CursorMotionPollMs or CursorAlwaysPollMs)`. koenvue_config.json 으로 `cursor_indicator_enabled = false` 를 명시 저장한 채 부팅하면 lazy 게이트가 동일하게 작동해 비용 0 보장.
 
-메뉴 체크 의미는 플로팅 배지 `IDM_USER_HIDDEN` 과 동일 — 라벨 "커서 헤일로 숨김" + `MF_CHECKED` = **현재 숨김 상태** (= `CursorIndicatorEnabled = false`). 클릭 시 enabled 반전.
+메뉴 체크 의미는 한/영 배지 `IDM_USER_HIDDEN` 과 동일 — 라벨 "커서 헤일로 숨김" + `MF_CHECKED` = **현재 숨김 상태** (= `CursorIndicatorEnabled = false`). 클릭 시 enabled 반전.
 
 OFF 토글 시 `DisableCursorOverlay()` 가 역순으로 `KillTimer` → `CursorOverlay.Dispose()` (엔진/DIB/GDI 핸들 해제) → `DestroyWindow(_hwndCursorOverlay)` → `_hwndCursorOverlay = IntPtr.Zero` (lazy 재생성 게이트 복귀). `OnProcessExit` 도 동일 cleanup 을 명시적으로 호출.
 
@@ -171,17 +171,17 @@ OFF 토글 시 `DisableCursorOverlay()` 가 역순으로 `KillTimer` → `Cursor
 
 ### Render 후 SW_SHOW 호출자 패턴 + alpha 디폴트 255
 
-`LayeredCursorBase.Show(x, y)` 는 좌표/DPI 캐시만 갱신하고 `ShowWindow` 를 부르지 않는다. CursorOverlay (호출자) 가 `Render` 직후 명시 `ShowWindow(SW_SHOW)` 호출 — [dev-notes/2026-05-20-post-pr10-attempts-reverted.md](https://github.com/joujin-git/KoEnVue/blob/feat/v094-integration/docs/dev-notes/2026-05-20-post-pr10-attempts-reverted.md) 가설 A 함정 (Render 전 SW_SHOW 가 layered window 비트맵 없이 visible 캐싱 → 후속 UpdateLayeredWindow 가 화면에 안 나타남) 회피. 플로팅 배지 ([Animation.cs:100](../App/UI/Animation.cs#L100)) 와 동일 `SW_SHOW` 사용.
+`LayeredCursorBase.Show(x, y)` 는 좌표/DPI 캐시만 갱신하고 `ShowWindow` 를 부르지 않는다. CursorOverlay (호출자) 가 `Render` 직후 명시 `ShowWindow(SW_SHOW)` 호출 — [dev-notes/2026-05-20-post-pr10-attempts-reverted.md](https://github.com/joujin-git/KoEnVue/blob/feat/v094-integration/docs/dev-notes/2026-05-20-post-pr10-attempts-reverted.md) 가설 A 함정 (Render 전 SW_SHOW 가 layered window 비트맵 없이 visible 캐싱 → 후속 UpdateLayeredWindow 가 화면에 안 나타남) 회피. 한/영 배지 ([Animation.cs:100](../App/UI/Animation.cs#L100)) 와 동일 `SW_SHOW` 사용.
 
-`_displayAlpha` 디폴트 0 으로 두면 첫 `Render → UpdateLayeredWindow` 가 `SourceConstantAlpha=0` (완전 투명) 으로 그려져 사용자가 못 본다. cursor 인디는 페이드 없이 항상 100% 표시이므로 [`LayeredCursorBase`](../Core/Windowing/LayeredCursorBase.cs) 에서 `_displayAlpha = 255` 디폴트로 초기화. Hide/Prepare 의 임시 0 블리트는 `_displayAlpha` 를 덮지 않는다(PR-29 Commit0 — 과거 `_lastAlpha=0` 캐시 회귀 차단). 플로팅 배지의 OverlayAnimator 알파 보간과 무관. 이동 딤(PR-29)도 창 알파는 Full 유지하고 셰이더 원별 알파만 낮춘다.
+`_displayAlpha` 디폴트 0 으로 두면 첫 `Render → UpdateLayeredWindow` 가 `SourceConstantAlpha=0` (완전 투명) 으로 그려져 사용자가 못 본다. cursor 인디는 페이드 없이 항상 100% 표시이므로 [`LayeredCursorBase`](../Core/Windowing/LayeredCursorBase.cs) 에서 `_displayAlpha = 255` 디폴트로 초기화. Hide/Prepare 의 임시 0 블리트는 `_displayAlpha` 를 덮지 않는다(PR-29 Commit0 — 과거 `_lastAlpha=0` 캐시 회귀 차단). 한/영 배지의 OverlayAnimator 알파 보간과 무관. 이동 딤(PR-29)도 창 알파는 Full 유지하고 셰이더 원별 알파만 낮춘다.
 
 ### Settings 다이얼로그 노출 (PR-C / PR-21)
 
 PR-C 에서 cursor 10 config 키를 트레이 메뉴 "상세 설정" 다이얼로그의 12번째 섹션 "커서 헤일로" 로 GUI 노출. 새 컨트롤/팩토리/I18n 테이블 변경 0 — 기존 Bool/Int/Dbl 팩토리 + 인라인 `("한국어", "English")` 튜플 패턴 재사용. Min/Max 는 `DefaultConfig.MinCursor*` / `MaxCursor*` const 를 직접 참조해 **단일 진실원** 유지 (config-reference.md 표의 범위와 자동 일치). PR-C 당시는 디폴트 OFF 였으나 디폴트가 ON + 항상 표시 모드로 전환 — 다이얼로그 노출은 끄거나 세부 조정하려는 사용자의 발견 가능성을 보장.
 
-**PR-21 — 13→14 섹션 + 3 대분류 재배치**: 기존 13 섹션이 메인·커서·전역 설정이 뒤섞인 순서였던 것을 **일반 (앱 전역) → 플로팅 배지 → 커서 헤일로** 3 대분류로 재정렬. `BuildRowDefs` 변경: (1) "일반" + "일반 — 트레이" 를 맨 앞으로 이동 (기존 "시스템" 섹션의 언어/로그/업데이트/관리자 권한 → "일반", 기존 "트레이" 섹션 → "일반 — 트레이"). (2) 플로팅 배지 8 섹션 모두 `"플로팅 배지 — XXX"` (`Floating badge — XXX`) 접두. (3) 커서 헤일로 = `"커서 헤일로 — 동심원"` (`Cursor halo — Rings`, 기존 10 필드) + 신규 `"커서 헤일로 — 전환 효과"` (`Cursor halo — Transition`) 섹션 (`cursor_highlight_scale` / `cursor_highlight_duration_ms` 2 필드). (4) "고급" 은 14번째 말미. `cursor_change_highlight` on/off 는 메인 `change_highlight` 와 동일하게 트레이 메뉴 토글 전용이라 다이얼로그 제외 (애니메이션 on/off 는 메뉴, 세부 수치는 다이얼로그). 각 `FieldDef` 의 get/Commit 람다가 독립적이라 섹션 순서 변경에도 동작 정합 — `_fields` 인덱스와 컨트롤 짝은 `Add` 순서만 보장하면 됨 (70→72 필드). 컨트롤/팩토리/I18n 키 변경 0 (섹션 제목 문자열만 이동·개명).
+**PR-21 — 13→14 섹션 + 3 대분류 재배치**: 기존 13 섹션이 메인·커서·전역 설정이 뒤섞인 순서였던 것을 **일반 (앱 전역) → 한/영 배지 → 커서 헤일로** 3 대분류로 재정렬. `BuildRowDefs` 변경: (1) "일반" + "일반 — 트레이" 를 맨 앞으로 이동 (기존 "시스템" 섹션의 언어/로그/업데이트/관리자 권한 → "일반", 기존 "트레이" 섹션 → "일반 — 트레이"). (2) 한/영 배지 8 섹션 모두 `"한/영 배지 — XXX"` (`Floating badge — XXX`) 접두. (3) 커서 헤일로 = `"커서 헤일로 — 동심원"` (`Cursor halo — Rings`, 기존 10 필드) + 신규 `"커서 헤일로 — 전환 효과"` (`Cursor halo — Transition`) 섹션 (`cursor_highlight_scale` / `cursor_highlight_duration_ms` 2 필드). (4) "고급" 은 14번째 말미. `cursor_change_highlight` on/off 는 메인 `change_highlight` 와 동일하게 트레이 메뉴 토글 전용이라 다이얼로그 제외 (애니메이션 on/off 는 메뉴, 세부 수치는 다이얼로그). 각 `FieldDef` 의 get/Commit 람다가 독립적이라 섹션 순서 변경에도 동작 정합 — `_fields` 인덱스와 컨트롤 짝은 `Add` 순서만 보장하면 됨 (70→72 필드). 컨트롤/팩토리/I18n 키 변경 0 (섹션 제목 문자열만 이동·개명).
 
-**2026-06-01 후속 — 색상 섹션 2분할 + 테마 흡수 + "인디" → "인디케이터" 전체 표기 (섹션 수 14 유지)**: PR-21 의 색상 섹션 구성을 색상의 적용 범위(공용 / 메인 전용) 기준으로 재분할. (1) PR-21 의 "플로팅 배지 — 색상·투명도" (배경 3 + 글자 3 + 투명도 2) + 독립 "플로팅 배지 — 테마" 두 섹션을 → **"인디케이터 — 색상 (플로팅 배지/커서 헤일로 공통)"** (`Indicator — Colors (Shared by Floating badge/Cursor halo)`, 테마 + 배경색 3) + **"플로팅 배지 — 글자색·투명도"** (`Floating badge — Foreground & Opacity`, 글자색 3 + 투명도 2) 로 재편. 배경색 3 (`HangulBg`/`EnglishBg`/`NonKoreanBg`) 은 [색상 합성](#색상-합성-app-측-책임) 의 공용 단일 진실원 (메인 배경 = 커서 동심원 색) 이라 메인/커서 접두 없이 "인디케이터" 로 + 라벨에 `(플로팅 배지/커서 헤일로 공통)` 명시, 테마는 그 배경색(+글자색)을 일괄 지정/복원하는 프리셋이라 같은 섹션으로 흡수 (PR-21 의 독립 테마 섹션 소멸). 글자색·투명도는 메인 라벨 전용이라 "플로팅 배지" 접두 유지. 공용 색이라 이 "색상" 섹션을 **인디케이터 섹션들 맨 앞(3번)** 으로 배치 (일반·일반-트레이 2 섹션 다음, 메인·커서 모든 인디 섹션보다 앞) → "플로팅 배지 — 표시 모드" 3→4, "플로팅 배지 — 크기·테두리" 4→5 로 밀림. (2) PR-21 의 모든 `"플로팅 배지 — XXX"` / `"커서 헤일로 — XXX"` 라벨을 `"플로팅 배지 — XXX"` / `"커서 헤일로 — XXX"` 전체 표기로 통일. 섹션 수 14 불변 (2 섹션 → 2 섹션 재편, 순증 0), 필드 수·get/Commit 람다·config 키·컨트롤·팩토리·I18n 키 변경 0 (섹션 제목 + ColorField 재배치만). `_fields` 인덱스/컨트롤 짝은 `Add` 순서가 보장.
+**2026-06-01 후속 — 색상 섹션 2분할 + 테마 흡수 + "인디" → "인디케이터" 전체 표기 (섹션 수 14 유지)**: PR-21 의 색상 섹션 구성을 색상의 적용 범위(공용 / 메인 전용) 기준으로 재분할. (1) PR-21 의 "한/영 배지 — 색상·투명도" (배경 3 + 글자 3 + 투명도 2) + 독립 "한/영 배지 — 테마" 두 섹션을 → **"인디케이터 — 색상 (한/영 배지/커서 헤일로 공통)"** (`Indicator — Colors (Shared by Floating badge/Cursor halo)`, 테마 + 배경색 3) + **"한/영 배지 — 글자색·투명도"** (`Floating badge — Foreground & Opacity`, 글자색 3 + 투명도 2) 로 재편. 배경색 3 (`HangulBg`/`EnglishBg`/`NonKoreanBg`) 은 [색상 합성](#색상-합성-app-측-책임) 의 공용 단일 진실원 (메인 배경 = 커서 동심원 색) 이라 메인/커서 접두 없이 "인디케이터" 로 + 라벨에 `(한/영 배지/커서 헤일로 공통)` 명시, 테마는 그 배경색(+글자색)을 일괄 지정/복원하는 프리셋이라 같은 섹션으로 흡수 (PR-21 의 독립 테마 섹션 소멸). 글자색·투명도는 메인 라벨 전용이라 "한/영 배지" 접두 유지. 공용 색이라 이 "색상" 섹션을 **인디케이터 섹션들 맨 앞(3번)** 으로 배치 (일반·일반-트레이 2 섹션 다음, 메인·커서 모든 인디 섹션보다 앞) → "한/영 배지 — 표시 모드" 3→4, "한/영 배지 — 크기·테두리" 4→5 로 밀림. (2) PR-21 의 모든 `"한/영 배지 — XXX"` / `"커서 헤일로 — XXX"` 라벨을 `"한/영 배지 — XXX"` / `"커서 헤일로 — XXX"` 전체 표기로 통일. 섹션 수 14 불변 (2 섹션 → 2 섹션 재편, 순증 0), 필드 수·get/Commit 람다·config 키·컨트롤·팩토리·I18n 키 변경 0 (섹션 제목 + ColorField 재배치만). `_fields` 인덱스/컨트롤 짝은 `Add` 순서가 보장.
 
 **현재 Settings 색상 섹션명**: 위 2026-06-01 제목을 **"공통 — 색상"** (`Shared — Colors`) 로 단축 (트레이 메뉴 공통 블록과 용어 정합). 섹션 순서·필드·config 키 불변.
 
@@ -197,7 +197,7 @@ short left-click temporarily hides the indicator (`_clickDismissed`); movement p
 `SM_CXDRAG`/`SM_CYDRAG` with a passing `drag_modifier` promotes to native drag via
 `WM_NCLBUTTONDOWN`/`HTCAPTION`. `WM_ENTERSIZEMOVE` / `WM_EXITSIZEMOVE` track drag lifecycle.
 Click-dismissed indicators reappear on focus change or IME (한/영) change — not via
-`UserHidden` (tray “플로팅 배지 숨김” remains the persistent path). While hidden the
+`UserHidden` (tray “한/영 배지 숨김” remains the persistent path). While hidden the
 overlay window is gone, so mouse clicks pass through to whatever is underneath.
 
 ### Drag modifier (drag initiation gate)
@@ -398,8 +398,8 @@ Ease-out cubic interpolation: `1 - (1 - t)^3` via `TIMER_ID_SLIDE`. All animatio
 트레이 "애니메이션 사용"(`animation_enabled` / [`AppConfig.AnimationEnabled`](../App/Models/AppConfig.cs)) 은 fade·highlight·slide **전체**를 끄는 마스터 스위치다. 게이팅 지점이 두 층으로 나뉜다:
 
 - **fade** — [`OverlayAnimator`](../Core/Animation/OverlayAnimator.cs) 가 fade-in / fade-out / dim-idle 3곳에서 `AnimationEnabled` 를 **직접** 본다 (`false` 면 `SnapToTargetAlpha` 로 즉시 표시/숨김). Core 자체 게이팅이라 PR-22 에서 불변.
-- **highlight / slide (플로팅 배지)** — 엔진은 `AnimationConfig.ChangeHighlight` / `SlideAnimation` 만 보고 `AnimationEnabled` 와 무관하게 동작한다. 마스터 의미는 App 파사드 [`Animation.BuildAnimationConfig`](../App/UI/Animation.cs) **1지점**이 합성한다 — `ChangeHighlight: config.AnimationEnabled && config.ChangeHighlight`, `SlideAnimation: config.AnimationEnabled && config.SlideAnimation` (AND). 마스터 OFF 면 두 값이 `false` 로 합성돼 엔진의 slide/highlight 분기가 진입조차 안 하고, 마스터 ON 이면 개별 토글(`change_highlight` / `slide_animation`) 값이 그대로 보존된다.
-- **커서 헤일로 강조 팝** — 커서 헤일로는 별도 파사드([`CursorOverlay`](../App/UI/CursorOverlay.cs))라 `BuildAnimationConfig` 합성을 거치지 않는다. 초기 PR-22 는 이 경로를 놓쳐 마스터 OFF 시에도 커서 팝이 계속 떴다 — **후속 보강**으로 [`CursorOverlay.SetImeState`](../App/UI/CursorOverlay.cs) 의 팝 트리거를 `if (_config.AnimationEnabled && _config.CursorChangeHighlight) TriggerPop(); else _engine.Render(...)` 로 좁혀 플로팅 배지 `AnimationEnabled && ChangeHighlight` (Animation.cs:154) 와 **평행한 AND 게이팅**을 줬다. 마스터 OFF 면 커서 팝도 정지(색만 즉시 갱신). 위 [IME 전환 스케일 팝 (PR-21)](#ime-전환-스케일-팝-pr-21) 의 `TriggerPop` 항목 참조.
+- **highlight / slide (한/영 배지)** — 엔진은 `AnimationConfig.ChangeHighlight` / `SlideAnimation` 만 보고 `AnimationEnabled` 와 무관하게 동작한다. 마스터 의미는 App 파사드 [`Animation.BuildAnimationConfig`](../App/UI/Animation.cs) **1지점**이 합성한다 — `ChangeHighlight: config.AnimationEnabled && config.ChangeHighlight`, `SlideAnimation: config.AnimationEnabled && config.SlideAnimation` (AND). 마스터 OFF 면 두 값이 `false` 로 합성돼 엔진의 slide/highlight 분기가 진입조차 안 하고, 마스터 ON 이면 개별 토글(`change_highlight` / `slide_animation`) 값이 그대로 보존된다.
+- **커서 헤일로 강조 팝** — 커서 헤일로는 별도 파사드([`CursorOverlay`](../App/UI/CursorOverlay.cs))라 `BuildAnimationConfig` 합성을 거치지 않는다. 초기 PR-22 는 이 경로를 놓쳐 마스터 OFF 시에도 커서 팝이 계속 떴다 — **후속 보강**으로 [`CursorOverlay.SetImeState`](../App/UI/CursorOverlay.cs) 의 팝 트리거를 `if (_config.AnimationEnabled && _config.CursorChangeHighlight) TriggerPop(); else _engine.Render(...)` 로 좁혀 한/영 배지 `AnimationEnabled && ChangeHighlight` (Animation.cs:154) 와 **평행한 AND 게이팅**을 줬다. 마스터 OFF 면 커서 팝도 정지(색만 즉시 갱신). 위 [IME 전환 스케일 팝 (PR-21)](#ime-전환-스케일-팝-pr-21) 의 `TriggerPop` 항목 참조.
 
 이 분담의 이유: 엔진 내부 가드 3곳(이미 `AnimationEnabled` 를 보는 fade) 외에 highlight/slide 분기마다 `AnimationEnabled &&` 를 산개하는 대신, "최종 플래그"를 App 이 한 곳에서 만들어 엔진에 넘기면 **Core 상태머신 분기가 무변경**으로 남는다 (`e253f2f` slide+highlight 합성 로직과의 상호작용 회귀 표면 0). P4(마스터 단일 진실원) + P6(App 이 합성, Core 는 `AnimationConfig` 만 소비) 정합. 회귀 가드: [tests/KoEnVue.Tests/Unit/AnimationFacadeTests.cs](../tests/KoEnVue.Tests/Unit/AnimationFacadeTests.cs) 4 Fact (마스터 OFF→highlight·slide 게이팅 / 마스터 ON→개별 토글 보존 / 마스터 ON+개별 OFF→AND 로 OFF 유지 / `AnimationEnabled` 플래그 통과).
 
@@ -456,7 +456,7 @@ Main thread:
 이어지는 `hwndFocus == 0` 폴백은 **두 윈도우 클래스**를 포그라운드 윈도우로 대체한다 — `Win32Constants.ConsoleWindowClass`(conhost) **및** `Win32Constants.ApplicationFrameWindowClass`("ApplicationFrameWindow", UWP 앱 프레임). 둘 다 GUITHREADINFO 의 `hwndFocus` 가 0 으로 떨어지는 동형 증상이라 같은 폴백을 공유한다.
 
 - **conhost**: 콘솔 호스트는 포커스를 AccessibleObject 에 보고하지 않는다.
-- **UWP 프레임**: 설정 앱(SystemSettings) 등 UWP 앱의 foreground 창은 `ApplicationFrameHost.exe` 가 소유하는 `ApplicationFrameWindow` 지만 실제 콘텐츠는 **별도 프로세스의 CoreWindow**(예: `SystemSettings.exe`)다. 콘텐츠 클릭 시 프레임 스레드 기준 `GetGUIThreadInfo` 의 `hwndFocus = 0` → `SystemFilter.ShouldHide` 조건 6(`hwndFocus == 0 && HideWhenNoFocus`) 이 발동하고 `FilteredStreak` 가 `HideHysteresisPolls`(=3) 에 도달하면 플로팅 배지가 사라진다(스모킹건 로그: `Filter triggered HIDE: ... hwndFocus=0x0, fgClass=ApplicationFrameWindow, streak=3`). foreground 를 포커스 타깃으로 대체해 이 no-focus HIDE 오탐을 막는다.
+- **UWP 프레임**: 설정 앱(SystemSettings) 등 UWP 앱의 foreground 창은 `ApplicationFrameHost.exe` 가 소유하는 `ApplicationFrameWindow` 지만 실제 콘텐츠는 **별도 프로세스의 CoreWindow**(예: `SystemSettings.exe`)다. 콘텐츠 클릭 시 프레임 스레드 기준 `GetGUIThreadInfo` 의 `hwndFocus = 0` → `SystemFilter.ShouldHide` 조건 6(`hwndFocus == 0 && HideWhenNoFocus`) 이 발동하고 `FilteredStreak` 가 `HideHysteresisPolls`(=3) 에 도달하면 한/영 배지가 사라진다(스모킹건 로그: `Filter triggered HIDE: ... hwndFocus=0x0, fgClass=ApplicationFrameWindow, streak=3`). foreground 를 포커스 타깃으로 대체해 이 no-focus HIDE 오탐을 막는다.
 
 **`Windows.UI.Core.CoreWindow` 제외**: 시작 메뉴/검색의 `CoreWindow`(역시 `hwndFocus = 0`)는 폴백에서 **의도적으로 제외** — 이들은 `SystemInputProcesses` 경로로 *정상* 숨김돼야 하므로 폴백 대상은 일반 UWP 앱 프레임인 `ApplicationFrameWindow` 로만 한정한다(시작메뉴 ESC 시 정상 소멸 회귀가드).
 
@@ -478,7 +478,7 @@ Detection loop sends `WM_POSITION_UPDATED` **before** `WM_IME_STATE_CHANGED` / `
 
 `TryHandleFilter` 는 filtered 가 떴다고 곧바로 HIDE 를 보내지 않고, `DetectionState.FilteredStreak` 로 **연속 filtered 폴링 수**를 세어 `DefaultConfig.HideHysteresisPolls`(= 3, AppConfig 키 아닌 코드 레벨 const) 회 연속일 때만 HIDE 를 확정한다. 일부 창(파일 탐색기 `CabinetWClass` 등)은 포커스 전환 직후 `hwndFocus` 가 `0 ↔ 정상` 으로 진동(flip-flop)해 조건 6(`hwndFocus == 0 && HideWhenNoFocus`) 이 매 폴링 filtered ↔ non-filtered 로 뒤집히는데, 디바운스가 이 단발 진동을 흡수한다. 잠정(`streak < N`) 구간에서는 `Filter HIDE deferred` 로그만 남기고 **`lastFiltered`/`lastHwndForeground` 등 상태를 갱신하지 않은 채 return** — 현 인디 상태를 유지하므로, 다음 틱이 진동의 반대 위상이면 filter exit 경로의 `WM_POSITION_UPDATED` 가 자연 복원한다. 이 "잠정 구간 상태 미갱신" **비대칭** 이 핵심으로, [Deferred `lastHwndForeground`](#deferred-lasthwndforeground) 와 같은 결을 이루며 "첫 진입 Show 누락" 함정을 피하면서 진동만 걸러낸다. non-filtered 진입 시 `FilteredStreak = 0` 으로 리셋. 작업표시줄 등 실제 숨김 대상은 연속 filtered 라 약 `PollIntervalMs × (N − 1)` 만큼만 HIDE 가 지연될 뿐 정상 동작한다.
 
-이 디바운스가 없던 시절, 애니메이션 ON 에서는 교대 post 된 HIDE(`forceHidden: true` → FadingOut 400ms) 와 Show 가 경합해 플로팅 배지가 깜박이다 마지막 이벤트가 HIDE 면 `Hidden` 으로 박제됐다 — `OverlayAnimator` 의 FadingOut 재진입엔 `SnapToTargetAlpha` 가 없어 alpha 가 점진 0 으로 수렴하기 때문(C안 미해결 잔여). 애니메이션 OFF 는 즉시 토글이라 무증상이었다. 자세한 race 분석은 [docs/dev-notes/2026-06-02-explorer-hide-flipflop-debounce.md](dev-notes/2026-06-02-explorer-hide-flipflop-debounce.md).
+이 디바운스가 없던 시절, 애니메이션 ON 에서는 교대 post 된 HIDE(`forceHidden: true` → FadingOut 400ms) 와 Show 가 경합해 한/영 배지가 깜박이다 마지막 이벤트가 HIDE 면 `Hidden` 으로 박제됐다 — `OverlayAnimator` 의 FadingOut 재진입엔 `SnapToTargetAlpha` 가 없어 alpha 가 점진 0 으로 수렴하기 때문(C안 미해결 잔여). 애니메이션 OFF 는 즉시 토글이라 무증상이었다. 자세한 race 분석은 [docs/dev-notes/2026-06-02-explorer-hide-flipflop-debounce.md](dev-notes/2026-06-02-explorer-hide-flipflop-debounce.md).
 
 ### Modal dialog gate
 
@@ -526,7 +526,7 @@ IME 감지 경로는 두 가지다 — (1) 디텍션 스레드 80ms 폴링 (`Det
 7. Fullscreen exclusive (covers monitor + no `WS_CAPTION`)
 8. App blacklist / whitelist (`app_filter_list` + `app_filter_mode`)
 
-**Pointer suppress 축 (PR-32)**: FG `ShouldHide` 와 직교. 감지 틱마다 `OverlaySuppressProbe.IsPointerOverSuppressSurface` (`GetCursorPos` → `WindowFromPoint` → `GA_ROOT`) 가 `#32768`(`Win32Constants.PopupMenuClass`) ∪ `SystemHideClasses`/`SystemHideProcesses` 를 매칭하면 **히스테리시스 없이** 즉시 HIDE. 클래식 메뉴는 FG를 안 뺏는 경우가 많아 FG 축만으로는 플로팅 배지가 남던 불일치를 해소. 커서 `IsOverShellUi` 도 동일 프로브(+ `IsSystemInputProcess`). Forced Show(`TryShowIndicatorIfForegroundAllowed`)도 Pointer면 스킵. WinUI/브라우저 커스텀 메뉴는 클래스 비표준이라 v1 비보장.
+**Pointer suppress 축 (PR-32)**: FG `ShouldHide` 와 직교. 감지 틱마다 `OverlaySuppressProbe.IsPointerOverSuppressSurface` (`GetCursorPos` → `WindowFromPoint` → `GA_ROOT`) 가 `#32768`(`Win32Constants.PopupMenuClass`) ∪ `SystemHideClasses`/`SystemHideProcesses` 를 매칭하면 **히스테리시스 없이** 즉시 HIDE. 클래식 메뉴는 FG를 안 뺏는 경우가 많아 FG 축만으로는 한/영 배지가 남던 불일치를 해소. 커서 `IsOverShellUi` 도 동일 프로브(+ `IsSystemInputProcess`). Forced Show(`TryShowIndicatorIfForegroundAllowed`)도 Pointer면 스킵. WinUI/브라우저 커스텀 메뉴는 클래스 비표준이라 v1 비보장.
 
 **Per-tick 프로세스명 메모이제이션**: `ShouldHide` 본문에 `string? hwndProcess = null; string ResolveHwndProcess() => hwndProcess ??= WindowProcessInfo.GetProcessName(hwnd);` 로컬 클로저를 둔다. 조건 4-b 의 owner 루프(루트까지 최대 5단계 상승)가 각 노드마다 동일 hwnd 의 프로세스명을 재조회하고, 조건 5 직접 비교 + 조건 8 blacklist 조회가 또 한 번 호출하던 중복을 제거 — `GetProcessName` 은 내부적으로 `OpenProcess` + `QueryFullProcessImageNameW` + `Path.GetFileNameWithoutExtension` 체인이라 호출당 NT 핸들 오픈 + 커널 모드 전환이 발생하는 무거운 경로이다. 감지 스레드 80ms 핫패스에서 1 tick 당 평균 3~5회의 P/Invoke 체인을 절감한다. cross-tick 캐시는 불필요 — `DetectionState.LastForegroundProcessName` 이 이미 foreground 전환 레벨의 cross-tick 캐시 역할을 담당하므로, `ResolveHwndProcess` 는 1 tick 내부 국소 최적화 한정이다.
 
@@ -733,15 +733,15 @@ Handled in [Program.cs](../Program.cs) (not `Tray.cs`) because it needs `_indica
 
 Config hot-reload (`HandleConfigChanged`): when `prev.UserHidden == false` and the new config has `UserHidden == true` while the indicator is visible, `HideOverlay("config UserHidden")` runs immediately (previously a visible indicator could freeze in place after a hand-edit of `user_hidden`).
 
-The menu path (`IDM_USER_HIDDEN` → `updateConfig(config with { UserHidden = !config.UserHidden })`) reaches the same helper: the `HandleMenuCommand` lambda in [Program.cs](../Program.cs) captures `wasHidden = _config.UserHidden` before applying `newConfig`, then calls `ApplyUserHiddenTransition` when the bit actually flipped (otherwise falls through to the existing `_indicatorVisible`-based config-changed branch). This ensures the right-click "플로팅 배지 숨김" toggle produces identical overlay/tray-icon behavior as the left-click toggle, even when `tray_click_action` has been set to `"settings"` or `"none"` (in which case the right-click menu is the only GUI path back from `user_hidden = true`).
+The menu path (`IDM_USER_HIDDEN` → `updateConfig(config with { UserHidden = !config.UserHidden })`) reaches the same helper: the `HandleMenuCommand` lambda in [Program.cs](../Program.cs) captures `wasHidden = _config.UserHidden` before applying `newConfig`, then calls `ApplyUserHiddenTransition` when the bit actually flipped (otherwise falls through to the existing `_indicatorVisible`-based config-changed branch). This ensures the right-click "한/영 배지 숨김" toggle produces identical overlay/tray-icon behavior as the left-click toggle, even when `tray_click_action` has been set to `"settings"` or `"none"` (in which case the right-click menu is the only GUI path back from `user_hidden = true`).
 
 Five event handlers gate on `_config.UserHidden` to prevent detection-thread events from re-showing a user-hidden indicator: `HandleImeStateChanged`, `HandleFocusChanged`, `HandlePositionUpdated`, `HandleConfigChanged` (skips the refresh/`TriggerShow` branch when still hidden — tray icon still rebuilds so a hot-edited `user_hidden` / `cursor_indicator_enabled` renders the right shapes; false→true hide is handled above), and `HandleActivateRequest`. The detection thread itself does **not** read `UserHidden` — `_indicatorVisible = false` is sufficient to suppress the `TriggerShow` path in main-thread handlers, and cost of the `_config.UserHidden` check is trivial compared to the `WindowProcessInfo.GetProcessName` P/Invoke chain in the detection tick.
 
-Reset paths: (1) right-click tray → "플로팅 배지 숨김" menu toggle (flips the bit directly), (2) left-click tray when `tray_click_action = "toggle"` — reaches `false` by advancing the cycle, so it can take up to two clicks from a hidden stage (`CursorOnly` → `None` → `Both`), (3) delete `koenvue_config.json` (STJ's default unmapped-member handling reinstates `user_hidden = false`), (4) hand-edit the field — mtime polling reapplies the new config at the next detection event. Persisting the state in config deliberately makes it "sticky" — restart/resume preserves the user's explicit hide intent.
+Reset paths: (1) right-click tray → "한/영 배지 숨김" menu toggle (flips the bit directly), (2) left-click tray when `tray_click_action = "toggle"` — reaches `false` by advancing the cycle, so it can take up to two clicks from a hidden stage (`CursorOnly` → `None` → `Both`), (3) delete `koenvue_config.json` (STJ's default unmapped-member handling reinstates `user_hidden = false`), (4) hand-edit the field — mtime polling reapplies the new config at the next detection event. Persisting the state in config deliberately makes it "sticky" — restart/resume preserves the user's explicit hide intent.
 
 ### Tray icon hidden-state rendering (`TrayIcon.PaintIcon`)
 
-숨김 상태는 **보이는 도형만 그려서** 표현한다 — 취소선 오버레이가 아니다. `CreateIcon` 이 `Tray.GetVisibility(config)` 로 현재 단계를 읽어 `PaintIcon` 에 넘기면, `Tray.GetShapes(visibility)` 가 링(커서 헤일로)·배지(플로팅 배지) 중 무엇을 그릴지 판정한다: 링+배지 / 배지 / 링 / (도형 없음, 배경색만). 좌클릭 순환 4단계와 1:1 이라 네 상태가 서로 다르게 보인다. 상태별 `fgHex` (`HangulFg` / `EnglishFg` / `NonKoreanFg`) 는 `ColorHelper.HexToColorRef` 로 `bgHex` 와 함께 해석돼 도형 색이 테마 작성자가 지정한 배경 대비를 그대로 상속한다.
+숨김 상태는 **보이는 도형만 그려서** 표현한다 — 취소선 오버레이가 아니다. `CreateIcon` 이 `Tray.GetVisibility(config)` 로 현재 단계를 읽어 `PaintIcon` 에 넘기면, `Tray.GetShapes(visibility)` 가 링(커서 헤일로)·배지(한/영 배지) 중 무엇을 그릴지 판정한다: 링+배지 / 배지 / 링 / (도형 없음, 배경색만). 좌클릭 순환 4단계와 1:1 이라 네 상태가 서로 다르게 보인다. 상태별 `fgHex` (`HangulFg` / `EnglishFg` / `NonKoreanFg`) 는 `ColorHelper.HexToColorRef` 로 `bgHex` 와 함께 해석돼 도형 색이 테마 작성자가 지정한 배경 대비를 그대로 상속한다.
 
 취소선 방식(`DrawStrikeThrough` / `DrawDoubleStrikeThrough`, v0.9.2.x)을 폐기한 이유는 두 가지다 — (1) `user_hidden`(배지) 만 보고 그려서 헤일로만 숨긴 상태가 정상 상태와 구별되지 않았고, (2) 링+배지처럼 도형이 넓어지면 같은 Fg 색 줄은 도형에 묻히고 배경색으로 파내면 도형이 조각나 16 px 에서 읽기 어렵다. 폐기 시점까지의 취소선 두께·색상 튜닝 이력은 CHANGELOG 의 해당 릴리스 항목 참고.
 
@@ -761,24 +761,24 @@ Handles the "user moved the exe" case: the first boot after a move still misses 
 ### Tray menu structure
 
 ```
-KoEnVue v0.9.2.5 — GitHub                       ← always-visible header (MF_DEFAULT bold)
-   or KoEnVue v0.9.2.5 → v0.9.3.0 — 다운로드    ← label flips when UpdateChecker finds update
+KoEnVue v1.0.0.2 — GitHub                       ← always-visible header (MF_DEFAULT bold)
+   or KoEnVue v1.0.0.2 → v1.0.1.0 — 다운로드    ← label flips when UpdateChecker finds update
 ───
-투명도 ▸       진하게 / 보통 / 연하게              ← 메인
-크기 ▸         1배 / 2배 / 3배 / 4배 / 5배 / 직접 지정...
-☑ 창에 자석처럼 붙이기
-☑ 플로팅 배지 변경 강조
-기본 위치 ▸       현재 위치로 설정 / 초기화
-위치 모드 ▸       ○ 고정 위치 / ● 창 기준
-드래그 활성 키 ▸  ● 없음 / ○ Ctrl / ○ Alt / ○ Ctrl + Alt
-위치 기록 정리...
-☐ 플로팅 배지 숨김
-───
-커서 헤일로 표시 ▸  ● 흐릿하게 / ○ 선명하게 / ○ 이동 중 흐릿하게  ← 커서
-☑ 커서 헤일로 변경 강조
+☐ 한/영 배지 숨김                                 ← 숨김 토글 (접지 않음)
 ☐ 커서 헤일로 숨김
 ───
-☑ 애니메이션 사용                                 ← 공통 (메인·커서 마스터)
+한/영 배지 ▸    투명도 ▸        진하게 / 보통 / 연하게
+                크기 ▸          1배 / 2배 / 3배 / 4배 / 5배 / 직접 지정...
+                ☑ 창에 자석처럼 붙이기
+                ☑ 전환 강조
+                기본 위치 ▸      현재 위치로 설정 / 초기화
+                위치 기준 ▸      ○ 고정 위치 / ● 창 기준
+                드래그 활성 키 ▸ ● 없음 / ○ Ctrl / ○ Alt / ○ Ctrl + Alt
+                위치 기록 정리...
+커서 헤일로 ▸   선명도 ▸        ● 흐릿하게 / ○ 선명하게 / ○ 이동 중 흐릿하게
+                ☑ 전환 강조
+───
+☑ 애니메이션 사용                                 ← 공통 (배지·커서 마스터)
 ───
 ☑ 시작 프로그램 등록                               ← 앱
 ☐ 관리자 권한으로 실행
@@ -838,7 +838,7 @@ Parsing uses `double.TryParse` + `CultureInfo.InvariantCulture`, so `"2.3"` work
 
 ### SettingsDialog
 
-14 sections of settings (PR-21 — 일반 / 플로팅 배지 / 커서 헤일로 3 대분류 재배치, 정확한 필드 수는 [SettingsDialog.Fields.cs](../App/UI/Dialogs/SettingsDialog.Fields.cs) 의 `BuildRowDefs` 참조). Split across 4 partial class files:
+14 sections of settings (PR-21 — 일반 / 한/영 배지 / 커서 헤일로 3 대분류 재배치, 정확한 필드 수는 [SettingsDialog.Fields.cs](../App/UI/Dialogs/SettingsDialog.Fields.cs) 의 `BuildRowDefs` 참조). Split across 4 partial class files:
 
 - **`SettingsDialog.cs`** (modal state, `Show`, `BuildChildren`(+윈도우 생성 헬퍼 5종), `TryCommit`, dialog WndProc)
 - **`SettingsDialog.Layout.cs`** (`SettingsLayout` 메트릭 record struct + `BuildLayout` 팩토리 — DPI 스케일·파생 좌표 순수 산술)
@@ -992,7 +992,7 @@ case 4 만 신규 분기 (`isDowngrade = !newAdminConfig.AdminElevation && Admin
 
 ### Admin elevation toggle — 4 case 통일 흐름 (PR-15 후속 fix #3, 2026-05-29)
 
-위 fix #2 의 4-case 비대칭 (case 1/2/3 자동 spawn + case 4 안내 + `MB_YESNO`) 이 사용자 mental model 충돌 (메시지박스 표시 **전** 에 `updateConfig` + `ReregisterIfAdminChanged` 이미 disk 반영 완료 — Yes/No 컨벤션의 "취소" 직관과 불일치) + 플로팅 배지 잔존 회귀 (MB_OK + `break` 흐름의 자연 결과 — `WM_CLOSE` 미발화 → `OnProcessExit` 미진입 → `Overlay.Dispose` 미실행) 동시 보고를 사용자 직접 제안 (4 case 단일 메시지 + `MB_OK` 단일 버튼 + 자동 종료) 으로 통합 해결.
+위 fix #2 의 4-case 비대칭 (case 1/2/3 자동 spawn + case 4 안내 + `MB_YESNO`) 이 사용자 mental model 충돌 (메시지박스 표시 **전** 에 `updateConfig` + `ReregisterIfAdminChanged` 이미 disk 반영 완료 — Yes/No 컨벤션의 "취소" 직관과 불일치) + 한/영 배지 잔존 회귀 (MB_OK + `break` 흐름의 자연 결과 — `WM_CLOSE` 미발화 → `OnProcessExit` 미진입 → `Overlay.Dispose` 미실행) 동시 보고를 사용자 직접 제안 (4 case 단일 메시지 + `MB_OK` 단일 버튼 + 자동 종료) 으로 통합 해결.
 
 [`Tray.HandleMenuCommand`](../App/UI/Tray.cs) 의 `IDM_ADMIN_ELEVATION` 핸들러는 fix #3 부터 **4 단계 단일 흐름** (~14 LOC):
 
