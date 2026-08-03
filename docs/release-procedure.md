@@ -1,4 +1,4 @@
-# Release Procedure — v0.9.5.0 이후 (다음 v0.9.X.Y 준비)
+# Release Procedure
 
 **유지보수자 전용.** 일반 사용자는 [README.md](../README.md) 의 다운로드 섹션을 보세요. 본 문서는 PR-11 (Version 단일 진실원 + SHA256 release) 머지 후 절차입니다.
 
@@ -7,7 +7,7 @@
 ## 1. 사전 조건
 
 - **메인 브랜치 클린 상태.** 모든 PR 머지 + working tree 깨끗.
-- **로컬 [dotnet build](../KoEnVue.csproj) 통과** + **[dotnet test](../tests/KoEnVue.Tests/) 전부 통과 (현재 212개)** + **[GitHub Actions](../.github/workflows/build.yml) 녹색** (이전 main 푸시 기준).
+- **로컬 [dotnet build](../KoEnVue.csproj) 통과** + **[dotnet test](../tests/KoEnVue.Tests/) 전부 통과** + **[GitHub Actions](../.github/workflows/build.yml) 녹색** (이전 main 푸시 기준). 테스트 개수는 적지 않는다 — 릴리즈마다 늘어 stale 이 되고, "전부 통과" 가 실제 기준이다.
 - **CHANGELOG.md** 의 `[Unreleased]` 섹션이 비어 있지 않은지 확인. 릴리스 직전에 `[Unreleased]` → `[X.Y.Z] — YYYY-MM-DD` 로 승격하고 새 빈 `[Unreleased]` 헤더를 추가.
 
 ## 2. 버전 bump
