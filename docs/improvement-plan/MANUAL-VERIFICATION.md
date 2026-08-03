@@ -82,7 +82,7 @@
 
 ## B. 트레이 아이콘 (3차 A·B, 2차 G7·G12)
 
-### B-1. 부팅 직후 아이콘이 실제 한/영과 맞는가 — 3차 A 🔴 ⬜ 미실시
+### B-1. 부팅 직후 아이콘이 실제 한/영과 맞는가 — 3차 A 🔴 ◐ 부분 관찰
 
 재현 조건이 까다롭다(부팅 재시도 구간 + 테마 변경이 겹쳐야 함). **실패해도 결론을 내리기 어려우니**, 아래를 관찰만 하고 이상하면 로그를 남긴다.
 
@@ -92,6 +92,13 @@
 
 **기대** — 아이콘이 항상 실제 상태를 따라간다.
 **이상하면** — `koenvue.log` 에서 `NIM_ADD` 로 검색해 재시도가 있었는지 확인하고 그 구간을 보고.
+
+**2026-08-03 관찰 (재부팅 1회, `d:\_portable\KoEnVue\koenvue.log`)** — **결함 없었음. 다만 수정 검증은 아니다.**
+
+- 부팅 10:58:12 → 자동 시작 10:59:56(승격 자식) → **10:59:57.003 `Tray icon initialized`** 한 번에 성공
+- 이후 9시간 20분 · 5,584줄에서 **WARN/ERROR 0건 · `retry` 0건 · `recreat` 0건**
+- **재시도가 0건이라는 점이 판정의 핵심이다.** 3차 A 는 *`NIM_ADD` 재시도 구간에 테마 변경이 끼어드는* 레이스인데, 재시도 자체가 없었으니 **결함이 발동할 전제가 만들어지지 않았다.** 따라서 「실사용에서 문제 없었음」만 확인됐고 「수정이 그 레이스를 막는지」는 여전히 미확인이다 — 이 항목을 ✅ 로 올리려면 **재시도가 실제로 잡힌 부팅**이 필요하다.
+- 부수 확인: `koenvue_crash.txt` 는 이름과 달리 크래시가 아니라 **승격(elevation) 진단**이 쌓이는 파일이다(정상 3줄). 파일명만 보고 크래시로 오인하기 쉽다.
 
 ### B-2. 탐색기 재시작 후 아이콘이 살아나는가 — 3차 B 🟠 ✅
 
@@ -104,7 +111,20 @@
 
 > **📌 후속 과제 — 해결됨 (2026-08-03)** — 이 경로에서 매번 `[WARN] Failed to remove tray icon on shutdown` 이 찍혔다. 두 가지가 어긋나 있었다: ⓐ **종료 중이 아닌데 "on shutdown"** — 재생성 경로가 같은 `Remove` 를 공유한다, ⓑ **실패가 당연한 상황에 WARN** — 탐색기가 방금 죽어 아이콘을 지울 셸이 없다. `TrayRemoveReason`(종료·재생성·트레이 해제) 도입으로 정리했다.
 >
-> **재검증 시 기대 로그가 바뀐다** — 위 103줄의 시퀀스는 수정 **전** 실측이다. 이제는 재생성 경로가 `Tray icon removed (recreate)` 이고, 삭제 실패는 WARN 이 아니라 `[DEBUG] Tray icon delete skipped — no shell registration (Explorer restarted)` 로 나온다. 종료 경로는 `Tray icon removed (shutdown)`, 설정에서 트레이를 끄면 `Tray icon removed (tray disabled)`.
+> **재검증 시 기대 로그가 바뀐다** — 위 「2026-08-03 결과」 줄의 시퀀스는 수정 **전** 실측이다.
+>
+> **수정 후 실측 (2026-08-03 20:34~20:35, 새 빌드로 세 경로 전부)**
+>
+> ```
+> 20:34:07.613 [INFO]  TaskbarCreated broadcast received, recreating tray icon
+> 20:34:07.633 [DEBUG] Tray icon delete skipped — no shell registration (Explorer restarted)
+> 20:34:07.633 [INFO]  Tray icon removed (recreate)
+> 20:34:07.760 [INFO]  Tray icon recreated (TaskbarCreated or recovery)
+> 20:34:50.292 [INFO]  Tray icon removed (tray disabled)      ← config 핫리로드로 tray_enabled=false
+> 20:35:36.374 [INFO]  Tray icon removed (shutdown)           ← 정상 종료, WARN 없음
+> ```
+>
+> **`[WARN] Failed to remove tray icon on shutdown` 이 소멸**했다. 그리고 이 확인은 **실패 분기가 발동한 상태**에서 이뤄졌다 — `Tray icon delete skipped` 가 찍혔다는 것은 `NIM_DELETE` 가 실제로 `false` 를 반환했다는 뜻이고, 성공했다면 그 줄 자체가 나오지 않는다.
 
 ### B-3. 「시작 프로그램」 체크가 실제와 맞는가 — 2차 G12 🟠 ✅
 
