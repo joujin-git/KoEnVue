@@ -714,6 +714,28 @@ P5 (`app.manifest asInvoker`, PR-03, v0.9.3.0) intentionally drops the `requireA
 
 `NOTIFYICON_VERSION_4` requires `WM_CONTEXTMENU` for right-click menu — shell grants foreground activation on `WM_CONTEXTMENU`. Handling `WM_RBUTTONUP` instead would result in menu items failing to respond because the tray app doesn't have keyboard focus.
 
+### Menu handle lifetime (2단 중첩 이후)
+
+2026-08-04 의 대분류 서브메뉴 도입으로 `ShowMenu` 의 중첩이 2단이 됐다. 매 호출마다 `CreatePopupMenu` **9회**(서브메뉴 8 + 최상위 1)이고 해제는 `DestroyMenu(hMenu)` **한 줄**뿐인데, 이는 `DestroyMenu` 가 `MF_POPUP` 으로 부착된 서브메뉴를 **재귀적으로** 파괴하기 때문이다. 성립 조건은 두 가지다.
+
+1. **생성한 서브메뉴가 모두 부모에 부착될 것** — 부착 실패·누락 시 그 핸들은 고아가 된다. 현재 `MF_POPUP` 부착이 8회로 생성 수와 짝이 맞고, 부착은 전부 무조건 경로다(항목 추가만 조건부인 곳이 있어도 부착 자체는 분기 밖).
+2. **생성 이후 이탈 경로가 없을 것** — 조기 `return` 2개(`_initialized` · `ModalDialogLoop.RejectReentry`)는 첫 `CreatePopupMenu` **앞**에 있고 `throw` 도 없다. 새 가드를 추가할 때 이 순서를 깨면 곧바로 누수가 된다.
+
+**누수 확인법** — HMENU 는 커널 핸들이 아니라 **USER 오브젝트**라 `Process.HandleCount` 로는 안 잡힌다. `GetGuiResources(hProcess, GR_USEROBJECTS=1)` 로 센다.
+
+```powershell
+Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices;
+  public class G { [DllImport("user32.dll")] public static extern uint GetGuiResources(IntPtr h, uint f); }'
+$p = Get-Process KoEnVue
+[G]::GetGuiResources($p.Handle, 1)   # USER objects
+```
+
+> **먼저 계측기 양성 대조를 세운다** — 메뉴를 여는 순간 값이 **+13** 튀는 것을 확인해야 「닫으면 안 늘어난다」는 관측이 의미를 갖는다. 튐이 안 잡히면 측정 실패다.
+>
+> **`admin_elevation: true` 면 측정할 수 없다.** 앱이 관리자 권한으로 self-relaunch 하면 일반 권한 셸에서 `Handle`/`Path` 가 **예외 없이 빈 값**으로 나온다. exe 를 빈 폴더에 복사해 실행하면 config 기본값(false)이라 일반 권한으로 뜬다 — 사용자 설정을 건드리지 않는 우회로.
+
+**2026-08-04 실측**: 메뉴를 한 번도 안 연 상태 USER=31 → 41회 여닫은 뒤 34(유휴 40초 후 안정). 첫 열기에서 +2~3 이 붙지만 반복해도 그 자리라 누수가 아니다(Win32 팝업 인프라의 일회성 리소스로 추정). 누수라면 41 × 9 ≈ +370 이어야 한다.
+
 ### Tray callback routing
 
 Handled in [Program.cs](../Program.cs) (not `Tray.cs`) because it needs `_indicatorVisible` access for the tray click-action toggle.
