@@ -2,7 +2,7 @@
 
 > bug-hunt **2차 20그룹** + **3차 18그룹** 수정 중 **단위 테스트로 잡을 수 없는 것**만 모았다. 실제 창·GDI·IME·셸에 닿는 경로라 사람이 눌러 봐야 확인된다.
 >
-> 준비: `bin\Release\net10.0-windows\win-x64\publish\` 의 `KoEnVue.exe` 를 쓴다. **`config.json` 을 먼저 백업**해 두면 마음 편하게 만질 수 있다. 로그가 필요한 항목은 `log_level` 을 `DEBUG` 로 두고 시작한다.
+> 준비: `bin\Release\net10.0-windows\win-x64\publish\` 의 `KoEnVue.exe` 를 쓴다. **`koenvue_config.json` 을 먼저 백업**해 두면 마음 편하게 만질 수 있다. 로그가 필요한 항목은 `log_level` 을 `DEBUG` 로 두고 시작한다.
 
 ---
 
@@ -50,12 +50,12 @@
 가장 재현하기 쉽고, 고치기 전에는 **거의 확실히 재현되던** 것.
 
 1. 앱을 종료한다.
-2. `config.json` 첫 줄 다음에 주석을 한 줄 넣는다: `// 테스트`
+2. `koenvue_config.json` 첫 줄 다음에 주석을 한 줄 넣는다: `// 테스트`
 3. 같은 파일에서 `"cursor_display_mode": "soft"` → `"sharp"` 로 바꾼다.
 4. 앱을 실행한다.
 5. **트레이로 아무 값이나 바꾼다**(투명도 등) — 원래 버그는 이 저장 시점에 확정됐다.
 
-**기대** — 커서 헤일로가 선명한(sharp) 모양으로 나온다. 트레이 저장 후에도 `config.json` 의 값이 `sharp` 그대로다.
+**기대** — 커서 헤일로가 선명한(sharp) 모양으로 나온다. 트레이 저장 후에도 `koenvue_config.json` 의 값이 `sharp` 그대로다.
 **고치기 전** — 매번 `soft` 로 되돌아가고, 트레이를 한 번이라도 조작하면 파일에도 `soft` 가 확정됐다.
 
 **2026-08-03 결과** — 통과. 부팅 후 파일 mtime 이 편집 시각 그대로였고(앱이 덮어쓰지 않음), 트레이로 투명도를 0.85→0.6 으로 바꾼 뒤에도 `sharp` 가 살아남았다. DEBUG 로그의 `Cursor halo config applied (… displayMode=Sharp …)` 가 런타임 측 독립 증거.
@@ -79,7 +79,7 @@
 2. 트레이 우클릭 → 위치 기록 정리 → 그 앱 항목을 선택해 삭제.
 3. **메모장을 닫지 말고** 다시 포커스를 준다.
 
-**기대** — 배지가 기본 위치로 돌아온다. `config.json` 의 `indicator_positions` 에서도 그 항목이 사라져 있다.
+**기대** — 배지가 기본 위치로 돌아온다. `koenvue_config.json` 의 `indicator_positions` 에서도 그 항목이 사라져 있다.
 **고치기 전** — 창이 살아 있는 동안 옛 좌표를 계속 썼고(Q), 저장 시점에 파일이 바뀌어 있었다면 지운 항목이 파일에 되살아났다(F).
 
 **2026-08-03 결과** — 통과. 로그가 전 과정을 찍었다: `Saved relative position for notepad++` → `Cleaned 1 position(s)` → `Config saved` → `PositionUpdated: … hwnd=0x702FA … saved=0`. 마지막 줄의 **hwnd 가 삭제 전과 동일**한 것이 Q 의 결정적 증거 — 창을 닫지 않았는데도 캐시가 무효화됐다.
@@ -183,7 +183,7 @@
 
 ### C-4. 잘못된 config 안내가 한 번만 뜨는가 — 2차 G17 🟠 ✅
 
-1. 앱 실행 중에 `config.json` 을 고의로 깨뜨린다(닫는 중괄호 하나 삭제).
+1. 앱 실행 중에 `koenvue_config.json` 을 고의로 깨뜨린다(닫는 중괄호 하나 삭제).
 2. 안내 창이 뜨면 **닫지 말고** 파일을 고쳐 저장한다. **깨진 상태로 한 번 더 저장해 보면** 더 정확하다 — 원래 버그는 *박스가 떠 있는 동안 파일이 바뀔 때마다* 쌓이는 것이었다.
 3. 박스를 닫고, 고친 값이 반영되는지 본다.
 
@@ -197,6 +197,8 @@
 09:16:30.614  Config reloaded
 ```
 
+> 위 로그의 `config.json` 은 **당시 실제 출력**이라 그대로 둔다 — 파일명이 `koenvue_config.json` 으로 바뀐 것은 그 뒤인 v1.0.0.2(2026-08-03) 다. 지금 실시하면 로그에도 새 이름이 찍힌다.
+
 > **안내 박스가 다른 창에 가려진다.** 실시 중 박스를 찾기 어려웠다. Alt+Tab 으로 「KoEnVue」를 고르면 앞으로 나온다. 창 좌표는 `GetWindowRect` 로 확인 가능(관측: 420×179).
 
 ---
@@ -206,7 +208,7 @@
 ### D-1. 파일로 배지 숨김을 해제하면 나타나는가 — 2차 G19 🟠 ✅
 
 1. 트레이 좌클릭으로 배지를 숨긴다. 좌클릭은 `Both → BadgeOnly → CursorOnly → None → Both` 로 순환하므로 **배지가 사라지는 상태**(`CursorOnly` 또는 `None`)까지 누른다.
-2. 편집기에서 `config.json` 의 `"user_hidden": true` → `false` 로 바꾸고 저장.
+2. 편집기에서 `koenvue_config.json` 의 `"user_hidden": true` → `false` 로 바꾸고 저장.
 3. **편집기에 포커스를 둔 채** 기다린다(최대 5초).
 
 **기대** — 배지가 나타난다.
@@ -231,7 +233,7 @@
 
 **2026-08-03 결과** — 통과. 강조색 `#0078D4` → `#0063B1` 변경(레지스트리 `HKCU:\SOFTWARE\Microsoft\Windows\DWM\AccentColor` 로 확인)에 **셋이 함께** 따라갔다. 수정 코드는 [Program.SystemEvents.cs:82](../../Program.SystemEvents.cs) 의 `ApplyCursorConfigChange()` 호출.
 
-> `theme: system` 은 색을 **런타임에만 계산**하고 `config.json` 의 사용자 색은 덮어쓰지 않는다. `custom` 으로 되돌리면 원래 색이 그대로 돌아온다.
+> `theme: system` 은 색을 **런타임에만 계산**하고 `koenvue_config.json` 의 사용자 색은 덮어쓰지 않는다. `custom` 으로 되돌리면 원래 색이 그대로 돌아온다.
 
 ### D-4. 드래그 중 배지가 따라오는가 — 3차 J 🟡 ✅
 
@@ -251,10 +253,10 @@
 
 ### E-1. 파일 편집과 트레이 조작이 겹쳐도 둘 다 살아남는가 — 2차 G6 🔴 ✅
 
-1. `config.json` 에서 `cursor_indicator_enabled` 를 `false` 로 바꾸고 저장.
+1. `koenvue_config.json` 에서 `cursor_indicator_enabled` 를 `false` 로 바꾸고 저장.
 2. **앱이 그 변경을 알아채기 전에** 트레이 우클릭 → 투명도를 **지금과 다른 값**으로 바꾼다.
 
-**기대** — 헤일로가 사라지고(파일 편집 반영) 투명도도 바뀐다(트레이 조작 반영). `config.json` 에 둘 다 들어 있다.
+**기대** — 헤일로가 사라지고(파일 편집 반영) 투명도도 바뀐다(트레이 조작 반영). `koenvue_config.json` 에 둘 다 들어 있다.
 
 > **⚠️ 타이밍 (2026-08-03 실측)** — 이 항목은 **손으로 맞추기 어렵다.** 병합 조건은 "디스크가 앱이 마지막으로 본 상태에서 벗어났을 때"([JsonSettingsManager.cs:250](../../Core/Config/JsonSettingsManager.cs))인데, 앱이 그것을 **0~5초 안에** 알아채고 기준선을 갱신해 버리면 병합 대상이 아니게 된다. 실제로 두 번 놓쳤다(0.885초·1.4초 만에 감지).
 >
@@ -308,5 +310,5 @@ F-1 뒤에 `log_to_file` 을 다시 `true` 로 바꾸고 `koenvue.log` 를 연�
 
 - 어느 항목인지 (예: `A-2`)
 - `koenvue.log` 의 해당 시각 앞뒤 20줄
-- `config.json` 현재 내용
+- `koenvue_config.json` 현재 내용
 - Windows 버전 · 모니터 구성(배율 다른 모니터가 섞였는지)
