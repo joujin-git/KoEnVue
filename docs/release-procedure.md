@@ -8,7 +8,16 @@
 
 - **메인 브랜치 클린 상태.** 모든 PR 머지 + working tree 깨끗.
 - **로컬 [dotnet build](../KoEnVue.csproj) 통과** + **[dotnet test](../tests/KoEnVue.Tests/) 전부 통과** + **[GitHub Actions](../.github/workflows/build.yml) 녹색** (이전 main 푸시 기준). 테스트 개수는 적지 않는다 — 릴리즈마다 늘어 stale 이 되고, "전부 통과" 가 실제 기준이다.
-- **CHANGELOG.md** 의 `[Unreleased]` 섹션이 비어 있지 않은지 확인. 릴리스 직전에 `[Unreleased]` → `[X.Y.Z] — YYYY-MM-DD` 로 승격하고 새 빈 `[Unreleased]` 헤더를 추가.
+- **CHANGELOG.md 승격** — `[Unreleased]` 섹션이 비어 있지 않은지 확인하고 **여기서 바로 승격한다.**
+
+  ```diff
+  - ## [Unreleased]
+  + ## [X.Y.Z.W] — YYYY-MM-DD — 한 줄 요약
+  ```
+
+  새 빈 `## [Unreleased]` 헤더를 위에 추가한다. 커밋은 §2 의 버전 bump 와 **한 커밋으로** 묶는다.
+
+  > **릴리즈 후가 아니라 사전에 하는 이유** — 태그가 가리키는 커밋에 CHANGELOG 가 이미 들어 있어야 §4 의 릴리즈 노트를 그 섹션에서 그대로 뽑을 수 있다. (2026-08-04 통합 — 이전에는 §6 「CHANGELOG 정리」가 같은 작업을 릴리즈 후에 한 번 더 지시해, 어느 시점에 하는 것이 맞는지 모호했다.)
 
 ## 2. 버전 bump
 
@@ -85,16 +94,7 @@ git push origin vX.Y.Z.W  # 태그 푸시
 
 5~10 초 후 트레이 메뉴 최상단 헤더 라벨이 `KoEnVue v{old} → v{new} — 다운로드` 로 자동 전환되면 [UpdateChecker](../App/Update/UpdateChecker.cs) 가 새 릴리스를 정상 감지한 것.
 
-## 6. CHANGELOG 정리
-
-```diff
-- ## [Unreleased]
-+ ## [X.Y.Z.W] — YYYY-MM-DD
-```
-
-새 빈 `## [Unreleased]` 헤더를 위에 추가 + 커밋 + 푸시.
-
-## 7. 문서 갱신
+## 6. 문서 갱신
 
 **손대야 하는 곳은 한 군데뿐이다** — 나머지는 낡지 않도록 써 두었다.
 
