@@ -175,8 +175,8 @@ Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관�
 ### 4.2 메뉴
 
 ```
-KoEnVue v1.0.0.2 — GitHub              ← 항상 최상단 헤더 (MF_DEFAULT 볼드)
-   또는 KoEnVue v1.0.0.2 → v1.0.1.0 — 다운로드   ← 새 버전 가용 시 라벨 변경
+KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT 볼드)
+   또는 KoEnVue v{cur} → {newTag} — 다운로드      ← 새 버전 가용 시 라벨 변경
 ───
 ☐ 한/영 배지 숨김                       ← 숨김 토글 (접지 않음)
 ☐ 커서 헤일로 숨김

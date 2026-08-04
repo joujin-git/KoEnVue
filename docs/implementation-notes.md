@@ -783,8 +783,8 @@ Handles the "user moved the exe" case: the first boot after a move still misses 
 ### Tray menu structure
 
 ```
-KoEnVue v1.0.0.2 — GitHub                       ← always-visible header (MF_DEFAULT bold)
-   or KoEnVue v1.0.0.2 → v1.0.1.0 — 다운로드    ← label flips when UpdateChecker finds update
+KoEnVue v{cur} — GitHub                         ← always-visible header (MF_DEFAULT bold)
+   or KoEnVue v{cur} → {newTag} — 다운로드      ← label flips when UpdateChecker finds update
 ───
 ☐ 한/영 배지 숨김                                 ← 숨김 토글 (접지 않음)
 ☐ 커서 헤일로 숨김
