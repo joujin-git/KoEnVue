@@ -156,6 +156,42 @@ function Invoke-WipCommit {
     }
 }
 
+# 같은 프로젝트에서 아직 살아 있는 **다른** Claude 세션 — SessionEnd 가 wip 커밋해도 되는지 판단용.
+# 2026-09-17 실측: 사용자가 연 짧은 곁 세션(/resume-session 후 삭제)의 SessionEnd 가 `git add -A` 로
+# **작업 중인 다른 세션의 미커밋 변경**까지 wip 커밋·push 했다(그때는 세션 로그뿐이라 무해). 살아 있음은 기록으로 가른다:
+#   - `<id>.desktop-released.json` 이 있으면 데스크탑 앱이 해제한 세션 → 종료
+#   - 비대화형(entrypoint `sdk*`, 예: claude -p)은 입력을 기다리지 않으므로 최근 $HeadlessSessionLiveMinutes 분 안에 기록이 있을 때만
+#   - 그 밖(claude-desktop · 터미널 대화형)은 사용자를 기다리며 오래 쉬므로 $InteractiveSessionLiveMinutes 분
+# 오판의 방향: 살아 있다고 잘못 보면 wip 커밋이 **미뤄질 뿐**(변경은 디스크에 남음) — 남의 작업을 push 하는 반대쪽보다 안전.
+# 기록 폴더는 slug 계산 대신 hook 입력의 transcript_path 에서 얻는다(slug 오배치 계열 재발 방지).
+# 반환: 살아 있는 다른 세션 표기 배열(비어 있을 수 있음). 판단 불가(transcript_path 없음)면 $null.
+$InteractiveSessionLiveMinutes = 120
+$HeadlessSessionLiveMinutes = 10
+function Get-OtherLiveSessions {
+    param([string]$TranscriptPath, [string]$SessionId)
+    if ([string]::IsNullOrWhiteSpace($TranscriptPath)) { return $null }
+    $ownPath = [System.IO.Path]::GetFullPath($TranscriptPath)
+    $dir = Split-Path $ownPath -Parent
+    if (-not (Test-Path $dir -PathType Container)) { return $null }
+    if ([string]::IsNullOrWhiteSpace($SessionId)) { $SessionId = [System.IO.Path]::GetFileNameWithoutExtension($ownPath) }
+    $now = Get-Date
+    $live = New-Object System.Collections.Generic.List[string]
+    foreach ($f in Get-ChildItem -Path $dir -Filter '*.jsonl' -File -ErrorAction SilentlyContinue) {
+        # 자기 자신은 경로와 id 둘 다로 제외 — id 형식이 파일명과 어긋나도 자기 기록을 '다른 세션'으로 세지 않게.
+        if ($f.FullName -eq $ownPath -or $f.BaseName -eq $SessionId) { continue }
+        if (Test-Path (Join-Path $dir "$($f.BaseName).desktop-released.json")) { continue }
+        $entrypoint = ''
+        try {
+            foreach ($line in (Get-Content -Path $f.FullName -TotalCount 40 -Encoding UTF8 -ErrorAction Stop)) {
+                if ($line -match '"entrypoint"\s*:\s*"([^"]+)"') { $entrypoint = $matches[1]; break }
+            }
+        } catch { }
+        $window = if ($entrypoint -like 'sdk*') { $HeadlessSessionLiveMinutes } else { $InteractiveSessionLiveMinutes }
+        if (($now - $f.LastWriteTime).TotalMinutes -le $window) { $live.Add("$($f.BaseName)($entrypoint)") }
+    }
+    return ,$live.ToArray()
+}
+
 # Push to upstream — used by the "커밋 = 푸시 항상 같이" workflow rule.
 # Returns: 'pushed' on success, 'no-upstream' if no tracking branch, 'failed' on push error.
 function Invoke-Push {
