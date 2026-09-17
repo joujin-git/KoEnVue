@@ -60,7 +60,7 @@ Before adding a new helper: **grep Core/ first**.
 
 ### P6 verification invariants
 
-Run at the repo root. **Each grep must match the expected count in its trailing `#` comment; a grep with no annotation must return 0 matches.** 기대값의 단일 진실원은 각 줄의 주석이다 — 아래 13개 grep 은 의도적으로 0 이 아닌 기대값(1 / 1+ / ≥1 / 2 / 3 / 4 / 5)을 가지므로, "전부 0" 으로 일괄 판정하면 정상 통과 중인 항목을 위반으로 오판한다.
+Run at the repo root. **Each grep must match the expected count in its trailing `#` comment; a grep with no annotation must return 0 matches.** 기대값의 단일 진실원은 각 줄의 주석이다 — 아래 블록에는 의도적으로 0 이 아닌 기대값(예: `1+` / `≥1` / `**3**`)을 가진 grep 이 섞여 있으므로, "전부 0" 으로 일괄 판정하면 정상 통과 중인 항목을 위반으로 오판한다. **그런 grep 의 개수는 여기 적지 않는다** — 가드가 추가될 때마다 낡는다(이 자리에 "13개" 가 적힌 채 실제 16개와 어긋나 있던 것을 2026-09-17 정정). 세는 기준: 주석의 **기대값 표기** — 출처 라벨 뒤 `:` 바로 다음(`PR-15: 3`, `PR-18: 0`)이나 굵게 쓴 값(`**5**`), `N+` · `≥N` — 가 0 보다 크면 0 이 아닌 항목이고, 기대값 표기가 없거나 `0` 이면 0 매치 항목이다. 주석 속 이슈·PR 번호(`확정 #28`, `PR-18 5/5`) 같은 다른 숫자는 기대값이 아니다. 판정은 개수 대조가 아니라 **줄마다** 실제 매치 수를 그 줄의 주석과 비교한다.
 
 ```bash
 git grep "KoEnVue\.App"      Core/   # P6 namespace gate
