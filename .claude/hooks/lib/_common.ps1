@@ -246,7 +246,7 @@ function Get-AutoMemoryDir {
 # 삭제는 동기화 안 함(추가/수정만). Copy-Item 은 mtime 보존 → 정상 세션엔 (2)가 무동작.
 # C: 디렉토리 부재는 skip 사유가 아니라 **복구 대상** — C: 복원/초기화 직후의 정상 상태이므로
 # E: 쪽과 대칭으로 생성한다(2026-07-22: 부재 시 skip 하던 탓에 복원 후 복구가 통째로 불발).
-# 반환: @{ absorbed; restored; created; errors }. absorbed>0 이면 E: 변경됨 → 호출부가 commit 판단.
+# 반환: @{ absorbed; restored; created; errors; path }. absorbed>0 이면 E: 변경됨 → 호출부가 commit 판단.
 # created=$true 면 C: 가 복원/초기화된 것 → 호출부가 사용자에게 알린다.
 # `errors` 는 **침묵 금지 장치**(2026-07-29 추가) — 종전 catch 3곳이 실패를 통째로 삼켜 "실패"와
 # "할 일 없음"이 구분되지 않았다. 실제로 07-29 세션 시작 때 C: 가 복원으로 소실됐는데 경고도
@@ -266,7 +266,7 @@ function Sync-Memory {
         $msg = "C: 경로 계산 이상 — projects 바로 아래가 아님 ($cDir)"
         $errs.Add($msg)
         Write-HookError -HookName 'Sync-Memory' -Message $msg
-        return @{ absorbed = 0; restored = 0; created = $false; errors = $errs.ToArray() }
+        return @{ absorbed = 0; restored = 0; created = $false; errors = $errs.ToArray(); path = $cDir }
     }
     # -PathType Container: 맨 Test-Path 는 **같은 이름의 파일에도 true** 라 생성 분기를 건너뛰고,
     # 그 뒤 Get-ChildItem 이 파일 경로를 받으면 -Filter 를 무시하고 그 파일 자체를 반환한다
@@ -288,7 +288,7 @@ function Sync-Memory {
             $msg = "C: 디렉토리 생성 실패 ($cDir): $($_.Exception.Message)"
             $errs.Add($msg)
             Write-HookError -HookName 'Sync-Memory' -Message $msg
-            return @{ absorbed = 0; restored = 0; created = $false; errors = $errs.ToArray() }
+            return @{ absorbed = 0; restored = 0; created = $false; errors = $errs.ToArray(); path = $cDir }
         }
     }
     $absorbed = 0; $restored = 0
@@ -317,7 +317,7 @@ function Sync-Memory {
     if ($errs.Count -gt 0) {
         Write-HookError -HookName 'Sync-Memory' -Message ("$($errs.Count)건 — " + ($errs -join ' | '))
     }
-    return @{ absorbed = $absorbed; restored = $restored; created = $created; errors = $errs.ToArray() }
+    return @{ absorbed = $absorbed; restored = $restored; created = $created; errors = $errs.ToArray(); path = $cDir }
 }
 
 # Mask common secret patterns before persisting transcript text to git-tracked files

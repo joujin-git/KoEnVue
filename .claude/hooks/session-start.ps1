@@ -29,6 +29,8 @@ if ($memSync.absorbed -gt 0 -or $memSync.restored -gt 0 -or $memSync.created -or
         if ($memErrs.Count -gt 3) { $lines.Add("  - (외 $($memErrs.Count - 3)건)") }
     }
     $lines.Add("C:→E: $($memSync.absorbed)건 흡수, E:→C: $($memSync.restored)건 복구. absorbed>0 이면 git 백업 위해 커밋 필요.")
+    # 건수만으로는 **어디에** 썼는지 모른다 — 2026-09-17 에 "14건 복구" 가 엉뚱한 중첩 경로였다. 경로를 함께 보인다.
+    $lines.Add("C: 경로: ``$($memSync.path)``")
     $lines.Add('')
 }
 
