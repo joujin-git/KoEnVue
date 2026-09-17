@@ -190,7 +190,7 @@ hook 이벤트 5개 (SessionStart · PreCompact · Stop · SessionEnd · Instruc
 - **한계**: 세션 발췌는 transcript JSONL 내부 스키마(`type`/`message`/`content`)에 의존 — Claude Code 버전업으로 스키마가 바뀌면 발췌가 깨질 수 있음(위 빈 발췌 마커가 그 조기 신호).
 
 ### `SessionEnd` → `session-end.ps1`
-- dirty tree 가 있으면:
+- dirty tree 가 있으면 (아래 「다른 세션이 살아 있으면」 경우는 제외):
   1. **먼저** 오늘 세션 파일에 `## [YYYY-MM-DD HH:MM] session-end (reason)` 블록 append (turn/정리 블록과 달리 **날짜까지** 찍는다 — `session-end.ps1` 의 `yyyy-MM-dd HH:mm` 스탬프) (`Add-SessionBlock` mutex 로 직렬화; 이 세션의 최근 10분 커밋 목록 + "방금 wip — 이 마무리 블록 포함" 한 줄)
   2. **그 다음** `wip: session YYYY-MM-DD HH:MM — session end (reason)` 커밋 — block 변경분 + 기존 dirty 가 같은 wip 커밋에 묶임 (다음 세션 시작 시 dirty 잔여물 0 보장)
 - dirty tree 가 없으면 nothing — 마무리 블록도 안 적고 wip 커밋도 만들지 않음 (잡음 0)
@@ -274,7 +274,7 @@ hook 이벤트 5개 (SessionStart · PreCompact · Stop · SessionEnd · Instruc
 
 git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로 push 도 자동.
 
-1. 작업 중 `Ctrl+C` / 시스템 종료 → `SessionEnd` hook 이 자동 wip 커밋 + **자동 push**
+1. 작업 중 `Ctrl+C` / 시스템 종료 → `SessionEnd` hook 이 자동 wip 커밋 + **자동 push** (단 같은 프로젝트에 다른 세션이 살아 있다고 판정되면 wip 커밋은 생략 — 미커밋 변경은 이 장비에만 남으니 장비를 옮기기 전 커밋 여부 확인, §4 SessionEnd)
 2. Claude 의 모든 `git commit` 은 Stop hook(턴 끝 1회)이 미푸시 커밋을 자동 push
 3. 다른 장비에서 `git pull` → 최신 상태
 4. `claude` 실행 → `SessionStart` hook 이 최근 세션 요약 + push 안 한 commit 알림 (잊은 경우 대비)

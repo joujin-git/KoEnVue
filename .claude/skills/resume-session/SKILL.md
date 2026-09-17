@@ -19,7 +19,7 @@ allowed-tools: Bash, Read, Glob
 ## 임무
 1. **상태 보고**: 어디까지 했고, 무엇이 dirty 인지
 2. **다음 작업 후보**: 가장 최근 세션의 "다음" 섹션과 wip 커밋 메시지에서
-3. **위험 신호**: dirty tree 가 있으면 이전 세션의 자동 wip 커밋 잔재인지 / 미커밋 새 변경인지 분별
+3. **위험 신호**: dirty tree 가 있으면 이전 세션의 자동 wip 커밋 잔재인지 / 미커밋 새 변경인지 / **같은 프로젝트에서 아직 작업 중인 다른 세션의 변경**인지 분별. 셋째면 이 세션에서 커밋·되돌리기 금지 — 그 세션이 처리한다(SessionEnd 도 다른 세션이 살아 있으면 wip 커밋을 생략한다, docs/harness.md SessionEnd 절). 다른 세션 여부는 `C:\Users\<user>\.claude\projects\<slug>\` 의 최근 `*.jsonl`(해제 기록 `<id>.desktop-released.json` 없는 것)로 확인
 4. 사용자에게 "이어서 X 할까요? 아니면 다른 거 하실래요?" 라고 묻기 — 단정해서 시작하지 말 것
 
 추가 인자(있다면): $ARGUMENTS
