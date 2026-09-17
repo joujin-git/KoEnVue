@@ -420,7 +420,9 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 **2026-09-17 재발 — 「14건 복구」라고 보고했는데 정위치는 빈 채**: 44일 공백 뒤 첫 세션(데스크탑 앱 2.1.271)에서 `created` 경고 + `restored=14` 가 정상 주입됐으나, `/resume-session` 이 C: 를 직접 열어 보니 `E--dev-KoEnVue\memory` 가 **존재하지 않았습니다.** 파일은 `projects\e-\dev\KoEnVue\memory\` 라는 **중첩 디렉토리**에 있었고, 생성 시각(10:05:27.974)이 hook 실행 구간(875ms, 28.274 종료) 안이었습니다. 정위치의 부모 `E--dev-KoEnVue` 는 그 뒤(28.404) 런타임이 세션 transcript 를 쓰며 만든 것입니다.
 
-원인은 slug 계산 — `$root -replace '[:\\]', '-'` 가 `/` 를 남깁니다. hook 이 받은 프로젝트 경로가 `e:/dev/KoEnVue` 같은 **슬래시 형식**이면 slug 가 `e-/dev/KoEnVue` 가 되고, `Join-Path` 후 파일시스템이 `/` 를 구분자로 읽어 중첩됩니다. 가짜 `USERPROFILE` 로 재현: 수정 전 원본은 슬래시 경로(대소문자 무관)에서 중첩 + `restored=14` + **❌ 없음**, 백슬래시 경로에서만 정상. (hook 환경의 `CLAUDE_PROJECT_DIR` 값 자체는 도구 셸에 그 변수가 없어 직접 관측하지 못함 — 오배치 흔적과 재현 결과로 확정.)
+원인은 slug 계산 — `$root -replace '[:\\]', '-'` 가 `/` 를 남깁니다. hook 이 받은 프로젝트 경로가 `e:/dev/KoEnVue` 같은 **슬래시 형식**이면 slug 가 `e-/dev/KoEnVue` 가 되고, `Join-Path` 후 파일시스템이 `/` 를 구분자로 읽어 중첩됩니다. 가짜 `USERPROFILE` 로 재현: 수정 전 원본은 슬래시 경로(대소문자 무관)에서 중첩 + `restored=14` + **❌ 없음**, 백슬래시 경로에서만 정상. (hook 환경의 `CLAUDE_PROJECT_DIR` 값 자체는 도구 셸에 그 변수가 없어 처음엔 오배치 흔적과 재현 결과로만 확정했고, 같은 날 **직접 관측**했다 — 환경변수가 없을 때의 폴백(`Resolve-Path`)은 `E:\dev\KoEnVue` 백슬래시를 내므로 슬래시는 변수 자체에서 온 것이고, `claude -p` 로 새 세션을 띄워 `--settings` 로 붙인 임시 SessionStart hook 이 **`E:/dev/KoEnVue`**(entrypoint `sdk-cli`)를 기록했다.)
+
+**실제 새 세션에서 수정 확인 (2026-09-17)**: 정위치 C: `memory` 를 이름만 바꿔 치운 **실패 상태**에서 `claude -p` 로 KoEnVue 새 세션을 띄웠다 — 실제 `session-start.ps1` 이 `created` 경고와 함께 `C: 경로: C:\Users\…\.claude\projects\E--dev-KoEnVue\memory` 를 보고했고, 디스크에 정위치 14/14(E: 와 해시 불일치 0) · 중첩 `e-\dev\KoEnVue` 없음. (모델 호출은 CLI 저장 토큰 만료 401 로 실패했지만 SessionStart 는 그보다 먼저 돈다.) 같은 날 안내에 **실제로 쓴 C: 경로 줄**을 추가했다 — 건수만으로는 오배치를 알아볼 수 없었기 때문. 데스크탑 앱(entrypoint `claude-desktop`) 세션 시작에서의 발화는 다음 데스크탑 세션의 안내 경로 줄로 확인한다.
 
 **반환값으로는 원리적으로 못 잡는 결함**이었습니다 — 엉뚱한 곳에 만들고 복사해도 `created`/`restored` 는 정상과 완전히 같고, 다음 세션부터는 그 중첩 디렉토리가 이미 있어 `created` 경고조차 사라져 **영구 침묵**으로 굳습니다. 07-29 의 교훈(실패를 반환값에 남겨라)은 "실패"만 다뤘고, **성공으로 보고되는 오배치**는 범위 밖이었습니다.
 
