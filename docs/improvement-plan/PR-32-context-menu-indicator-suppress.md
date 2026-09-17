@@ -2,7 +2,7 @@
 
 > 상태: **✅ implemented** — 2026-07-24, main 직접. Tier-1 build/test/publish + reviewer ✅. 수동 smoke는 사용자 확인.
 >
-> 후속 (2026-09-17): 포인터 판정 대상을 `OverlaySuppressTarget { Badge, CursorHalo }` 로 분리(`includeSystemInputProcesses` 대체) — **바탕화면·작업 표시줄 위에서는 한/영 배지를 숨기지 않음**(커서 헤일로는 유지, 클릭해 포커스가 넘어가면 FG 축이 숨김). 아래 본문(설계·smoke)은 당시 기록이며, 현행은 [implementation-notes § System filter](../implementation-notes.md#system-filter-8-conditions).
+> 후속 (2026-09-17): 포인터 판정 대상을 `OverlaySuppressTarget { Badge, CursorHalo }` 로 분리(`includeSystemInputProcesses` 대체) — **바탕화면·작업 표시줄 위에서는 한/영 배지를 숨기지 않음**(커서 헤일로는 유지, 클릭해 포커스가 넘어가면 FG 축이 숨김). 아래 본문(설계·smoke)은 당시 기록이며, 현행은 [implementation-notes § System filter](../implementation-notes.md#system-filter-8-conditions). **사용자 실기 확인 (2026-09-17, 커밋 `1f6c558` publish 빌드) — 4항목 정상**: ① 바탕화면·작업 표시줄 위 배지 표시 ② 작업 표시줄·바탕화면 우클릭 메뉴 위 배지 숨김 유지 ③ 바탕화면 클릭 시 배지 숨김 ④ 작업 표시줄 버튼으로 앱 전환 시 배지 깜박임 없음.
 >
 > 선행: PR-26 (강제 Show + 레벨 HIDE) · 세션 2026-07-24 (우클릭 dismiss 보류, `#32768` 축 권고)
 
