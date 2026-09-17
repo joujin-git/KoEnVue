@@ -225,8 +225,8 @@ internal static class DetectionService
         AppConfig cfg, out AppConfig appConfig)
     {
         // PR-32 Pointer 축 — FG 히스테리시스와 독립. #32768 등 FG 미변경 메뉴는 즉시 HIDE.
-        // Start/Search 는 메인 표시 정책 유지(includeSystemInput: false). 커서만 SystemInput 숨김.
-        if (OverlaySuppressProbe.IsPointerOverSuppressSurface(cfg, includeSystemInputProcesses: false))
+        // Start/Search 와 바탕화면·작업 표시줄 위는 배지 표시 유지(Badge). 커서 헤일로만 숨김.
+        if (OverlaySuppressProbe.IsPointerOverSuppressSurface(cfg, OverlaySuppressTarget.Badge))
         {
             if (host.IsIndicatorVisible())
             {

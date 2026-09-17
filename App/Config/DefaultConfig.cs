@@ -154,12 +154,36 @@ internal static partial class DefaultConfig
     /// 사용자가 인디를 시스템 창 위로 드래그해도 z-band 한계로 가려지므로
     /// 저장된 위치 대신 항상 기본 위치(창 중앙 상단)를 사용해야 한다.
     /// </summary>
-    public static bool IsSystemInputProcess(string processName)
+    public static bool IsSystemInputProcess(string processName) =>
+        ContainsIgnoreCase(SystemInputProcesses, processName);
+
+    // === 바탕화면·작업 표시줄 표면 ===
+
+    /// <summary>
+    /// 바탕화면(Progman/WorkerW)·작업 표시줄(주/보조 모니터) 루트 클래스. <see cref="DefaultSystemHideClasses"/>
+    /// 의 일부이면서, 포인터 축에서 한/영 배지만 숨김 예외로 두는 표면이다 — 포인터가 지나가기만 해서는
+    /// 배지가 사라지지 않고, 클릭해 포커스가 넘어가면 FG 축이 숨긴다. 커서 헤일로는 포인터 축에서도 숨김.
+    /// 두 용도가 같은 이름을 공유하도록 여기서 한 번만 정의한다. 감지 틱마다 조회하는 판정 테이블이라
+    /// 호출마다 새 배열을 만드는 property 대신 private 필드로 두고, 밖에는 판정 함수만 노출한다.
+    /// </summary>
+    private static readonly string[] DesktopTaskbarClasses =
+    [
+        "Progman",
+        "WorkerW",
+        "Shell_TrayWnd",
+        "Shell_SecondaryTrayWnd",
+    ];
+
+    /// <summary>바탕화면·작업 표시줄 루트 클래스 여부 (대소문자 무관).</summary>
+    public static bool IsDesktopTaskbarClass(string className) =>
+        ContainsIgnoreCase(DesktopTaskbarClasses, className);
+
+    private static bool ContainsIgnoreCase(string[] list, string value)
     {
-        if (string.IsNullOrEmpty(processName)) return false;
-        foreach (string p in SystemInputProcesses)
+        if (string.IsNullOrEmpty(value)) return false;
+        foreach (string item in list)
         {
-            if (p.Equals(processName, StringComparison.OrdinalIgnoreCase))
+            if (item.Equals(value, StringComparison.OrdinalIgnoreCase))
                 return true;
         }
         return false;
@@ -235,9 +259,10 @@ internal static partial class DefaultConfig
     public const string DefaultOverlayClassName    = "KoEnVueOverlay";
 
     // 시스템 숨김 클래스/프로세스 (메인 SystemFilter FG 축 + OverlaySuppressProbe WFP 축 공용 기본 목록).
+    // 단 WFP 축에서 한/영 배지는 앞의 바탕화면·작업 표시줄 4종을 매칭하지 않는다(IsDesktopTaskbarClass).
     // #32768(PopupMenuClass) 은 FG 목록에 넣지 않고 프로브 전용(PR-32) — FG 미변경 메뉴는 WFP 축.
     public static string[] DefaultSystemHideClasses =>
-        ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow_WASDK", "TopLevelWindowForOverflowXamlIsland", "ControlCenterWindow"];
+        [.. DesktopTaskbarClasses, "XamlExplorerHostIslandWindow_WASDK", "TopLevelWindowForOverflowXamlIsland", "ControlCenterWindow"];
     public static string[] DefaultSystemHideProcesses => ["ShellExperienceHost"];
 
     // === Validate clamp / SettingsDialog field range — Min/Max 단일 진실원 (D7) ===

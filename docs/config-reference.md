@@ -96,10 +96,10 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 
 | 키 | 타입 | 기본값 | 설명 |
 |---|---|---|---|
-| `system_hide_classes` | string[] | `["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow_WASDK", "TopLevelWindowForOverflowXamlIsland", "ControlCenterWindow"]` | FG `SystemFilter` + 포인터 `OverlaySuppressProbe`(PR-32). `#32768` 메뉴는 키에 없고 프로브 전용 const. 일반 사용자가 편집할 일은 거의 없음 |
+| `system_hide_classes` | string[] | `["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow_WASDK", "TopLevelWindowForOverflowXamlIsland", "ControlCenterWindow"]` | FG `SystemFilter` + 포인터 `OverlaySuppressProbe`(PR-32). `#32768` 메뉴는 키에 없고 프로브 전용 const. **포인터 축에서 바탕화면·작업 표시줄 4종(`Progman`/`WorkerW`/`Shell_TrayWnd`/`Shell_SecondaryTrayWnd`)은 커서 헤일로만 숨기고 한/영 배지는 예외** — 포인터가 지나가기만 해서는 배지가 사라지지 않고, 클릭해 포커스가 넘어가면 FG 축이 숨김. 예외 목록은 고정(`DefaultConfig.DesktopTaskbarClasses`)이라 이 키나 `system_hide_classes_user` 로 바꿀 수 없음. 일반 사용자가 편집할 일은 거의 없음 |
 | `system_hide_classes_user` | string[] | `[]` | 사용자 추가 클래스명 (FG+포인터 공용) |
 | `system_hide_processes` | string[] | `["ShellExperienceHost"]` | Win11 셸 메뉴 등 (FG + 포인터). 작업 표시줄/바탕 우클릭 팝업 |
-| `system_hide_processes_user` | string[] | `[]` | 사용자 추가 프로세스명 (확장자 없음) |
+| `system_hide_processes_user` | string[] | `[]` | 사용자 추가 프로세스명 (확장자 없음). FG+포인터 공용 — 위 바탕화면·작업 표시줄 배지 예외는 클래스 매칭만 건너뛰므로 여기 넣은 프로세스 규칙은 그 위에서도 적용 |
 
 ## 앱별 프로필 + 필터 (App Profiles + Filter)
 

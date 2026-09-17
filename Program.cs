@@ -792,8 +792,9 @@ internal static partial class Program
             return;
         }
 
-        // PR-32: 메뉴·셸 표면 위에서는 FG가 통과해도 Show 금지 (커서 WFP 축과 대칭).
-        if (OverlaySuppressProbe.IsPointerOverSuppressSurface(_config, includeSystemInputProcesses: false))
+        // PR-32: 메뉴·셸 표면 위에서는 FG가 통과해도 Show 금지 — 감지 틱 Pointer 축과 같은 Badge 판정.
+        // 바탕화면·작업 표시줄 위는 배지 예외라 Show 허용 (커서 헤일로는 그 위에서도 숨김).
+        if (OverlaySuppressProbe.IsPointerOverSuppressSurface(_config, OverlaySuppressTarget.Badge))
         {
             Logger.Info("Forced show skipped: pointer over suppress surface");
             return;

@@ -474,7 +474,8 @@ internal static class CursorOverlay
     /// 커서 바로 아래 창이 셸·메뉴 suppress 표면인지 (PR-32).
     /// <see cref="User32.WindowFromPoint"/> 는 WS_EX_TRANSPARENT 커서 헤일로를 통과한다.
     /// <see cref="Win32Constants.GA_ROOT"/> 루트 캐시로 매 tick GetProcessName 을 피한다.
-    /// 판정은 <see cref="OverlaySuppressProbe"/> 단일 진실원 (메인 Pointer 축과 공유, Start/Search 포함).
+    /// 판정은 <see cref="OverlaySuppressProbe"/> 단일 진실원 (메인 Pointer 축과 공유). 배지와 달리
+    /// Start/Search 와 바탕화면·작업 표시줄 위에서도 숨긴다(<see cref="OverlaySuppressTarget.CursorHalo"/>).
     /// </summary>
     private static bool IsOverShellUi(POINT cursor)
     {
@@ -487,7 +488,7 @@ internal static class CursorOverlay
         if (root == _lastShellHwnd) return _lastShellResult;
 
         bool result = OverlaySuppressProbe.IsSuppressRoot(
-            root, _config, includeSystemInputProcesses: true);
+            root, _config, OverlaySuppressTarget.CursorHalo);
         _lastShellHwnd = root;
         _lastShellResult = result;
         return result;

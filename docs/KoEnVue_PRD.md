@@ -82,7 +82,7 @@ Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관�
 
 ### 2.4 숨김 조건
 - 바탕화면 / 작업 표시줄 / 잠금 화면 (SystemFilter, FG 축 + 히스테리시스)
-- **포인터가 셸·클래식 컨텍스트 메뉴(`#32768`) 위** (PR-32 `OverlaySuppressProbe`, FG와 직교·즉시 숨김 — 메인·커서 공유; Start/Search는 커서만). WinUI/브라우저 커스텀 메뉴는 비보장
+- **포인터가 셸·클래식 컨텍스트 메뉴(`#32768`) 위** (PR-32 `OverlaySuppressProbe`, FG와 직교·즉시 숨김 — 한/영 배지·커서 헤일로 공유; Start/Search 와 바탕화면·작업 표시줄 위는 커서 헤일로만 숨김 — 배지는 포인터가 지나가기만 해서는 사라지지 않음. 바탕화면·작업 표시줄은 클릭해 포커스가 넘어가면 위 FG 축이 숨기고, Start/Search 는 포커스를 가져도 배지 표시가 기존 정책). WinUI/브라우저 커스텀 메뉴는 비보장
 - 전체 화면 앱 (`hide_in_fullscreen`)
 - 비한국어 IME + `NonKoreanIme = Hide` 설정
 - 포커스 없는 창 (`hide_when_no_focus`)
