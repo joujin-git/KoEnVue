@@ -211,17 +211,24 @@ function Get-DocSyncReminders {
     return $out
 }
 
+function Get-ClaudeProjectsDir {
+    return (Join-Path $env:USERPROFILE '.claude\projects')
+}
+
 # Claude Code 기본 auto-memory 위치 (C:) — autoMemoryDirectory(${CLAUDE_PROJECT_DIR} 전개 실패)가
-# 무시될 때 실제 읽기/쓰기 위치. slug = 프로젝트 절대경로의 ':' '\' → '-' 치환.
+# 무시될 때 실제 읽기/쓰기 위치. slug = 프로젝트 절대경로의 ':' '\' '/' → '-' 치환.
+# '/' 누락 시: 데스크탑 앱 hook 은 CLAUDE_PROJECT_DIR 를 슬래시 형식(e:/dev/KoEnVue)으로 줄 수 있고,
+# 그러면 slug 'e-/dev/KoEnVue' 의 '/' 가 경로 구분자로 읽혀 projects\e-\dev\KoEnVue\memory 라는
+# **중첩 디렉토리**에 미러된다(2026-09-17 실측). 복사는 전부 성공해 반환값으론 드러나지 않는다.
 # 드라이브문자 대소문자는 Claude Code 버전에 따라 달랐다 — 2026-07 이전 소문자(e--dev-KoEnVue),
 # 이후 원형 유지(E--dev-KoEnVue). 실재하는 변형을 우선 반환하고, 어느 쪽도 없으면 원형 slug 경로를
 # 반환한다. **부재 시 $null 을 주지 않는 것이 핵심** — C: 복원 직후엔 디렉토리가 없는 게 정상이고
 # 그때가 E:→C: 복구가 가장 필요한 순간이라, $null 로 skip 하면 hook 이 무동작한다(2026-07-22 실측).
 function Get-AutoMemoryDir {
     $root = Get-ProjectRoot
-    $slug = $root -replace '[:\\]', '-'
+    $slug = $root -replace '[:\\/]', '-'
     $lower = if ($slug -match '^([A-Za-z])(.*)$') { $matches[1].ToLower() + $matches[2] } else { $slug }
-    $base = Join-Path $env:USERPROFILE '.claude\projects'
+    $base = Get-ClaudeProjectsDir
     foreach ($s in @($slug, $lower)) {
         $dir = Join-Path (Join-Path $base $s) 'memory'
         if (Test-Path $dir) { return $dir }
@@ -249,6 +256,18 @@ function Sync-Memory {
     $errs = New-Object System.Collections.Generic.List[string]
     $cDir = Get-AutoMemoryDir
     $eDir = Join-Path (Get-ProjectRoot) '.claude\memory'
+    # 위치 가드 (2026-09-17) — slug 계산이 어긋나면 엉뚱한 곳에 만들고 복사해도 created/restored 는
+    # 정상과 똑같이 나온다(슬래시 경로로 중첩 디렉토리에 14건 "복구" 보고, 정위치는 빈 채였다).
+    # memory 의 조부모가 projects 자체인지 확인하고, 아니면 **아무것도 만들지 않고** 실패로 보고한다.
+    # GetFullPath 가 '/' 를 '\' 로 정규화하므로 문자열 비교 전에 반드시 거친다.
+    $cGrandParent = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($cDir)))
+    $projectsDir = [System.IO.Path]::GetFullPath((Get-ClaudeProjectsDir))
+    if ($cGrandParent.TrimEnd('\') -ne $projectsDir.TrimEnd('\')) {
+        $msg = "C: 경로 계산 이상 — projects 바로 아래가 아님 ($cDir)"
+        $errs.Add($msg)
+        Write-HookError -HookName 'Sync-Memory' -Message $msg
+        return @{ absorbed = 0; restored = 0; created = $false; errors = $errs.ToArray() }
+    }
     # -PathType Container: 맨 Test-Path 는 **같은 이름의 파일에도 true** 라 생성 분기를 건너뛰고,
     # 그 뒤 Get-ChildItem 이 파일 경로를 받으면 -Filter 를 무시하고 그 파일 자체를 반환한다
     # → 확장자 무관 잡파일이 E: 정본으로 흡수됐다(2026-07-29 검증 중 실측). 디렉토리만 인정.

@@ -4,7 +4,7 @@
 - [Workflow rules](feedback_workflow_rules.md) — 빌드 = debug + release publish 항상 둘 다, 커밋 = `git push` 까지 항상 같이 (Stop hook 이 턴 끝 1회 자동 push).
 - [OS 의존 버그 감수](os-dependent-accept.md) — 제어 불가 OS(Win32/셸) 동작에 의존하는 버그는 무리한 수정보다 감수 선호.
 - [도구 제약 — 감수 전 실험](tool-limit-verify-first.md) — 제어 가능한 제약(도구/SDK/설정)은 "못 한다" 단정 전 저비용 실험으로 재확인. permissions.deny·정적게이트·PostToolUse 자동기록 사례.
-- [안전망은 실패 상태에서 검증](safety-net-verify-in-failure-state.md) — hook·복구 로직은 정상 상태 성공이 아니라 발동 조건(실패 상태)을 만들어 end-to-end 발화 확인. 침묵 실패 금지. Sync-Memory 6주 무동작 사례.
+- [안전망은 실패 상태에서 검증](safety-net-verify-in-failure-state.md) — hook·복구 로직은 정상 상태 성공이 아니라 발동 조건(실패 상태)을 만들어 end-to-end 발화 확인. 침묵 실패 금지. Sync-Memory 6주 무동작 사례 + 09-17 「14건 복구」 보고인데 중첩 경로에 오배치 사례(건수 말고 위치 확인).
 - [근거가 되는 정량 주장은 직접 재현](verify-load-bearing-claims.md) — 서브에이전트 실측·코드 주석이 권고를 떠받치면 메인이 조건 바꿔 재측정. SetTimer 16ms≈60fps 오전제 사례.
 - [설정 검증은 런타임 부산물로](verify-with-runtime-artifacts.md) — 내가 만든 산출물은 증거가 아니다(순환논법). 런타임이 새긴 필드·타임스탬프 + 대조군. autoMemoryDirectory 5주 유보 사례.
 - [규범 문서의 일괄 서술 = 반례 의심 + 사본 전수 grep](normative-doc-blanket-claims.md) — "전부 0" 류는 자기 예외와 모순되기 쉽고 hook·에이전트 사본으로 전파. conventions.md invariant 헤더 6곳 사례.
