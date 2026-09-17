@@ -122,9 +122,13 @@ if ($dirty) {
 }
 Add-SessionBlock -Path $sessionFile -Content ($block -join "`n")
 
-# ── (7) 메인 세션에 doc-sync/경고/push 실패를 additionalContext 로 시도 ──
-# (Stop hook 이 additionalContext 를 지원하면 다음 턴에 노출됨. 미지원이어도 무해 —
-#  세션 로그(6)가 확실한 기록. 재구성 후 스모크로 실제 노출 여부 확인 대상.)
+# ── (7) 메인 세션에 doc-sync/경고/push 실패를 additionalContext 로 전달 — 같은 내용은 한 번만 ──
+# 실측(2026-09-17, 데스크탑 앱 2.1.271): Stop 의 additionalContext 는 "다음 사용자 턴에 노출"이 아니라
+# **그 자리에서 모델을 다시 깨운다**. 깨어난 턴이 끝나면 이 hook 이 또 돌고, 트리는 여전히 dirty 라
+# 같은 문구를 또 내보내 → 커밋될 때까지 빈 턴이 반복됐다(백그라운드 에이전트 대기 중 약 10회).
+# 그래서 ① stop_hook_active(hook 이 일으킨 연속 턴)면 보내지 않고 ② 직전에 보낸 것과 지문이 같으면
+# 보내지 않는다. 보낼 것이 없어지면(커밋 등) 지문을 지워 다음 변경에 다시 한 번 알린다.
+# 판정은 state/stop-last.json 에 남긴다 — "안 보냈다"가 dedupe 인지 hook 무동작인지 가르는 런타임 흔적.
 $ctxParts = @()
 if ($docReminders.Count -gt 0) {
     $items = (@($docReminders | ForEach-Object { $_.Docs -join ', ' }) | Select-Object -Unique) -join ' / '
@@ -132,14 +136,44 @@ if ($docReminders.Count -gt 0) {
 }
 if ($wfWarnings.Count -gt 0) { $ctxParts += "[harness] 워크플로우 정합 경고: $($wfWarnings -join ' | ')" }
 if ($pushNote -and $pushNote -notmatch '완료') { $ctxParts += "[harness] $pushNote" }
+
+$stateDir = Get-StateDir
+$fingerprintFile = Join-Path $stateDir 'stop-context.last'
+$hasActiveField = [bool]($payload -and ($payload.PSObject.Properties.Name -contains 'stop_hook_active'))
+$stopHookActive = $hasActiveField -and [bool]$payload.stop_hook_active
+$decision = 'nothing-to-send'
 if ($ctxParts.Count -gt 0) {
-    Write-HookOutput @{
-        hookSpecificOutput = @{
-            hookEventName = 'Stop'
-            additionalContext = ($ctxParts -join "`n")
+    # 지문 = 보낼 문구 + 리마인더를 일으킨 파일 목록. 리마인더 규칙에 안 걸리는 파일(세션 로그·docs 편집)은
+    # 넣지 않는다 — docs-keeper 가 문서를 고치는 동안 지문이 바뀌어 다시 깨우는 일을 막는다.
+    $triggerFiles = @($changedFiles | Where-Object { @(Get-DocSyncReminders -Files @($_)).Count -gt 0 } | Sort-Object -Unique)
+    $fingerprint = (@($ctxParts) + $triggerFiles) -join "`n"
+    $lastFingerprint = if (Test-Path $fingerprintFile) { [System.IO.File]::ReadAllText($fingerprintFile) } else { '' }
+    if ($stopHookActive) {
+        $decision = 'skip-stop-hook-active'
+    } elseif ($fingerprint -eq $lastFingerprint) {
+        $decision = 'skip-duplicate'
+    } else {
+        [System.IO.File]::WriteAllText($fingerprintFile, $fingerprint, [System.Text.UTF8Encoding]::new($false))
+        Write-HookOutput @{
+            hookSpecificOutput = @{
+                hookEventName = 'Stop'
+                additionalContext = ($ctxParts -join "`n")
+            }
         }
+        $decision = 'emitted'
     }
+} elseif (Test-Path $fingerprintFile) {
+    Remove-Item $fingerprintFile -Force
+    $decision = 'reset'
 }
+$trace = [ordered]@{
+    at = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+    has_stop_hook_active = $hasActiveField
+    stop_hook_active = $stopHookActive
+    decision = $decision
+    context_parts = $ctxParts.Count
+}
+[System.IO.File]::WriteAllText((Join-Path $stateDir 'stop-last.json'), ($trace | ConvertTo-Json -Compress), [System.Text.UTF8Encoding]::new($false))
 exit 0
 
 }
