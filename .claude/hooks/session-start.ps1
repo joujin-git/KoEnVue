@@ -21,7 +21,7 @@ $memErrs = @($memSync.errors)
 if ($memSync.absorbed -gt 0 -or $memSync.restored -gt 0 -or $memSync.created -or $memErrs.Count -gt 0) {
     $lines.Add("## 메모리 동기화 (C:↔E:)")
     if ($memSync.created) {
-        $lines.Add("⚠ C: auto-memory 디렉토리가 없어 새로 생성했습니다 — **C: 복원/초기화 감지**. 아래 복구 건수를 확인하세요.")
+        $lines.Add("⚠ C: auto-memory 디렉토리가 없어 새로 생성했습니다 — **C: 복원/초기화 감지**. 아래 복구 건수와 경로를 확인하세요.")
     }
     if ($memErrs.Count -gt 0) {
         $lines.Add("❌ **동기화 실패 $($memErrs.Count)건** — 아래 사유. 상세는 ``.claude/state/hook-errors.log``. E: 가 실경로이므로 메모리 회상 자체는 정상이나, 보험 사본이 깨진 상태입니다.")
