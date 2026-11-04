@@ -42,9 +42,10 @@ internal readonly record struct OverlayStyle(
     string LabelText,           // 현재 상태의 라벨 (그리기용)
 
     // === CAPS LOCK 표시 (state-independent — 파사드가 시스템 토글 상태를 주입) ===
-    // true면 라벨 좌우 세로 막대(fg 색상)가 그려진다. 토글은 BuildStyle이 static 필드에서 읽어와
+    // true면 배지 둘레에 CapsLockHex 색 테두리가 그려진다. 토글은 BuildStyle이 static 필드에서 읽어와
     // 매 렌더마다 반영하므로 record 동등성 비교 시 state-transition 트리거로도 작동한다.
     bool CapsLockOn,
+    string CapsLockHex,         // config.CapsLockColor (state-independent)
 
     // === 라벨 측정용 (flip-flop fix 필수 — state-independent) ===
     // CalculateFixedLabelWidth는 상태와 무관하게 모든 라벨 후보를 측정해 최대 폭으로
@@ -75,6 +76,7 @@ internal readonly record struct OverlayStyle(
             && BorderHex == other.BorderHex
             && LabelText == other.LabelText
             && CapsLockOn == other.CapsLockOn
+            && CapsLockHex == other.CapsLockHex
             && MeasureLabels.AsSpan().SequenceEqual(other.MeasureLabels);
     }
 
@@ -94,6 +96,7 @@ internal readonly record struct OverlayStyle(
         hc.Add(BorderHex);
         hc.Add(LabelText);
         hc.Add(CapsLockOn);
+        hc.Add(CapsLockHex);
         foreach (string label in MeasureLabels)
             hc.Add(label);
         return hc.ToHashCode();

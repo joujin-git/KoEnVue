@@ -744,6 +744,7 @@ internal sealed partial class AppSettingsManager : JsonSettingsManager<AppConfig
             EnglishFg = config.EnglishFg ?? DefaultConfig.DefaultEnglishFg,
             NonKoreanBg = config.NonKoreanBg ?? DefaultConfig.DefaultNonKoreanBg,
             NonKoreanFg = config.NonKoreanFg ?? DefaultConfig.DefaultNonKoreanFg,
+            CapsLockColor = config.CapsLockColor ?? DefaultConfig.DefaultCapsLockColor,
             FontFamily = config.FontFamily ?? DefaultConfig.DefaultIndicatorFontFamily,
             HangulLabel = config.HangulLabel ?? DefaultConfig.DefaultHangulLabel,
             EnglishLabel = config.EnglishLabel ?? DefaultConfig.DefaultEnglishLabel,

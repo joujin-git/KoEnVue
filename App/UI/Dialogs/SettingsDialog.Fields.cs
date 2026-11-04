@@ -160,6 +160,8 @@ internal static partial class SettingsDialog
             c => c.EnglishBg, (c, v) => c with { EnglishBg = v }));
         Add(ColorField("비한국어 배경색", "Non-Korean background",
             c => c.NonKoreanBg, (c, v) => c with { NonKoreanBg = v }));
+        Add(ColorField("CapsLock 색", "Caps Lock color",
+            c => c.CapsLockColor, (c, v) => c with { CapsLockColor = v }));
 
         // ================================================================
         // 4. 한/영 배지 — 표시 모드

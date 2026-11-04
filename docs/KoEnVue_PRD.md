@@ -9,7 +9,7 @@
 Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관적으로 알기 어렵다. 기본 작업 표시줄의 IME 표시기는 화면 우측 하단에 위치해 타이핑 중 시선 이동이 크고, 게임·전체 화면 애플리케이션에서는 아예 보이지 않는다.
 
 ### 1.3 솔루션
-**드래그 가능한 플로팅 오버레이**로 현재 입력 상태를 라벨로 띄워 주는 경량 유틸리티. 앱별로 위치를 기억하고, 포커스 전환 또는 한/영 전환 시 입력 모드를 즉시 확인할 수 있다. CAPS LOCK 상태도 라벨 가장자리 막대로 함께 보조 표시한다.
+**드래그 가능한 플로팅 오버레이**로 현재 입력 상태를 라벨로 띄워 주는 경량 유틸리티. 앱별로 위치를 기억하고, 포커스 전환 또는 한/영 전환 시 입력 모드를 즉시 확인할 수 있다. CAPS LOCK 상태도 라벨 둘레 CapsLock 색 테두리로 함께 보조 표시한다.
 
 ### 1.4 대상 사용자
 - Windows 한국어 사용자
@@ -32,7 +32,7 @@ Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관�
 - **텍스트 라벨**: "한" (한글), "En" (영문), "EN" (비한국어 IME)
 - **도형**: RoundedRect 고정 (설정 불가)
 - **색상**: `koenvue_config.json` 으로 배경/전경 색상 지정 가능. 상태별 (한글/영문/비한국어) 로 따로 지정
-- **CAPS LOCK 보조 표시**: CAPS LOCK 이 켜져 있으면 라벨 좌우 수직 가장자리에 현재 상태의 `fg` 색상과 동일한 얇은 세로 막대가 함께 그려져, 타이핑 중 시선 이동 없이 한/영 상태와 CAPS LOCK 상태를 동시에 확인할 수 있다. 꺼지면 막대도 자동으로 사라진다. 상태별 색상과 무관하게 동작하므로 한/영/비한국어 어느 모드에서도 유지된다
+- **CAPS LOCK 보조 표시**: CAPS LOCK 이 켜져 있으면 라벨 둘레에 CapsLock 전용 색(`caps_lock_color`, 기본 보라 `#9333EA`) 테두리가 함께 그려져, 타이핑 중 시선 이동 없이 한/영 상태와 CAPS LOCK 상태를 동시에 확인할 수 있다. 꺼지면 테두리도 자동으로 사라진다. 상태별 색상과 무관한 한 색이라 한/영/비한국어 어느 모드에서도 같은 모양으로 유지되고 한/영 색과 헷갈리지 않는다
 
 ### 2.2 위치
 
@@ -98,10 +98,10 @@ Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관�
 
 ### 2.6 CAPS LOCK 표시
 - **목적**: 한/영 상태와 별개로 CAPS LOCK 토글 상태를 타이핑 중 시선 이동 없이 인디케이터 위에서 바로 확인
-- **형태**: 라벨 좌우 수직 가장자리에 세로 막대 두 개. 막대 색상은 현재 상태(한/영/비한국어)의 `fg` 를 그대로 재사용해 테마와 자연스럽게 어울림
-- **동작**: 켜지면 즉시 막대 그리기, 꺼지면 즉시 사라짐. 한/영 상태 변경과 독립적으로 동작하므로 어떤 IME 모드에서도 토글 표시가 유지된다
+- **형태**: 라벨(배지) 둘레 테두리 4 logical px (사용자 외곽선 위에 덧그림). 색은 IME 상태와 무관한 CapsLock 전용 색 `caps_lock_color` (기본 보라 `#9333EA`) — 커서 헤일로의 CAPS 바깥 원과 같은 색이라 두 인디가 같은 신호를 준다. 2026-11-04 이전엔 좌우 세로 막대 두 개(현재 상태 `fg` 색)였으나 글자 옆에 붙어 눈에 덜 띄어 시안 비교로 테두리로 교체
+- **동작**: 켜지면 즉시 테두리 그리기, 꺼지면 즉시 사라짐. 한/영 상태 변경과 독립적으로 동작하므로 어떤 IME 모드에서도 토글 표시가 유지된다
 - **감지 방식**: `GetKeyState(VK_CAPITAL)` 은 호출 스레드의 입력 상태를 읽으므로 감지 스레드(80 ms 폴러)에서는 신뢰할 수 없다. 대신 메인 스레드 `WM_TIMER` (주기 200 ms, `DefaultConfig.CapsLockPollMs`) 로 폴링한다. 부팅 시 초기값은 `Overlay.Initialize` 와 `Program.Main` 에서 같은 함수를 호출해 주입해 — 사용자가 CAPS LOCK 이 켜진 상태로 앱을 시작해도 첫 렌더부터 올바르게 표시된다
-- **설정 필드 없음**: 토글 표시는 시스템 CAPS LOCK 상태를 그대로 반영하므로 사용자가 별도로 켜고 끌 필요가 없다(원하지 않으면 CAPS LOCK 을 끄면 된다). `koenvue_config.json` 에 관련 키 없음
+- **켜고 끄는 설정 없음**: 토글 표시는 시스템 CAPS LOCK 상태를 그대로 반영하므로 사용자가 별도로 켜고 끌 필요가 없다(원하지 않으면 CAPS LOCK 을 끄면 된다). 색만 `caps_lock_color` (상세 설정 「공통 — 색상」의 「CapsLock 색」) 로 바꿀 수 있고, 테마 프리셋은 이 색을 바꾸지 않는다
 
 ### 2.7 텍스트 수직 정렬 보정
 `DT_VCENTER` 는 폰트 셀(`tmAscent + tmDescent`) 중앙을 사각형 중앙에 맞춘다. 한글 폰트(맑은 고딕 등)는 라틴 액센트용 상단 reserved 영역(`tmInternalLeading`) 이 있는데 한글·대문자 영문은 이 영역을 사용하지 않으므로, `tmInternalLeading > tmDescent` 인 폰트에서는 글리프 시각 중심이 셀 중심보다 `(tmInternalLeading - tmDescent) / 2` 픽셀만큼 아래쪽에 위치한다. 결과적으로 라벨이 라운드 배경 안에서 살짝 아래로 치우쳐 보인다.
@@ -136,11 +136,11 @@ Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관�
   - **배경** — 둥근 모서리 정사각형(반지름 `min(W,H) * 0.22`), 모서리 바깥은 완전 투명. 앱 아이콘과 같은 인상을 준다
   - **안개 고리** (2026-11-04, 선명한 링+후광을 대체) — 기본 커서 헤일로가 넓은 안개(「흐릿하게」)로 바뀐 것에 맞춰 Fg 색 가우시안 안개 고리를 그린다. 앱 아이콘 `koenvue.ico` 와 같은 비율: 고리 중심 반지름 `0.34×min(W,H)`, σ `0.085×min`, 최대 진하기 0.95, σ 의 3.5 배 밖은 0. 고리 안쪽이 비어 있어 「커서 주변 비움」과도 모양이 맞는다
   - **배지** — 폭 `iconW/3`, 높이 `iconH/5`(최소 3 px), 모서리 반지름은 높이의 0.25 배(살짝만). 고리 안쪽 중앙. 폭을 `iconW*3/8` 로 잡으면 16 px 에서 고리 안쪽에 닿아 답답해진다 — 실측(옛 링 기준)으로 축소
-  - **작은 아이콘(`min(W,H) < 32` — 100~150% DPI 트레이 16~24 px)** — 안개가 뭉개지므로 σ 를 `0.06×min` 으로 좁히고 진하기를 1.0 으로, 고리 중심에 1.6 px 가는 선을 겹쳐 윤곽을 살린다(`koenvue.ico` 16~24 px 와 동일). 해상도별로 디테일을 달리하는 것은 아이콘 디자인의 통상 관행. 16/20/24/32 px × 4단계 × 한/영 색 렌더로 네 단계 구별을 육안 확인
+  - **작은 아이콘(`min(W,H) < 32` — 100~150% DPI 트레이 16~24 px)** — 몇 픽셀뿐이라 큰 아이콘 비율 그대로면 고리가 옅게 사라지고, σ 를 좁히면 선명한 링처럼 보이므로 오히려 **더 넓은 안개**로: 고리 중심 반지름 `0.33×min`, σ `0.10×min`, 진하기 1.0, 가는 선 없음(`koenvue.ico` 16~24 px 와 동일). 2026-11-04 16 px 시안 4종 중 사용자가 「더 넓게」 선택 — 이전의 σ `0.06×min` + 1.6 px 가는 선 겹치기를 대체. 해상도별로 디테일을 달리하는 것은 아이콘 디자인의 통상 관행. 16/20/24/32 px × 4단계 × 한/영 색 렌더로 네 단계 구별을 육안 확인
   - **렌더링은 GDI 도형 API 가 아니라 32bpp DIB 픽셀에 직접** — GDI 는 안티앨리어싱을 하지 않아 16 px 원 둘레가 계단처럼 거칠어진다. 안개 고리는 픽셀마다 4×4 서브샘플 평균(`FogRingCoverage`), 둥근 모서리·배지 모서리는 경계 픽셀만 4×4 서브샘플로 커버리지를 재어 배경↔전경을 보간한다(경계에서 떨어진 픽셀은 즉시 0/1 판정)
   - **모두 숨김 단계에서는 배경색만 남는다.** 도형이 사라져도 IME 상태는 그 배경색으로 계속 읽히므로 "앱은 살아 있고 표시만 전부 껐다" 가 드러난다
   - 어느 도형을 그릴지는 `Tray.GetShapes(visibility)` 단일 진실원 — 단위 테스트로 네 단계가 서로 다름 + 그리는 도형이 실제 표시 상태와 일치함을 고정
-- **탐색기 앱 아이콘(`koenvue.ico`)은 링 대신 부드러운 안개 고리** (2026-11-04) — 기본 커서 헤일로가 넓은 안개(「흐릿하게」)로 바뀐 것에 맞춰, 파란(`#1A73E8`) 둥근 모서리 배경(반지름 `0.22×side`) 위에 흰 가우시안 안개 고리(중심 반지름 `0.34×side`, σ `0.085×side`, 최대 α 0.95)와 가운데 흰 배지(`side/3`×`side/5`, 모서리 `0.25×높이`)를 그린다. 고리 안쪽이 비어 있어 「커서 주변 비움」과도 모양이 맞는다. 24 px 이하는 σ 를 `0.06×side` 로 좁히고 가는 선(약 1.6 px)을 겹쳐 뭉개지지 않게 한다. 16/20/24/32/48/64/128/256 px 8종 PNG 임베드, 4×4(64 px 이하)·2×2 서브샘플. IME 상태가 없으므로 한글 기본색 고정. 트레이 아이콘(런타임 생성)도 같은 안개 고리 비율을 쓴다(위 트레이 항목)
+- **탐색기 앱 아이콘(`koenvue.ico`)은 링 대신 부드러운 안개 고리** (2026-11-04) — 기본 커서 헤일로가 넓은 안개(「흐릿하게」)로 바뀐 것에 맞춰, 파란(`#1A73E8`) 둥근 모서리 배경(반지름 `0.22×side`) 위에 흰 가우시안 안개 고리(중심 반지름 `0.34×side`, σ `0.085×side`, 최대 α 0.95)와 가운데 흰 배지(`side/3`×`side/5`, 모서리 `0.25×높이`)를 그린다. 고리 안쪽이 비어 있어 「커서 주변 비움」과도 모양이 맞는다. 24 px 이하는 트레이 작은 아이콘과 같은 더 넓은 안개(반지름 `0.33×side`, σ `0.10×side`, 진하기 1.0 — 2026-11-04 가는 선 겹치기 대체). 16/20/24/32/48/64/128/256 px 8종 PNG 임베드, 4×4(64 px 이하)·2×2 서브샘플. IME 상태가 없으므로 한글 기본색 고정. 트레이 아이콘(런타임 생성)도 같은 안개 고리 비율을 쓴다(위 트레이 항목)
 - **쉘 재시작 자동 복구**: `explorer.exe` 가 죽고 재시작되거나 쉘 업데이트로 트레이가 초기화되면 `TaskbarCreated` 브로드캐스트 메시지를 받아 트레이 아이콘을 자동 재등록한다. 사용자가 앱을 재시작할 필요 없음
 
 ### 4.1a 좌클릭 동작 (`tray_click_action`)
@@ -207,7 +207,7 @@ KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT
 - **헤더 라인 (KoEnVue v… — GitHub / → v… — 다운로드)** 은 항상 메뉴 최상단에 노출되는 단일 라인이며 두 모드로 동작한다. 평소엔 `KoEnVue v{DefaultConfig.AppVersion} — GitHub` 라벨에 `MF_DEFAULT` 플래그를 부여해 시스템이 자동 볼드로 그리고 (팝업 메뉴당 1개만 가능), 바로 아래 separator 가 메뉴 구조를 분할 — 위치(최상단) + 볼드 + 분리선 3종이 합쳐져 "메뉴 헤더" 역할을 명시한다. `_pendingUpdate is not null` 일 때 라벨이 `KoEnVue v{cur} → {newTag} — 다운로드` 로 자동 전환되어 같은 헤더 위치에서 새 버전 가용을 알린다 (별도 알림 블록 없음). 클릭 시 `IDM_HOMEPAGE` 단일 진입점이 `_pendingUpdate` 유무로 분기 — `OpenUpdatePage()` (`info.HtmlUrl` prefix 검증 후 릴리스 페이지) 또는 `OpenHomepage()` (`https://github.com/{UpdateRepoOwner}/{UpdateRepoName}` 컴파일 타임 합성, 외부 입력 검증 불필요). 라벨의 한·영 분기는 마지막 행위 단어(`I18n.MenuDownload` = "다운로드"/"Download") 만, 브랜드명·버전 숫자·화살표 부분은 공통. `_pendingUpdate.Version` 이 GitHub release `tag_name` 형식("v1.0.1") 이라 `→ {tag}` 로 합성해야 v 가 중복되지 않음. 자동 업데이트는 아니며 사용자가 직접 새 exe 를 받아 교체. `config.update_check_enabled = false` 로 GitHub 조회 자체를 비활성화 가능 (이때 헤더는 평소 모드만 노출)
 - **블록 순서**: 숨김 토글(한/영 배지·커서 헤일로) → 대분류 2종 → 공통(애니메이션 마스터) → 앱(시작·관리자) → 상세설정 → 종료. 설정 항목은 대상별 서브메뉴로 접어 최상위를 짧게 유지하되, **숨김 토글만은 접지 않고 맨 위에 남긴다** — 가장 자주 쓰는 항목이자 좌클릭 순환을 끈 환경의 유일한 해제 경로이기 때문. 대분류 안에서는 부모가 대상을 밝히므로 자식 라벨에 접두를 두지 않는다("한/영 배지 ▸ 전환 강조"). 자석 스냅·애니메이션·전환 강조는 기본 켜짐
 - **한/영 배지 숨김**은 `config.user_hidden` 체크 토글 — 좌클릭 동작을 `"settings"`/`"none"` 으로 바꾸어 좌클릭 토글 경로가 막힌 경우에도 우클릭 메뉴로 항상 숨김 해제가 가능하도록 4.1a 의 dead-end 방지용. 내부적으로 `HandleTrayToggle` 과 동일한 `ApplyUserHiddenTransition` 헬퍼로 오버레이/트레이 아이콘 상태를 즉시 동기화하며, 토글 즉시 `Settings.Save` 로 koenvue_config.json 에 영구 저장
-- **상세 설정**은 구분선으로 묶어 종료 바로 위에 배치 — 트레이 메뉴로 노출되지 않는 나머지 필드를 편집하는 진입점. 색상 섹션 제목은 **"공통 — 색상"** (`Shared — Colors`) — 메인/커서 배경색·테마 공용
+- **상세 설정**은 구분선으로 묶어 종료 바로 위에 배치 — 트레이 메뉴로 노출되지 않는 나머지 필드를 편집하는 진입점. 색상 섹션 제목은 **"공통 — 색상"** (`Shared — Colors`) — 메인/커서 배경색·CapsLock 색·테마 공용
 
 ### 4.3 시작 프로그램 등록
 - `schtasks /xml` 기반 등록/해제 (ONLOGON 트리거 + `<Delay>PT15S</Delay>`, 기본 `LeastPrivilege` — P5 asInvoker 와 일치, v0.9.3.0 부터 UAC 프롬프트 없음)
@@ -291,7 +291,7 @@ KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT
 | 표시 모드 | `display_mode`, `event_display_duration_ms`, `always_idle_timeout_ms` |
 | 외관 — 크기 | `label_width`, `label_height`, `label_border_radius`, `border_width`, `indicator_scale` |
 | 외관 — 텍스트 | `font_family`, `font_size`, `font_weight`, `hangul_label`, `english_label`, `non_korean_label` |
-| 외관 — 색상 | `hangul_bg`, `hangul_fg`, `english_bg`, `english_fg`, `non_korean_bg`, `non_korean_fg`, `opacity`, `idle_opacity`, `active_opacity` |
+| 외관 — 색상 | `hangul_bg`, `hangul_fg`, `english_bg`, `english_fg`, `non_korean_bg`, `non_korean_fg`, `caps_lock_color`, `opacity`, `idle_opacity`, `active_opacity` |
 | 외관 — 테마 | `theme` (6 종 프리셋: `custom` / `minimal` / `vivid` / `pastel` / `dark` / `system`) |
 | 애니메이션 | `animation_enabled`, `fade_in_ms`, `fade_out_ms`, `change_highlight`, `highlight_scale`, `highlight_duration_ms`, `slide_animation`, `slide_speed_ms` |
 | 감지 | `poll_interval_ms`, `detection_method`, `non_korean_ime`, `hide_in_fullscreen`, `hide_when_no_focus`, `hide_on_lock_screen`, `system_hide_classes`, `system_hide_classes_user`, `system_hide_processes`, `system_hide_processes_user` |
@@ -305,7 +305,7 @@ KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT
 
 ### 5.3 테마 프리셋
 
-`theme` 필드는 6 종 프리셋 중 선택한다. `custom` 외의 값은 `hangul_bg` / `hangul_fg` / `english_bg` / `english_fg` / `non_korean_bg` / `non_korean_fg` 를 덮어쓴다. 프리셋 적용 시 기존 커스텀 색상은 `custom_backup_*` 필드 6 개에 자동 백업되며, `custom` 으로 복귀하면 원래 커스텀 색상이 복원된다.
+`theme` 필드는 6 종 프리셋 중 선택한다. `custom` 외의 값은 `hangul_bg` / `hangul_fg` / `english_bg` / `english_fg` / `non_korean_bg` / `non_korean_fg` 를 덮어쓴다 (`caps_lock_color` 는 그대로). 프리셋 적용 시 기존 커스텀 색상은 `custom_backup_*` 필드 6 개에 자동 백업되며, `custom` 으로 복귀하면 원래 커스텀 색상이 복원된다.
 
 | 테마 | 설명 |
 |------|------|

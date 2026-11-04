@@ -209,21 +209,12 @@ internal static class Overlay
     public static void ClearLastValidSystemInputFrame()
         => _lastValidSystemInputFrame = default;
 
-    /// <summary>CAPS LOCK 막대 두께 (logical px, DPI 스케일링 전).</summary>
-    private const int CapsLockBarWidthLogicalPx = 2;
-
     /// <summary>
-    /// CAPS LOCK 막대 수평 인셋 최소값 (logical px). 보더가 있으면 borderWidth와 max.
-    /// 1 logical px은 시각적으로 너무 작아 대칭이 흐려지므로 2로 설정.
+    /// CAPS LOCK 테두리 두께 (logical px, DPI 스케일링 전). 배지 둘레에 CapsLock 색(기본 보라)으로 그린다 —
+    /// 예전 좌우 흰 막대는 글자 옆에 붙어 눈에 덜 띄었고, 막대를 보라로 바꾸면 파란 배지 위에서 묻혔다
+    /// (2026-11-04 시안 비교로 테두리 선택, 두께는 실기 확인으로 2→3→4). 사용자 보더(BorderWidth)보다 위에 덧그린다.
     /// </summary>
-    private const int CapsLockBarInsetLogicalPx = 2;
-
-    /// <summary>
-    /// CAPS LOCK 막대 우측 시각 보정 (physical px).
-    /// 수학적으론 대칭이지만 RoundRect의 우/하단 exclusive 규칙 + DrawTextW AA 가중치 +
-    /// premultiplied alpha 합성이 겹치며 시각적으로 우측 gap이 1px 좁아 보이는 현상을 보정.
-    /// </summary>
-    private const int CapsLockRightCompensationPx = 1;
+    private const int CapsLockBorderWidthLogicalPx = 4;
 
     /// <summary>
     /// 앱별 저장 위치가 없을 때 기본 위치.
@@ -511,6 +502,7 @@ internal static class Overlay
             BorderHex: config.BorderColor,
             LabelText: labelText,
             CapsLockOn: _capsLockOn,
+            CapsLockHex: config.CapsLockColor,
             MeasureLabels: [config.HangulLabel, config.EnglishLabel, config.NonKoreanLabel]
         );
     }
@@ -582,33 +574,24 @@ internal static class Overlay
             Gdi32.SetTextColor(hdc, oldTextColor);
             Gdi32.SetBkMode(hdc, oldBkMode);
 
-            // 5. CAPS LOCK 막대 (좌우 세로 띠, fg 색상 재사용) — 상수는 클래스 헤드의 Caps* 참조
-            //    - topY/bottomY: borderRadius만큼 수직 인셋 → 모서리 라운드와 겹치지 않음
-            //    - leftX:  max(borderWidth, CapsLockBarInsetLogicalPx) 수평 인셋 (보더가 있으면 보더 안쪽)
-            //    - rightX: leftX 대칭 위치에 +CapsLockRightCompensationPx 추가 시각 보정
-            //    - 병리 설정(LabelHeight < 2*BorderRadius) 또는 w가 너무 좁은 경우 silent skip
+            // 5. CAPS LOCK 테두리 — 3. 사용자 보더와 같은 방식(펜 RoundRect, 반폭 인셋)으로 CapsLock 색을 덧그린다.
             if (style.CapsLockOn)
             {
-                IntPtr hCapsBrush = Gdi32.CreateSolidBrush(fgColor);
+                int capsW = Math.Max(1, DpiHelper.Scale(CapsLockBorderWidthLogicalPx, metrics.DpiScale));
+                uint capsColor = ColorHelper.HexToColorRef(style.CapsLockHex);
+                IntPtr hCapsPen = Gdi32.CreatePen(Win32Constants.PS_SOLID, capsW, capsColor);
                 try
                 {
-                    int barW = Math.Max(1, DpiHelper.Scale(CapsLockBarWidthLogicalPx, metrics.DpiScale));
-                    int inset = Math.Max(metrics.ScaledBorderWidth, DpiHelper.Scale(CapsLockBarInsetLogicalPx, metrics.DpiScale));
-                    int leftX = inset;
-                    int rightX = w - inset - barW - CapsLockRightCompensationPx;
-                    int topY = metrics.ScaledBorderRadius;
-                    int bottomY = h - metrics.ScaledBorderRadius;
-                    if (bottomY > topY && rightX >= leftX + barW)
-                    {
-                        var leftRect = new RECT { Left = leftX, Top = topY, Right = leftX + barW, Bottom = bottomY };
-                        var rightRect = new RECT { Left = rightX, Top = topY, Right = rightX + barW, Bottom = bottomY };
-                        User32.FillRect(hdc, ref leftRect, hCapsBrush);
-                        User32.FillRect(hdc, ref rightRect, hCapsBrush);
-                    }
+                    IntPtr oldCapsPen = Gdi32.SelectObject(hdc, hCapsPen);
+                    IntPtr oldCapsBrush = Gdi32.SelectObject(hdc, Gdi32.GetStockObject(Win32Constants.NULL_BRUSH));
+                    int halfCaps = capsW / 2;
+                    Gdi32.RoundRect(hdc, halfCaps, halfCaps, w - halfCaps, h - halfCaps, radius, radius);
+                    Gdi32.SelectObject(hdc, oldCapsBrush);
+                    Gdi32.SelectObject(hdc, oldCapsPen);
                 }
                 finally
                 {
-                    Gdi32.DeleteObject(hCapsBrush);
+                    Gdi32.DeleteObject(hCapsPen);
                 }
             }
         }

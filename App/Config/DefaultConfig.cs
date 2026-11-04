@@ -263,6 +263,9 @@ internal static partial class DefaultConfig
     public const string DefaultNonKoreanBg         = "#6B7280";
     public const string DefaultNonKoreanFg         = "#FFFFFF";
     public const string DefaultBorderColor         = "#000000";
+    // CapsLock 전용 색 — 한/영 어느 상태 색과도 겹치지 않게(보라). 커서 헤일로 바깥 띠 + 배지 테두리.
+    // 예전엔 「반대 언어 색」이라 한글+CapsLock 이 영문처럼 보였다 (2026-11-04 사용자 보고).
+    public const string DefaultCapsLockColor       = "#9333EA";
 
     // 한/영 배지 라벨 폰트/텍스트. DefaultDialogFontFamily 와 값은 같으나 의미 독립 (배지 폰트 vs 다이얼로그 폰트).
     public const string DefaultIndicatorFontFamily = "맑은 고딕";

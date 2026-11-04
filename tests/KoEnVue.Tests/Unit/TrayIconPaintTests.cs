@@ -33,9 +33,10 @@ public class TrayIconPaintTests
         // 모두 숨김: 배경 안 픽셀은 전부 배경색
         Assert.True(IsColor(none, side, mid, mid, bgR, bgG, bgB));
         Assert.True(IsColor(none, side, ringX, mid, bgR, bgG, bgB));
-        // 헤일로만: 고리 안쪽(중심)은 비어 있고 고리 위치는 밝다
-        Assert.True(IsColor(haloOnly, side, mid, mid, bgR, bgG, bgB), "고리 안쪽이 비어 있어야 함");
+        // 헤일로만: 고리 위치는 밝고, 고리 안쪽(중심)은 그보다 뚜렷이 어둡다 — 작은 아이콘은 안개가 넓어(σ 0.10)
+        // 중심까지 살짝 번지므로 「정확히 배경색」 대신 고리와의 밝기 차로 본다.
         Assert.True(Brightness(haloOnly, side, ringX, mid) > Brightness(none, side, ringX, mid) + 100, "고리가 보여야 함");
+        Assert.True(Brightness(haloOnly, side, ringX, mid) > Brightness(haloOnly, side, mid, mid) + 100, "고리 안쪽이 비어 있어야 함");
         // 배지만: 중심은 배지(흰색), 고리 위치는 배경색
         Assert.True(Brightness(badgeOnly, side, mid, mid) > 3 * 250, "배지가 보여야 함");
         Assert.True(IsColor(badgeOnly, side, ringX, mid, bgR, bgG, bgB), "배지만 단계에 고리가 그려짐");

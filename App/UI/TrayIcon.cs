@@ -36,12 +36,13 @@ internal static class TrayIcon
     private const double FogSigmaRatio = 0.085;
     private const double FogMaxAlpha = 0.95;
     private const double FogSigmaCutoff = 3.5;          // σ 의 이 배수 밖은 0
-    // 작은 아이콘(이 크기 미만 — 100~150% DPI 트레이 16~24px)은 안개가 뭉개지므로 σ 를 좁히고
-    // 진하기를 1 로, 고리 중심에 가는 선을 겹쳐 윤곽을 살린다 (koenvue.ico 16~24px 와 동일).
+    // 작은 아이콘(이 크기 미만 — 100~150% DPI 트레이 16~24px)은 안개를 더 넓게(σ 0.10) 진하기 1 로 —
+    // 몇 픽셀뿐이라 큰 아이콘 비율 그대로면 고리가 옅게 사라지고, 좁히면 선명한 링처럼 보인다.
+    // 사용자가 16px 시안 4종 중 「더 넓게」 선택 (2026-11-04). koenvue.ico 16~24px 와 동일.
     private const int SmallIconMaxExclusive = 32;
-    private const double SmallFogSigmaRatio = 0.06;
+    private const double SmallFogRingRadiusRatio = 0.33;
+    private const double SmallFogSigmaRatio = 0.10;
     private const double SmallFogMaxAlpha = 1.0;
-    private const double SmallCoreLineWidthPx = 1.6;
 
     private const int AntiAliasSamples = 4;     // 픽셀당 4x4 서브샘플
 
@@ -177,10 +178,9 @@ internal static class TrayIcon
         double cx = iconW / 2.0, cy = iconH / 2.0;
         bool small = side < SmallIconMaxExclusive;
         var fog = new FogRing(
-            Radius: side * FogRingRadiusRatio,
+            Radius: side * (small ? SmallFogRingRadiusRatio : FogRingRadiusRatio),
             Sigma: side * (small ? SmallFogSigmaRatio : FogSigmaRatio),
-            MaxAlpha: small ? SmallFogMaxAlpha : FogMaxAlpha,
-            CoreHalfWidth: small ? SmallCoreLineWidthPx * 0.5 : 0.0);
+            MaxAlpha: small ? SmallFogMaxAlpha : FogMaxAlpha);
         double corner = side * BackgroundCornerRatio;
 
         double badgeW = iconW / (double)BadgeWidthRatio;
@@ -222,15 +222,13 @@ internal static class TrayIcon
         }
     }
 
-    /// <summary>안개 고리 치수 (px) — 중심 반지름, σ, 최대 진하기, 겹치는 선의 반폭(0 = 선 없음).</summary>
-    private readonly record struct FogRing(double Radius, double Sigma, double MaxAlpha, double CoreHalfWidth)
+    /// <summary>안개 고리 치수 (px) — 중심 반지름, σ, 최대 진하기.</summary>
+    private readonly record struct FogRing(double Radius, double Sigma, double MaxAlpha)
     {
-        /// <summary>중심 거리 d 에서의 진하기(0~1) — 가우시안 안개와 가는 선 중 큰 쪽.</summary>
+        /// <summary>중심 거리 d 에서의 진하기(0~1) — 가우시안.</summary>
         public double Intensity(double d)
         {
-            double off = Math.Abs(d - Radius);
-            if (off < CoreHalfWidth) return 1.0;
-            double t = off / Sigma;
+            double t = Math.Abs(d - Radius) / Sigma;
             return t >= FogSigmaCutoff ? 0.0 : MaxAlpha * Math.Exp(-0.5 * t * t);
         }
     }

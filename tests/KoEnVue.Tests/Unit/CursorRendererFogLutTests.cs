@@ -11,7 +11,7 @@ namespace KoEnVue.Tests.Unit;
 /// 0.2% 이하·알파 곱 ≤ 8/255 의 색 차이가 있었다 — 섞기 후 교차선의 색 급변이 사라져 표 보간과 일치).
 /// σ ≥ 8px 이면 거리표 경로는 픽셀 중심 1점만 샘플한다(정밀 경로는 2×2). 그 케이스는 알파 허용치가 2 다 — 3σ 에서 잘리는
 /// 안개 끝(≈1.5/255 계단)에 걸친 픽셀을 2×2 는 1/255 미만으로 평균해 0, 1점은 2 로 칠한다(2026-11-04 실측, 원 알파
-/// 0.55·1.0 모두 ≤2).
+/// 0.55·1.0 모두 ≤2). CapsLock ON 이면 문턱은 좁힌 바깥 원 σ(CapsFogSigma) 기준이다.
 /// </summary>
 public class CursorRendererFogLutTests
 {
@@ -29,8 +29,9 @@ public class CursorRendererFogLutTests
         { 96, 20, 10, 12, 0.8, 1.5, true, OnePointAlphaTolerance },
         { 45, 35, 30, 2, 0.35, 1.25, true, SupersampleAlphaTolerance }, // σ≈7.2px (halo 2×1.25 → 반올림 2)
         { 45, 35, 30, 0, 0.01, 1.0, false, SupersampleAlphaTolerance }, // 최소 σ(≈0.57px) — 보간 오차가 가장 큰 쪽
-        // 작은 반지름 + 1점 샘플(σ≈9.1px) + 홀수 변(115px): 중심 꼭짓점 픽셀 — 중심 2×2 보정 없으면 알파 4/255 로 실패
-        { 8, 6, 4, 1, 1.0, 1.25, true, OnePointAlphaTolerance },
+        // 작은 반지름 + 1점 샘플(σ≈9.1px) + 홀수 변(115px): 중심 꼭짓점 픽셀 — 중심 2×2 보정 없으면 실패.
+        // CapsLock OFF 여야 한다 — ON 이면 1점 문턱을 좁힌 바깥 σ(4px)로 판정해 2×2 경로로 가 이 보정을 시험하지 못한다.
+        { 8, 6, 4, 1, 1.0, 1.25, false, OnePointAlphaTolerance },
     };
 
     [Theory]
@@ -195,6 +196,42 @@ public class CursorRendererFogLutTests
         Assert.Equal(0, insideVisible);
         Assert.Equal(0, outsideChanged);
         Assert.InRange(maxLutDiff, 0, OnePointAlphaTolerance);
+    }
+
+    [Theory]
+    [InlineData(Blue)]
+    [InlineData(Orange)]
+    public void CapsFog_LanguageInsideCapsBandOutside(uint languageColor)
+    {
+        // 2026-11-04 사용자 요청: CapsLock 은 한/영 헤일로를 덮지 말고 그 바깥에 전용 색(보라) 띠로.
+        // 바깥 원 σ 를 좁히기 전에는 넓은 CapsLock 안개가 한/영 안개를 통째로 덮어 언어 색이 안 보였다.
+        const uint purple = 0xFF9333EA;
+        var style = new CursorStyle(96, 20, 10, 1, 12, 0.5, languageColor, languageColor, purple, true,
+            MotionSoftness: 0.8, MotionFogPadLogicalPx: 28,
+            RingAlphaInner: 0.55, RingAlphaMiddle: 0.55 * 0.97, RingAlphaOuter: 0.55 * 0.94, ClearRadiusLogicalPx: 48);
+        int side = style.BoundingBoxLogicalPx;
+        byte[] px = RenderToBytes(style, 1.0, useFogLut: true);
+        double white = KoEnVue.App.Config.DefaultConfig.CursorFogWhitenessBase
+            + KoEnVue.App.Config.DefaultConfig.CursorFogWhitenessSoftSpan * 0.8;
+
+        int mid = side / 2;
+        Assert.True(CloserTo(px, side, mid + 70, mid, languageColor, purple, white), "비움 바로 바깥은 언어 색이어야 함");
+        Assert.True(CloserTo(px, side, mid + 96, mid, purple, languageColor, white), "바깥 원은 CapsLock 색이어야 함");
+    }
+
+    private static bool CloserTo(byte[] px, int side, int x, int y, uint want, uint other, double white)
+    {
+        int i = (y * side + x) * 4;
+        double dWant = 0, dOther = 0;
+        for (int c = 0; c < 3; c++)
+        {
+            int shift = 8 * c; // BGRA 바이트 c ↔ ARGB 의 B(0)/G(8)/R(16)
+            double w = ((want >> shift) & 0xFF) * (1 - white) + 255 * white;
+            double o = ((other >> shift) & 0xFF) * (1 - white) + 255 * white;
+            dWant += Math.Abs(px[i + c] - w);
+            dOther += Math.Abs(px[i + c] - o);
+        }
+        return dWant < dOther;
     }
 
     [Fact]

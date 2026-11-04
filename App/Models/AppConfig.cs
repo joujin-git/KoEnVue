@@ -37,6 +37,7 @@ internal sealed record AppConfig
     public string EnglishFg { get; init; } = DefaultConfig.DefaultEnglishFg;
     public string NonKoreanBg { get; init; } = DefaultConfig.DefaultNonKoreanBg;
     public string NonKoreanFg { get; init; } = DefaultConfig.DefaultNonKoreanFg;
+    public string CapsLockColor { get; init; } = DefaultConfig.DefaultCapsLockColor;
     public double Opacity { get; init; } = DefaultConfig.Opacity;
     public double IdleOpacity { get; init; } = DefaultConfig.IdleOpacity;
     public double ActiveOpacity { get; init; } = DefaultConfig.ActiveOpacity;

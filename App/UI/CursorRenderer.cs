@@ -36,11 +36,17 @@ internal static class CursorRenderer
     // 안개 CapsLock 색 섞기 날카로움 — 원별 알파의 이 거듭제곱으로 가중. 1 이면 넓게 섞여 보색이 회색이 되고,
     // 클수록 경계가 좁아진다(너무 크면 다시 뚝 끊김). 미리보기 비교로 정함.
     private const double FogCapsColorSharpness = 4.0;
+    // 안개 CapsLock 바깥 원의 σ = 안개 σ × 이 비율 (σ 가 CapsFogMinSigmaPx 보다 크면, 0.35/0.25 렌더 비교로 정함). 같은 σ 로 그리면
+    // 넓은 안개가 한/영 안개를 통째로 덮어 CapsLock 만 보였다 — 좁혀서 한/영 안개 바깥에 띠로 두른다
+    // (2026-11-04 사용자 요청: 「한/영 헤일로 바깥에 CapsLock 보라」).
+    private const double CapsFogSigmaRatio = 0.25;
+    private const double CapsFogMinSigmaPx = 4.0;
     // DIB 경계 흐림 폭의 하한 (px) — 흐림 폭은 보통 σ.
     private const double EdgeFadeMinWidthPx = 1.0;
     // 안개 σ 가 이 값(px) 이상이면 픽셀 중심 1점만 샘플(2×2 대신) — 300% DPI 팝 프레임이 15ms 주기를 넘던 것을 줄인다.
     // 넓은 안개는 한 픽셀 안에서 거의 변하지 않는다. 2×2 정밀 경로와 차이(2026-11-04 실측)는 알파 ≤2/255 로, 두 원이 만나는
     // 접힌 선(σ 에 반비례 — σ 4.9px 에서 3/255 라 8px 로 정함)과 3σ 안개 끝의 원래 계단(≈1.5/255)에서만 생긴다.
+    // CapsLock ON 이면 좁힌 바깥 원 σ(CapsFogSigma) 로 판정한다 — 가장 좁은 안개가 기준.
     private const double SingleSampleMinFogSigmaPx = 8.0;
     // 1점 샘플 경로에서도 중심에서 이 거리(px) 안쪽 픽셀은 2×2 로 — 거리 함수가 중심에서 뾰족해(원뿔 꼭짓점)
     // 반지름이 작은 설정(σ≈9px)에서 중앙 픽셀만 4~5/255 어긋났다.
@@ -149,7 +155,8 @@ internal static class CursorRenderer
                 style.RingAlphaInner, style.RingAlphaMiddle, style.RingAlphaOuter, fade);
         }
 
-        if (fogLut && fogSigma >= SingleSampleMinFogSigmaPx)
+        double minSigma = style.CapsLockOn ? CapsFogSigma(fogSigma) : fogSigma;
+        if (fogLut && minSigma >= SingleSampleMinFogSigmaPx)
         {
             ShadeDibFogCenterSample(ppvBits, w, h, cx, cy, maxOuterRSq);
             return (w, h);
@@ -346,13 +353,14 @@ internal static class CursorRenderer
             return;
         }
 
-        // 안개 모드 CapsLock: 바깥 원(반대 상태 색)이 안쪽 원(현재 상태 색)과 넓게 겹친다. 「가장 진한 원 색」만
+        // 안개 모드 CapsLock: 바깥 원(CapsLock 색)이 안쪽 원(현재 상태 색)과 겹친다. 「가장 진한 원 색」만
         // 쓰면 두 알파가 같아지는 지점에서 색이 뚝 바뀌어 원형 경계가 생기고(2026-11-04 사용자 보고), 알파 비율로
-        // 섞으면 보색(파랑↔주황)이 회색이 된다. → 진하기는 겹쳐 쌓고(over — 교차점의 알파 골 제거), 색은 알파의
-        // 거듭제곱 가중으로 좁은 구간에서만 섞어 회색 띠 없이 안쪽=현재 색, 바깥=CapsLock 색을 유지한다.
+        // 섞으면 두 색이 탁하게 섞인다. → 진하기는 겹쳐 쌓고(over — 교차점의 알파 골 제거), 색은 알파의
+        // 거듭제곱 가중으로 좁은 구간에서만 섞어 안쪽=현재 색, 바깥=CapsLock 색을 유지한다. 바깥 원은 σ 를 좁혀
+        // (CapsFogSigma) 한/영 안개를 덮지 않고 그 바깥에 띠로 보이게 한다.
         double outerAlpha = 0.0;
         byte outerRed = 0, outerGreen = 0, outerBlue = 0;
-        EvaluateRing(d, outerR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, outerColorArgb, ringAlphaOuter,
+        EvaluateRing(d, outerR, coreHalf, haloHalf, haloOpacity, soft, CapsFogSigma(fogSigma), outerColorArgb, ringAlphaOuter,
             ref outerAlpha, ref outerRed, ref outerGreen, ref outerBlue);
         if (outerAlpha <= 0.0) return;
 
@@ -526,6 +534,10 @@ internal static class CursorRenderer
             bestB = ringB;
         }
     }
+
+    /// <summary>안개 CapsLock 바깥 원의 σ — 넓은 안개만 좁힌다(좁은 안개는 원래 한/영 안개를 덮지 않음).</summary>
+    private static double CapsFogSigma(double fogSigma) =>
+        fogSigma <= CapsFogMinSigmaPx ? fogSigma : Math.Max(fogSigma * CapsFogSigmaRatio, CapsFogMinSigmaPx);
 
     private static double Clamp01(double v)
     {

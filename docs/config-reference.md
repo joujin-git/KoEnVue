@@ -1,6 +1,6 @@
 # `koenvue_config.json` 전체 키 레퍼런스
 
-KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 — **100 항목** (top-level 90 + 중첩 10). 중첩 10 은 `event_triggers.*` 2 + `advanced.*` 2 + `default_indicator_position.*` 3 + `default_indicator_position_relative.*` 3 이다 (`app_profiles` 는 값이 자유형 override 객체라 그 자체가 top-level 1행). 실측 invariant: `grep -cE '^\| \`[a-z_0-9.]+\`' docs/config-reference.md` → **100** (2026-11-04 `cursor_clear_radius` 추가로 99→100). (2026-07-29 정정: 종전 서술은 "101" 이었으나 실제는 줄곧 99 로 2 과다 표기였다.) 내역: 커서 헤일로 17 키 = 동심원 11 + 표시모드·안개 3 + 전환 효과 3, PR-15 `admin_elevation` 포함. 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
+KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 — **101 항목** (top-level 91 + 중첩 10). 중첩 10 은 `event_triggers.*` 2 + `advanced.*` 2 + `default_indicator_position.*` 3 + `default_indicator_position_relative.*` 3 이다 (`app_profiles` 는 값이 자유형 override 객체라 그 자체가 top-level 1행). 실측 invariant: `grep -cE '^\| \`[a-z_0-9.]+\`' docs/config-reference.md` → **101** (2026-11-04 `cursor_clear_radius` 추가로 99→100, 같은 날 `caps_lock_color` 추가로 100→101). (2026-07-29 정정: 종전 서술은 "101" 이었으나 실제는 줄곧 99 로 2 과다 표기였다.) 내역: 커서 헤일로 17 키 = 동심원 11 + 표시모드·안개 3 + 전환 효과 3, PR-15 `admin_elevation` 포함. 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
 
 `koenvue_config.json` 의 위치: `%LOCALAPPDATA%\KoEnVue\koenvue_config.json` (기본) 또는 exe 폴더 (writable 일 때). 자세한 결정 절차는 [README §다운로드](../README.md) 의 권장 설치 위치 절을 참고하세요. 저장 즉시 **핫 리로드** 됩니다 (메인 스레드 mtime 폴링, ~5초 간격).
 
@@ -39,6 +39,7 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 | `english_fg` | string | `"#FFFFFF"` | `#RRGGBB` | 영문 모드 글자색 |
 | `non_korean_bg` | string | `"#6B7280"` | `#RRGGBB` | 비한국어 IME 모드 배경색 |
 | `non_korean_fg` | string | `"#FFFFFF"` | `#RRGGBB` | 비한국어 IME 모드 글자색 |
+| `caps_lock_color` | string | `"#9333EA"` | `#RRGGBB` | CAPS LOCK 전용 색 (기본 보라). CAPS LOCK ON 일 때 한/영 배지 둘레 테두리 (4 logical px, 사용자 외곽선 위에 덧그림) + 커서 헤일로 바깥 원 (Outer) 에 쓰임. IME 상태와 무관한 한 색이라 한/영 색과 헷갈리지 않음. 테마 프리셋이 바꾸지 않음. 상세 설정 「공통 — 색상」의 「CapsLock 색」 (2026-11-04) |
 | `opacity` | double | `0.85` | 0.1 ~ 1.0 | `on_event` 모드 표시 시 불투명도 |
 | `idle_opacity` | double | `0.55` | 0.1 ~ 1.0 | `always` 모드 유휴 (`always_idle_timeout_ms` 경과 후) 불투명도 |
 | `active_opacity` | double | `0.95` | 0.1 ~ 1.0 | `always` 모드 활성 (이벤트 직후) 불투명도 |
@@ -58,7 +59,7 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 
 | 키 | 타입 | 기본값 | 범위 | 설명 |
 |---|---|---|---|---|
-| `theme` | enum | `"custom"` | `custom` / `minimal` / `vivid` / `pastel` / `dark` / `system` | 6 프리셋. `custom` 외의 값은 위 6개 색상 키를 자동으로 덮어씀. `system` 은 Windows 강조색 + 고대비 모드 자동 추적 (PR-14, [DwmGetColorizationColor] + `COLOR_HIGHLIGHT` 폴백) |
+| `theme` | enum | `"custom"` | `custom` / `minimal` / `vivid` / `pastel` / `dark` / `system` | 6 프리셋. `custom` 외의 값은 위 6개 색상 키를 자동으로 덮어씀 (`caps_lock_color` 는 제외). `system` 은 Windows 강조색 + 고대비 모드 자동 추적 (PR-14, [DwmGetColorizationColor] + `COLOR_HIGHLIGHT` 폴백) |
 | `custom_backup_hangul_bg` | string? | `null` | — | 프리셋 적용 직전 `hangul_bg` 백업. `theme` 을 다시 `custom` 으로 돌리면 자동 복원. 사용자가 직접 편집할 일 없음 |
 | `custom_backup_hangul_fg` | string? | `null` | — | 동상, `hangul_fg` 백업 |
 | `custom_backup_english_bg` | string? | `null` | — | 동상, `english_bg` 백업 |
@@ -165,7 +166,7 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 
 마우스 커서 주변에 동심원 3개 (Inner / Middle / Outer) + 헤일로를 표시하는 보조 인디케이터. 메인 라벨 인디 (`한`/`En`/`EN`) 와는 **별개 윈도우** (`WS_EX_TRANSPARENT` 영구 ON — 클릭은 항상 아래 창으로 통과) 로 동작하며 트레이 메뉴 "커서 헤일로 숨김" 체크박스로 즉시 토글 가능. 기본 ON + 항상 표시 모드 (`cursor_always_show = true`) 라 첫 부팅부터 가시. `cursor_indicator_enabled = false` 로 끈 동안에는 메모리 / CPU 비용 0 (lazy 해제 + 재활성화 시 lazy 생성).
 
-색상 정책: Inner/Middle 은 현재 IME 색상 (한글/영문/비한국어 중 하나). CAPS LOCK ON 시 보이는 Outer 원은 "영문 IME → 한글 색상, 한글/비한글 IME → 영문 색상" — CAPS 토글이 한 눈에 보이도록.
+색상 정책: Inner/Middle 은 현재 IME 색상 (한글/영문/비한국어 중 하나). CAPS LOCK ON 시 보이는 Outer 원은 IME 상태와 무관하게 `caps_lock_color` (기본 보라 `#9333EA`) — 예전 「반대 언어 색」(영문 → 한글 색, 한글/비한글 → 영문 색) 은 한글+CAPS 가 영문처럼 보여 2026-11-04 교체. 안개 모드(흐릿하게)에서는 Outer 의 σ 만 좁혀 (σ ≤ 4px 면 그대로, 아니면 max(σ×0.25, 4px)) 한/영 안개는 안쪽에 그대로 두고 그 바깥(Outer 반지름 근처)에 CAPS 색 띠로 보이게 함. 선명하게 모드는 색만 바뀜 (가는 바깥 고리).
 
 아래 11 키는 트레이 메뉴 "상세 설정" 다이얼로그의 **"커서 헤일로 — 동심원"** 섹션 (PR-21 재배치 후 12 번째) 에서도 GUI 로 노출됩니다 — koenvue_config.json 직접 편집 / GUI 편집 둘 다 가능. Min/Max 는 두 경로 모두 `DefaultConfig.MinCursor*` / `MaxCursor*` 상수 단일 진실원에서 클램프. IME 전환 스케일 팝 3 키는 아래 [전환 효과](#전환-효과-cursor-transition) 절 참조.
 
@@ -217,7 +218,7 @@ IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 스케일
 | 진실원 | 어디서 참조 |
 |---|---|
 | `AppConfig` 의 모든 numeric init 디폴트 ([App/Models/AppConfig.cs](../App/Models/AppConfig.cs)) | `DefaultConfig.*` 동명 const — PR-05 D7 가 6쌍 (`FadeInMs`/`FadeOutMs`/`HighlightScale`/`HighlightDurationMs`/`AlwaysIdleTimeoutMs`/`PollIntervalMs`) 도입 + PR-17 (v0.9.5.0) 가 14 필드 추가 (외관 6 + 투명도 3 + 슬라이드 1 + 동작/시스템/고급 4). 검증: `git grep -nE "\}\s*=\s*-?[0-9]+(\.[0-9]+)?\s*;" App/Models/AppConfig.cs` → 0 매치 |
-| `AppConfig` 의 색상/문자열/배열 init 디폴트 + `Settings.EnsureSubObjects`/`ValidateAdvanced` 폴백 ([App/Models/AppConfig.cs](../App/Models/AppConfig.cs) + [App/Config/Settings.cs](../App/Config/Settings.cs)) | `DefaultConfig` 의 색상 7 const (`DefaultHangulBg` 등) + 폰트 (`DefaultIndicatorFontFamily`) + 라벨 3 + 클래스명 (`DefaultOverlayClassName`) const + 숨김 배열 2 property (`DefaultSystemHideClasses`/`DefaultSystemHideProcesses`) — AUDIT 묶음 2 (DUP-1) 가 PR-17 numeric 단일화의 비-numeric 축 완성. 검증: `git grep '"#1A73E8"\|"맑은 고딕"\|"KoEnVueOverlay"\|"Progman"\|"ShellExperienceHost"' App/Models/AppConfig.cs App/Config/Settings.cs` → 0 (배열/문자열은 정규식 미포착 — 수동 확인 병기) |
+| `AppConfig` 의 색상/문자열/배열 init 디폴트 + `Settings.EnsureSubObjects`/`ValidateAdvanced` 폴백 ([App/Models/AppConfig.cs](../App/Models/AppConfig.cs) + [App/Config/Settings.cs](../App/Config/Settings.cs)) | `DefaultConfig` 의 색상 8 const (`DefaultHangulBg` 등 + 2026-11-04 `DefaultCapsLockColor`) + 폰트 (`DefaultIndicatorFontFamily`) + 라벨 3 + 클래스명 (`DefaultOverlayClassName`) const + 숨김 배열 2 property (`DefaultSystemHideClasses`/`DefaultSystemHideProcesses`) — AUDIT 묶음 2 (DUP-1) 가 PR-17 numeric 단일화의 비-numeric 축 완성. 검증: `git grep '"#1A73E8"\|"#9333EA"\|"맑은 고딕"\|"KoEnVueOverlay"\|"Progman"\|"ShellExperienceHost"' App/Models/AppConfig.cs App/Config/Settings.cs` → 0 (배열/문자열은 정규식 미포착 — 수동 확인 병기) |
 | `AppConfig.DefaultIndicatorPositionRelative` init 디폴트 + Overlay null 폴백 ([App/Models/AppConfig.cs](../App/Models/AppConfig.cs) + [App/UI/Overlay.cs](../App/UI/Overlay.cs)) | `DefaultConfig.{DefaultRelativeCorner, DefaultRelativeOffsetX, DefaultRelativeOffsetY}` 3 const — record init 디폴트 객체와 null 폴백 경로가 동일 const 참조 (두 경로 단일 진실원 일치) |
 | `Min/MaxX` 18쌍 ([App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs)) | `Settings.Validate` clamp 20개 인자 + `SettingsDialog.Fields.cs` Int/Dbl min/max 15개 인자. PR-21 이 커서 전환 효과 2쌍 추가 (`Min/MaxCursorHighlightScale` 1.0/2.0 + `Min/MaxCursorHighlightDurationMs` 0/2000) — `MaxCursorHighlightScale` 는 `CursorStyle.MaxHighlightScale` (Core) 를 참조 (App→Core 단일 진실원, P6 정방향 — DIB bbox 팝 상한과 clamp 상한 동기화) |
 | `KoEnVue.csproj` `<Version>` | PE 헤더 3종 (Assembly/File/Informational) + `Directory.Build.targets` 가 emit 하는 `Version.g.cs` 의 `DefaultConfig.AppVersion` (PR-11 D6) |

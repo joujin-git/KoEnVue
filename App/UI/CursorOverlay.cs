@@ -22,8 +22,9 @@ namespace KoEnVue.App.UI;
 ///   <item><b>항상 표시 모드</b> (<see cref="AppConfig.CursorAlwaysShow"/> = true): 폴링으로 위치 추종, 숨김 안 함. 이동 중 시인성 저하(PR-29) 가능.</item>
 /// </list>
 /// <para>
-/// 색상 정책 — Inner/Middle 은 현재 IME 색상 (Hangul/English/NonKorean 각자), Outer 는 영문일 때
-/// 한글 색상, 한글/비한글일 때 영문 색상 (한글/비한글을 같은 카테고리로 통합 — 사용자 인터뷰 결정).
+/// 색상 정책 — Inner/Middle 은 현재 IME 색상 (Hangul/English/NonKorean 각자), CapsLock Outer 는 전용 색
+/// (<see cref="AppConfig.CapsLockColor"/>, 기본 보라). 예전엔 반대 언어 색이라 한글+CapsLock 이 영문처럼
+/// 보였다 (2026-11-04 사용자 보고 — 한/영 색은 언어만 뜻하도록 분리).
 /// </para>
 /// <para>
 /// 모든 메서드는 메인 UI 스레드에서만 호출된다. P6 게이트: 본 파사드는 App 측이므로 ImeState / AppConfig
@@ -421,8 +422,7 @@ internal static class CursorOverlay
     }
 
     /// <summary>
-    /// AppConfig + IME 상태 + CAPS 토글 → CursorStyle 합성. 한글/비한글 IME 는 같은 카테고리로 묶어
-    /// CAPS Outer 색상이 영문 색상이 되고, 영문 IME 일 때만 CAPS 가 한글 색상 (인터뷰 결정).
+    /// AppConfig + IME 상태 + CAPS 토글 → CursorStyle 합성. CAPS Outer 는 IME 상태와 무관한 CapsLock 전용 색.
     /// </summary>
     private static CursorStyle RebuildStylePreservingMotion(ImeState state, bool capsOn)
     {
@@ -451,10 +451,8 @@ internal static class CursorOverlay
             ImeState.English => config.EnglishBg,
             _ => config.NonKoreanBg
         };
-        string capsBg = state == ImeState.English ? config.HangulBg : config.EnglishBg;
-
         uint innerArgb = ColorHelper.HexToArgb(currentBg);
-        uint outerArgb = ColorHelper.HexToArgb(capsBg);
+        uint outerArgb = ColorHelper.HexToArgb(config.CapsLockColor);
 
         return new CursorStyle(
             OuterRadiusLogicalPx: config.CursorOuterRadius,
