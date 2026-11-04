@@ -277,6 +277,22 @@ function Invoke-WipCommitPaths {
     }
 }
 
+# 파일 끝 N줄 — 큰 transcript 용. `Get-Content -Tail` 은 끝에서 작은 버퍼로 거꾸로 읽어 아주 긴 줄에서
+# 극단적으로 느려진다(2026-11-04 실측: 9MB transcript·이미지 base64 1,089,216자 한 줄 → -Tail 1000 이 64초,
+# Stop hook 60초 타임아웃으로 13:08 부터 매 턴 세션 로그·판정 기록 없이 강제 종료). 앞에서부터 스트리밍해
+# 마지막 N줄만 큐에 남긴다 — 결과 같음, 파일 크기에 선형.
+function Get-FileTailLines {
+    param([Parameter(Mandatory)][string]$Path, [int]$Count = 1000)
+    $queue = New-Object 'System.Collections.Generic.Queue[string]' ($Count + 1)
+    try {
+        foreach ($line in [System.IO.File]::ReadLines($Path, [System.Text.Encoding]::UTF8)) {
+            $queue.Enqueue($line)
+            if ($queue.Count -gt $Count) { [void]$queue.Dequeue() }
+        }
+    } catch { }
+    return ,$queue.ToArray()
+}
+
 # Push to upstream — used by the "커밋 = 푸시 항상 같이" workflow rule.
 # Returns: 'pushed' on success, 'no-upstream' if no tracking branch, 'failed' on push error.
 function Invoke-Push {

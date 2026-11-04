@@ -18,7 +18,8 @@ $stamp = Get-Date -Format 'HH:mm'
 # ── (1) transcript 에서 마지막 assistant text 발췌 (Tail-clamp) ──
 $lastAssistantText = ''
 if ($payload -and $payload.transcript_path -and (Test-Path $payload.transcript_path)) {
-    $lines = Get-Content -Path $payload.transcript_path -Encoding UTF8 -Tail 1000 -ErrorAction SilentlyContinue
+    # Get-Content -Tail 은 긴 줄(이미지 base64)에서 60초를 넘겨 hook 이 강제 종료됐다 — Get-FileTailLines 주석.
+    $lines = Get-FileTailLines -Path $payload.transcript_path -Count 1000
     for ($i = $lines.Count - 1; $i -ge 0; $i--) {
         $line = $lines[$i]
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
