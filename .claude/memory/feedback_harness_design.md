@@ -12,7 +12,7 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정 →
 
 ## 핵심 규칙
 
-- **모델**: `opus` alias (최신 Opus 를 자동 추종 — 버전 숫자를 박지 않는다) + **`fastMode: false`**(2026-07-30 사용자 요청으로 해제 — 아래 섹션. 키는 남겨 명시적 false 로 둔다). **설정은 `effortLevel: "high"` 이나 데스크탑 앱 실효는 `xhigh`**(앱이 설정을 무시 — 2026-07-29 transcript 실측), `CLAUDE_CODE_EFFORT_LEVEL` env 는 **제거된 상태가 정상**. (이력: 재구성 전엔 파일 `xhigh` + env `max` 로 실효 max 를 강제했다. `max`/`ultracode` 는 session-only 라 파일 스코프 무효 — 2026-06-08 AUDIT-2 검증. schema enum 엔 `max` 가 있지만 JSON 작성 허용일 뿐 persistent 적용과 별개.)
+- **모델**: `opus` alias (최신 Opus 를 자동 추종 — 버전 숫자를 박지 않는다) + **`fastMode: false`**(2026-07-30 사용자 요청으로 해제 — 아래 섹션. 키는 남겨 명시적 false 로 둔다). **`effortLevel: "xhigh"`**(2026-11-04 사용자 결정 "항상 xhigh 로 작업하고 싶어" — 설정을 앱 실효에 맞춤. 앱은 원래 설정을 무시하고 `xhigh` 로 돌았음 — 2026-07-29 transcript 실측), `CLAUDE_CODE_EFFORT_LEVEL` env 는 **제거된 상태가 정상**. (이력: 재구성 전엔 파일 `xhigh` + env `max` 로 실효 max 를 강제했다. `max`/`ultracode` 는 session-only 라 파일 스코프 무효 — 2026-06-08 AUDIT-2 검증. schema enum 엔 `max` 가 있지만 JSON 작성 허용일 뿐 persistent 적용과 별개.)
 - **Thinking 항상**: `alwaysThinkingEnabled: true`. **매 턴 ultrathink 주입은 2026-07-24 제거** — `UserPromptSubmit` hook(inject-turn-context.ps1)이 삭제돼 지금은 세션 effort 에 맞춘 적응형이다.
 - **단일 세션 + 항상 서브에이전트**: Agent Team 안 씀 (토큰 3–5배, resume 미지원, 동시 1팀만)
 - **권한**: `bypassPermissions` 전체 — 사용자가 git 으로 책임짐. 속도 우선
@@ -60,7 +60,7 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정 →
 
 **Why**: 일상 작업 속도↑(멀티에이전트·max·매 hook 오버헤드 제거), 큰 작업 깊이는 워크플로우 수동 호출로 보존. 이 규모(1인·유지보수)에 "매 작업 6+ 에이전트 fan-out + 매 tool call 245ms hook"은 과잉이었다.
 
-**How to apply**: 기본은 solo + 필요 시 서브에이전트(탐색 explorer/haiku, 검증 verifier/sonnet). 큰 작업만 Workflow 수동. effort 는 설정 high / 데스크탑 앱 실효 xhigh — 더 깊이가 필요하면 그때 승격. 이 균형을 "항상 max·항상 멀티에이전트"로 되돌리려면 사용자 확인. [[verify-load-bearing-claims]] 적용 사례(서브에이전트 fastMode 주장을 schemastore 로 교차검증).
+**How to apply**: 기본은 solo + 필요 시 서브에이전트(탐색 explorer/haiku, 검증 verifier/sonnet). 큰 작업만 Workflow 수동. effort 는 **항상 xhigh**(2026-11-04 사용자 결정 — high 로 낮추자는 제안 금지). 이 균형을 "항상 max·항상 멀티에이전트"로 되돌리려면 사용자 확인. [[verify-load-bearing-claims]] 적용 사례(서브에이전트 fastMode 주장을 schemastore 로 교차검증).
 
 ## 2026-07-30 fast mode 해제
 
@@ -90,3 +90,11 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정 →
 - [[feedback-version-format]]
 - [[feedback-workflow-rules]]
 - [[os-dependent-accept]]
+
+## 2026-11-04 effort 항상 xhigh
+
+**변경**: `.claude/settings.json` `effortLevel: "high"` → **`"xhigh"`**. 사용자 요청 「항상 xhigh로 작업하고 싶어」. 사용자 전역 `~/.claude/settings.json` 은 이미 `xhigh`. agents 4개 본문·session-start·statusline 폴백·harness-status·docs/harness.md 의 「설정 high / 앱 실효 xhigh」 서술도 함께 정리.
+
+**Why:** 품질 우선(07-30 fast mode 해제와 같은 방향). 앱이 이미 xhigh 로 돌고 있었으므로 실제 동작 변화는 없고, 설정과 실효의 불일치를 없앤 것.
+
+**How to apply:** effort 를 high 이하로 낮추자는 제안 금지 — 비용·속도 이유로도 먼저 묻지 말 것. 더 깊이가 필요하면 max 는 session-only 라 파일로 영속 불가. 관련 [[verify-with-runtime-artifacts]]: 실효 effort 는 transcript `"effort":` 필드로 확인.

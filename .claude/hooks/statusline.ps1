@@ -6,9 +6,9 @@ $payload = Read-HookInput
 
 $model = 'opus'
 # effort 폴백: payload.effort.level 미수신 시 env override 를 반영. 단 2026-07-24 재구성으로
-# env CLAUDE_CODE_EFFORT_LEVEL 는 제거됐으므로 미설정이 정상 — 실질 폴백은 settings 값과 같은 'high'.
+# env CLAUDE_CODE_EFFORT_LEVEL 는 제거됐으므로 미설정이 정상 — 실질 폴백은 settings 값과 같은 'xhigh'(2026-11-04).
 # payload 에 effort.level 이 오면 아래에서 덮어씀(우선).
-$effort = if ($env:CLAUDE_CODE_EFFORT_LEVEL) { [string]$env:CLAUDE_CODE_EFFORT_LEVEL } else { 'high' }
+$effort = if ($env:CLAUDE_CODE_EFFORT_LEVEL) { [string]$env:CLAUDE_CODE_EFFORT_LEVEL } else { 'xhigh' }
 $branch = ''
 $dirty = ''
 
