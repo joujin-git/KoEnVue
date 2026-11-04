@@ -329,7 +329,7 @@ internal static partial class DefaultConfig
     public const double CursorHaloOpacity          = 0.5;
     // 커서 비움 반지름 (logical px) — 안개 모드에서 커서 바로 주변 글자가 뿌옇게 보이지 않도록 이 안쪽은 안개 0.
     // 0 = 끔. 바깥으로 CursorClearFadeWidth 에 걸쳐 안개가 서서히 나타난다 (2026-11-04 사용자 요청).
-    public const int    CursorClearRadius          = 24;
+    public const int    CursorClearRadius          = 48;
     public const int    CursorClearFadeWidth       = 16;
     public const int    CursorIdleDelayMs          = 100;
     public const int    CursorMotionThresholdPx    = 5;

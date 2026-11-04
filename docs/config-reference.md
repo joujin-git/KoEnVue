@@ -179,7 +179,7 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 | `cursor_core_thickness` | int | `1` | 1 ~ 8 | 코어 (사용자 색상) 두께 (논리 px). 양옆 0.5px 분석적 AA 적용 |
 | `cursor_halo_thickness` | int | `12` | 0 ~ 12 | 헤일로 (흰색) 두께 (논리 px). 0 = 헤일로 끔. 코어 양옆 `(halo - core) / 2` 씩 외부 확장 |
 | `cursor_halo_opacity` | double | `0.5` | 0.0 ~ 1.0 | 헤일로 흰색 불투명도. 코어와 alpha 비교해 큰 쪽이 채택됨 |
-| `cursor_clear_radius` | int | `24` | 0 ~ 96 | 커서 주변 비움 반지름 (논리 px, DPI 적용). **안개 모드에서만**(흐릿하게 상시 / 이동 중 흐릿하게의 이동 중) 중심에서 이 반지름 안쪽 안개를 0 으로 비우고, 바깥으로 `DefaultConfig.CursorClearFadeWidth`(=16 논리 px)에 걸쳐 smoothstep 으로 서서히 나타나게 함 — 커서 바로 옆 글자가 안개로 부옇게 보이지 않도록. 0 = 끔. 전환 팝 배율과 무관한 고정 크기. 선명하게(`sharp`)는 가는 고리라 영향 없음. 키가 없는 기존 설정 파일은 기본 24 적용 (2026-11-04) |
+| `cursor_clear_radius` | int | `48` | 0 ~ 96 | 커서 주변 비움 반지름 (논리 px, DPI 적용). **안개 모드에서만**(흐릿하게 상시 / 이동 중 흐릿하게의 이동 중) 중심에서 이 반지름 안쪽 안개를 0 으로 비우고, 바깥으로 `DefaultConfig.CursorClearFadeWidth`(=16 논리 px)에 걸쳐 smoothstep 으로 서서히 나타나게 함 — 커서 바로 옆 글자가 안개로 부옇게 보이지 않도록. 0 = 끔. 전환 팝 배율과 무관한 고정 크기. 선명하게(`sharp`)는 가는 고리라 영향 없음. 키가 없는 기존 설정 파일은 기본 48 적용 (2026-11-04) |
 | `cursor_idle_delay_ms` | int | `100` | 0 ~ 2000 | (정지 검출 모드) 마우스 정지 후 인디 표시까지 대기 시간 (ms). 0 = 즉시 |
 | `cursor_motion_threshold_px` | int | `5` | 1 ~ 32 | (정지 검출 모드) 직전 폴링 좌표와 맨해튼 거리 임계 (px). 초과 시 "이동" 으로 분류 — 인디 즉시 숨김 |
 

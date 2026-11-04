@@ -776,9 +776,9 @@ Reset paths: (1) right-click tray → "한/영 배지 숨김" menu toggle (flips
 
 ### Tray icon hidden-state rendering (`TrayIcon.PaintIcon`)
 
-숨김 상태는 **보이는 도형만 그려서** 표현한다 — 취소선 오버레이가 아니다. `CreateIcon` 이 `Tray.GetVisibility(config)` 로 현재 단계를 읽어 `PaintIcon` 에 넘기면, `Tray.GetShapes(visibility)` 가 링(커서 헤일로)·배지(한/영 배지) 중 무엇을 그릴지 판정한다: 링+배지 / 배지 / 링 / (도형 없음, 배경색만). 좌클릭 순환 4단계와 1:1 이라 네 상태가 서로 다르게 보인다. 상태별 `fgHex` (`HangulFg` / `EnglishFg` / `NonKoreanFg`) 는 `ColorHelper.HexToColorRef` 로 `bgHex` 와 함께 해석돼 도형 색이 테마 작성자가 지정한 배경 대비를 그대로 상속한다.
+숨김 상태는 **보이는 도형만 그려서** 표현한다 — 취소선 오버레이가 아니다. `CreateIcon` 이 `Tray.GetVisibility(config)` 로 현재 단계를 읽어 `PaintIcon` 에 넘기면, `Tray.GetShapes(visibility)` 가 안개 고리(커서 헤일로)·배지(한/영 배지) 중 무엇을 그릴지 판정한다: 고리+배지 / 배지 / 고리 / (도형 없음, 배경색만). 고리는 2026-11-04 선명한 링+후광에서 `koenvue.ico` 와 같은 비율의 가우시안 안개 고리로 바뀌었다(치수는 [PRD §4.1](KoEnVue_PRD.md)). 좌클릭 순환 4단계와 1:1 이라 네 상태가 서로 다르게 보인다. 상태별 `fgHex` (`HangulFg` / `EnglishFg` / `NonKoreanFg`) 는 `ColorHelper.HexToColorRef` 로 `bgHex` 와 함께 해석돼 도형 색이 테마 작성자가 지정한 배경 대비를 그대로 상속한다.
 
-취소선 방식(`DrawStrikeThrough` / `DrawDoubleStrikeThrough`, v0.9.2.x)을 폐기한 이유는 두 가지다 — (1) `user_hidden`(배지) 만 보고 그려서 헤일로만 숨긴 상태가 정상 상태와 구별되지 않았고, (2) 링+배지처럼 도형이 넓어지면 같은 Fg 색 줄은 도형에 묻히고 배경색으로 파내면 도형이 조각나 16 px 에서 읽기 어렵다. 폐기 시점까지의 취소선 두께·색상 튜닝 이력은 CHANGELOG 의 해당 릴리스 항목 참고.
+취소선 방식(`DrawStrikeThrough` / `DrawDoubleStrikeThrough`, v0.9.2.x)을 폐기한 이유는 두 가지다 — (1) `user_hidden`(배지) 만 보고 그려서 헤일로만 숨긴 상태가 정상 상태와 구별되지 않았고, (2) 헤일로 도형+배지처럼 도형이 넓어지면 같은 Fg 색 줄은 도형에 묻히고 배경색으로 파내면 도형이 조각나 16 px 에서 읽기 어렵다. 폐기 시점까지의 취소선 두께·색상 튜닝 이력은 CHANGELOG 의 해당 릴리스 항목 참고.
 
 ### Startup task registration & path/delay auto-sync
 

@@ -11,22 +11,16 @@ namespace KoEnVue.App.UI;
 
 /// <summary>
 /// GDI 기반 트레이 아이콘 동적 생성.
-/// 헤일로 링 + 배지 디자인 — 텍스트 미표시, 배경색으로 IME 상태 구분.
+/// 헤일로 안개 고리 + 배지 디자인 — 텍스트 미표시, 배경색으로 IME 상태 구분.
 /// </summary>
 internal static class TrayIcon
 {
-    // 도형 = 커서 헤일로(바깥 링) + 한/영 배지(안쪽 가로 사각형) — 제품의 두 표시 요소를 그대로
+    // 도형 = 커서 헤일로(안개 고리) + 한/영 배지(안쪽 가로 사각형) — 제품의 두 표시 요소를 그대로
     // 은유한다. 좌클릭 순환 4단계는 **보이는 요소만 그리는 것**으로 표현한다:
-    //   둘 다 보임 → 링 + 배지 / 배지만 → 배지 / 헤일로만 → 링 / 모두 숨김 → 배경색만
+    //   둘 다 보임 → 고리 + 배지 / 배지만 → 배지 / 헤일로만 → 고리 / 모두 숨김 → 배경색만
     // 취소선으로 덧그리지 않는 이유 — 도형이 넓어 같은 Fg 색 줄은 묻히고, 배경색으로 파내면
     // 도형이 조각나 읽기 어렵다. "있고 없음" 이 16px 에서 가장 빨리 읽힌다.
     // (P3: 매직 넘버 금지 — 모든 치수는 아이콘 크기 대비 비율 + 최소 픽셀)
-    // 치수는 16px 실측으로 정했다 — 링을 아이콘 가장자리까지 키우면(inset 0) 사각형 모서리에서
-    // 원이 평평하게 잘리고, 배지가 iconW*3/8 이면 링 안쪽에 닿아 답답해진다. 아래 비율이 링을
-    // 온전히 유지하면서 배지 둘레에 여백이 남는 조합.
-    private const int HaloEdgeInsetPx = 1;      // 링 바깥 반지름 = min(W,H)/2 - 1
-    private const int HaloThicknessRatio = 8;   // 링 두께 = min(W,H) / 8
-    private const int HaloThicknessMinPx = 2;
     private const int BadgeWidthRatio = 3;      // 배지 폭 = iconW / 3
     private const int BadgeHeightRatio = 5;     // 배지 높이 = iconH / 5
     private const int BadgeMinHeightPx = 3;
@@ -35,20 +29,24 @@ internal static class TrayIcon
     private const double BackgroundCornerRatio = 0.22;  // 모서리 반지름 = min(W,H) * 0.22
     private const double BadgeCornerRatio = 0.25;       // 배지 모서리 반지름 = 배지 높이 * 0.25 (살짝만)
 
-    // 링 바깥으로 번지는 후광 — "헤일로" 느낌을 내는 요소. 링에 붙은 쪽이 가장 진하고
-    // 바깥으로 갈수록 빠르게 옅어진다(거듭제곱 감쇠).
-    // **작은 아이콘에서는 생략한다** — 16px 에서 후광은 링 경계를 뿌옇게 흐려 오히려 선명도를
-    // 떨어뜨린다(실측). 해상도별로 디테일을 달리하는 것은 아이콘 디자인의 통상 관행이며,
-    // 앱 아이콘(koenvue.ico)도 같은 기준으로 32px 이상에만 후광을 넣는다.
-    private const int GlowMinIconSize = 32;             // 이 크기 미만이면 후광 생략
-    private const int GlowWidthRatio = 9;               // 후광 폭 = min(W,H) / 9
-    private const double GlowMaxAlpha = 0.65;
-    private const double GlowFalloff = 2.2;
+    // 헤일로 = 가우시안 안개 고리 (2026-11-04) — 기본 커서 헤일로가 넓은 안개(「흐릿하게」)로 바뀐 것에 맞춰
+    // 선명한 링+후광을 대체. 앱 아이콘(koenvue.ico)과 같은 비율: 고리 중심 반지름 0.34·σ 0.085·최대 진하기 0.95
+    // (모두 min(W,H) 대비). 고리 안쪽이 비어 있어 「커서 주변 비움」과도 모양이 맞는다.
+    private const double FogRingRadiusRatio = 0.34;
+    private const double FogSigmaRatio = 0.085;
+    private const double FogMaxAlpha = 0.95;
+    private const double FogSigmaCutoff = 3.5;          // σ 의 이 배수 밖은 0
+    // 작은 아이콘(이 크기 미만 — 100~150% DPI 트레이 16~24px)은 안개가 뭉개지므로 σ 를 좁히고
+    // 진하기를 1 로, 고리 중심에 가는 선을 겹쳐 윤곽을 살린다 (koenvue.ico 16~24px 와 동일).
+    private const int SmallIconMaxExclusive = 32;
+    private const double SmallFogSigmaRatio = 0.06;
+    private const double SmallFogMaxAlpha = 1.0;
+    private const double SmallCoreLineWidthPx = 1.6;
 
-    private const int AntiAliasSamples = 4;     // 경계 픽셀당 4x4 서브샘플
+    private const int AntiAliasSamples = 4;     // 픽셀당 4x4 서브샘플
 
     /// <summary>
-    /// ImeState별 배경색으로 헤일로 링 + 배지 아이콘을 생성한다.
+    /// ImeState별 배경색으로 헤일로 안개 고리 + 배지 아이콘을 생성한다.
     /// 호출자가 반환된 SafeIconHandle의 수명을 관리한다.
     /// </summary>
     internal static unsafe SafeIconHandle CreateIcon(ImeState state, AppConfig config)
@@ -67,7 +65,7 @@ internal static class TrayIcon
         };
         uint bgColor = ColorHelper.HexToColorRef(bgHex);
 
-        // 상태별 전경색 — 링·배지·후광이 공유. 테마 프리셋이 배경 대비 가독성을 보장하는
+        // 상태별 전경색 — 안개 고리·배지가 공유. 테마 프리셋이 배경 대비 가독성을 보장하는
         // Fg 쌍을 세팅하므로 아이콘 내부 도형 색을 여기에 위임 (pastel 테마의 저대비 방지).
         string fgHex = state switch
         {
@@ -111,7 +109,7 @@ internal static class TrayIcon
             hOldBitmap = Gdi32.SelectObject(memDC, hBitmap);
 
             // 5~6. 배경 + 도형을 DIB 픽셀에 **직접** 쓴다. GDI 의 Ellipse 는 안티앨리어싱이
-            //      없어 16px 원 둘레가 계단처럼 거칠어진다 — 링 경계 픽셀만 서브샘플링으로
+            //      없어 16px 원 둘레가 계단처럼 거칠어진다 — 안개 고리·둥근 모서리를 서브샘플링으로
             //      커버리지를 구해 배경↔전경을 보간한다.
             //      단계 판독은 Tray.GetVisibility, 요소 선택은 Tray.GetShapes 단일 진실원.
             PaintIcon(ppvBits, iconW, iconH, fgColor, bgColor, Tray.GetVisibility(config));
@@ -156,18 +154,17 @@ internal static class TrayIcon
     }
 
     /// <summary>
-    /// 커서 헤일로(바깥 링) + 한/영 배지(안쪽 가로 사각형)를 32bpp DIB 픽셀에 직접 그린다 —
+    /// 커서 헤일로(안개 고리) + 한/영 배지(안쪽 가로 사각형)를 32bpp DIB 픽셀에 직접 그린다 —
     /// 좌클릭 순환 단계에서 <b>보이는 요소만</b> 그리므로 네 단계가 도형 모양으로 구별된다.
     /// 모두 숨김 단계에서는 배경색만 남고, IME 상태는 그 배경색으로 계속 읽힌다.
     /// <para>
-    /// GDI 의 <c>Ellipse</c> 를 쓰지 않는 이유 — GDI 는 안티앨리어싱을 하지 않아 16px 원 둘레가
-    /// 계단처럼 거칠어진다. 링 경계에 걸친 픽셀만 <see cref="AntiAliasSamples"/>² 서브샘플로
-    /// 커버리지를 재어 배경↔전경을 보간하면 같은 크기에서도 둘레가 매끄럽다. 배지는 정수 좌표
-    /// 직사각형이라 경계가 픽셀에 딱 맞으므로 보간이 필요 없다.
+    /// GDI 도형 API 를 쓰지 않는 이유 — GDI 는 안티앨리어싱을 하지 않아 16px 원 둘레가 계단처럼
+    /// 거칠어진다. 고리는 <see cref="AntiAliasSamples"/>² 서브샘플 평균, 둥근 모서리는 경계 픽셀만
+    /// 서브샘플로 커버리지를 재어 배경↔전경을 보간한다.
     /// </para>
     /// </summary>
     /// <param name="bits">DIB 픽셀 버퍼 (32bpp BGRA, bottom-up).</param>
-    private static unsafe void PaintIcon(IntPtr bits, int iconW, int iconH, uint fgColor, uint bgColor,
+    internal static unsafe void PaintIcon(IntPtr bits, int iconW, int iconH, uint fgColor, uint bgColor,
                                          IndicatorVisibility visibility)
     {
         (bool drawBadge, bool drawHalo) = Tray.GetShapes(visibility);
@@ -178,10 +175,12 @@ internal static class TrayIcon
 
         int side = Math.Min(iconW, iconH);
         double cx = iconW / 2.0, cy = iconH / 2.0;
-        double rOuter = side / 2.0 - HaloEdgeInsetPx;
-        double thick = Math.Max(side / (double)HaloThicknessRatio, HaloThicknessMinPx);
-        double rInner = Math.Max(rOuter - thick, 1.0);
-        double glowWidth = side / (double)GlowWidthRatio;
+        bool small = side < SmallIconMaxExclusive;
+        var fog = new FogRing(
+            Radius: side * FogRingRadiusRatio,
+            Sigma: side * (small ? SmallFogSigmaRatio : FogSigmaRatio),
+            MaxAlpha: small ? SmallFogMaxAlpha : FogMaxAlpha,
+            CoreHalfWidth: small ? SmallCoreLineWidthPx * 0.5 : 0.0);
         double corner = side * BackgroundCornerRatio;
 
         double badgeW = iconW / (double)BadgeWidthRatio;
@@ -207,16 +206,7 @@ internal static class TrayIcon
                     continue;
                 }
 
-                double coverage = 0.0;
-                if (drawHalo)
-                {
-                    coverage = RingCoverage(x, y, cx, cy, rInner, rOuter);
-                    if (coverage < 1.0 && side >= GlowMinIconSize)
-                    {
-                        double glow = GlowIntensity(x, y, cx, cy, rOuter, glowWidth);
-                        if (glow > coverage) coverage = glow;
-                    }
-                }
+                double coverage = drawHalo ? FogRingCoverage(x, y, cx, cy, fog) : 0.0;
                 if (drawBadge)
                 {
                     double badge = RoundedRectCoverage(x, y, badgeX, badgeY,
@@ -232,18 +222,36 @@ internal static class TrayIcon
         }
     }
 
-    /// <summary>
-    /// 링 바깥으로 번지는 후광의 세기(0~1). 링에 접한 쪽이 가장 진하고 바깥으로 갈수록
-    /// <see cref="GlowFalloff"/> 거듭제곱으로 옅어진다.
-    /// </summary>
-    private static double GlowIntensity(int px, int py, double cx, double cy, double rOuter, double width)
+    /// <summary>안개 고리 치수 (px) — 중심 반지름, σ, 최대 진하기, 겹치는 선의 반폭(0 = 선 없음).</summary>
+    private readonly record struct FogRing(double Radius, double Sigma, double MaxAlpha, double CoreHalfWidth)
     {
-        double dx = px + 0.5 - cx, dy = py + 0.5 - cy;
-        double d = Math.Sqrt(dx * dx + dy * dy);
-        if (d <= rOuter || d >= rOuter + width) return 0.0;
+        /// <summary>중심 거리 d 에서의 진하기(0~1) — 가우시안 안개와 가는 선 중 큰 쪽.</summary>
+        public double Intensity(double d)
+        {
+            double off = Math.Abs(d - Radius);
+            if (off < CoreHalfWidth) return 1.0;
+            double t = off / Sigma;
+            return t >= FogSigmaCutoff ? 0.0 : MaxAlpha * Math.Exp(-0.5 * t * t);
+        }
+    }
 
-        double t = (d - rOuter) / width;
-        return GlowMaxAlpha * Math.Pow(1.0 - t, GlowFalloff);
+    /// <summary>
+    /// 픽셀 하나의 안개 고리 진하기(0~1) — <see cref="AntiAliasSamples"/>² 서브샘플 평균.
+    /// 아이콘이 작아(수십 px) 모든 픽셀을 서브샘플해도 비용이 무시할 만하다.
+    /// </summary>
+    private static double FogRingCoverage(int px, int py, double cx, double cy, FogRing fog)
+    {
+        double sum = 0.0;
+        for (int sy = 0; sy < AntiAliasSamples; sy++)
+        {
+            for (int sx = 0; sx < AntiAliasSamples; sx++)
+            {
+                double fx = px + (sx + 0.5) / AntiAliasSamples - cx;
+                double fy = py + (sy + 0.5) / AntiAliasSamples - cy;
+                sum += fog.Intensity(Math.Sqrt(fx * fx + fy * fy));
+            }
+        }
+        return sum / (AntiAliasSamples * AntiAliasSamples);
     }
 
     /// <summary>
@@ -288,32 +296,6 @@ internal static class TrayIcon
         double dx = x < cxL ? cxL - x : (x > cxR ? x - cxR : 0.0);
         double dy = y < cyT ? cyT - y : (y > cyB ? y - cyB : 0.0);
         return dx * dx + dy * dy <= radius * radius;
-    }
-
-    /// <summary>
-    /// 픽셀 하나가 링([<paramref name="rInner"/>, <paramref name="rOuter"/>])에 덮인 비율(0~1).
-    /// 경계에서 충분히 떨어진 픽셀은 서브샘플링 없이 0/1 로 즉시 판정한다.
-    /// </summary>
-    private static double RingCoverage(int px, int py, double cx, double cy, double rInner, double rOuter)
-    {
-        double dx = px + 0.5 - cx, dy = py + 0.5 - cy;
-        double d = Math.Sqrt(dx * dx + dy * dy);
-
-        if (d > rOuter + 1.0 || d < rInner - 1.0) return 0.0;
-        if (d > rInner + 1.0 && d < rOuter - 1.0) return 1.0;
-
-        int hit = 0;
-        for (int sy = 0; sy < AntiAliasSamples; sy++)
-        {
-            for (int sx = 0; sx < AntiAliasSamples; sx++)
-            {
-                double fx = px + (sx + 0.5) / AntiAliasSamples - cx;
-                double fy = py + (sy + 0.5) / AntiAliasSamples - cy;
-                double sd = Math.Sqrt(fx * fx + fy * fy);
-                if (sd >= rInner && sd <= rOuter) hit++;
-            }
-        }
-        return hit / (double)(AntiAliasSamples * AntiAliasSamples);
     }
 
     private static byte Blend(byte from, byte to, double t) => (byte)(from + (to - from) * t + 0.5);
