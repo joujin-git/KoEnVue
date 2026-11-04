@@ -67,4 +67,16 @@ public class ColorHelperTests
     {
         Assert.Equal(expected, ColorHelper.HexToLayeredColorRef(hex));
     }
+
+    // CapsLock 배지 테두리 = CapsLock 색 + 흰색 45% (기본 #9333EA → 사용자가 고른 시안 #C48FF3).
+    [Theory]
+    [InlineData("#9333EA", 0.45, "#C48FF3")]
+    [InlineData("#9333EA", 0.0, "#9333EA")]
+    [InlineData("#9333EA", 1.0, "#FFFFFF")]
+    [InlineData("#000000", 0.5, "#808080")]
+    [InlineData("ZZZZZZ", 0.45, "#737373")] // 잘못된 형식 → 검정 폴백 후 섞기
+    public void MixWithWhite_BlendsPerChannel(string hex, double ratio, string expected)
+    {
+        Assert.Equal(expected, ColorHelper.MixWithWhite(hex, ratio));
+    }
 }

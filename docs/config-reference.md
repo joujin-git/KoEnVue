@@ -39,7 +39,7 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 | `english_fg` | string | `"#FFFFFF"` | `#RRGGBB` | 영문 모드 글자색 |
 | `non_korean_bg` | string | `"#6B7280"` | `#RRGGBB` | 비한국어 IME 모드 배경색 |
 | `non_korean_fg` | string | `"#FFFFFF"` | `#RRGGBB` | 비한국어 IME 모드 글자색 |
-| `caps_lock_color` | string | `"#9333EA"` | `#RRGGBB` | CAPS LOCK 전용 색 (기본 보라). CAPS LOCK ON 일 때 한/영 배지 둘레 테두리 (배지 배율(`indicator_scale`) 1당 2 logical px — 기본 배율 2.0 에서 4, 켜져 있는 동안 사용자 외곽선 대신 표시. 순수 검정 `#000000` 도 검정으로 보이도록 `#010101` 로 그림) + 커서 헤일로 바깥 원 (Outer) 에 쓰임. IME 상태와 무관한 한 색이라 한/영 색과 헷갈리지 않음. 테마 프리셋이 바꾸지 않음. 상세 설정 「공통 — 색상」의 「CapsLock 색」 (2026-11-04) |
+| `caps_lock_color` | string | `"#9333EA"` | `#RRGGBB` | CAPS LOCK 전용 색 (기본 보라). CAPS LOCK ON 일 때 한/영 배지 둘레 테두리 (이 색에 흰색 45% 를 섞은 연한 색 — 기본 `#C48FF3`; 배지 배율(`indicator_scale`) 1당 2 logical px — 기본 배율 2.0 에서 4, 켜져 있는 동안 사용자 외곽선 대신 표시. 순수 검정 `#000000` 도 검정으로 보이도록 `#010101` 로 그림) + 커서 헤일로 바깥 원 (Outer) 에 쓰임. IME 상태와 무관한 한 색이라 한/영 색과 헷갈리지 않음. 테마 프리셋이 바꾸지 않음. 상세 설정 「공통 — 색상」의 「CapsLock 색」 (2026-11-04) |
 | `opacity` | double | `0.85` | 0.1 ~ 1.0 | `on_event` 모드 표시 시 불투명도 |
 | `idle_opacity` | double | `0.55` | 0.1 ~ 1.0 | `always` 모드 유휴 (`always_idle_timeout_ms` 경과 후) 불투명도 |
 | `active_opacity` | double | `0.95` | 0.1 ~ 1.0 | `always` 모드 활성 (이벤트 직후) 불투명도 |

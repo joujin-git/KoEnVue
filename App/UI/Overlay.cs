@@ -219,6 +219,13 @@ internal static class Overlay
     private const double CapsLockBorderWidthPerScale = 2.0;
 
     /// <summary>
+    /// CAPS LOCK 배지 테두리에 섞는 흰색 비율 — 테두리는 CapsLock 색(기본 #9333EA)의 연한 버전(기본 → #C48FF3).
+    /// 진한 보라는 배지에서 너무 강했다(2026-11-04 사용자 요청, 흰색 30/45/60% 시안 중 45% 선택). 설정 색 자체를
+    /// 연하게 바꾸지 않는 이유: 커서 헤일로는 안개에 흰색을 77% 섞어 그려 연보라면 보라 띠가 흰색에 묻힌다(렌더 비교).
+    /// </summary>
+    private const double CapsLockBorderWhiteMix = 0.45;
+
+    /// <summary>
     /// 앱별 저장 위치가 없을 때 기본 위치.
     /// - 시스템 입력 프로세스(시작 메뉴, 검색 창): 포그라운드 창의 시각적 왼쪽 위 모서리 바로 위쪽.
     ///   창 rect는 DWM extended frame bounds로 받아 invisible resize border를 배제한다.
@@ -505,7 +512,7 @@ internal static class Overlay
             BorderHex: config.BorderColor,
             LabelText: labelText,
             CapsLockOn: _capsLockOn,
-            CapsLockHex: config.CapsLockColor,
+            CapsLockHex: ColorHelper.MixWithWhite(config.CapsLockColor, CapsLockBorderWhiteMix),
             CapsLockBorderWidthLogicalPx: capsBorderWidthPx,
             MeasureLabels: [config.HangulLabel, config.EnglishLabel, config.NonKoreanLabel]
         );

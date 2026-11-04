@@ -96,6 +96,19 @@ internal static class ColorHelper
         => $"#{r:X2}{g:X2}{b:X2}";
 
     /// <summary>
+    /// HEX 색에 흰색을 <paramref name="whiteRatio"/>(0~1) 만큼 섞은 "#RRGGBB" — 채널별 c·(1−t) + 255·t, 반올림.
+    /// 잘못된 형식은 검정으로 보고 섞는다(<see cref="HexToRgb"/> 와 같은 폴백).
+    /// </summary>
+    public static string MixWithWhite(string hex, double whiteRatio)
+    {
+        double t = Math.Clamp(whiteRatio, 0.0, 1.0);
+        var (r, g, b) = HexToRgb(hex);
+        return RgbToHex(Mix(r), Mix(g), Mix(b));
+
+        byte Mix(byte c) => (byte)Math.Round(c * (1.0 - t) + byte.MaxValue * t);
+    }
+
+    /// <summary>
     /// 입력된 16진 색상 문자열을 "#RRGGBB" 형식으로 정규화한다.
     /// "#RRGGBB", "RRGGBB" 모두 허용, 결과는 대문자 + # 프리픽스.
     /// </summary>
