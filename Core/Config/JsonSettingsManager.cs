@@ -77,6 +77,16 @@ internal class JsonSettingsManager<T>
     private DateTime _syncedMtime = DateTime.MinValue;
 
     /// <summary>
+    /// 일시적 잠금(IOException)으로 연달아 실패한 로드 횟수. 한도까지는 다음 폴링이 다시 읽게 하고(편집기의 짧은
+    /// 배타 잠금), 넘으면 읽기 시점 mtime 으로 확정해 5초마다 재시도·Warning 이 끝없이 쌓이지 않게 한다 — 오래
+    /// 잡고 있는 프로세스나 권한 문제는 "잠깐" 이 아니다(release-review 2026-11-04). 메인 스레드(TryLoad) 전용.
+    /// </summary>
+    private int _consecutiveLockFailures;
+
+    /// <summary><see cref="_consecutiveLockFailures"/> 한도 — 폴링 5초 × 6 ≈ 30초 동안 재시도.</summary>
+    private const int MaxLockRetryLoads = 6;
+
+    /// <summary>
     /// 앱이 <b>마지막으로 디스크와 동기화된 시점</b>의 설정을 직렬화한 것. <see cref="TryLoad"/> 성공과
     /// <see cref="Save"/> 성공이 갱신한다.
     ///
@@ -185,6 +195,7 @@ internal class JsonSettingsManager<T>
                     // 성공 로드 — 폴링 기준과 동기화 기준이 함께 **읽기 시점**으로 맞춰진다.
                     _lastMtime = mtimeBeforeRead;
                     _syncedMtime = _lastMtime;
+                    _consecutiveLockFailures = 0;
                     // 방금 디스크와 동기화됐다 — 다음 Save 의 3-way 병합 기준선을 여기서 세운다 (§N-48).
                     // 파일 원문이 아니라 **앱의 표현**으로 저장해야 주석·포맷 차이가 diff 를 오염시키지 않는다.
                     _lastPersistedJson = JsonSerializer.Serialize(config, _typeInfo);
@@ -205,10 +216,15 @@ internal class JsonSettingsManager<T>
                 // 이 "이미 본 것" 으로 박혀 수정이 끝내 반영되지 않았다.
                 //  - 내용 문제(JSON 등): 읽기 시점 mtime — 같은 손상 파일로 5초마다 재발송하는 스팸은 계속
                 //    막고, 그 뒤의 편집은 mtime 이 달라 다음 폴링이 다시 읽는다.
-                //  - 일시적 I/O 실패(편집기의 배타 잠금 등): 내용을 못 봤으니 다음 폴링이 반드시 다시 읽도록
-                //    MinValue — 잠금이 풀린 뒤 mtime 이 그대로여도 놓치지 않는다. 재시도는 폴링 주기(5초)로만.
+                //  - 일시적 잠금(IOException — 편집기의 배타 잠금 등): 내용을 못 봤으니 다음 폴링이 다시 읽도록
+                //    MinValue — 잠금이 풀린 뒤 mtime 이 그대로여도 놓치지 않는다. 재시도는 폴링 주기(5초)로만,
+                //    연속 MaxLockRetryLoads 회까지. 권한 거부(UnauthorizedAccessException)는 잠깐이 아니라 내용
+                //    문제와 같이 다룬다 — 끝없는 재시도·Warning 방지(release-review 2026-11-04).
+                bool retryLock = ex is IOException && ++_consecutiveLockFailures <= MaxLockRetryLoads;
+                if (!retryLock)
+                    _consecutiveLockFailures = 0;
                 lock (_mtimeLock)
-                    _lastMtime = IsExpectedIoException(ex) ? DateTime.MinValue : mtimeBeforeRead;
+                    _lastMtime = retryLock ? DateTime.MinValue : mtimeBeforeRead;
                 value = new T();
                 return false;
             }

@@ -237,6 +237,30 @@ public class BugHunt20261104Tests : IDisposable
     }
 
     [Fact]
+    public void 잠금이_계속되면_재시도는_한도에서_멈춘다()
+    {
+        // release-review 2026-11-04: 잠금 실패마다 MinValue 로 되돌리면 오래 잡고 있는 프로세스에 5초마다
+        // 재시도·Warning 이 끝없이 쌓였다. 한도까지만 재시도하고 그 뒤로는 읽기 시점 mtime 으로 확정한다.
+        string path = Path.Combine(_dir, "koenvue_config.json");
+        File.WriteAllText(path, """{ "opacity": 0.8 }""");
+        var mgr = new JsonSettingsManager<AppConfig>(path, AppConfigJsonContext.Default.AppConfig);
+        Assert.True(mgr.CheckReload());
+
+        using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            int retries = 0;
+            for (int i = 0; i < 20; i++)
+            {
+                Assert.False(mgr.TryLoad(out _));
+                if (!mgr.CheckReload()) break;
+                retries++;
+            }
+            Assert.InRange(retries, 1, 10); // 재시도는 하되 끝없이는 아님 (한도 6)
+            Assert.False(mgr.CheckReload(), "한도 뒤에는 같은 mtime 으로 다시 발송하지 않는다");
+        }
+    }
+
+    [Fact]
     public void 손상된_설정_파일은_같은_mtime_으로_재발송하지_않는다()
     {
         string path = Path.Combine(_dir, "koenvue_config.json");

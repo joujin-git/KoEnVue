@@ -303,6 +303,13 @@ internal static partial class Tray
             _updatePending = true;
             _pendingUpdateState = state;
             _pendingUpdateConfig = config;
+            // 재등록도 보류 중이면 그 스냅샷도 최신으로 — 보류된 Recreate 는 드레인 **뒤에** 돌아, 먼저 받아 둔
+            // 옛 값(테마 변경 전 config)으로 아이콘을 새로 등록해 다음 갱신까지 옛 색으로 남았다(release-review 2026-11-04).
+            if (_recreatePending)
+            {
+                _pendingRecreateState = state;
+                _pendingRecreateConfig = config;
+            }
             return;
         }
 

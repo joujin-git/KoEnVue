@@ -9,8 +9,9 @@ namespace KoEnVue.Core.Windowing;
 /// 모든 LogicalPx 필드는 사용자 설정 값 (DPI 미적용). 엔진이 <see cref="Core.Dpi.DpiHelper.Scale"/> 로 변환.
 /// </para>
 /// <para>
-/// CAPS LOCK 외곽 원 색상 (<see cref="OuterColorArgb"/>) 은 현재 IME 의 반대 카테고리 색상 — App
-/// 측 <c>CursorOverlay.BuildStyle</c> 가 합성. 영문 IME → 한글 색상. 한글/비한글 IME → 영문 색상.
+/// CAPS LOCK 외곽 원 색상 (<see cref="OuterColorArgb"/>) 은 IME 상태와 무관한 CapsLock 전용 색
+/// (<c>caps_lock_color</c>, 기본 보라 #9333EA) — App 측 <c>CursorOverlay.BuildStyle</c> 가 합성
+/// (2026-11-04 사용자 결정 — 예전 "반대 언어 색" 은 한/영 전환과 헷갈렸다).
 /// </para>
 /// </summary>
 internal readonly record struct CursorStyle(
