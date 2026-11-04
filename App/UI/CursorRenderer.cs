@@ -33,6 +33,29 @@ internal static class CursorRenderer
     private const int FogLutTailEntries = 2;
     // 칸 사이 위치가 이 값 미만이면 앞 칸이 가깝다 (색 선택용).
     private const double FogLutNearestSplit = 0.5;
+    // 안개 CapsLock 색 섞기 날카로움 — 원별 알파의 이 거듭제곱으로 가중. 1 이면 넓게 섞여 보색이 회색이 되고,
+    // 클수록 경계가 좁아진다(너무 크면 다시 뚝 끊김). 미리보기 비교로 정함.
+    private const double FogCapsColorSharpness = 4.0;
+    // DIB 경계 흐림 폭의 하한 (px) — 흐림 폭은 보통 σ.
+    private const double EdgeFadeMinWidthPx = 1.0;
+
+    /// <summary>
+    /// DIB 경계 흐림 구간 [Start, End] (중심 거리, px). 넓은 안개(3σ)가 정사각 DIB 를 넘으면 변에서 직선으로
+    /// 잘리므로(release-review 2026-11-04 — 전환 팝 + CapsLock 에서 경계 알파 ≈62/255), 내접원 End 까지
+    /// smoothstep 으로 0 이 되게 감쇠해 둥글고 부드러운 끝을 만든다. End ≤ Start 면 감쇠 없음.
+    /// </summary>
+    private readonly record struct EdgeFade(double Start, double End)
+    {
+        public static readonly EdgeFade None = new(0.0, 0.0);
+
+        public double Factor(double d)
+        {
+            if (End <= Start || d <= Start) return AlphaUnitMax;
+            if (d >= End) return AlphaUnitMin;
+            double t = (d - Start) / (End - Start);
+            return AlphaUnitMax - t * t * (3.0 - 2.0 * t);
+        }
+    }
 
     // 안개 거리표 재사용 버퍼. Render 는 커서 헤일로 창의 UI 스레드에서만 호출되므로 단일 스레드 전제
     // (팝 애니메이션 매 프레임 재할당 회피).
@@ -80,6 +103,16 @@ internal static class CursorRenderer
             ? fogSigma * FogSigmaCutoff
             : Math.Max(baseCore, baseHalo) + HalfPixel;
         double maxOuterR = maxRing + extent + EdgeMarginPx;
+
+        // 그릴 범위가 DIB 내접원을 넘으면 경계 흐림 + 범위를 내접원으로 제한(모서리는 어차피 0).
+        double inscribedR = Math.Min(w, h) * 0.5;
+        EdgeFade fade = EdgeFade.None;
+        if (maxOuterR > inscribedR)
+        {
+            double fadeWidth = Math.Max(fogSigma, EdgeFadeMinWidthPx);
+            fade = new EdgeFade(Math.Max(maxRing, inscribedR - fadeWidth), inscribedR);
+            maxOuterR = inscribedR;
+        }
         double maxOuterRSq = maxOuterR * maxOuterR;
 
         bool fogLut = useFogLut && soft > 0.0 && fogSigma > 0.0;
@@ -88,14 +121,14 @@ internal static class CursorRenderer
             BuildFogLut(maxOuterR,
                 outerR, middleR, innerR, baseCore, baseHalo, haloOpacity, soft, fogSigma, style.CapsLockOn,
                 style.InnerColorArgb, style.MiddleColorArgb, style.OuterColorArgb,
-                style.RingAlphaInner, style.RingAlphaMiddle, style.RingAlphaOuter);
+                style.RingAlphaInner, style.RingAlphaMiddle, style.RingAlphaOuter, fade);
         }
 
         ShadeDib(ppvBits, w, h, cx, cy,
             outerR, middleR, innerR, baseCore, baseHalo, haloOpacity, soft, fogSigma, style.CapsLockOn,
             style.InnerColorArgb, style.MiddleColorArgb, style.OuterColorArgb,
             style.RingAlphaInner, style.RingAlphaMiddle, style.RingAlphaOuter,
-            maxOuterRSq, fogLut);
+            maxOuterRSq, fogLut, fade);
 
         return (w, h);
     }
@@ -110,7 +143,7 @@ internal static class CursorRenderer
         double coreHalf, double haloHalf, double haloOpacity,
         double soft, double fogSigma, bool capsOn,
         uint innerColorArgb, uint middleColorArgb, uint outerColorArgb,
-        double ringAlphaInner, double ringAlphaMiddle, double ringAlphaOuter)
+        double ringAlphaInner, double ringAlphaMiddle, double ringAlphaOuter, EdgeFade fade)
     {
         int count = (int)Math.Ceiling(maxOuterR * FogLutStepsPerPx) + FogLutTailEntries;
         if (s_fogLutAlpha.Length < count)
@@ -124,7 +157,7 @@ internal static class CursorRenderer
             double d = (double)i / FogLutStepsPerPx;
             SampleRings(d, outerR, middleR, innerR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, capsOn,
                 innerColorArgb, middleColorArgb, outerColorArgb,
-                ringAlphaInner, ringAlphaMiddle, ringAlphaOuter,
+                ringAlphaInner, ringAlphaMiddle, ringAlphaOuter, fade,
                 out double a, out byte r, out byte g, out byte b);
             s_fogLutAlpha[i] = a;
             s_fogLutRgb[i] = ((uint)r << 16) | ((uint)g << 8) | b;
@@ -151,26 +184,69 @@ internal static class CursorRenderer
         b = (byte)rgb;
     }
 
-    /// <summary>거리 d 에서 Inner/Middle(/CAPS 면 Outer) 중 가장 진한 원의 알파·색.</summary>
+    /// <summary>거리 d 에서 Inner/Middle(/CAPS 면 Outer) 중 가장 진한 원의 알파·색 × DIB 경계 흐림.</summary>
     private static void SampleRings(
         double d,
         double outerR, double middleR, double innerR,
         double coreHalf, double haloHalf, double haloOpacity,
         double soft, double fogSigma, bool capsOn,
         uint innerColorArgb, uint middleColorArgb, uint outerColorArgb,
-        double ringAlphaInner, double ringAlphaMiddle, double ringAlphaOuter,
+        double ringAlphaInner, double ringAlphaMiddle, double ringAlphaOuter, EdgeFade fade,
         out double alpha, out byte r, out byte g, out byte b)
     {
+        double fadeFactor = fade.Factor(d);
         alpha = 0.0;
         r = 0; g = 0; b = 0;
+        if (fadeFactor <= AlphaUnitMin) return;
+        SampleRingsUnfaded(d, outerR, middleR, innerR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, capsOn,
+            innerColorArgb, middleColorArgb, outerColorArgb,
+            ringAlphaInner, ringAlphaMiddle, ringAlphaOuter,
+            ref alpha, ref r, ref g, ref b);
+        alpha *= fadeFactor;
+    }
+
+    private static void SampleRingsUnfaded(
+        double d,
+        double outerR, double middleR, double innerR,
+        double coreHalf, double haloHalf, double haloOpacity,
+        double soft, double fogSigma, bool capsOn,
+        uint innerColorArgb, uint middleColorArgb, uint outerColorArgb,
+        double ringAlphaInner, double ringAlphaMiddle, double ringAlphaOuter,
+        ref double alpha, ref byte r, ref byte g, ref byte b)
+    {
         EvaluateRing(d, innerR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, innerColorArgb, ringAlphaInner,
             ref alpha, ref r, ref g, ref b);
         EvaluateRing(d, middleR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, middleColorArgb, ringAlphaMiddle,
             ref alpha, ref r, ref g, ref b);
-        if (capsOn)
+        if (!capsOn) return;
+
+        if (soft <= 0.0 || fogSigma <= 0.0)
+        {
+            // 선명하게 모드: 가는 고리끼리 떨어져 있으므로 가장 진한 원 하나만 (기존 동작).
             EvaluateRing(d, outerR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, outerColorArgb, ringAlphaOuter,
                 ref alpha, ref r, ref g, ref b);
+            return;
+        }
+
+        // 안개 모드 CapsLock: 바깥 원(반대 상태 색)이 안쪽 원(현재 상태 색)과 넓게 겹친다. 「가장 진한 원 색」만
+        // 쓰면 두 알파가 같아지는 지점에서 색이 뚝 바뀌어 원형 경계가 생기고(2026-11-04 사용자 보고), 알파 비율로
+        // 섞으면 보색(파랑↔주황)이 회색이 된다. → 진하기는 겹쳐 쌓고(over — 교차점의 알파 골 제거), 색은 알파의
+        // 거듭제곱 가중으로 좁은 구간에서만 섞어 회색 띠 없이 안쪽=현재 색, 바깥=CapsLock 색을 유지한다.
+        double outerAlpha = 0.0;
+        byte outerRed = 0, outerGreen = 0, outerBlue = 0;
+        EvaluateRing(d, outerR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, outerColorArgb, ringAlphaOuter,
+            ref outerAlpha, ref outerRed, ref outerGreen, ref outerBlue);
+        if (outerAlpha <= 0.0) return;
+
+        double wInner = Math.Pow(alpha, FogCapsColorSharpness);
+        double wOuter = Math.Pow(outerAlpha, FogCapsColorSharpness);
+        double wSum = wInner + wOuter;
+        r = (byte)Math.Round((r * wInner + outerRed * wOuter) / wSum);
+        g = (byte)Math.Round((g * wInner + outerGreen * wOuter) / wSum);
+        b = (byte)Math.Round((b * wInner + outerBlue * wOuter) / wSum);
+        alpha += outerAlpha * (AlphaUnitMax - alpha);
     }
+
 
     private static unsafe void ShadeDib(
         IntPtr ppvBits, int w, int h, double cx, double cy,
@@ -179,7 +255,7 @@ internal static class CursorRenderer
         double soft, double fogSigma, bool capsOn,
         uint innerColorArgb, uint middleColorArgb, uint outerColorArgb,
         double ringAlphaInner, double ringAlphaMiddle, double ringAlphaOuter,
-        double maxOuterRSq, bool fogLut)
+        double maxOuterRSq, bool fogLut, EdgeFade fade)
     {
         byte* bits = (byte*)ppvBits;
         int stride = w * DibSectionFactory.BytesPerPixel;
@@ -232,7 +308,7 @@ internal static class CursorRenderer
                         {
                             SampleRings(d, outerR, middleR, innerR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, capsOn,
                                 innerColorArgb, middleColorArgb, outerColorArgb,
-                                ringAlphaInner, ringAlphaMiddle, ringAlphaOuter,
+                                ringAlphaInner, ringAlphaMiddle, ringAlphaOuter, fade,
                                 out sampleAlpha, out sampleR, out sampleG, out sampleB);
                         }
 

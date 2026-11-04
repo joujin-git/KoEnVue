@@ -7,8 +7,8 @@ namespace KoEnVue.Tests.Unit;
 
 /// <summary>
 /// 커서 헤일로 안개 거리표(LUT) 경로가 샘플마다 직접 계산하는 정밀 경로와 같은 그림을 내는지.
-/// 2026-11-04 도입 시 실측: 알파 차이 ≤ 1/255, 색 차이는 CapsLock 바깥 원이 안쪽 원과 겹치는 경계선
-/// 위에서만(보이는 픽셀의 0.2% 이하, 알파 곱 기준 ≤ 8/255).
+/// 2026-11-04 실측: 알파 차이 ≤ 1/255, 색 차이 0 (CapsLock 색 섞기 도입 전엔 바깥 원 교차선에서 보이는 픽셀
+/// 0.2% 이하·알파 곱 ≤ 8/255 의 색 차이가 있었다 — 섞기 후 교차선의 색 급변이 사라져 표 보간과 일치).
 /// </summary>
 public class CursorRendererFogLutTests
 {
@@ -51,8 +51,62 @@ public class CursorRendererFogLutTests
 
         Assert.True(visible > 0);
         Assert.InRange(maxAlphaDiff, 0, 1);
-        Assert.InRange(maxPremulDiff, 0, 8);
-        Assert.True(colorOff * 100 <= visible, $"색 차이 픽셀 {colorOff}/{visible} > 1%");
+        Assert.InRange(maxPremulDiff, 0, 2);
+        Assert.Equal(0, colorOff);
+    }
+
+    [Theory]
+    [InlineData(1.0)]
+    [InlineData(1.5)]
+    public void WideFog_FadesToZeroAtDibEdge(double dpi)
+    {
+        // release-review 2026-11-04: 기본값(halo 12·soft 0.8) + CapsLock + 전환 팝(×1.3) 에서 안개 3σ 가
+        // DIB 를 넘어 변에서 직선으로 잘렸다(가장자리 알파 ≈62/255). 경계 흐림 후 테두리 줄은 완전히 투명해야 한다.
+        var style = new CursorStyle(96, 20, 10, 1, 12, 0.5, Blue, Blue, Orange, true,
+            HighlightScale: 1.3, MotionSoftness: 0.8, MotionFogPadLogicalPx: 28,
+            RingAlphaInner: 0.55, RingAlphaMiddle: 0.53, RingAlphaOuter: 0.52);
+        int side = (int)Math.Ceiling(style.BoundingBoxLogicalPx * dpi);
+        byte[] px = RenderToBytes(style, dpi, useFogLut: true);
+
+        int maxBorderAlpha = 0;
+        for (int i = 0; i < side; i++)
+        {
+            maxBorderAlpha = Math.Max(maxBorderAlpha, px[i * 4 + 3]);                          // 윗변
+            maxBorderAlpha = Math.Max(maxBorderAlpha, px[((side - 1) * side + i) * 4 + 3]);    // 아랫변
+            maxBorderAlpha = Math.Max(maxBorderAlpha, px[(i * side) * 4 + 3]);                 // 왼변
+            maxBorderAlpha = Math.Max(maxBorderAlpha, px[(i * side + side - 1) * 4 + 3]);      // 오른변
+        }
+        Assert.Equal(0, maxBorderAlpha);
+
+        // 흐림이 안개를 통째로 지우지는 않는다 — 바깥 원(반지름 96×1.3) 근처는 여전히 보인다.
+        int mid = side / 2;
+        int ringX = mid + (int)Math.Round(96 * 1.3 * dpi);
+        Assert.True(px[(mid * side + ringX) * 4 + 3] > 64, "바깥 원 근처 안개가 사라짐");
+    }
+
+    [Theory]
+    [InlineData(1.0)]
+    [InlineData(1.3)]
+    public void CapsFog_ColorChangesSmoothlyAcrossRings(double scale)
+    {
+        // 2026-11-04 사용자 보고: 안개 모드 CapsLock 에서 「가장 진한 원의 색」만 칠해 안쪽(현재 색)↔바깥(반대 색)
+        // 알파가 같아지는 반지름에서 색이 뚝 바뀌는 원형 경계가 보였다. 중심선을 따라 이웃 픽셀 간 색 변화가 작아야 한다.
+        var style = new CursorStyle(96, 20, 10, 1, 12, 0.5, Orange, Orange, Blue, true,
+            HighlightScale: scale, MotionSoftness: 0.8, MotionFogPadLogicalPx: 28,
+            RingAlphaInner: 0.55, RingAlphaMiddle: 0.55 * 0.97, RingAlphaOuter: 0.55 * 0.94);
+        int side = style.BoundingBoxLogicalPx;
+        byte[] px = RenderToBytes(style, 1.0, useFogLut: true);
+
+        int mid = side / 2;
+        int maxStep = 0;
+        for (int x = mid; x < side - 1; x++)
+        {
+            int a = (mid * side + x) * 4, n = a + 4;
+            if (px[a + 3] < 32 || px[n + 3] < 32) continue; // 안개 끝(거의 투명)은 제외
+            for (int c = 0; c < 3; c++)
+                maxStep = Math.Max(maxStep, Math.Abs(px[a + c] - px[n + c]));
+        }
+        Assert.InRange(maxStep, 0, 4);
     }
 
     [Fact]
