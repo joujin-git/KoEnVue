@@ -330,10 +330,10 @@ internal static partial class SettingsDialog
                : ["Soft", "Sharp", "Soft while moving"],
             c => (int)c.CursorDisplayMode,
             (c, i) => c with { CursorDisplayMode = (CursorDisplayMode)i }));
-        Add(Dbl("안개 농도", "Fog opacity",
+        Add(Dbl("헤일로 농도", "Halo density",
             DefaultConfig.MinCursorMotionAlpha, DefaultConfig.MaxCursorMotionAlpha,
             c => c.CursorMotionAlpha, (c, v) => c with { CursorMotionAlpha = v }));
-        Add(Dbl("안개 강도", "Fog softness",
+        Add(Dbl("헤일로 강도", "Halo softness",
             DefaultConfig.MinCursorMotionSoftness, DefaultConfig.MaxCursorMotionSoftness,
             c => c.CursorMotionSoftness, (c, v) => c with { CursorMotionSoftness = v }));
         Add(Int("외부 원 반지름 (px)", "Outer radius (px)",

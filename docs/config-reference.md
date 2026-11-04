@@ -189,8 +189,8 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 | 키 | 타입 | 기본값 | 범위 | 설명 |
 |---|---|---|---|---|
 | `cursor_display_mode` | enum | `"soft"` | `soft` / `sharp` / `motion` | **soft**=흐릿하게(기본) · **sharp**=선명하게 · **motion**=이동 중 흐릿하게(PR-29/30). 구 `cursor_motion_dim_enabled` 는 로드 시 true→motion / false→sharp 로 마이그 후 저장 시 소멸 |
-| `cursor_motion_alpha` | double | `0.55` | **0.04 ~ 1.0** | Soft/Motion 안개 알파 기준. Sharp에서는 무시(값 보존). Middle/Outer 배수 0.97 / 0.94 |
-| `cursor_motion_softness` | double | `0.35` | 0.0 ~ 1.0 | Soft/Motion 안개 강도. 1=σ≈14×헤일로반폭. Sharp에서는 무시 |
+| `cursor_motion_alpha` | double | `0.55` | **0.04 ~ 1.0** | Soft/Motion 안개 알파 기준(상세 설정「헤일로 농도」). Sharp에서는 무시(값 보존). Middle/Outer 배수 0.97 / 0.94 |
+| `cursor_motion_softness` | double | `0.35` | 0.0 ~ 1.0 | Soft/Motion 안개 강도(상세 설정「헤일로 강도」). 1=σ≈14×헤일로반폭. Sharp에서는 무시 |
 
 ### 전환 효과 (Cursor Transition)
 
