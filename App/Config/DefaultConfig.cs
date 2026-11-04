@@ -256,7 +256,7 @@ internal static partial class DefaultConfig
     // 호출마다 새 배열 — static readonly 배열 공유로 인한 변형 위험 0 (TrayQuickOpacityPresets 패턴).
 
     // 상태 색상 (Hangul/English/NonKorean — 배경 Bg / 전경 Fg) + 테두리
-    public const string DefaultHangulBg            = "#16A34A";
+    public const string DefaultHangulBg            = "#1A73E8";
     public const string DefaultHangulFg            = "#FFFFFF";
     public const string DefaultEnglishBg           = "#D97706";
     public const string DefaultEnglishFg           = "#FFFFFF";
