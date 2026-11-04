@@ -172,6 +172,7 @@ internal sealed record AppConfig
     public int CursorCoreThickness { get; init; } = DefaultConfig.CursorCoreThickness;
     public int CursorHaloThickness { get; init; } = DefaultConfig.CursorHaloThickness;
     public double CursorHaloOpacity { get; init; } = DefaultConfig.CursorHaloOpacity;
+    public int CursorClearRadius { get; init; } = DefaultConfig.CursorClearRadius;
     public int CursorIdleDelayMs { get; init; } = DefaultConfig.CursorIdleDelayMs;
     public int CursorMotionThresholdPx { get; init; } = DefaultConfig.CursorMotionThresholdPx;
     // 전환 효과 (IME 한↔영 변경 시 스케일 팝). on/off 는 트레이 메뉴 토글 (메인 ChangeHighlight 동일 정책).

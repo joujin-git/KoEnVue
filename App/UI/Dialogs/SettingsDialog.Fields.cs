@@ -336,6 +336,9 @@ internal static partial class SettingsDialog
         Add(Dbl("헤일로 강도", "Halo softness",
             DefaultConfig.MinCursorMotionSoftness, DefaultConfig.MaxCursorMotionSoftness,
             c => c.CursorMotionSoftness, (c, v) => c with { CursorMotionSoftness = v }));
+        Add(Int("커서 주변 비움 반지름 (px)", "Clear radius around cursor (px)",
+            DefaultConfig.MinCursorClearRadius, DefaultConfig.MaxCursorClearRadius,
+            c => c.CursorClearRadius, (c, v) => c with { CursorClearRadius = v }));
         Add(Int("외부 원 반지름 (px)", "Outer radius (px)",
             DefaultConfig.MinCursorOuterRadius, DefaultConfig.MaxCursorOuterRadius,
             c => c.CursorOuterRadius, (c, v) => c with { CursorOuterRadius = v }));

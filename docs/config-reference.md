@@ -1,6 +1,6 @@
 # `koenvue_config.json` 전체 키 레퍼런스
 
-KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 — **99 항목** (top-level 89 + 중첩 10). 중첩 10 은 `event_triggers.*` 2 + `advanced.*` 2 + `default_indicator_position.*` 3 + `default_indicator_position_relative.*` 3 이다 (`app_profiles` 는 값이 자유형 override 객체라 그 자체가 top-level 1행). 실측 invariant: `grep -cE '^\| \`[a-z_0-9.]+\`' docs/config-reference.md` → **99**. (2026-07-29 정정: 종전 서술은 "101" 이었으나 실제는 줄곧 99 로 2 과다 표기였다.) 내역: 커서 헤일로 16 키 = 동심원 10 + 표시모드·안개 3 + 전환 효과 3, PR-15 `admin_elevation` 포함. 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
+KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 — **100 항목** (top-level 90 + 중첩 10). 중첩 10 은 `event_triggers.*` 2 + `advanced.*` 2 + `default_indicator_position.*` 3 + `default_indicator_position_relative.*` 3 이다 (`app_profiles` 는 값이 자유형 override 객체라 그 자체가 top-level 1행). 실측 invariant: `grep -cE '^\| \`[a-z_0-9.]+\`' docs/config-reference.md` → **100** (2026-11-04 `cursor_clear_radius` 추가로 99→100). (2026-07-29 정정: 종전 서술은 "101" 이었으나 실제는 줄곧 99 로 2 과다 표기였다.) 내역: 커서 헤일로 17 키 = 동심원 11 + 표시모드·안개 3 + 전환 효과 3, PR-15 `admin_elevation` 포함. 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
 
 `koenvue_config.json` 의 위치: `%LOCALAPPDATA%\KoEnVue\koenvue_config.json` (기본) 또는 exe 폴더 (writable 일 때). 자세한 결정 절차는 [README §다운로드](../README.md) 의 권장 설치 위치 절을 참고하세요. 저장 즉시 **핫 리로드** 됩니다 (메인 스레드 mtime 폴링, ~5초 간격).
 
@@ -167,7 +167,7 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 
 색상 정책: Inner/Middle 은 현재 IME 색상 (한글/영문/비한국어 중 하나). CAPS LOCK ON 시 보이는 Outer 원은 "영문 IME → 한글 색상, 한글/비한글 IME → 영문 색상" — CAPS 토글이 한 눈에 보이도록.
 
-아래 10 키는 트레이 메뉴 "상세 설정" 다이얼로그의 **"커서 헤일로 — 동심원"** 섹션 (PR-21 재배치 후 12 번째) 에서도 GUI 로 노출됩니다 — koenvue_config.json 직접 편집 / GUI 편집 둘 다 가능. Min/Max 는 두 경로 모두 `DefaultConfig.MinCursor*` / `MaxCursor*` 상수 단일 진실원에서 클램프. IME 전환 스케일 팝 3 키는 아래 [전환 효과](#전환-효과-cursor-transition) 절 참조.
+아래 11 키는 트레이 메뉴 "상세 설정" 다이얼로그의 **"커서 헤일로 — 동심원"** 섹션 (PR-21 재배치 후 12 번째) 에서도 GUI 로 노출됩니다 — koenvue_config.json 직접 편집 / GUI 편집 둘 다 가능. Min/Max 는 두 경로 모두 `DefaultConfig.MinCursor*` / `MaxCursor*` 상수 단일 진실원에서 클램프. IME 전환 스케일 팝 3 키는 아래 [전환 효과](#전환-효과-cursor-transition) 절 참조.
 
 | 키 | 타입 | 기본값 | 범위 | 설명 |
 |---|---|---|---|---|
@@ -179,6 +179,7 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 | `cursor_core_thickness` | int | `1` | 1 ~ 8 | 코어 (사용자 색상) 두께 (논리 px). 양옆 0.5px 분석적 AA 적용 |
 | `cursor_halo_thickness` | int | `12` | 0 ~ 12 | 헤일로 (흰색) 두께 (논리 px). 0 = 헤일로 끔. 코어 양옆 `(halo - core) / 2` 씩 외부 확장 |
 | `cursor_halo_opacity` | double | `0.5` | 0.0 ~ 1.0 | 헤일로 흰색 불투명도. 코어와 alpha 비교해 큰 쪽이 채택됨 |
+| `cursor_clear_radius` | int | `24` | 0 ~ 96 | 커서 주변 비움 반지름 (논리 px, DPI 적용). **안개 모드에서만**(흐릿하게 상시 / 이동 중 흐릿하게의 이동 중) 중심에서 이 반지름 안쪽 안개를 0 으로 비우고, 바깥으로 `DefaultConfig.CursorClearFadeWidth`(=16 논리 px)에 걸쳐 smoothstep 으로 서서히 나타나게 함 — 커서 바로 옆 글자가 안개로 부옇게 보이지 않도록. 0 = 끔. 전환 팝 배율과 무관한 고정 크기. 선명하게(`sharp`)는 가는 고리라 영향 없음. 키가 없는 기존 설정 파일은 기본 24 적용 (2026-11-04) |
 | `cursor_idle_delay_ms` | int | `100` | 0 ~ 2000 | (정지 검출 모드) 마우스 정지 후 인디 표시까지 대기 시간 (ms). 0 = 즉시 |
 | `cursor_motion_threshold_px` | int | `5` | 1 ~ 32 | (정지 검출 모드) 직전 폴링 좌표와 맨해튼 거리 임계 (px). 초과 시 "이동" 으로 분류 — 인디 즉시 숨김 |
 

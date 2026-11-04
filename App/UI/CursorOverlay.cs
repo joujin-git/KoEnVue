@@ -466,7 +466,8 @@ internal static class CursorOverlay
             InnerColorArgb: innerArgb,
             MiddleColorArgb: innerArgb,
             OuterColorArgb: outerArgb,
-            CapsLockOn: capsOn
+            CapsLockOn: capsOn,
+            ClearRadiusLogicalPx: config.CursorClearRadius
         );
     }
 

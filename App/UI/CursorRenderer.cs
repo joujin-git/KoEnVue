@@ -47,21 +47,29 @@ internal static class CursorRenderer
     private const double CenterSupersampleRadiusPx = 1.0;
 
     /// <summary>
-    /// DIB 경계 흐림 구간 [Start, End] (중심 거리, px). 넓은 안개(3σ)가 정사각 DIB 를 넘으면 변에서 직선으로
-    /// 잘리므로(release-review 2026-11-04 — 전환 팝 + CapsLock 에서 경계 알파 ≈62/255), 내접원 End 까지
-    /// smoothstep 으로 0 이 되게 감쇠해 둥글고 부드러운 끝을 만든다. End ≤ Start 면 감쇠 없음.
+    /// 중심 거리(px)에 따른 안개 알파 배수 — 두 구간의 smoothstep 곱.
+    /// <para>커서 비움 [ClearStart, ClearEnd]: 안쪽은 0, ClearEnd 부터 1 — 커서 바로 주변 글자가 안개로 뿌옇게 보이지 않게
+    /// (<see cref="CursorStyle.ClearRadiusLogicalPx"/>, 2026-11-04 사용자 요청). ClearEnd ≤ ClearStart 면 비움 없음.</para>
+    /// <para>DIB 경계 흐림 [EdgeStart, EdgeEnd]: 넓은 안개(3σ)가 정사각 DIB 를 넘으면 변에서 직선으로
+    /// 잘리므로(release-review 2026-11-04 — 전환 팝 + CapsLock 에서 경계 알파 ≈62/255), 내접원 EdgeEnd 까지
+    /// 0 이 되게 감쇠해 둥글고 부드러운 끝을 만든다. EdgeEnd ≤ EdgeStart 면 감쇠 없음.</para>
     /// </summary>
-    private readonly record struct EdgeFade(double Start, double End)
+    private readonly record struct RadialFade(double ClearStart, double ClearEnd, double EdgeStart, double EdgeEnd)
     {
-        public static readonly EdgeFade None = new(0.0, 0.0);
-
         public double Factor(double d)
         {
-            if (End <= Start || d <= Start) return AlphaUnitMax;
-            if (d >= End) return AlphaUnitMin;
-            double t = (d - Start) / (End - Start);
-            return AlphaUnitMax - t * t * (3.0 - 2.0 * t);
+            double rise = AlphaUnitMax;
+            if (ClearEnd > ClearStart)
+            {
+                if (d <= ClearStart) return AlphaUnitMin;
+                if (d < ClearEnd) rise = SmoothStep((d - ClearStart) / (ClearEnd - ClearStart));
+            }
+            if (EdgeEnd <= EdgeStart || d <= EdgeStart) return rise;
+            if (d >= EdgeEnd) return AlphaUnitMin;
+            return rise * (AlphaUnitMax - SmoothStep((d - EdgeStart) / (EdgeEnd - EdgeStart)));
         }
+
+        private static double SmoothStep(double t) => t * t * (3.0 - 2.0 * t);
     }
 
     // 안개 거리표 재사용 버퍼. Render 는 커서 헤일로 창의 UI 스레드에서만 호출되므로 단일 스레드 전제
@@ -111,15 +119,25 @@ internal static class CursorRenderer
             : Math.Max(baseCore, baseHalo) + HalfPixel;
         double maxOuterR = maxRing + extent + EdgeMarginPx;
 
+        // 커서 비움 — 안개 모드만(선명하게는 가는 고리라 안쪽이 이미 비어 있다). 팝 배율과 무관하게 고정 크기.
+        double clearStart = 0.0, clearEnd = 0.0;
+        if (soft > 0.0 && style.ClearRadiusLogicalPx > 0)
+        {
+            clearStart = DpiHelper.Scale(style.ClearRadiusLogicalPx, metrics.DpiScale);
+            clearEnd = clearStart + DpiHelper.Scale(DefaultConfig.CursorClearFadeWidth, metrics.DpiScale);
+        }
+
         // 그릴 범위가 DIB 내접원을 넘으면 경계 흐림 + 범위를 내접원으로 제한(모서리는 어차피 0).
         double inscribedR = Math.Min(w, h) * 0.5;
-        EdgeFade fade = EdgeFade.None;
+        double edgeStart = 0.0, edgeEnd = 0.0;
         if (maxOuterR > inscribedR)
         {
             double fadeWidth = Math.Max(fogSigma, EdgeFadeMinWidthPx);
-            fade = new EdgeFade(Math.Max(maxRing, inscribedR - fadeWidth), inscribedR);
+            edgeStart = Math.Max(maxRing, inscribedR - fadeWidth);
+            edgeEnd = inscribedR;
             maxOuterR = inscribedR;
         }
+        RadialFade fade = new(clearStart, clearEnd, edgeStart, edgeEnd);
         double maxOuterRSq = maxOuterR * maxOuterR;
 
         bool fogLut = useFogLut && soft > 0.0 && fogSigma > 0.0;
@@ -240,7 +258,7 @@ internal static class CursorRenderer
         double coreHalf, double haloHalf, double haloOpacity,
         double soft, double fogSigma, bool capsOn,
         uint innerColorArgb, uint middleColorArgb, uint outerColorArgb,
-        double ringAlphaInner, double ringAlphaMiddle, double ringAlphaOuter, EdgeFade fade)
+        double ringAlphaInner, double ringAlphaMiddle, double ringAlphaOuter, RadialFade fade)
     {
         int count = (int)Math.Ceiling(maxOuterR * FogLutStepsPerPx) + FogLutTailEntries;
         if (s_fogLutAlpha.Length < count)
@@ -291,7 +309,7 @@ internal static class CursorRenderer
         double coreHalf, double haloHalf, double haloOpacity,
         double soft, double fogSigma, bool capsOn,
         uint innerColorArgb, uint middleColorArgb, uint outerColorArgb,
-        double ringAlphaInner, double ringAlphaMiddle, double ringAlphaOuter, EdgeFade fade,
+        double ringAlphaInner, double ringAlphaMiddle, double ringAlphaOuter, RadialFade fade,
         out double alpha, out byte r, out byte g, out byte b)
     {
         double fadeFactor = fade.Factor(d);
@@ -355,7 +373,7 @@ internal static class CursorRenderer
         double soft, double fogSigma, bool capsOn,
         uint innerColorArgb, uint middleColorArgb, uint outerColorArgb,
         double ringAlphaInner, double ringAlphaMiddle, double ringAlphaOuter,
-        double maxOuterRSq, bool fogLut, EdgeFade fade)
+        double maxOuterRSq, bool fogLut, RadialFade fade)
     {
         byte* bits = (byte*)ppvBits;
         int stride = w * DibSectionFactory.BytesPerPixel;

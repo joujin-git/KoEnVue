@@ -184,6 +184,7 @@ internal static class Settings
             CursorCoreThickness = Math.Clamp(config.CursorCoreThickness, DefaultConfig.MinCursorCoreThickness, DefaultConfig.MaxCursorCoreThickness),
             CursorHaloThickness = Math.Clamp(config.CursorHaloThickness, DefaultConfig.MinCursorHaloThickness, DefaultConfig.MaxCursorHaloThickness),
             CursorHaloOpacity = Math.Clamp(config.CursorHaloOpacity, DefaultConfig.MinCursorHaloOpacity, DefaultConfig.MaxCursorHaloOpacity),
+            CursorClearRadius = Math.Clamp(config.CursorClearRadius, DefaultConfig.MinCursorClearRadius, DefaultConfig.MaxCursorClearRadius),
             CursorIdleDelayMs = Math.Clamp(config.CursorIdleDelayMs, DefaultConfig.MinCursorIdleDelayMs, DefaultConfig.MaxCursorIdleDelayMs),
             CursorMotionThresholdPx = Math.Clamp(config.CursorMotionThresholdPx, DefaultConfig.MinCursorMotionThresholdPx, DefaultConfig.MaxCursorMotionThresholdPx),
             CursorHighlightScale = Math.Clamp(config.CursorHighlightScale, DefaultConfig.MinCursorHighlightScale, DefaultConfig.MaxCursorHighlightScale),

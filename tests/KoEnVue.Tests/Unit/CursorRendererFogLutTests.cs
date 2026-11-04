@@ -156,6 +156,57 @@ public class CursorRendererFogLutTests
         }
     }
 
+    [Theory]
+    [InlineData(1.0, false)]
+    [InlineData(1.5, true)]
+    public void ClearZone_FogIsZeroNearCursorAndUnchangedOutside(double dpi, bool caps)
+    {
+        // 2026-11-04 사용자 요청: 커서 주변 글자가 안개로 뿌옇게 보이지 않도록 비움 반지름 안쪽은 안개 0.
+        var baseStyle = new CursorStyle(96, 20, 10, 1, 12, 0.5, Blue, Blue, Orange, caps,
+            HighlightScale: 1.3, MotionSoftness: 0.8, MotionFogPadLogicalPx: 28,
+            RingAlphaInner: 0.55, RingAlphaMiddle: 0.53, RingAlphaOuter: 0.52);
+        const int clearLogical = 24;
+        var cleared = baseStyle with { ClearRadiusLogicalPx = clearLogical };
+        int side = (int)Math.Ceiling(baseStyle.BoundingBoxLogicalPx * dpi);
+        byte[] before = RenderToBytes(baseStyle, dpi, useFogLut: true);
+        byte[] after = RenderToBytes(cleared, dpi, useFogLut: true);
+        byte[] afterExact = RenderToBytes(cleared, dpi, useFogLut: false);
+
+        double clearR = Math.Round(clearLogical * dpi);
+        double clearEnd = clearR + Math.Round(KoEnVue.App.Config.DefaultConfig.CursorClearFadeWidth * dpi);
+        int insideVisible = 0, outsideChanged = 0, maxLutDiff = 0;
+        bool beforeHadFogInside = false;
+        for (int y = 0; y < side; y++)
+        for (int x = 0; x < side; x++)
+        {
+            int i = (y * side + x) * 4 + 3;
+            double dx = x + 0.5 - side * 0.5, dy = y + 0.5 - side * 0.5;
+            double d = Math.Sqrt(dx * dx + dy * dy);
+            if (d < clearR - 1.0)
+            {
+                if (after[i] > 0) insideVisible++;
+                if (before[i] > 0) beforeHadFogInside = true;
+            }
+            else if (d > clearEnd + 1.0 && before[i] != after[i]) outsideChanged++;
+            maxLutDiff = Math.Max(maxLutDiff, Math.Abs(after[i] - afterExact[i]));
+        }
+
+        Assert.True(beforeHadFogInside, "비움 없이는 커서 주변에 안개가 있어야 함 (대조군)");
+        Assert.Equal(0, insideVisible);
+        Assert.Equal(0, outsideChanged);
+        Assert.InRange(maxLutDiff, 0, OnePointAlphaTolerance);
+    }
+
+    [Fact]
+    public void ClearZone_DoesNotAffectSharpMode()
+    {
+        // 선명하게(soft=0)는 가는 고리라 안쪽이 이미 비어 있다 — 비움 설정이 고리를 지우면 안 된다.
+        var style = new CursorStyle(45, 35, 10, 2, 4, 0.5, Blue, Blue, Orange, true);
+        byte[] off = RenderToBytes(style, 1.0, useFogLut: true);
+        byte[] on = RenderToBytes(style with { ClearRadiusLogicalPx = 40 }, 1.0, useFogLut: true);
+        Assert.Equal(off, on);
+    }
+
     private static byte[] RenderToBytes(CursorStyle style, double dpi, bool useFogLut)
     {
         int side = (int)Math.Ceiling(style.BoundingBoxLogicalPx * dpi);

@@ -32,7 +32,9 @@ internal readonly record struct CursorStyle(
     // PR-29 이동 딤: 원별 픽셀 알파 배수(1=평상시). 창 SourceConstantAlpha 와 별개.
     double RingAlphaInner = 1.0,
     double RingAlphaMiddle = 1.0,
-    double RingAlphaOuter = 1.0
+    double RingAlphaOuter = 1.0,
+    // 커서 비움 반지름 (logical px) — 안개 모드에서 이 안쪽은 안개 0. 0 = 끔. 팝 배율과 무관.
+    int ClearRadiusLogicalPx = 0
 )
 {
     /// <summary>
