@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: c492f502-5d0a-450d-853d-101a243df772
-  modified: 2026-07-30T00:09:16.281Z
+  modified: 2026-11-04T12:12:32.002Z
 ---
 
 KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정 → **2026-07-24 균형 재구성**). ⚠️ 최신 실효 상태는 맨 아래 「2026-07-24 균형 재구성」 섹션 — 아래 초기 결정 중 effort=max·ultracode 항상 ON 은 그 섹션에서 갱신됨(effort 설정 high·ultracode 큰 작업만 수동). **2026-07-29 정정: 데스크탑 앱은 `effortLevel` 설정을 무시하고 `xhigh` 로 돈다**(transcript `"effort":"xhigh","entrypoint":"claude-desktop"` 실측). 사용자 결정 — 그대로 두고 문서를 실제에 맞춤.
@@ -37,14 +37,14 @@ KoEnVue 의 Claude Code 하네스 설계 결정 (2026-05-22 인터뷰 확정 →
 ## ultracode — 멀티에이전트 워크플로우 (2026-06-08 전면 도입 확정)
 
 - **발동(2026-06-08 당시 — 현재는 폐기)**: 항상 ON. `inject-turn-context.ps1` hook 이 매 턴 "ultracode" 키워드 + 행동 지시 주입. **지금은 hook 삭제 + 큰 작업만 수동 호출.** substantive 작업(다중 파일 변경·리뷰·감사·버그헌트·설계비교·하네스변경)은 Workflow 도구로 오케스트레이션, trivial 은 solo.
-- **effort 와 별개 축**: ultracode 는 effort 레벨이 아니다. (당시엔 `CLAUDE_CODE_EFFORT_LEVEL=max` 를 함께 유지했다 — **그 env 는 2026-07-24 제거됐고, 데스크탑 앱 실효는 `xhigh` — settings 의 `high` 는 앱이 무시한다(2026-07-29)**) — ultracode 가 effort 를 대체하지 않음(env 를 ultracode 로 바꾸면 max 손실 위험). 이번 세션이 env=max + 키워드 ultracode 조합으로 동작한 게 증거.
+- **effort 와 별개 축**: ultracode 는 effort 레벨이 아니다. (당시엔 `CLAUDE_CODE_EFFORT_LEVEL=max` 를 함께 유지했다 — **그 env 는 2026-07-24 제거됐고, effort 는 `xhigh` — 2026-11-04 부터 settings·데스크탑 앱 실효 일치**) — ultracode 가 effort 를 대체하지 않음(env 를 ultracode 로 바꾸면 max 손실 위험). 이번 세션이 env=max + 키워드 ultracode 조합으로 동작한 게 증거.
 - **Agent Team 은 여전히 거부**: Workflow 도구는 Agent Team(TeamCreate)과 다른 메커니즘 — 결정론적·resume(resumeFromRunId)·budget 지원. "단일 세션 + 서브에이전트" 철학과 충돌 없음.
 - **저장 워크플로우 5개**: `.claude/workflows/*.js` — release-review, bug-hunt, codebase-audit, design-compare, harness-optimize. `Workflow({name})` 호출 또는 `/<name>`.
 - **검증 상태(2026-06-08 갱신)**: 워크플로우 `/<name>` 자동 노출 + `Workflow({name})` 다중 에이전트 fan-out 확인됨(release-review/harness-optimize 각 6 에이전트 실행). hook 키워드가 ultracode "런타임 플래그"를 켜는지만 미확인이나 명시적 지시 + 워크플로우 실행으로 행동 보장. (statusLine 은 재구성 후 `[model · effort] | git:branch | 한/En 하네스` 만 렌더 — ultracode 표시는 없어졌다.)
 
 **Why**: 사용자 "비용 무제한, 깊이 최우선" 철학을 ultracode 에도 일관 적용 — 전면 도입 + 항상 자동 (2026-06-08 인터뷰).
 
-**How to apply**: (⚠️ 2026-07-24 균형 재구성으로 갱신 — 아래 「2026-07-24 균형 재구성」 섹션이 최신. 이제 ultracode 는 큰 작업만 수동 호출, effort 설정은 high — 단 데스크탑 앱 실효는 xhigh.)
+**How to apply**: (⚠️ 2026-07-24 균형 재구성으로 갱신 — 아래 「2026-07-24 균형 재구성」 섹션이 최신. 이제 ultracode 는 큰 작업만 수동 호출, effort 는 xhigh — 2026-11-04 부터 설정·앱 실효 일치.)
 
 ## 2026-07-24 균형 재구성 (속도/정확성 균형으로 전환)
 

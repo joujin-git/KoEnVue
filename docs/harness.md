@@ -9,7 +9,7 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 **왜 필요해요?** 매번 같은 설명을 다시 안 해도 되고, 다른 장비로 옮겨도 작업이 이어집니다. 잊을 만한 안전망(자동 wip 커밋, 비밀번호 마스킹) 도 자동으로 잡습니다.
 
 **처음 써보기 — 5단계**:
-1. **Claude Code 실행** — 터미널은 `claude`, 데스크탑 앱은 이 프로젝트 폴더를 열면 됩니다. 활성 판별은 **표면 무관한 기준**으로: 세션 시작 컨텍스트에 `[harness] KoEnVue 하네스 활성화` 문구가 주입됐는지(SessionStart hook 산출물). 터미널에서는 화면 아래 statusLine 에 `[opus · high] | git:main* | 한/En 하네스` 도 함께 보이지만, **데스크탑 앱에서는 이 커스텀 statusLine 이 표시되지 않습니다**(2026-07-29 화면 확인). 앱은 대신 자체 배지(`권한 무시` / `Opus 5 · 빠름` / `엑스트라`)를 보여줍니다 — 다만 이 관측은 **2026-07-29 시점(당시 `fastMode: true`)** 이라, `빠름` 배지는 **07-30 fast mode 해제 후 사라져야 정상**입니다(§1 모델 행). 앱이 `effortLevel` 을 무시한 전례가 있어 `fastMode` 존중 여부도 보장되지 않으니, 이 배지가 해제의 실효를 눈으로 확인하는 런타임 신호입니다 — 계속 `빠름` 이면 앱이 이 설정도 무시하는 것. `엑스트라`(=`xhigh`)가 설정값 `high` 와 어긋나는 것은 이미 확정(§1 Effort 행)
+1. **Claude Code 실행** — 터미널은 `claude`, 데스크탑 앱은 이 프로젝트 폴더를 열면 됩니다. 활성 판별은 **표면 무관한 기준**으로: 세션 시작 컨텍스트에 `[harness] KoEnVue 하네스 활성화` 문구가 주입됐는지(SessionStart hook 산출물). 터미널에서는 화면 아래 statusLine 에 `[opus · xhigh] | git:main* | 한/En 하네스` 도 함께 보이지만, **데스크탑 앱에서는 이 커스텀 statusLine 이 표시되지 않습니다**(2026-07-29 화면 확인). 앱은 대신 자체 배지(`권한 무시` / `Opus 5 · 빠름` / `엑스트라`)를 보여줍니다 — 다만 이 관측은 **2026-07-29 시점(당시 `fastMode: true`)** 이라, `빠름` 배지는 **07-30 fast mode 해제 후 사라져야 정상**입니다(§1 모델 행). 앱이 `effortLevel` 을 무시한 전례가 있어 `fastMode` 존중 여부도 보장되지 않으니, 이 배지가 해제의 실효를 눈으로 확인하는 런타임 신호입니다 — 계속 `빠름` 이면 앱이 이 설정도 무시하는 것. `엑스트라`(=`xhigh`)는 2026-11-04 부터 설정값 `xhigh` 와 일치(§1 Effort 행)
 2. **`/harness-status` 입력** → 모델/effort, 서브에이전트 6명, 오늘 세션 파일, dirty tree, hook 에러 정상 여부를 한눈에 확인
 3. **자연어로 작업 요청** — 예: "한 레이블 색을 빨강으로 바꿔줘". 하네스가 적응형 effort 로 처리하고, 필요하면 서브에이전트(explorer, planner 등)에 위임. 코드리뷰·감사·릴리즈 같은 큰 작업은 `/release-review` 처럼 워크플로우를 수동 호출
 4. **작업 마무리할 때 `/wrap-up`** → 문서 동기화 + 세션 요약을 `docs/sessions/YYYY-MM-DD.md` 에 자동 기록
@@ -25,7 +25,7 @@ KoEnVue 의 바이브 코딩 워크플로우를 위한 Claude Code 하네스 구
 
 | 결정 | 내용 | 이유 |
 |------|------|------|
-| 모델 | `opus` alias (최신 Opus 자동 추종 — 버전 숫자를 박지 않는다) + **`fastMode: false`** | 최고 성능 모델을 **기본 출력 경로로** 사용. ⚠️ **2026-07-30 사용자 결정으로 fast mode 해제** — 2026-07-24 재구성 때 속도를 위해 켰으나(모델 다운그레이드는 아니었음), 응답 품질을 우선해 끔. 키 자체는 남겨 `false` 로 **명시**한다(삭제하면 "검토한 적 없음"과 구분되지 않음 — `/harness-status` grep 도 이 키를 읽는다). model/effort 는 statusLine payload(`payload.effort.level`)로 전달됨 — 미수신 시 statusline.ps1 이 env→`high` 폴백. **데스크탑 앱에선 statusLine 자체가 렌더되지 않아 이 경로가 무실효**(§10) |
+| 모델 | `opus` alias (최신 Opus 자동 추종 — 버전 숫자를 박지 않는다) + **`fastMode: false`** | 최고 성능 모델을 **기본 출력 경로로** 사용. ⚠️ **2026-07-30 사용자 결정으로 fast mode 해제** — 2026-07-24 재구성 때 속도를 위해 켰으나(모델 다운그레이드는 아니었음), 응답 품질을 우선해 끔. 키 자체는 남겨 `false` 로 **명시**한다(삭제하면 "검토한 적 없음"과 구분되지 않음 — `/harness-status` grep 도 이 키를 읽는다). model/effort 는 statusLine payload(`payload.effort.level`)로 전달됨 — 미수신 시 statusline.ps1 이 env→`xhigh` 폴백. **데스크탑 앱에선 statusLine 자체가 렌더되지 않아 이 경로가 무실효**(§10) |
 | Effort | **`effortLevel: xhigh`** (2026-11-04 사용자 결정 — "항상 xhigh 로 작업") — 설정·데스크탑 앱 실효 일치 | **2026-11-04**: 설정을 `high`→`xhigh` 로 올려 앱 실효와 맞췄습니다(사용자 전역 `~/.claude/settings.json` 도 `xhigh`). 이전 경위 — **2026-07-29 발견**: 데스크탑 앱은 이 설정을 **무시하고** 기본값 `xhigh` 로 세션을 돌립니다. 근거는 transcript 메타 `"effort":"xhigh","entrypoint":"claude-desktop"`(모든 응답에 기록) + 앱 하단 배지 「엑스트라」(= Extra = `xhigh`). 알려진 앱 버그 — effort 선택이 디스크에 저장되지 않아 매 채팅 기본값으로 폴백하고, `/effort` 명령도 앱 세션에선 쓸 수 없습니다([#66266](https://github.com/anthropics/claude-code/issues/66266)·[#66083](https://github.com/anthropics/claude-code/issues/66083)). **사용자 결정(07-29): `xhigh` 를 그대로 두고 문서를 실제에 맞춘다.** 터미널에서 실행할 때 `high` 가 먹는지는 미검증. 이력: 2026-07-24 재구성으로 `max`→`high` + env `CLAUDE_CODE_EFFORT_LEVEL=max` 제거(`max`/`ultracode` 는 session-only 라 파일 스코프 무효, 파일 최대 유효값이 `xhigh`) |
 | Thinking | `alwaysThinkingEnabled: true`, `showThinkingSummaries: true` | thinking 은 유지하되 **매 턴 ultrathink 강제 주입은 제거** — 세션 effort 에 맞춘 **적응형**(단순 작업은 가볍게, 복잡한 작업은 깊게) |
 | **ultracode** | **큰 작업만 수동** — 매 턴 주입하던 `inject-turn-context` hook **삭제**, 큰 작업(리뷰·감사·릴리즈·설계비교·버그헌트)만 워크플로우 `/<name>` 수동 호출 | 매 작업 6+ 에이전트 fan-out 은 이 규모(1인·유지보수)에 과잉. 일상은 solo + 필요 시 서브에이전트 |
@@ -295,7 +295,7 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 **상한의 실제 — `budget` 가드는 거의 무실효**: `budget`(total/spent/remaining) 을 실제 읽는 워크플로우는 **bug-hunt 1개뿐**이고, 그조차 `budget.total` 미주입 시(현재 호출은 total 안 넘김) round hard cap(`round < 8`)만 실효 상한입니다. 나머지 4개(release-review·codebase-audit·design-compare·harness-optimize)는 budget 을 안 읽으며 **per-parallel-item cap** 이 유일 상한 — `MAX_VERIFY=25`(release-review)·`MAX_MODULES=24`(codebase-audit)·동시 16(전역). 즉 토큰 총량 가드가 아니라 fan-out 폭주 방지일 뿐. **노드 effort (2026-07-29 확인)**: 워크플로우 노드(`agent()`)는 **`opts.effort` 를 생략하면 세션 effort 를 상속**합니다(Workflow 도구 계약에 명시). 그리고 그 세션 effort 는 **`xhigh`** 이므로(§1 표), 노드도 `xhigh` 로 돕니다 — 위 "수 배~수십 배" 추정은 과대평가가 아니라 오히려 **하한**입니다. 특정 스테이지만 싸게 돌리려면 `opts.effort: 'low'` 를 **명시**해야 합니다 — 생략은 절약이 아니라 상속입니다.
 
 가시화 수단:
-- **`statusLine`**: 매 턴 `[opus · high] | git:main* | 한/En 하네스` 표시
+- **`statusLine`**: 매 턴 `[opus · xhigh] | git:main* | 한/En 하네스` 표시
 - **`showTurnDuration: true`**: 매 응답 후 소요 시간 노출 → 비용 자각
 - **`awaySummaryEnabled: true`**: 자리 비운 동안의 진행 요약
 - **`/status`**: 누적 토큰/비용 (Claude Code built-in)
