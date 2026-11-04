@@ -38,6 +38,13 @@ internal static class CursorRenderer
     private const double FogCapsColorSharpness = 4.0;
     // DIB 경계 흐림 폭의 하한 (px) — 흐림 폭은 보통 σ.
     private const double EdgeFadeMinWidthPx = 1.0;
+    // 안개 σ 가 이 값(px) 이상이면 픽셀 중심 1점만 샘플(2×2 대신) — 300% DPI 팝 프레임이 15ms 주기를 넘던 것을 줄인다.
+    // 넓은 안개는 한 픽셀 안에서 거의 변하지 않는다. 2×2 정밀 경로와 차이(2026-11-04 실측)는 알파 ≤2/255 로, 두 원이 만나는
+    // 접힌 선(σ 에 반비례 — σ 4.9px 에서 3/255 라 8px 로 정함)과 3σ 안개 끝의 원래 계단(≈1.5/255)에서만 생긴다.
+    private const double SingleSampleMinFogSigmaPx = 8.0;
+    // 1점 샘플 경로에서도 중심에서 이 거리(px) 안쪽 픽셀은 2×2 로 — 거리 함수가 중심에서 뾰족해(원뿔 꼭짓점)
+    // 반지름이 작은 설정(σ≈9px)에서 중앙 픽셀만 4~5/255 어긋났다.
+    private const double CenterSupersampleRadiusPx = 1.0;
 
     /// <summary>
     /// DIB 경계 흐림 구간 [Start, End] (중심 거리, px). 넓은 안개(3σ)가 정사각 DIB 를 넘으면 변에서 직선으로
@@ -124,6 +131,12 @@ internal static class CursorRenderer
                 style.RingAlphaInner, style.RingAlphaMiddle, style.RingAlphaOuter, fade);
         }
 
+        if (fogLut && fogSigma >= SingleSampleMinFogSigmaPx)
+        {
+            ShadeDibFogCenterSample(ppvBits, w, h, cx, cy, maxOuterRSq);
+            return (w, h);
+        }
+
         ShadeDib(ppvBits, w, h, cx, cy,
             outerR, middleR, innerR, baseCore, baseHalo, haloOpacity, soft, fogSigma, style.CapsLockOn,
             style.InnerColorArgb, style.MiddleColorArgb, style.OuterColorArgb,
@@ -131,6 +144,90 @@ internal static class CursorRenderer
             maxOuterRSq, fogLut, fade);
 
         return (w, h);
+    }
+
+    /// <summary>
+    /// 넓은 안개 전용 — 픽셀 중심 1점만 거리표에서 조회 (<see cref="ShadeDib"/> 의 2×2 서브샘플 대신).
+    /// 중심 <see cref="CenterSupersampleRadiusPx"/> 안쪽만 2×2. 4분면 대칭은 같다: 중심 오프셋 x+0.5-cx 와
+    /// 거울 픽셀의 오프셋은 부호만 반대.
+    /// </summary>
+    private static unsafe void ShadeDibFogCenterSample(
+        IntPtr ppvBits, int w, int h, double cx, double cy, double maxOuterRSq)
+    {
+        byte* bits = (byte*)ppvBits;
+        int stride = w * DibSectionFactory.BytesPerPixel;
+        int halfW = (w + 1) / 2;
+        int halfH = (h + 1) / 2;
+        const double centerRSq = CenterSupersampleRadiusPx * CenterSupersampleRadiusPx;
+
+        for (int y = 0; y < halfH; y++)
+        {
+            double dy = y + HalfPixel - cy;
+            double dy2 = dy * dy;
+            if (dy2 > maxOuterRSq) continue;
+
+            byte* rowTop = bits + (long)y * stride;
+            byte* rowBot = bits + (long)(h - 1 - y) * stride;
+
+            for (int x = 0; x < halfW; x++)
+            {
+                double dx = x + HalfPixel - cx;
+                double distSq = dx * dx + dy2;
+                if (distSq > maxOuterRSq) continue;
+
+                double alpha;
+                byte r, g, b;
+                if (distSq < centerRSq)
+                    LookupFogSupersampled(x, y, cx, cy, maxOuterRSq, out alpha, out r, out g, out b);
+                else
+                    LookupFog(Math.Sqrt(distSq), out alpha, out r, out g, out b);
+                if (alpha < MinVisibleAlpha) continue;
+
+                byte a = (byte)Math.Round(alpha * ByteChannelMax);
+                int left = x * DibSectionFactory.BytesPerPixel;
+                int right = (w - 1 - x) * DibSectionFactory.BytesPerPixel;
+                WritePixel(rowTop + left, b, g, r, a);
+                WritePixel(rowTop + right, b, g, r, a);
+                WritePixel(rowBot + left, b, g, r, a);
+                WritePixel(rowBot + right, b, g, r, a);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 픽셀 (x, y) 의 2×2 서브샘플 거리표 평균 — <see cref="ShadeDib"/> 와 같은 누적(알파 평균, 색은 알파 가중).
+    /// </summary>
+    private static void LookupFogSupersampled(
+        int x, int y, double cx, double cy, double maxOuterRSq,
+        out double alpha, out byte r, out byte g, out byte b)
+    {
+        double accumA = 0.0, accumR = 0.0, accumG = 0.0, accumB = 0.0;
+        for (int sy = 0; sy < 2; sy++)
+        {
+            double dy = y + (sy == 0 ? SubSampleLow : SubSampleHigh) - cy;
+            for (int sx = 0; sx < 2; sx++)
+            {
+                double dx = x + (sx == 0 ? SubSampleLow : SubSampleHigh) - cx;
+                double distSq = dx * dx + dy * dy;
+                if (distSq > maxOuterRSq) continue;
+                LookupFog(Math.Sqrt(distSq), out double sa, out byte sr, out byte sg, out byte sb);
+                if (sa <= 0.0) continue;
+                accumA += sa;
+                accumR += sa * sr;
+                accumG += sa * sg;
+                accumB += sa * sb;
+            }
+        }
+
+        alpha = accumA * InvSubSampleCount;
+        if (accumA <= 0.0)
+        {
+            r = 0; g = 0; b = 0;
+            return;
+        }
+        r = (byte)Math.Round(accumR / accumA);
+        g = (byte)Math.Round(accumG / accumA);
+        b = (byte)Math.Round(accumB / accumA);
     }
 
     /// <summary>

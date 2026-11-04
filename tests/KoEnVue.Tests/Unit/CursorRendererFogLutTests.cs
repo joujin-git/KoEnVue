@@ -9,25 +9,34 @@ namespace KoEnVue.Tests.Unit;
 /// 커서 헤일로 안개 거리표(LUT) 경로가 샘플마다 직접 계산하는 정밀 경로와 같은 그림을 내는지.
 /// 2026-11-04 실측: 알파 차이 ≤ 1/255, 색 차이 0 (CapsLock 색 섞기 도입 전엔 바깥 원 교차선에서 보이는 픽셀
 /// 0.2% 이하·알파 곱 ≤ 8/255 의 색 차이가 있었다 — 섞기 후 교차선의 색 급변이 사라져 표 보간과 일치).
+/// σ ≥ 8px 이면 거리표 경로는 픽셀 중심 1점만 샘플한다(정밀 경로는 2×2). 그 케이스는 알파 허용치가 2 다 — 3σ 에서 잘리는
+/// 안개 끝(≈1.5/255 계단)에 걸친 픽셀을 2×2 는 1/255 미만으로 평균해 0, 1점은 2 로 칠한다(2026-11-04 실측, 원 알파
+/// 0.55·1.0 모두 ≤2).
 /// </summary>
 public class CursorRendererFogLutTests
 {
     private const uint Blue = 0xFF1A73E8;
     private const uint Orange = 0xFFD97706;
 
-    public static TheoryData<int, int, int, int, double, double, bool> Cases => new()
+    // 알파 허용치: 1점 샘플 경로(σ ≥ 8px) 2, 2×2 거리표 경로(σ < 8px) 1 — 경로별 회귀 감도 유지.
+    private const int OnePointAlphaTolerance = 2;
+    private const int SupersampleAlphaTolerance = 1;
+
+    public static TheoryData<int, int, int, int, double, double, bool, int> Cases => new()
     {
-        // outer, middle, inner, haloThickness, softness, dpi, capsLock
-        { 96, 20, 10, 12, 0.8, 1.0, false },
-        { 96, 20, 10, 12, 0.8, 1.5, true },
-        { 45, 35, 30, 2, 0.35, 1.25, true },
-        { 45, 35, 30, 0, 0.01, 1.0, false }, // 최소 σ(≈0.57px) — 보간 오차가 가장 큰 쪽
+        // outer, middle, inner, haloThickness, softness, dpi, capsLock, 알파 허용치
+        { 96, 20, 10, 12, 0.8, 1.0, false, OnePointAlphaTolerance },
+        { 96, 20, 10, 12, 0.8, 1.5, true, OnePointAlphaTolerance },
+        { 45, 35, 30, 2, 0.35, 1.25, true, SupersampleAlphaTolerance }, // σ≈7.2px (halo 2×1.25 → 반올림 2)
+        { 45, 35, 30, 0, 0.01, 1.0, false, SupersampleAlphaTolerance }, // 최소 σ(≈0.57px) — 보간 오차가 가장 큰 쪽
+        // 작은 반지름 + 1점 샘플(σ≈9.1px) + 홀수 변(115px): 중심 꼭짓점 픽셀 — 중심 2×2 보정 없으면 알파 4/255 로 실패
+        { 8, 6, 4, 1, 1.0, 1.25, true, OnePointAlphaTolerance },
     };
 
     [Theory]
     [MemberData(nameof(Cases))]
     public void FogLut_MatchesExactPath(
-        int outer, int middle, int inner, int halo, double soft, double dpi, bool caps)
+        int outer, int middle, int inner, int halo, double soft, double dpi, bool caps, int alphaTolerance)
     {
         var style = new CursorStyle(outer, middle, inner, 1, halo, 0.5, Blue, Blue, Orange, caps,
             HighlightScale: 1.3, MotionSoftness: soft, MotionFogPadLogicalPx: 28,
@@ -50,7 +59,7 @@ public class CursorRendererFogLutTests
         }
 
         Assert.True(visible > 0);
-        Assert.InRange(maxAlphaDiff, 0, 1);
+        Assert.InRange(maxAlphaDiff, 0, alphaTolerance);
         Assert.InRange(maxPremulDiff, 0, 2);
         Assert.Equal(0, colorOff);
     }
