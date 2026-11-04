@@ -23,6 +23,21 @@ internal static class ColorHelper
     }
 
     /// <summary>
+    /// 레이어드 창 DIB 에 GDI 로 그릴 때 쓰는 COLORREF — 순수 검정(0)만 <see cref="NearBlackColorRef"/> 로 바꾼다.
+    /// GDI 는 알파를 쓰지 않아 엔진 후처리(LayeredOverlayBase.ApplyPremultipliedAlpha)가 「RGB≠0 이면 불투명」으로
+    /// 알파를 채우는데, 순수 검정은 빈 픽셀과 구별이 안 돼 투명 구멍이 된다(release-review 2026-11-04 —
+    /// CapsLock 색을 검정으로 고르면 배지 테두리가 비어 보임). 눈으로는 같은 검정.
+    /// </summary>
+    public static uint HexToLayeredColorRef(string hex)
+    {
+        uint colorRef = HexToColorRef(hex);
+        return colorRef == 0 ? NearBlackColorRef : colorRef;
+    }
+
+    /// <summary>레이어드 DIB 의 「불투명 검정」 — RGB 각 1 (0x00010101).</summary>
+    private const uint NearBlackColorRef = 0x00010101;
+
+    /// <summary>
     /// HEX 문자열 (#RRGGBB 또는 RRGGBB)을 불투명 ARGB (0xFFRRGGBB)로 변환한다.
     /// COLORREF(0x00BBGGRR, BGR)와 달리 RGB 순서이며 alpha=255 고정. 커서 헤일로 셰이더가
     /// 픽셀 채널을 직접 쓸 때 사용. 잘못된 형식은 불투명 검정 (0xFF000000) 반환.

@@ -56,4 +56,15 @@ public class ColorHelperTests
         var actual = ColorHelper.ColorRefToRgb(colorRef);
         Assert.Equal((r, g, b), actual);
     }
+
+    // release-review 2026-11-04: 레이어드 DIB 에서 순수 검정(0)은 투명 구멍 — 그리기 색은 거의 검정으로.
+    [Theory]
+    [InlineData("#000000", 0x00010101u)]
+    [InlineData("ZZZZZZ", 0x00010101u)]   // 잘못된 형식 → 검정 → 거의 검정
+    [InlineData("#9333EA", 0x00EA3393u)]  // 그 밖의 색은 HexToColorRef 그대로
+    [InlineData("#010101", 0x00010101u)]
+    public void HexToLayeredColorRef_NeverPureBlack(string hex, uint expected)
+    {
+        Assert.Equal(expected, ColorHelper.HexToLayeredColorRef(hex));
+    }
 }

@@ -212,7 +212,7 @@ internal static class Overlay
     /// <summary>
     /// CAPS LOCK 테두리 두께 (logical px, DPI 스케일링 전). 배지 둘레에 CapsLock 색(기본 보라)으로 그린다 —
     /// 예전 좌우 흰 막대는 글자 옆에 붙어 눈에 덜 띄었고, 막대를 보라로 바꾸면 파란 배지 위에서 묻혔다
-    /// (2026-11-04 시안 비교로 테두리 선택, 두께는 실기 확인으로 2→3→4). 사용자 보더(BorderWidth)보다 위에 덧그린다.
+    /// (2026-11-04 시안 비교로 테두리 선택, 두께는 실기 확인으로 2→3→4). 켜져 있으면 사용자 보더(BorderWidth) 자리를 대신한다.
     /// </summary>
     private const int CapsLockBorderWidthLogicalPx = 4;
 
@@ -523,21 +523,48 @@ internal static class Overlay
         // 1. NULL_PEN 선택 (RoundRect 1px 검은색 테두리 제거)
         IntPtr oldPen = Gdi32.SelectObject(hdc, Gdi32.GetStockObject(Win32Constants.NULL_PEN));
 
-        // 2. 배경 RoundRect — hBrush 는 try/finally 로 예외 경로에서도 DeleteObject 보장
-        uint bgColor = ColorHelper.HexToColorRef(style.BgHex);
+        // 2. 배경 RoundRect — hBrush 는 try/finally 로 예외 경로에서도 DeleteObject 보장.
+        //    색은 HexToLayeredColorRef — 순수 검정은 레이어드 DIB 에서 투명 구멍이 되므로 거의 검정으로.
+        uint bgColor = ColorHelper.HexToLayeredColorRef(style.BgHex);
         IntPtr hBrush = Gdi32.CreateSolidBrush(bgColor);
         try
         {
-            IntPtr oldBrush = Gdi32.SelectObject(hdc, hBrush);
             int radius = metrics.ScaledBorderRadius;
-            Gdi32.RoundRect(hdc, 0, 0, w, h, radius, radius);
-            Gdi32.SelectObject(hdc, oldBrush);
-
-            // 3. 보더 (borderWidth > 0) — hBorderPen 도 중첩 try/finally 로 보호
-            int borderW = metrics.ScaledBorderWidth;
-            if (borderW > 0)
+            if (style.CapsLockOn)
             {
-                uint borderColor = ColorHelper.HexToColorRef(style.BorderHex);
+                // 2'. CAPS LOCK 테두리 — 배지 전체를 CapsLock 색으로 채우고 안쪽을 배경색으로 다시 채운다.
+                //     펜 RoundRect(반폭 인셋)는 모서리에서 테두리 바깥에 배경색이 비집고 나왔다(release-review
+                //     2026-11-04, 300% 에서 대각선 ≈2.5px). 채우기는 바깥 윤곽이 배경과 같은 호출이라 어긋남 0
+                //     (100~300% GDI 실측). 안쪽 모서리 = 바깥 반지름 − 두께 (동심원).
+                int capsW = Math.Max(1, DpiHelper.Scale(CapsLockBorderWidthLogicalPx, metrics.DpiScale));
+                IntPtr hCapsBrush = Gdi32.CreateSolidBrush(ColorHelper.HexToLayeredColorRef(style.CapsLockHex));
+                try
+                {
+                    IntPtr oldCapsBrush = Gdi32.SelectObject(hdc, hCapsBrush);
+                    Gdi32.RoundRect(hdc, 0, 0, w, h, radius, radius);
+                    Gdi32.SelectObject(hdc, hBrush);
+                    int innerRadius = Math.Max(0, radius - 2 * capsW);
+                    Gdi32.RoundRect(hdc, capsW, capsW, w - capsW, h - capsW, innerRadius, innerRadius);
+                    Gdi32.SelectObject(hdc, oldCapsBrush);
+                }
+                finally
+                {
+                    Gdi32.DeleteObject(hCapsBrush);
+                }
+            }
+            else
+            {
+                IntPtr oldBrush = Gdi32.SelectObject(hdc, hBrush);
+                Gdi32.RoundRect(hdc, 0, 0, w, h, radius, radius);
+                Gdi32.SelectObject(hdc, oldBrush);
+            }
+
+            // 3. 보더 (borderWidth > 0) — hBorderPen 도 중첩 try/finally 로 보호.
+            //    CAPS LOCK 테두리가 켜져 있으면 그것이 보더 자리를 대신한다(두 테두리가 겹쳐 그려지지 않게).
+            int borderW = metrics.ScaledBorderWidth;
+            if (borderW > 0 && !style.CapsLockOn)
+            {
+                uint borderColor = ColorHelper.HexToLayeredColorRef(style.BorderHex);
                 IntPtr hBorderPen = Gdi32.CreatePen(Win32Constants.PS_SOLID, borderW, borderColor);
                 try
                 {
@@ -559,7 +586,7 @@ internal static class Overlay
 
             // 4. 텍스트 (폰트는 엔진이 사전 SelectObject)
             int oldBkMode = Gdi32.SetBkMode(hdc, Win32Constants.TRANSPARENT);
-            uint fgColor = ColorHelper.HexToColorRef(style.FgHex);
+            uint fgColor = ColorHelper.HexToLayeredColorRef(style.FgHex);
             uint oldTextColor = Gdi32.SetTextColor(hdc, fgColor);
 
             // textRect를 위로 vOffset만큼 이동 (Top/Bottom 동시) — 높이는 보존되므로
@@ -574,26 +601,6 @@ internal static class Overlay
             Gdi32.SetTextColor(hdc, oldTextColor);
             Gdi32.SetBkMode(hdc, oldBkMode);
 
-            // 5. CAPS LOCK 테두리 — 3. 사용자 보더와 같은 방식(펜 RoundRect, 반폭 인셋)으로 CapsLock 색을 덧그린다.
-            if (style.CapsLockOn)
-            {
-                int capsW = Math.Max(1, DpiHelper.Scale(CapsLockBorderWidthLogicalPx, metrics.DpiScale));
-                uint capsColor = ColorHelper.HexToColorRef(style.CapsLockHex);
-                IntPtr hCapsPen = Gdi32.CreatePen(Win32Constants.PS_SOLID, capsW, capsColor);
-                try
-                {
-                    IntPtr oldCapsPen = Gdi32.SelectObject(hdc, hCapsPen);
-                    IntPtr oldCapsBrush = Gdi32.SelectObject(hdc, Gdi32.GetStockObject(Win32Constants.NULL_BRUSH));
-                    int halfCaps = capsW / 2;
-                    Gdi32.RoundRect(hdc, halfCaps, halfCaps, w - halfCaps, h - halfCaps, radius, radius);
-                    Gdi32.SelectObject(hdc, oldCapsBrush);
-                    Gdi32.SelectObject(hdc, oldCapsPen);
-                }
-                finally
-                {
-                    Gdi32.DeleteObject(hCapsPen);
-                }
-            }
         }
         finally
         {
