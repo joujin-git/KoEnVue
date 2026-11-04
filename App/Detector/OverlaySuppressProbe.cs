@@ -16,7 +16,7 @@ internal enum OverlaySuppressTarget
     /// 위에서는 표시 — 포인터가 지나가기만 해서 배지가 사라지지 않게 한다.
     /// </summary>
     Badge,
-    /// <summary>커서 헤일로. 모든 suppress 표면 + Start/Search 위에서 숨김.</summary>
+    /// <summary>커서 헤일로. 모든 suppress 표면 + Start/Search 위에서 숨김. 화면 보호기(<c>*.scr</c>) 위는 두 대상 공통 숨김.</summary>
     CursorHalo,
 }
 
@@ -42,6 +42,11 @@ internal static class OverlaySuppressProbe
 
         if (string.IsNullOrEmpty(processName))
             return false;
+
+        // 화면 보호기는 전 화면 topmost 창이라 커서 헤일로가 주기 재-topmost 로 그 위에 올라온다
+        // (빈 화면 보호기로 모니터가 꺼진 듯한 상태에서 헤일로만 보이던 문제). 배지·헤일로 모두 숨김.
+        if (DefaultConfig.IsScreenSaverProcess(processName))
+            return true;
 
         if (target == OverlaySuppressTarget.CursorHalo && DefaultConfig.IsSystemInputProcess(processName))
             return true;

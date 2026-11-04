@@ -38,6 +38,28 @@ public class OverlaySuppressProbeTests
     }
 
     [Theory]
+    [InlineData("scrnsave.scr")]
+    [InlineData("Mystify.SCR")]
+    public void MatchesSuppressRoot_ScreenSaverProcess_HidesBoth(string processName)
+    {
+        // 한국어 Windows 의 빈 화면 보호기는 클래스명이 현지화돼 클래스 목록으로는 못 잡는다 — 프로세스로만 판정.
+        foreach (OverlaySuppressTarget target in Enum.GetValues<OverlaySuppressTarget>())
+            Assert.True(OverlaySuppressProbe.MatchesSuppressRoot(
+                "빈 화면 보호기", processName, DefaultCfg(), target));
+    }
+
+    [Theory]
+    [InlineData("notepad")]
+    [InlineData("scr")]
+    [InlineData("")]
+    public void MatchesSuppressRoot_NonScreenSaverProcess_NotHidden(string processName)
+    {
+        foreach (OverlaySuppressTarget target in Enum.GetValues<OverlaySuppressTarget>())
+            Assert.False(OverlaySuppressProbe.MatchesSuppressRoot(
+                "Notepad", processName, DefaultCfg(), target));
+    }
+
+    [Theory]
     [InlineData("XamlExplorerHostIslandWindow_WASDK")]
     [InlineData("TopLevelWindowForOverflowXamlIsland")]
     [InlineData("ControlCenterWindow")]

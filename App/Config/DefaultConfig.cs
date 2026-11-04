@@ -178,6 +178,21 @@ internal static partial class DefaultConfig
     public static bool IsDesktopTaskbarClass(string className) =>
         ContainsIgnoreCase(DesktopTaskbarClasses, className);
 
+    // === 화면 보호기 ===
+
+    /// <summary>
+    /// 화면 보호기 실행 파일 확장자. .NET <c>Process.ProcessName</c> 은 <c>.exe</c> 만 떼므로 화면 보호기는
+    /// <c>scrnsave.scr</c> 처럼 확장자가 남는다. 창 클래스는 OS 언어별로 현지화되고(한국어 Windows 의
+    /// 빈 화면 보호기는 한글 클래스명) 화면 보호기마다 달라 클래스로는 가려낼 수 없다. 직접 실행한
+    /// 화면 보호기(<c>scrnsave.scr /s</c>)는 <c>SPI_GETSCREENSAVERRUNNING</c> 도 0 이라 프로세스가 유일한 단서다.
+    /// </summary>
+    private const string ScreenSaverExtension = ".scr";
+
+    /// <summary>화면 보호기 프로세스 여부 (<see cref="ScreenSaverExtension"/>, 대소문자 무관).</summary>
+    public static bool IsScreenSaverProcess(string processName) =>
+        !string.IsNullOrEmpty(processName)
+        && processName.EndsWith(ScreenSaverExtension, StringComparison.OrdinalIgnoreCase);
+
     private static bool ContainsIgnoreCase(string[] list, string value)
     {
         if (string.IsNullOrEmpty(value)) return false;
