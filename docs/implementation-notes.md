@@ -91,6 +91,13 @@ The per-render skip uses `OverlayStyle` `record struct` value equality — `newS
 
 `Render` 루프는 `dy * dy > maxOuterRSq` early exit (한 행 통째 skip) + `distSq > maxOuterRSq` per-pixel skip 으로 외곽 모서리의 빈 영역을 거른다.
 
+### 안개 거리표 + 4분면 대칭 (렌더 비용, 2026-11-04)
+
+기본값 상향(외측 96·헤일로 12·softness 0.8)으로 DIB 가 468px(100% DPI)/702px(150%)로 커져 IME 스케일 팝 매 프레임 렌더가 20~63ms 까지 늘어 두 가지를 적용했다.
+- **4분면 대칭** (모든 모드): 중심이 `w/2, h/2` 라 거울 픽셀의 서브샘플 거리가 같다 — `ShadeDib` 는 왼쪽 위 1/4 만 계산해 네 곳에 쓴다(홀수 변 가운데 줄은 자기 자신에 두 번). 이전 렌더러와 비트 동일.
+- **안개 거리표** (soft&gt;0 만, 선명하게는 미사용): 안개는 중심 거리 d 만의 함수라 `BuildFogLut` 가 렌더마다 d 축 1차원 표(`FogLutStepsPerPx`=16칸/px, `SampleRings` 결과)를 만들고 `LookupFog` 가 알파는 이웃 두 칸 선형 보간·색은 가까운 칸(알파 0 칸이면 이웃 칸)으로 조회 — 픽셀×서브샘플마다 하던 `Math.Exp` 를 반지름 길이만큼으로 줄임. 정밀 경로와 차이는 알파 ≤1/255 + CAPS Outer 교차선의 색(보이는 픽셀 0.2% 이하). 표 버퍼는 정적 재사용(UI 스레드 단일 호출 전제).
+- 실측: 150%+CAPS 63→5.6ms, 100% 28→2.9ms, 구 기본값도 3~4배. 회귀 테스트 [`CursorRendererFogLutTests`](../tests/KoEnVue.Tests/Unit/CursorRendererFogLutTests.cs) — `RenderCore(useFogLut:false)` 기준 정확도 4 + 대칭 1.
+
 ### MinVisibleAlpha 가드 + cursor 전용 premultiply 정리 (외곽 잡티 차단)
 
 2x2 supersampling 의 평균 알파 (`avgAlpha = accumA * 0.25`) 가 양수더라도 `Math.Round(avgAlpha * 255)` 가 0 으로 떨어지는 외곽 sub-sample 1개만 살짝 들어오는 픽셀 ("round-down 부산 픽셀") 이 발생한다. 이 픽셀이 출력에 들어가면 alpha=0 + RGB!=0 상태로 DIB 에 잔류해 `LayeredCursorBase.ApplyPremultipliedAlpha` 단계에 도달한다.
@@ -128,7 +135,7 @@ IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 강조 �
 - **정지 검출 모드 (`CursorAlwaysShow = false`)** — `TIMER_ID_CURSOR_MOTION` 이 `CursorMotionPollMs = 50ms` 로 호출. 매 tick `GetCursorPos` → 이전 좌표와 맨해튼 거리 `(|dx| + |dy|) > CursorMotionThresholdPx (5)` 이면 "이동" 으로 분류해 `_idleStartTick = 0` 리셋 + 가시 중이면 즉시 `Hide()`. "정지" 분류면 `_idleStartTick` 가 0 이면 현재 tick 으로 마킹, 이후 매 tick `now - _idleStartTick >= CursorIdleDelayMs (100ms)` 검사 → 도달 시 `RenderAtCursor` 호출 + 마킹 해제. 가시 상태에서는 정지 추가 검출 skip (이미 표시 중)
 - **항상 표시 모드 (디폴트, `CursorAlwaysShow = true`)** — 타이머가 `CursorAlwaysPollMs = 15` 로 빠르게 호출 (`SetTimer` 양자화로 실배달 ~15.6ms≈64fps; 이전 16은 ~31ms≈32fps — [dev-notes/2026-07-22-settimer-tick-quantization.md](dev-notes/2026-07-22-settimer-tick-quantization.md)). 이동/정지 분류 자체를 skip 하고 매 tick `RenderAtCursor` 만 호출 → cursor 위치 추종. 숨기지 않음
 
-**커서 표시 (PR-29/30/31, AlwaysShow 전용)**: `cursor_display_mode` — **`soft`**(기본)=흐릿하게 · **`sharp`**=선명하게 · **`motion`**=이동 중 흐릿하게. Motion은 맨해튼 δ > **`CursorMotionDimThresholdPx`(=1)** 즉시 딤, 연속 **`CursorMotionDimSettlePolls`(=8)** 틱 후 Full (enter/exit 동일 δ). 숨김 모드 Hide는 `CursorMotionThresholdPx`(=5). 안개 셰이더: σ≈`baseHalo`×(1+soft×(FogSigmaMul−1)), α 디폴트 **0.55**/softness **0.35**. IME 스케일 팝은 HighlightScale만 — Soft/딤 안개 유지. 구 `cursor_motion_dim_enabled` → soft 키 없을 때 true→motion / false→sharp 마이그. [`CursorMotionDim`](../App/UI/CursorMotionDim.cs) + `CursorOverlay`. [PR-31](improvement-plan/PR-31-cursor-display-mode.md).
+**커서 표시 (PR-29/30/31, AlwaysShow 전용)**: `cursor_display_mode` — **`soft`**(기본)=흐릿하게 · **`sharp`**=선명하게 · **`motion`**=이동 중 흐릿하게. Motion은 맨해튼 δ > **`CursorMotionDimThresholdPx`(=1)** 즉시 딤, 연속 **`CursorMotionDimSettlePolls`(=8)** 틱 후 Full (enter/exit 동일 δ). 숨김 모드 Hide는 `CursorMotionThresholdPx`(=5). 안개 셰이더: σ≈`baseHalo`×(1+soft×(FogSigmaMul−1)), α 디폴트 **0.55**/softness **0.8** (2026-11-04 기본 반지름 96/20/10·헤일로 두께 12 와 함께 상향 — 고리 대신 넓은 빛 덩어리). IME 스케일 팝은 HighlightScale만 — Soft/딤 안개 유지. 구 `cursor_motion_dim_enabled` → soft 키 없을 때 true→motion / false→sharp 마이그. [`CursorMotionDim`](../App/UI/CursorMotionDim.cs) + `CursorOverlay`. [PR-31](improvement-plan/PR-31-cursor-display-mode.md).
 
 두 모드 전환은 `HandleConfigChanged` 의 "값 변경" 분기가 `KillTimer` + `SetTimer` 로 polling 주기를 즉시 교체해 흡수한다.
 

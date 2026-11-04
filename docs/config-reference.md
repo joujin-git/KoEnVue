@@ -173,11 +173,11 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 |---|---|---|---|---|
 | `cursor_indicator_enabled` | bool | `true` | — | 커서 추종 인디 활성. 트레이 메뉴 "커서 헤일로 숨김" 체크박스와 동일 — 기본 ON, 끄려면 메뉴 체크 또는 본 키를 `false` 로 |
 | `cursor_always_show` | bool | `true` | — | `true` (기본) = 항상 표시 모드 (`CursorAlwaysPollMs=15` 폴링 위치 추종 — `SetTimer` ~15.625ms 격자 양자화로 실배달 ~15.6ms≈64fps; 이전 16은 실효 ~31ms≈32fps. [dev-notes](dev-notes/2026-07-22-settimer-tick-quantization.md)). 숨김 안 함. `false` = 정지 검출 모드 (마우스 정지 → `cursor_idle_delay_ms` 후 표시, 이동 시 즉시 숨김) |
-| `cursor_outer_radius` | int | `45` | 8 ~ 96 | 외측 동심원 반지름 (논리 px, DPI 미적용). CAPS LOCK ON 시에만 보임 |
-| `cursor_middle_radius` | int | `35` | 6 ~ 80 | 중간 동심원 반지름 (논리 px) |
-| `cursor_inner_radius` | int | `30` | 4 ~ 64 | 내측 동심원 반지름 (논리 px) |
+| `cursor_outer_radius` | int | `96` | 8 ~ 96 | 외측 동심원 반지름 (논리 px, DPI 미적용). CAPS LOCK ON 시에만 보이지만 DIB 크기를 정해 흐릿하게 모드의 넓은 안개가 잘리지 않게 함 |
+| `cursor_middle_radius` | int | `20` | 6 ~ 80 | 중간 동심원 반지름 (논리 px) |
+| `cursor_inner_radius` | int | `10` | 4 ~ 64 | 내측 동심원 반지름 (논리 px) |
 | `cursor_core_thickness` | int | `1` | 1 ~ 8 | 코어 (사용자 색상) 두께 (논리 px). 양옆 0.5px 분석적 AA 적용 |
-| `cursor_halo_thickness` | int | `2` | 0 ~ 12 | 헤일로 (흰색) 두께 (논리 px). 0 = 헤일로 끔. 코어 양옆 `(halo - core) / 2` 씩 외부 확장 |
+| `cursor_halo_thickness` | int | `12` | 0 ~ 12 | 헤일로 (흰색) 두께 (논리 px). 0 = 헤일로 끔. 코어 양옆 `(halo - core) / 2` 씩 외부 확장 |
 | `cursor_halo_opacity` | double | `0.5` | 0.0 ~ 1.0 | 헤일로 흰색 불투명도. 코어와 alpha 비교해 큰 쪽이 채택됨 |
 | `cursor_idle_delay_ms` | int | `100` | 0 ~ 2000 | (정지 검출 모드) 마우스 정지 후 인디 표시까지 대기 시간 (ms). 0 = 즉시 |
 | `cursor_motion_threshold_px` | int | `5` | 1 ~ 32 | (정지 검출 모드) 직전 폴링 좌표와 맨해튼 거리 임계 (px). 초과 시 "이동" 으로 분류 — 인디 즉시 숨김 |
@@ -190,7 +190,7 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 |---|---|---|---|---|
 | `cursor_display_mode` | enum | `"soft"` | `soft` / `sharp` / `motion` | **soft**=흐릿하게(기본) · **sharp**=선명하게 · **motion**=이동 중 흐릿하게(PR-29/30). 구 `cursor_motion_dim_enabled` 는 로드 시 true→motion / false→sharp 로 마이그 후 저장 시 소멸 |
 | `cursor_motion_alpha` | double | `0.55` | **0.04 ~ 1.0** | Soft/Motion 안개 알파 기준(상세 설정「헤일로 농도」). Sharp에서는 무시(값 보존). Middle/Outer 배수 0.97 / 0.94 |
-| `cursor_motion_softness` | double | `0.35` | 0.0 ~ 1.0 | Soft/Motion 안개 강도(상세 설정「헤일로 강도」). 1=σ≈14×헤일로반폭. Sharp에서는 무시 |
+| `cursor_motion_softness` | double | `0.8` | 0.0 ~ 1.0 | Soft/Motion 안개 강도(상세 설정「헤일로 강도」). 1=σ≈14×헤일로반폭. Sharp에서는 무시 |
 
 ### 전환 효과 (Cursor Transition)
 

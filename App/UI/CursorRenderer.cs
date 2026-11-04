@@ -26,7 +26,28 @@ internal static class CursorRenderer
     // 가우시안 안개: σ의 이 배수까지 샘플 (그 밖은 0 취급).
     private const double FogSigmaCutoff = 3.0;
 
-    public static (int w, int h) Render(IntPtr ppvBits, CursorStyle style, CursorMetrics metrics)
+    // 안개 거리표(LUT) 해상도 — 1px 당 칸 수. 안개는 중심 거리 d 만의 함수라 d 축 1차원 표로 충분하다.
+    // 칸 사이 알파는 선형 보간: 최소 σ(≈0.57px) 에서도 보간 오차 < 1/255.
+    private const int FogLutStepsPerPx = 16;
+    // 표 끝 보간용 여유 칸 (i+1 접근).
+    private const int FogLutTailEntries = 2;
+    // 칸 사이 위치가 이 값 미만이면 앞 칸이 가깝다 (색 선택용).
+    private const double FogLutNearestSplit = 0.5;
+
+    // 안개 거리표 재사용 버퍼. Render 는 커서 헤일로 창의 UI 스레드에서만 호출되므로 단일 스레드 전제
+    // (팝 애니메이션 매 프레임 재할당 회피).
+    private static double[] s_fogLutAlpha = [];
+    private static uint[] s_fogLutRgb = [];
+
+    public static (int w, int h) Render(IntPtr ppvBits, CursorStyle style, CursorMetrics metrics) =>
+        RenderCore(ppvBits, style, metrics, useFogLut: true);
+
+    /// <summary>
+    /// <paramref name="useFogLut"/>=false 는 안개를 샘플마다 직접 계산하는 정밀 경로 —
+    /// 거리표 경로의 정확도 회귀 테스트 기준값 전용.
+    /// </summary>
+    internal static (int w, int h) RenderCore(
+        IntPtr ppvBits, CursorStyle style, CursorMetrics metrics, bool useFogLut)
     {
         int w = metrics.ScaledWidth;
         int h = metrics.ScaledHeight;
@@ -61,13 +82,94 @@ internal static class CursorRenderer
         double maxOuterR = maxRing + extent + EdgeMarginPx;
         double maxOuterRSq = maxOuterR * maxOuterR;
 
+        bool fogLut = useFogLut && soft > 0.0 && fogSigma > 0.0;
+        if (fogLut)
+        {
+            BuildFogLut(maxOuterR,
+                outerR, middleR, innerR, baseCore, baseHalo, haloOpacity, soft, fogSigma, style.CapsLockOn,
+                style.InnerColorArgb, style.MiddleColorArgb, style.OuterColorArgb,
+                style.RingAlphaInner, style.RingAlphaMiddle, style.RingAlphaOuter);
+        }
+
         ShadeDib(ppvBits, w, h, cx, cy,
             outerR, middleR, innerR, baseCore, baseHalo, haloOpacity, soft, fogSigma, style.CapsLockOn,
             style.InnerColorArgb, style.MiddleColorArgb, style.OuterColorArgb,
             style.RingAlphaInner, style.RingAlphaMiddle, style.RingAlphaOuter,
-            maxOuterRSq);
+            maxOuterRSq, fogLut);
 
         return (w, h);
+    }
+
+    /// <summary>
+    /// 안개 거리표 생성 — 거리 d = i / <see cref="FogLutStepsPerPx"/> 마다 <see cref="SampleRings"/> 결과(가장 진한
+    /// 원의 알파·색)를 저장. 픽셀 수(최대 수십만 × 4 서브샘플)만큼 하던 <c>Math.Exp</c> 를 반지름 길이만큼으로 줄인다.
+    /// </summary>
+    private static void BuildFogLut(
+        double maxOuterR,
+        double outerR, double middleR, double innerR,
+        double coreHalf, double haloHalf, double haloOpacity,
+        double soft, double fogSigma, bool capsOn,
+        uint innerColorArgb, uint middleColorArgb, uint outerColorArgb,
+        double ringAlphaInner, double ringAlphaMiddle, double ringAlphaOuter)
+    {
+        int count = (int)Math.Ceiling(maxOuterR * FogLutStepsPerPx) + FogLutTailEntries;
+        if (s_fogLutAlpha.Length < count)
+        {
+            s_fogLutAlpha = new double[count];
+            s_fogLutRgb = new uint[count];
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            double d = (double)i / FogLutStepsPerPx;
+            SampleRings(d, outerR, middleR, innerR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, capsOn,
+                innerColorArgb, middleColorArgb, outerColorArgb,
+                ringAlphaInner, ringAlphaMiddle, ringAlphaOuter,
+                out double a, out byte r, out byte g, out byte b);
+            s_fogLutAlpha[i] = a;
+            s_fogLutRgb[i] = ((uint)r << 16) | ((uint)g << 8) | b;
+        }
+    }
+
+    /// <summary>
+    /// 거리표 조회 — 알파는 이웃 두 칸 선형 보간, 색은 가까운 칸 것. 가까운 칸 알파가 0(안개 끝)이면
+    /// 그 칸의 검정 대신 이웃 칸 색을 쓴다. 호출자는 d ≤ maxOuterR 를 보장한다(표 길이 = maxOuterR × <see cref="FogLutStepsPerPx"/> 칸 + 여유).
+    /// </summary>
+    private static void LookupFog(double d, out double alpha, out byte r, out byte g, out byte b)
+    {
+        double pos = d * FogLutStepsPerPx;
+        int i = (int)pos;
+        double frac = pos - i;
+        double a0 = s_fogLutAlpha[i];
+        double a1 = s_fogLutAlpha[i + 1];
+        alpha = a0 + (a1 - a0) * frac;
+        bool nearFirst = frac < FogLutNearestSplit;
+        if (nearFirst ? a0 <= 0.0 : a1 <= 0.0) nearFirst = !nearFirst;
+        uint rgb = nearFirst ? s_fogLutRgb[i] : s_fogLutRgb[i + 1];
+        r = (byte)(rgb >> 16);
+        g = (byte)(rgb >> 8);
+        b = (byte)rgb;
+    }
+
+    /// <summary>거리 d 에서 Inner/Middle(/CAPS 면 Outer) 중 가장 진한 원의 알파·색.</summary>
+    private static void SampleRings(
+        double d,
+        double outerR, double middleR, double innerR,
+        double coreHalf, double haloHalf, double haloOpacity,
+        double soft, double fogSigma, bool capsOn,
+        uint innerColorArgb, uint middleColorArgb, uint outerColorArgb,
+        double ringAlphaInner, double ringAlphaMiddle, double ringAlphaOuter,
+        out double alpha, out byte r, out byte g, out byte b)
+    {
+        alpha = 0.0;
+        r = 0; g = 0; b = 0;
+        EvaluateRing(d, innerR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, innerColorArgb, ringAlphaInner,
+            ref alpha, ref r, ref g, ref b);
+        EvaluateRing(d, middleR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, middleColorArgb, ringAlphaMiddle,
+            ref alpha, ref r, ref g, ref b);
+        if (capsOn)
+            EvaluateRing(d, outerR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, outerColorArgb, ringAlphaOuter,
+                ref alpha, ref r, ref g, ref b);
     }
 
     private static unsafe void ShadeDib(
@@ -77,22 +179,29 @@ internal static class CursorRenderer
         double soft, double fogSigma, bool capsOn,
         uint innerColorArgb, uint middleColorArgb, uint outerColorArgb,
         double ringAlphaInner, double ringAlphaMiddle, double ringAlphaOuter,
-        double maxOuterRSq)
+        double maxOuterRSq, bool fogLut)
     {
-        byte* ptr = (byte*)ppvBits;
+        byte* bits = (byte*)ppvBits;
+        int stride = w * DibSectionFactory.BytesPerPixel;
 
-        for (int y = 0; y < h; y++)
+        // 4분면 대칭: 중심 cx = w/2, cy = h/2 라 픽셀 x 와 거울 픽셀 w-1-x 의 서브샘플 dx 는 부호만 반대
+        // ({x+0.25-cx, x+0.75-cx} ↔ 그 음수) — 거리 d 가 같아 결과도 같다. 왼쪽 위 4분면만 계산해 네 곳에 쓴다.
+        // 홀수 변의 가운데 줄은 거울이 자기 자신이라 같은 값을 두 번 쓸 뿐이다.
+        int halfW = (w + 1) / 2;
+        int halfH = (h + 1) / 2;
+
+        for (int y = 0; y < halfH; y++)
         {
             double dyTop = Math.Abs(y + SubSampleLow - cy);
             double dyBot = Math.Abs(y + SubSampleHigh - cy);
             double dyMin = Math.Min(dyTop, dyBot);
             if (dyMin * dyMin > maxOuterRSq)
-            {
-                ptr += w * DibSectionFactory.BytesPerPixel;
                 continue;
-            }
 
-            for (int x = 0; x < w; x++)
+            byte* rowTop = bits + (long)y * stride;
+            byte* rowBot = bits + (long)(h - 1 - y) * stride;
+
+            for (int x = 0; x < halfW; x++)
             {
                 double accumA = 0.0;
                 double accumR = 0.0, accumG = 0.0, accumB = 0.0;
@@ -113,16 +222,19 @@ internal static class CursorRenderer
 
                         double d = Math.Sqrt(distSq);
 
-                        double sampleAlpha = 0.0;
-                        byte sampleR = 0, sampleG = 0, sampleB = 0;
-
-                        EvaluateRing(d, innerR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, innerColorArgb, ringAlphaInner,
-                            ref sampleAlpha, ref sampleR, ref sampleG, ref sampleB);
-                        EvaluateRing(d, middleR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, middleColorArgb, ringAlphaMiddle,
-                            ref sampleAlpha, ref sampleR, ref sampleG, ref sampleB);
-                        if (capsOn)
-                            EvaluateRing(d, outerR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, outerColorArgb, ringAlphaOuter,
-                                ref sampleAlpha, ref sampleR, ref sampleG, ref sampleB);
+                        double sampleAlpha;
+                        byte sampleR, sampleG, sampleB;
+                        if (fogLut)
+                        {
+                            LookupFog(d, out sampleAlpha, out sampleR, out sampleG, out sampleB);
+                        }
+                        else
+                        {
+                            SampleRings(d, outerR, middleR, innerR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, capsOn,
+                                innerColorArgb, middleColorArgb, outerColorArgb,
+                                ringAlphaInner, ringAlphaMiddle, ringAlphaOuter,
+                                out sampleAlpha, out sampleR, out sampleG, out sampleB);
+                        }
 
                         if (sampleAlpha > 0.0)
                         {
@@ -137,14 +249,27 @@ internal static class CursorRenderer
                 double avgAlpha = accumA * InvSubSampleCount;
                 if (avgAlpha >= MinVisibleAlpha)
                 {
-                    ptr[0] = (byte)Math.Round(accumB / accumA);
-                    ptr[1] = (byte)Math.Round(accumG / accumA);
-                    ptr[2] = (byte)Math.Round(accumR / accumA);
-                    ptr[3] = (byte)Math.Round(avgAlpha * ByteChannelMax);
+                    byte pb = (byte)Math.Round(accumB / accumA);
+                    byte pg = (byte)Math.Round(accumG / accumA);
+                    byte pr = (byte)Math.Round(accumR / accumA);
+                    byte pa = (byte)Math.Round(avgAlpha * ByteChannelMax);
+                    int left = x * DibSectionFactory.BytesPerPixel;
+                    int right = (w - 1 - x) * DibSectionFactory.BytesPerPixel;
+                    WritePixel(rowTop + left, pb, pg, pr, pa);
+                    WritePixel(rowTop + right, pb, pg, pr, pa);
+                    WritePixel(rowBot + left, pb, pg, pr, pa);
+                    WritePixel(rowBot + right, pb, pg, pr, pa);
                 }
-                ptr += DibSectionFactory.BytesPerPixel;
             }
         }
+    }
+
+    private static unsafe void WritePixel(byte* p, byte b, byte g, byte r, byte a)
+    {
+        p[0] = b;
+        p[1] = g;
+        p[2] = r;
+        p[3] = a;
     }
 
     private static void EvaluateRing(

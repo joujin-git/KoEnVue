@@ -321,11 +321,11 @@ internal static partial class DefaultConfig
 
     public const bool   CursorIndicatorEnabled     = true;
     public const bool   CursorAlwaysShow           = true;
-    public const int    CursorOuterRadius          = 45;
-    public const int    CursorMiddleRadius         = 35;
-    public const int    CursorInnerRadius          = 30;
+    public const int    CursorOuterRadius          = 96;
+    public const int    CursorMiddleRadius         = 20;
+    public const int    CursorInnerRadius          = 10;
     public const int    CursorCoreThickness        = 1;
-    public const int    CursorHaloThickness        = 2;
+    public const int    CursorHaloThickness        = 12;
     public const double CursorHaloOpacity          = 0.5;
     public const int    CursorIdleDelayMs          = 100;
     public const int    CursorMotionThresholdPx    = 5;
@@ -388,7 +388,7 @@ internal static partial class DefaultConfig
     /// </summary>
     public const double CursorMotionAlpha          = 0.55;
     /// <summary>Soft/Motion 안개 강도(0=선명하게, 1=최대 소프트). 사용자 체감 디폴트.</summary>
-    public const double CursorMotionSoftness       = 0.35;
+    public const double CursorMotionSoftness       = 0.8;
 
     /// <summary>soft=1 일 때 가우시안 σ = baseHaloHalf × 이 값 (클수록 더 흐림).</summary>
     public const double CursorMotionFogSigmaMul    = 14.0;
