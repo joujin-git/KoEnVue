@@ -25,7 +25,7 @@ allowed-tools: Bash, Read, Edit, Write
 
 추가 인자(있다면): $ARGUMENTS
 
-**중요**: 이 명령 끝나면 세션 종료 가능 + 다른 장비에서 즉시 이어받을 수 있는 상태가 돼야 합니다. SessionEnd hook 이 어차피 wip + push fallback 을 잡지만, 의미 있는 정리는 이 명령에서.
+**중요**: 이 명령 끝나면 세션 종료 가능 + 다른 장비에서 즉시 이어받을 수 있는 상태가 돼야 합니다. SessionEnd hook 이 어차피 wip + push fallback 을 잡지만(다른 세션이 있으면 wip 를 생략하거나 이 세션 편집 파일만 커밋 — 나머지는 이 장비에만 남음), 의미 있는 정리는 이 명령에서.
 
 ## `docs/sessions/YYYY-MM-DD.md` 쓰기 단일 진실원 규약
 

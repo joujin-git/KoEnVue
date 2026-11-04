@@ -278,7 +278,8 @@ function Invoke-WipCommitPaths {
 }
 
 # 파일 끝 N줄 — 큰 transcript 용. `Get-Content -Tail` 은 끝에서 작은 버퍼로 거꾸로 읽어 아주 긴 줄에서
-# 극단적으로 느려진다(2026-11-04 실측: 9MB transcript·이미지 base64 1,089,216자 한 줄 → -Tail 1000 이 64초,
+# 극단적으로 느려진다(2026-11-04 실측: 9MB transcript·이미지 base64 1,089,216자 한 줄이 끝 1000줄 안일 때 -Tail 1000 이
+# 64초, 같은 줄을 범위에 넣은 대조 실험(-Tail 1500·2500) 109~125초 vs 범위 밖 0.8~2.8초 —
 # Stop hook 60초 타임아웃으로 13:08 부터 매 턴 세션 로그·판정 기록 없이 강제 종료). 앞에서부터 스트리밍해
 # 마지막 N줄만 큐에 남긴다 — 결과 같음, 파일 크기에 선형.
 function Get-FileTailLines {
