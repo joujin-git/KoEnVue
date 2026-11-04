@@ -156,18 +156,25 @@ function Invoke-WipCommit {
     }
 }
 
-# 같은 프로젝트에서 아직 살아 있는 **다른** Claude 세션 — SessionEnd 가 wip 커밋해도 되는지 판단용.
+# 같은 프로젝트의 **다른** Claude 세션 상태 — SessionEnd 가 wip 커밋해도 되는지, 무엇을 커밋할지 판단용.
 # 2026-09-17 실측: 사용자가 연 짧은 곁 세션(/resume-session 후 삭제)의 SessionEnd 가 `git add -A` 로
-# **작업 중인 다른 세션의 미커밋 변경**까지 wip 커밋·push 했다(그때는 세션 로그뿐이라 무해). 살아 있음은 기록으로 가른다:
-#   - `<id>.desktop-released.json` 이 있으면 데스크탑 앱이 해제한 세션 → 종료
-#   - 비대화형(entrypoint `sdk*`, 예: claude -p)은 입력을 기다리지 않으므로 최근 $HeadlessSessionLiveMinutes 분 안에 기록이 있을 때만
-#   - 그 밖(claude-desktop · 터미널 대화형)은 사용자를 기다리며 오래 쉬므로 $InteractiveSessionLiveMinutes 분
-# 오판의 방향: 살아 있다고 잘못 보면 wip 커밋이 **미뤄질 뿐**(변경은 디스크에 남음) — 남의 작업을 push 하는 반대쪽보다 안전.
+# **작업 중인 다른 세션의 미커밋 변경**까지 wip 커밋·push 했다(그때는 세션 로그뿐이라 무해). 기록으로 가른다:
+#   - `<id>.desktop-released.json` 이 있으면 데스크탑 앱이 해제한 세션 → 종료(무시)
+#   - Live: 최근 기록이 있음 — 비대화형(entrypoint `sdk*`, 예: claude -p)은 $HeadlessSessionLiveMinutes 분,
+#     그 밖(claude-desktop · 터미널 대화형)은 사용자를 기다리며 쉬므로 $InteractiveSessionLiveMinutes 분
+#   - Idle: Live 창은 지났지만 $IdleSessionMaybeLiveDays 일 안에 기록이 있는 미해제 세션 — 사용자가 창을 열어 둔 채
+#     오래 자리를 비운 것인지 끝난 것인지 기록만으로는 모른다(2026-11-04 release-review: 121분 비운 세션의
+#     미커밋 작업을 곁 세션 종료가 wip 커밋·push 할 수 있었다 — 시간 창만으로는 '살아 있는데 죽었다'는 오판을 못 막음).
+#     그래서 Idle 이 있으면 SessionEnd 는 **자기 세션이 편집한 파일만** 커밋한다(Get-SessionEditedFiles).
+#   데스크탑 앱 CLI 프로세스 생존은 신호로 쓰지 않는다 — 실행 인자에 세션 id 가 없고, 쉬는 세션의 프로세스를 앱이
+#   유지하는지 확인할 수 없었다(2026-11-04).
+# 오판의 방향: 살아 있다고 잘못 보면 wip 커밋이 **미뤄지거나 좁아질 뿐**(변경은 디스크에 남음) — 남의 작업을 push 하는 반대쪽보다 안전.
 # 기록 폴더는 slug 계산 대신 hook 입력의 transcript_path 에서 얻는다(slug 오배치 계열 재발 방지).
-# 반환: 살아 있는 다른 세션 표기 배열(비어 있을 수 있음). 판단 불가(transcript_path 없음)면 $null.
+# 반환: @{ Live = string[]; Idle = string[] } (비어 있을 수 있음). 판단 불가(transcript_path 없음)면 $null.
 $InteractiveSessionLiveMinutes = 120
 $HeadlessSessionLiveMinutes = 10
-function Get-OtherLiveSessions {
+$IdleSessionMaybeLiveDays = 7
+function Get-OtherSessionStates {
     param([string]$TranscriptPath, [string]$SessionId)
     if ([string]::IsNullOrWhiteSpace($TranscriptPath)) { return $null }
     $ownPath = [System.IO.Path]::GetFullPath($TranscriptPath)
@@ -176,10 +183,13 @@ function Get-OtherLiveSessions {
     if ([string]::IsNullOrWhiteSpace($SessionId)) { $SessionId = [System.IO.Path]::GetFileNameWithoutExtension($ownPath) }
     $now = Get-Date
     $live = New-Object System.Collections.Generic.List[string]
+    $idle = New-Object System.Collections.Generic.List[string]
     foreach ($f in Get-ChildItem -Path $dir -Filter '*.jsonl' -File -ErrorAction SilentlyContinue) {
         # 자기 자신은 경로와 id 둘 다로 제외 — id 형식이 파일명과 어긋나도 자기 기록을 '다른 세션'으로 세지 않게.
         if ($f.FullName -eq $ownPath -or $f.BaseName -eq $SessionId) { continue }
         if (Test-Path (Join-Path $dir "$($f.BaseName).desktop-released.json")) { continue }
+        $ageMinutes = ($now - $f.LastWriteTime).TotalMinutes
+        if ($ageMinutes -gt $IdleSessionMaybeLiveDays * 24 * 60) { continue }
         $entrypoint = ''
         try {
             foreach ($line in (Get-Content -Path $f.FullName -TotalCount 40 -Encoding UTF8 -ErrorAction Stop)) {
@@ -187,9 +197,84 @@ function Get-OtherLiveSessions {
             }
         } catch { }
         $window = if ($entrypoint -like 'sdk*') { $HeadlessSessionLiveMinutes } else { $InteractiveSessionLiveMinutes }
-        if (($now - $f.LastWriteTime).TotalMinutes -le $window) { $live.Add("$($f.BaseName)($entrypoint)") }
+        $label = "$($f.BaseName)($entrypoint)"
+        if ($ageMinutes -le $window) { $live.Add($label) }
+        elseif ($entrypoint -notlike 'sdk*') { $idle.Add($label) }   # 비대화형은 입력을 기다리지 않으므로 창이 지나면 종료로 본다
     }
-    return ,$live.ToArray()
+    return [pscustomobject]@{ Live = $live.ToArray(); Idle = $idle.ToArray() }
+}
+
+# 이 세션(과 그 서브에이전트·워크플로)이 Edit/Write/NotebookEdit/MultiEdit 로 편집한 저장소 안 파일 — 저장소 기준 상대 경로('/').
+# 기록: <transcript>.jsonl + <dir>\<sessionId>\**\*.jsonl(서브에이전트). Bash/PowerShell 로 한 편집(sed·복사 등)은
+# 기록에서 파일을 가려낼 수 없어 빠진다 — 그 변경은 커밋되지 않고 디스크에 남는다(안전한 쪽).
+# 반환: string[] (비어 있을 수 있음). 기록을 못 읽으면 빈 배열.
+$SessionEditToolNames = @('Edit', 'Write', 'NotebookEdit', 'MultiEdit')
+function Get-SessionEditedFiles {
+    param([string]$TranscriptPath, [string]$SessionId)
+    if ([string]::IsNullOrWhiteSpace($TranscriptPath) -or -not (Test-Path $TranscriptPath -PathType Leaf)) { return @() }
+    $ownPath = [System.IO.Path]::GetFullPath($TranscriptPath)
+    if ([string]::IsNullOrWhiteSpace($SessionId)) { $SessionId = [System.IO.Path]::GetFileNameWithoutExtension($ownPath) }
+    $files = @($ownPath)
+    $subDir = Join-Path (Split-Path $ownPath -Parent) $SessionId
+    if (Test-Path $subDir -PathType Container) {
+        $files += @(Get-ChildItem -Path $subDir -Filter '*.jsonl' -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    }
+    $root = [System.IO.Path]::GetFullPath((Get-ProjectRoot)).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    $namePattern = '"name"\s*:\s*"(' + ($SessionEditToolNames -join '|') + ')"'
+    $result = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($file in $files) {
+        try {
+            foreach ($line in [System.IO.File]::ReadLines($file)) {
+                if (-not $line.Contains('"tool_use"') -or $line -notmatch $namePattern) { continue }
+                try { $entry = $line | ConvertFrom-Json -Depth 64 } catch { continue }
+                foreach ($block in @($entry.message.content)) {
+                    if ($null -eq $block -or $block.type -ne 'tool_use' -or $SessionEditToolNames -notcontains $block.name) { continue }
+                    $target = if ($block.input.file_path) { [string]$block.input.file_path } else { [string]$block.input.notebook_path }
+                    if ([string]::IsNullOrWhiteSpace($target)) { continue }
+                    try { $full = [System.IO.Path]::GetFullPath($target) } catch { continue }
+                    if (-not $full.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+                    [void]$result.Add($full.Substring($root.Length).Replace('\', '/'))
+                }
+            }
+        } catch { }
+    }
+    return ,@($result)
+}
+
+# 작업 트리의 변경 경로(저장소 기준, '/') — 추적 변경 + 미추적 파일(디렉터리 펼침). 이름 바꾸기는 새 경로.
+function Get-DirtyPaths {
+    $root = Get-ProjectRoot
+    Push-Location $root
+    try {
+        $lines = @(git -c core.quotepath=false status --porcelain --untracked-files=all 2>$null)
+    } finally {
+        Pop-Location
+    }
+    $paths = foreach ($l in $lines) {
+        if ($l.Length -lt 4) { continue }
+        $p = $l.Substring(3)
+        if ($p -match ' -> ') { $p = ($p -split ' -> ')[-1] }
+        $p.Trim('"')
+    }
+    return ,@($paths)
+}
+
+# 지정 경로만 wip 커밋 — 다른 세션이 스테이징해 둔 변경도 건드리지 않도록 `git commit -- <paths>`(--only).
+function Invoke-WipCommitPaths {
+    param([string[]]$Paths, [string]$Note = '')
+    if (-not $Paths -or $Paths.Count -eq 0) { return $false }
+    $root = Get-ProjectRoot
+    Push-Location $root
+    try {
+        $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm'
+        $msg = "wip: session $stamp"
+        if ($Note) { $msg += " — $Note" }
+        git add -- @Paths 2>&1 | Out-Null
+        git commit -m $msg -- @Paths 2>&1 | Out-Null
+        return $LASTEXITCODE -eq 0
+    } finally {
+        Pop-Location
+    }
 }
 
 # Push to upstream — used by the "커밋 = 푸시 항상 같이" workflow rule.

@@ -190,11 +190,12 @@ hook 이벤트 5개 (SessionStart · PreCompact · Stop · SessionEnd · Instruc
 - **한계**: 세션 발췌는 transcript JSONL 내부 스키마(`type`/`message`/`content`)에 의존 — Claude Code 버전업으로 스키마가 바뀌면 발췌가 깨질 수 있음(위 빈 발췌 마커가 그 조기 신호).
 
 ### `SessionEnd` → `session-end.ps1`
-- dirty tree 가 있으면 (아래 「다른 세션이 살아 있으면」 경우는 제외):
+- dirty tree 가 있으면 (아래 「다른 세션이 살아 있으면」 「쉬는 중일 수 있는 다른 세션이 있으면」 경우는 제외):
   1. **먼저** 오늘 세션 파일에 `## [YYYY-MM-DD HH:MM] session-end (reason)` 블록 append (turn/정리 블록과 달리 **날짜까지** 찍는다 — `session-end.ps1` 의 `yyyy-MM-dd HH:mm` 스탬프) (`Add-SessionBlock` mutex 로 직렬화; 이 세션의 최근 10분 커밋 목록 + "방금 wip — 이 마무리 블록 포함" 한 줄)
   2. **그 다음** `wip: session YYYY-MM-DD HH:MM — session end (reason)` 커밋 — block 변경분 + 기존 dirty 가 같은 wip 커밋에 묶임 (다음 세션 시작 시 dirty 잔여물 0 보장)
 - dirty tree 가 없으면 nothing — 마무리 블록도 안 적고 wip 커밋도 만들지 않음 (잡음 0)
-- **같은 프로젝트에서 다른 세션이 살아 있으면 wip 커밋 생략** (2026-09-17): `git add -A` 는 **다른 세션의 미커밋 변경**까지 담는다. 실제로 사용자가 연 짧은 곁 세션(`/resume-session` 후 삭제)의 SessionEnd 가 작업 중이던 메인 세션의 세션 로그를 wip 커밋·push 했다 — 그때는 로그뿐이라 무해했지만, 메인 세션이 코드를 고치다 멈춘 순간이었다면 **반쯤 된 코드가 main 에 push** 됐다. `_common.ps1` 의 `Get-OtherLiveSessions` 가 hook 입력의 `transcript_path` 폴더(slug 계산 안 함)에서 자기 기록을 뺀 `*.jsonl` 을 보고 판정한다 — `<id>.desktop-released.json`(데스크탑 앱의 해제 기록)이 있으면 종료, 비대화형(entrypoint `sdk*`, 예: `claude -p`)은 최근 `$HeadlessSessionLiveMinutes`(10분), 그 밖(데스크탑·터미널 대화형)은 사용자를 기다리며 오래 쉬므로 `$InteractiveSessionLiveMinutes`(120분) 안에 기록이 있으면 살아 있음. 생략하면 `session-end` 블록에 "**wip 커밋 생략** — 다른 세션이 작업 중: …" 을 남기고 커밋하지 않는다(push 는 그대로). 오판의 방향은 안전 쪽 — 살아 있다고 잘못 보면 wip 가 **미뤄질 뿐** 변경은 디스크에 남는다. `transcript_path` 가 없으면 판단 불가로 종전처럼 커밋. 판정(`clean` / `skip-other-live` / `committed` / `committed-sessions-unknown`)·다른 세션 목록은 `.claude/state/session-end-last.json` 에 남는다. 검증: 임시 git 저장소 + 가짜 세션 기록 폴더로 실제 스크립트 9상황(살아 있음·해제·오래됨·비대화형 창 안팎·다른 세션 없음·id 불일치·판단 불가·깨끗한 트리) + 수정 전 원본 대조군(같은 조건에서 wip 커밋 = 사고 재현).
+- **같은 프로젝트에서 다른 세션이 살아 있으면 wip 커밋 생략** (2026-09-17): `git add -A` 는 **다른 세션의 미커밋 변경**까지 담는다. 실제로 사용자가 연 짧은 곁 세션(`/resume-session` 후 삭제)의 SessionEnd 가 작업 중이던 메인 세션의 세션 로그를 wip 커밋·push 했다 — 그때는 로그뿐이라 무해했지만, 메인 세션이 코드를 고치다 멈춘 순간이었다면 **반쯤 된 코드가 main 에 push** 됐다. `_common.ps1` 의 `Get-OtherSessionStates`(2026-11-04 전 이름 `Get-OtherLiveSessions`)가 hook 입력의 `transcript_path` 폴더(slug 계산 안 함)에서 자기 기록을 뺀 `*.jsonl` 을 보고 판정한다 — `<id>.desktop-released.json`(데스크탑 앱의 해제 기록)이 있으면 종료, 비대화형(entrypoint `sdk*`, 예: `claude -p`)은 최근 `$HeadlessSessionLiveMinutes`(10분), 그 밖(데스크탑·터미널 대화형)은 사용자를 기다리며 오래 쉬므로 `$InteractiveSessionLiveMinutes`(120분) 안에 기록이 있으면 살아 있음. 생략하면 `session-end` 블록에 "**wip 커밋 생략** — 다른 세션이 작업 중: …" 을 남기고 커밋하지 않는다(push 는 그대로). 오판의 방향은 안전 쪽 — 살아 있다고 잘못 보면 wip 가 **미뤄질 뿐** 변경은 디스크에 남는다. `transcript_path` 가 없으면 판단 불가로 종전처럼 커밋. 판정(`clean` / `skip-other-live` / `committed-own-only` / `committed` / `committed-sessions-unknown`)·다른 세션 목록(`others` 살아 있음, `idle_others` 쉬는 중일 수도)·`own_files`·`left_paths` 는 `.claude/state/session-end-last.json` 에 남는다. 검증: 임시 git 저장소 + 가짜 세션 기록 폴더로 실제 스크립트 9상황(살아 있음·해제·오래됨·비대화형 창 안팎·다른 세션 없음·id 불일치·판단 불가·깨끗한 트리) + 수정 전 원본 대조군(같은 조건에서 wip 커밋 = 사고 재현).
+- **쉬는 중일 수 있는 다른 세션이 있으면 이 세션이 편집한 파일만 wip 커밋** (2026-11-04, release-review 확정 low): 위 120분 창은 「살아 있는데 죽었다」는 오판을 못 막는다 — 대화형 세션 B 가 미커밋 편집을 남긴 채 사용자가 121분 넘게 자리를 비우면(창은 열림, 쉬는 세션은 기록을 쓰지 않음) 곁 세션 A 의 종료가 B 의 작업을 wip 커밋·push 했다. 데스크탑 앱의 CLI 프로세스 생존은 신호로 못 쓴다(실행 인자에 세션 id 없음, 쉬는 세션의 프로세스 유지 여부 확인 불가). 그래서 창이 지났지만 `$IdleSessionMaybeLiveDays`(7일) 안에 기록이 있는 미해제 대화형 세션을 **Idle** 로 따로 세고, Idle 이 있으면 `Get-SessionEditedFiles` 로 이 세션 기록(`<id>.jsonl` + `<id>\**\*.jsonl` 서브에이전트·워크플로)의 Edit/Write/NotebookEdit/MultiEdit 대상 중 저장소 안 dirty 파일 + 오늘 세션 로그만 `git commit -- <paths>`(다른 세션이 스테이징한 것도 건드리지 않음)로 커밋한다. 블록에 "**이 세션이 편집한 파일만 wip 커밋**" + 커밋한 파일·남겨 둔 변경 목록을 남긴다. 비대화형(`sdk*`)은 입력을 기다리지 않으므로 창이 지나면 종료로 본다. 검증: 임시 복제본 + 임시 bare 원격 + 가짜 기록(이 세션 Edit 1·서브에이전트 Write 1, 다른 세션 3시간 전)으로 실제 스크립트 — 수정 전 원본 대조군은 다른 세션 파일 2개까지 커밋·push(사고 재현), 수정 후는 이 세션 2개 + 세션 로그만 커밋하고 다른 세션 2개는 남김. 5분 전 기록(생략)·다른 세션 없음(전체)·`transcript_path` 없음(판단 불가) 도 확인. 이 세션 실제 기록(약 8MB + 서브에이전트 30여 개)에서 0.33초.
 - 위 처리 후 unpushed commit 이 있으면 `git push` 자동 시도 ("커밋 = 푸시 항상 같이" fallback)
 
 ### `InstructionsLoaded` → `claude-md-size-check.ps1`
@@ -274,7 +275,7 @@ hook 이벤트 5개 (SessionStart · PreCompact · Stop · SessionEnd · Instruc
 
 git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로 push 도 자동.
 
-1. 작업 중 `Ctrl+C` / 시스템 종료 → `SessionEnd` hook 이 자동 wip 커밋 + **자동 push** (단 같은 프로젝트에 다른 세션이 살아 있다고 판정되면 wip 커밋은 생략 — 미커밋 변경은 이 장비에만 남으니 장비를 옮기기 전 커밋 여부 확인, §4 SessionEnd)
+1. 작업 중 `Ctrl+C` / 시스템 종료 → `SessionEnd` hook 이 자동 wip 커밋 + **자동 push** (단 같은 프로젝트에 다른 세션이 살아 있다고 판정되면 wip 커밋은 생략, 쉬는 중일 수 있는 다른 세션이 있으면 이 세션이 편집한 파일만 커밋 — 남은 미커밋 변경은 이 장비에만 남으니 장비를 옮기기 전 커밋 여부 확인, §4 SessionEnd)
 2. Claude 의 모든 `git commit` 은 Stop hook(턴 끝 1회)이 미푸시 커밋을 자동 push
 3. 다른 장비에서 `git pull` → 최신 상태
 4. `claude` 실행 → `SessionStart` hook 이 최근 세션 요약 + push 안 한 commit 알림 (잊은 경우 대비)
@@ -323,6 +324,7 @@ git 만이 유일한 교봉점. **"커밋 = 푸시 항상 같이"** 규칙으로
 
 ## 10. 알려진 한계
 
+- `SessionEnd` 의 「이 세션 파일만」 커밋은 Edit/Write 계열 기록에 기댄다 — Bash/PowerShell 로 한 편집(sed·스크립트·복사)은 이 세션 것이어도 빠져 디스크에 남는다(안전한 쪽). 반대로 두 세션이 **같은 파일**을 고쳤으면 그 파일은 다른 세션 편집분까지 통째로 커밋된다. 7일 넘게 쉰 세션은 Idle 로도 세지 않는다.
 - `SessionEnd` 의 wip 커밋은 의미 없는 메시지로 묶이므로, 가능하면 `/wrap-up` 으로 의미 있는 커밋 만들고 종료
 - `SessionEnd` 의 auto-push 실패는 `additionalContext` 로 사용자에게 노출 불가 — `.claude/state/hook-errors.log` 에 기록되고 다음 `SessionStart` 의 "최근 hook 에러" 섹션에서 노출. 즉시 알고 싶다면 종료 직전 `/wrap-up` 사용.
 - `historian` 의 자동 호출은 hook 으로 불가능 (hook 은 단순 PowerShell 만 — subagent 위임 불가). 사용자가 `/wrap-up` 실행하거나 메인 세션이 wrap-up 판단 시 위임
