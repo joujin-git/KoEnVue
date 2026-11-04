@@ -134,8 +134,8 @@ internal static class CursorRenderer
     }
 
     /// <summary>
-    /// 안개 거리표 생성 — 거리 d = i / <see cref="FogLutStepsPerPx"/> 마다 <see cref="SampleRings"/> 결과(가장 진한
-    /// 원의 알파·색)를 저장. 픽셀 수(최대 수십만 × 4 서브샘플)만큼 하던 <c>Math.Exp</c> 를 반지름 길이만큼으로 줄인다.
+    /// 안개 거리표 생성 — 거리 d = i / <see cref="FogLutStepsPerPx"/> 마다 <see cref="SampleRings"/> 결과(원들을 합친
+    /// 알파·색 × 경계 흐림)를 저장. 픽셀 수(최대 수십만 × 4 서브샘플)만큼 하던 <c>Math.Exp</c> 를 반지름 길이만큼으로 줄인다.
     /// </summary>
     private static void BuildFogLut(
         double maxOuterR,
@@ -184,7 +184,10 @@ internal static class CursorRenderer
         b = (byte)rgb;
     }
 
-    /// <summary>거리 d 에서 Inner/Middle(/CAPS 면 Outer) 중 가장 진한 원의 알파·색 × DIB 경계 흐림.</summary>
+    /// <summary>
+    /// 거리 d 에서 원들을 합친 알파·색 × DIB 경계 흐림. Inner/Middle 은 더 진한 쪽, CAPS Outer 는 선명하게 모드면
+    /// 더 진한 쪽 · 안개 모드면 over 로 쌓고 색은 알파⁴ 가중 섞기 (<see cref="SampleRingsUnfaded"/>).
+    /// </summary>
     private static void SampleRings(
         double d,
         double outerR, double middleR, double innerR,
