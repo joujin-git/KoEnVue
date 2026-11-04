@@ -79,6 +79,12 @@ internal static class CursorOverlay
     /// </summary>
     public static void Initialize(IntPtr hwnd, IntPtr hwndTimer, AppConfig config, ImeState initialState, bool initialCapsLockOn)
     {
+        // 이전 엔진이 남아 있으면 먼저 정리한다 — 덮어쓰기만 하면 옛 엔진의 메모리 DC·DIB 가 회수되지 않고
+        // 팝 타이머도 살아 남는다(bug-hunt 2026-11-04 확정 #4·#41). 정상 경로는 DisableCursorOverlay 가
+        // 먼저 Dispose 하므로 no-op.
+        StopPop();
+        _engine?.Dispose();
+        _engine = null;
         _config = config;
         _hwndTimer = hwndTimer;
         _lastImeState = initialState;
@@ -119,18 +125,40 @@ internal static class CursorOverlay
         if (_engine is null) return;
 
         StopPop();  // config 변경 시 진행 중 팝 중단 — 스타일 재합성 전 정리.
-        ResetMotionDim();
         _engine.HandleDpiChanged();
         _currentStyle = BuildStyle(config, _lastImeState, _capsLockOn);
-        // 가시 중이면 Prepare(alpha=0) + Render 이중 블리트 대신 Render 1회 (PR-28 A안 #2).
-        if (_isVisible)
+        // 가시 중이면 Prepare(alpha=0) + Render 이중 블리트 대신 렌더 1회 (PR-28 A안 #2).
+        // 모션 타이머와 **같은 경로**로 그린다. 예전엔 위 BuildStyle 스타일(안개 0·안개 여백 0·원 알파 1)을 위치
+        // 재계산 없이 바로 Render 해, 기본값(항상 표시 + 흐리게)에서 설정 저장마다 선명한 고리가 커서보다
+        // 안개 여백(28 logical px)만큼 왼쪽 위로 한 프레임 튀었다. 멈춰 있을 때만 표시 모드에서는 다음 렌더가
+        // 없어 크기가 바뀐 헤일로가 어긋난 채 남았다(bug-hunt 2026-11-04 확정 #3·#23).
+        // 이동 딤 상태(_motionDimActive)는 유지한다 — 표시 모드가 바뀌었으면 AdvanceForMode 가 새 모드로 판정.
+        if (_isVisible && User32.GetCursorPos(out POINT cursor))
         {
-            _engine.Render(_currentStyle);
-            _engine.UpdateAlpha(CursorMotionDim.FullAlpha);
+            if (config.CursorAlwaysShow)
+            {
+                ApplyMotionDimAndRender(cursor, moving: false);
+            }
+            else
+            {
+                ResetMotionDim();
+                _engine.SetDisplayAlpha(CursorMotionDim.FullAlpha);
+                RenderAtCursor(cursor);
+            }
         }
         else
         {
-            _engine.PrepareResources(_currentStyle);
+            ResetMotionDim();
+            if (_isVisible)
+            {
+                // 커서 좌표를 못 읽는 드문 경우(보안 데스크톱 전환 등) — 자리 그대로 다시 그린다.
+                _engine.Render(_currentStyle);
+                _engine.UpdateAlpha(CursorMotionDim.FullAlpha);
+            }
+            else
+            {
+                _engine.PrepareResources(_currentStyle);
+            }
         }
         Logger.Debug($"Cursor halo config applied (alwaysShow={config.CursorAlwaysShow}, displayMode={config.CursorDisplayMode}, visible={_isVisible})");
     }

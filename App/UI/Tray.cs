@@ -144,6 +144,19 @@ internal static partial class Tray
     private static ImeState _pendingUpdateState;
     private static AppConfig? _pendingUpdateConfig;
 
+    // 셸 호출 구간 안에서 도착한 재등록 요청(TaskbarCreated). Recreate 는 Remove(_currentIcon·_notifyIcon 정리)
+    // + Initialize 라, 블로킹 Shell_NotifyIconW 를 기다리는 바깥 프레임이 쥔 아이콘을 중첩 실행이 치워 버리면
+    // 바깥 프레임이 돌아와 해제된 핸들·새 아이콘을 덮어썼다(bug-hunt 2026-11-04 확정 #16). 최외곽 프레임이
+    // 끝난 뒤 RunShellCall 이 대신 실행한다.
+    private static bool _recreatePending;
+
+    // Recreate 가 실제로 돈 횟수. 보류된 재등록은 RunShellCall 끝에서 **호출자의 후처리보다 먼저** 실행되므로,
+    // Initialize·HandleAddRetryTimer 는 셸 호출 뒤 이 값이 바뀌었으면 자기 결과(added)가 낡은 것으로 보고
+    // 후처리를 건너뛴다 — 안 그러면 이미 새로 등록된 아이콘 위에서 재시도 타이머를 열었다(리뷰 2026-11-04).
+    private static int _recreateGeneration;
+    private static ImeState _pendingRecreateState;
+    private static AppConfig? _pendingRecreateConfig;
+
     // ================================================================
     // Public API
     // ================================================================
@@ -185,10 +198,12 @@ internal static partial class Tray
         _initialized = true;
 
         bool added = false;
+        int generation = _recreateGeneration;
         RunShellCall(
             () => added = !icon.IsInvalid
                           && notify.Add(icon.DangerousGetHandle(), BuildTooltip(initialState, config)),
             drainPending: true);
+        if (generation != _recreateGeneration) return;  // 보류됐던 재등록이 방금 새로 초기화했다
 
         if (!added)
         {
@@ -249,9 +264,11 @@ internal static partial class Tray
         SafeIconHandle icon = _currentIcon;
         ImeState pendingState = _pendingInitialState;
         AppConfig pendingConfig = _pendingConfig;
+        int generation = _recreateGeneration;
         RunShellCall(
             () => added = notify.Add(icon.DangerousGetHandle(), BuildTooltip(pendingState, pendingConfig)),
             drainPending: true);
+        if (generation != _recreateGeneration) return;  // 보류됐던 재등록이 재시도 상태까지 새로 정리했다
 
         if (added)
         {
@@ -337,6 +354,16 @@ internal static partial class Tray
                 }
             }
         }
+
+        // 보류된 재등록 — 가드가 풀린 뒤라 Recreate 의 Remove/Initialize 가 정상 경로로 돈다. Remove 구간에서
+        // 보류됐다면 _initialized 가 이미 false 라 Recreate 첫 줄에서 무시된다(종료·재등록 중 — 둘 다 옳다).
+        if (outermost && _recreatePending)
+        {
+            _recreatePending = false;
+            AppConfig recreateConfig = _pendingRecreateConfig!;
+            _pendingRecreateConfig = null;
+            Recreate(_pendingRecreateState, recreateConfig);
+        }
     }
 
     private static void UpdateStateCore(ImeState state, AppConfig config)
@@ -395,7 +422,17 @@ internal static partial class Tray
         // _initialized 까지 확인하지 않으면 Initialize 재호출 시 _currentIcon 참조 유실로 핸들 누수.
         if (_hwndMain == IntPtr.Zero || !_initialized) return;
 
+        if (_shellCallInProgress)
+        {
+            _recreatePending = true;
+            _pendingRecreateState = state;
+            _pendingRecreateConfig = config;
+            Logger.Debug("Tray recreate deferred until the in-flight shell call returns");
+            return;
+        }
+
         IntPtr hwndMain = _hwndMain;
+        _recreateGeneration++;
         Remove(TrayRemoveReason.Recreate);
         Initialize(hwndMain, state, config);
         Logger.Info("Tray icon recreated (TaskbarCreated or recovery)");

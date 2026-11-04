@@ -70,13 +70,32 @@ internal static class CursorDisplayModeMigration
         if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
             return true;
 
+        string text;
         try
         {
-            string text = File.ReadAllText(filePath);
-            using var doc = JsonDocument.Parse(text, UserFileOptions);
+            text = File.ReadAllText(filePath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+        return TryResolveFromUserJson(text, out mode);
+    }
+
+    /// <summary>
+    /// 이미 읽은 user JSON 원문에서 마이그. 로드 파이프라인(<c>PostDeserializeFixup</c>)은 이것을 쓴다 — 파일을
+    /// 다시 열면 그 사이 원자 교체 에디터의 중간 상태(파일 없음)를 "신규 설치" 로 오판해 sharp/motion 을
+    /// Soft 로 덮었다(bug-hunt 2026-11-04 확정 #12). 파싱 실패는 false(역직렬화 값 유지 — 위 3차 M 과 같은 이유).
+    /// </summary>
+    public static bool TryResolveFromUserJson(string userJson, out CursorDisplayMode mode)
+    {
+        mode = CursorDisplayMode.Soft;
+        try
+        {
+            using var doc = JsonDocument.Parse(userJson, UserFileOptions);
             return TryResolveFromUserRoot(doc.RootElement, out mode);
         }
-        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        catch (JsonException)
         {
             return false;
         }

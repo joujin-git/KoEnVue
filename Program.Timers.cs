@@ -109,7 +109,7 @@ internal static partial class Program
         Logger.Debug($"CapsLock: {(current ? "ON" : "OFF")}");
         Overlay.SetCapsLock(current);
         if (_indicatorVisible)
-            Overlay.UpdateColor(_lastImeState, ResolveCurrent());
+            Animation.RefreshColor(_lastImeState, ResolveCurrent());
 
         // 커서 헤일로도 CAPS 토글에 따라 Outer 원 표시/숨김 + 색상 갱신
         if (_config.CursorIndicatorEnabled)

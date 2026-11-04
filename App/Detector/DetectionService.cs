@@ -107,6 +107,12 @@ internal static class DetectionService
         // 이미 appConfig 스냅샷 또는 DefaultConfig 상수를 쓰므로 직접 _config 를 읽던 곳만 cfg 로 통일.
         AppConfig cfg = host.GetConfig();
 
+        // 메인 창이 이미 파괴됐으면(트레이 「관리자 권한」 토글의 WM_CLOSE → WM_DESTROY 가 핸들을 Zero 로 내림,
+        // 프로세스 종료 전까지 이 스레드는 계속 돈다) 이 틱은 보낼 곳이 없다. Program 의 WM_DESTROY·OnProcessExit
+        // 주석이 기대하던 "감지 스레드가 Zero 를 보고 멈춤" 가드가 실제로는 없어, PostMessageW(NULL) 이 이 스레드의
+        // 펌프되지 않는 큐로 쌓였다(bug-hunt 2026-11-04 확정 #54).
+        if (host.GetHwndMain() == IntPtr.Zero) return;
+
         // 세션 잠금 중이고 HideOnLockScreen 활성 상태면 상태 전파 자체를 건너뜀.
         // LastFiltered=true 로 세팅해 잠금 해제 후 첫 정상 틱에서 foregroundChanged 가 유도되도록 한다.
         if (host.IsSessionLocked() && cfg.HideOnLockScreen)

@@ -137,6 +137,19 @@ internal static class Animation
         return true;
     }
 
+    /// <summary>
+    /// 표시 중인 배지의 색·모양만 갱신(CapsLock 토글 등). 강조 팝 진행 중이면 그리기만 하고 블리트는 다음 강조
+    /// 프레임에 맡긴다 — <see cref="Overlay.UpdateColor"/> 는 기본 크기로 블리트해 팝 도중 한 프레임 줄었다가 다시
+    /// 커지는 떨림이 났다(bug-hunt 2026-11-04 확정 #30, CapsLock 테두리로 토글마다 다시 그리게 되며 눈에 띔).
+    /// </summary>
+    public static void RefreshColor(ImeState state, AppConfig config)
+    {
+        if (_animator is { IsHighlightActive: true })
+            Overlay.Paint(state, config);
+        else
+            Overlay.UpdateColor(state, config);
+    }
+
     // ================================================================
     // TriggerHide
     // ================================================================

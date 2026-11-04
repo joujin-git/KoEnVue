@@ -87,6 +87,15 @@ internal static class Overlay
         _engine.Render(BuildStyle(config, state));
     }
 
+    /// <summary>
+    /// 블리트 없이 DIB 만 <paramref name="state"/>/<paramref name="config"/> 모양으로 다시 그린다 — 다음 애니메이션
+    /// 프레임이 올린다. 강조 팝 중 색 갱신, 위치 계산 전 크기 확정에 쓴다(<see cref="LayeredOverlayBase.Paint"/>).
+    /// </summary>
+    public static void Paint(ImeState state, AppConfig config)
+    {
+        _engine.Paint(BuildStyle(config, state));
+    }
+
     /// <summary>페이드 프레임: SourceConstantAlpha만 변경.</summary>
     public static void UpdateAlpha(byte alpha)
     {
@@ -121,9 +130,19 @@ internal static class Overlay
     public static void HandleDpiChanged()
     {
         _engine.HandleDpiChanged();
-        // 즉시 재생성 — 이후 UpdateAlpha/Show가 유효한 _currentWidth/Height를 기대.
-        // 상태 필드는 DIB 치수에 영향이 없으므로 임의 상태 OK.
-        _engine.PrepareResources(BuildStyle(_config, ImeState.Hangul));
+        RebuildResources();
+    }
+
+    /// <summary>
+    /// 배지 창이 받은 WM_DPICHANGED. 엔진이 이미 그 DPI 면 할 일이 없어 false — Show 가 새 모니터 DPI 로 맞춘 뒤
+    /// 블리트(UpdateLayeredWindow) 안에서 **중첩 도착**한 사본이다(확정 #37). 다르면(모니터 배율 설정 변경 등)
+    /// <see cref="HandleDpiChanged()"/> 와 같이 재생성하고 true — 호출자가 가시 배지를 다시 그린다.
+    /// </summary>
+    public static bool HandleWindowDpiChanged(uint newDpiX)
+    {
+        if (_engine.IsAtDpi(newDpiX)) return false;
+        HandleDpiChanged();
+        return true;
     }
 
     /// <summary>설정 변경 시 전체 리소스 리빌드.</summary>
@@ -131,7 +150,20 @@ internal static class Overlay
     {
         _config = config;
         _engine.HandleDpiChanged();  // 캐시 무효화 (DPI뿐 아니라 폰트/라벨 모두)
-        _engine.PrepareResources(BuildStyle(config, ImeState.Hangul));
+        RebuildResources();
+    }
+
+    /// <summary>
+    /// 캐시 무효화 직후 리소스 재생성 — 이후 UpdateAlpha/Show 가 유효한 _currentWidth/Height 를 기대한다.
+    /// 그린 적이 있으면 **그 모양으로 다시 그린다**: 재생성된 DIB 는 픽셀이 0 이라, 가시 플래그가 이미 내려간
+    /// 페이드아웃 구간(RefreshVisibleIndicator 가 건너뜀)에 남은 페이드 프레임이 빈 DIB 를 블리트해 배지가
+    /// 뚝 사라졌다(bug-hunt 2026-11-04 확정 #10). 그린 적이 없으면(부팅 직후) 글로벌 기준 크기만 잡는다 —
+    /// 상태 필드는 DIB 치수에 영향이 없으므로 임의 상태 OK.
+    /// </summary>
+    private static void RebuildResources()
+    {
+        if (!_engine.RepaintLastPainted())
+            _engine.PrepareResources(BuildStyle(_config, ImeState.Hangul));
     }
 
     /// <summary>
@@ -541,7 +573,11 @@ internal static class Overlay
         try
         {
             int radius = metrics.ScaledBorderRadius;
-            if (style.CapsLockOn)
+            // 원래 브러시는 **진입 시 한 번** 저장한다. CapsLock 분기가 첫 SelectObject(CapsLock 브러시)의 반환값을
+            // 원래 값으로 쓰던 시절엔 그 브러시 생성이 실패(GDI 압박)하면 0 이 저장돼 배경 브러시가 DC 에 선택된 채
+            // 남고, 아래 finally 의 DeleteObject 가 '선택된 객체 삭제'로 거부돼 렌더마다 샜다(bug-hunt 2026-11-04 #57).
+            IntPtr oldBrush = Gdi32.SelectObject(hdc, hBrush);
+            if (style.CapsLockOn && oldBrush != IntPtr.Zero)
             {
                 // 2'. CAPS LOCK 테두리 — 배지 전체를 CapsLock 색으로 채우고 안쪽을 배경색으로 다시 채운다.
                 //     펜 RoundRect(반폭 인셋)는 모서리에서 테두리 바깥에 배경색이 비집고 나왔다(release-review
@@ -551,24 +587,31 @@ internal static class Overlay
                 IntPtr hCapsBrush = Gdi32.CreateSolidBrush(ColorHelper.HexToLayeredColorRef(style.CapsLockHex));
                 try
                 {
-                    IntPtr oldCapsBrush = Gdi32.SelectObject(hdc, hCapsBrush);
-                    Gdi32.RoundRect(hdc, 0, 0, w, h, radius, radius);
-                    Gdi32.SelectObject(hdc, hBrush);
-                    int innerRadius = Math.Max(0, radius - 2 * capsW);
-                    Gdi32.RoundRect(hdc, capsW, capsW, w - capsW, h - capsW, innerRadius, innerRadius);
-                    Gdi32.SelectObject(hdc, oldCapsBrush);
+                    if (hCapsBrush != IntPtr.Zero)
+                    {
+                        Gdi32.SelectObject(hdc, hCapsBrush);
+                        Gdi32.RoundRect(hdc, 0, 0, w, h, radius, radius);
+                        Gdi32.SelectObject(hdc, hBrush);  // 안쪽은 배경 브러시 — CapsLock 브러시는 여기서 선택 해제
+                        int innerRadius = Math.Max(0, radius - 2 * capsW);
+                        Gdi32.RoundRect(hdc, capsW, capsW, w - capsW, h - capsW, innerRadius, innerRadius);
+                    }
+                    else
+                    {
+                        Gdi32.RoundRect(hdc, 0, 0, w, h, radius, radius);  // 테두리 없이 배경만
+                    }
                 }
                 finally
                 {
-                    Gdi32.DeleteObject(hCapsBrush);
+                    if (hCapsBrush != IntPtr.Zero)
+                        Gdi32.DeleteObject(hCapsBrush);
                 }
             }
             else
             {
-                IntPtr oldBrush = Gdi32.SelectObject(hdc, hBrush);
                 Gdi32.RoundRect(hdc, 0, 0, w, h, radius, radius);
-                Gdi32.SelectObject(hdc, oldBrush);
             }
+            if (oldBrush != IntPtr.Zero)
+                Gdi32.SelectObject(hdc, oldBrush);
 
             // 3. 보더 (borderWidth > 0) — hBorderPen 도 중첩 try/finally 로 보호.
             //    CAPS LOCK 테두리가 켜져 있으면 그것이 보더 자리를 대신한다(두 테두리가 겹쳐 그려지지 않게).

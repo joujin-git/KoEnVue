@@ -47,6 +47,9 @@ public sealed class OverlayAnimator : IDisposable
 
     // 강조 (HighlightScale → 1.0)
     private bool _highlightActive;
+
+    /// <summary>강조 팝 진행 중인지 — 진행 중이면 블리트는 강조 프레임(확대 크기)이 맡는다.</summary>
+    public bool IsHighlightActive => _highlightActive;
     private long _highlightStartTick;
     private double _highlightStartScale;
 

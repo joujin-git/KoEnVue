@@ -102,34 +102,46 @@ internal static partial class Program
         if (hiddenOnDragEnd)
             _indicatorVisible = false;
 
-        if (DefaultConfig.IsSystemInputProcess(_currentProcessName))
+        // 저장 대상은 드래그를 **시작한** 앱이다(확정 #18 — 필드 주석 참조). ENTERSIZEMOVE 를 거치지 않은
+        // 종료(대상 미기록)면 현재 값으로 폴백.
+        IntPtr targetHwnd = _dragTargetHwnd != IntPtr.Zero ? _dragTargetHwnd : _lastForegroundHwnd;
+        string targetProcess = _dragTargetHwnd != IntPtr.Zero ? _dragTargetProcess : _currentProcessName;
+        _dragTargetHwnd = IntPtr.Zero;
+        _dragTargetProcess = "";
+        if (targetHwnd != _lastForegroundHwnd)
+            Logger.Debug($"Foreground changed during drag; saving for drag target {targetProcess}");
+
+        if (DefaultConfig.IsSystemInputProcess(targetProcess))
         {
-            Logger.Debug($"Skip saving indicator position for system input process: {_currentProcessName}");
+            Logger.Debug($"Skip saving indicator position for system input process: {targetProcess}");
             Overlay.Show(x, y, _lastImeState, ResolveCurrent());
             return;
         }
 
-        if (_config.PositionMode == PositionMode.Window)
+        AppConfig targetConfig = targetHwnd != IntPtr.Zero
+            ? Settings.ResolveForApp(_config, targetHwnd) ?? _config
+            : _config;
+        if (targetConfig.PositionMode == PositionMode.Window)
         {
             // 창 기준 모드: 절대좌표 → 창 기준 상대 오프셋으로 변환 후 저장.
             // 상대값은 창 프레임 기준이므로 저장 전 work-area 클램프를 하지 않는다
             // (클램프하면 오프셋이 오염됨). 표시용 절대좌표만 Show 직전에 클램프.
-            if (_currentProcessName.Length > 0)
+            if (targetProcess.Length > 0)
             {
                 RelativePositionConfig? rel =
-                    Overlay.ComputeRelativeFromCurrentPosition(_lastForegroundHwnd);
+                    Overlay.ComputeRelativeFromCurrentPosition(targetHwnd);
                 if (rel is not null)
                 {
                     var positions = new Dictionary<string, int[]>(
                         _config.IndicatorPositionsRelative)
                     {
-                        [_currentProcessName] = [(int)rel.Corner, rel.DeltaX, rel.DeltaY]
+                        [targetProcess] = [(int)rel.Corner, rel.DeltaX, rel.DeltaY]
                     };
                     _config = _config with { IndicatorPositionsRelative = positions };
                     // 저장 + 병합 시 전이 재적용까지 (확정 #1·#15·#28). 드래그 경로는 자체 전이
                     // 적용자가 없으므로, 병합으로 들어온 값은 전적으로 헬퍼에 의존한다.
                     SaveAndSync();
-                    Logger.Debug($"Saved relative position for {_currentProcessName}: "
+                    Logger.Debug($"Saved relative position for {targetProcess}: "
                         + $"corner={rel.Corner}, delta=({rel.DeltaX}, {rel.DeltaY}) logical px");
                 }
             }
@@ -141,23 +153,23 @@ internal static partial class Program
             // 저장 시점에 정제해 두면 설정 파일 값 품질이 보장된다.
             (x, y) = ClampToVisibleArea(x, y);
 
-            if (_lastForegroundHwnd != IntPtr.Zero)
+            if (targetHwnd != IntPtr.Zero)
             {
                 // 프로세스명을 함께 담아야 HWND 재활용을 조회 시점에 걸러낼 수 있다 (§L).
                 PruneHwndPositions();
-                _hwndPositions[_lastForegroundHwnd] = (x, y, _currentProcessName);
+                _hwndPositions[targetHwnd] = (x, y, targetProcess);
             }
-            if (_currentProcessName.Length > 0)
+            if (targetProcess.Length > 0)
             {
                 var positions = new Dictionary<string, int[]>(_config.IndicatorPositions)
                 {
-                    [_currentProcessName] = [x, y]
+                    [targetProcess] = [x, y]
                 };
                 _config = _config with { IndicatorPositions = positions };
                 // 저장 + 병합 시 전이 재적용까지 (확정 #1·#15·#28). 드래그 경로는 자체 전이
                 // 적용자가 없으므로, 병합으로 들어온 값은 전적으로 헬퍼에 의존한다.
                 SaveAndSync();
-                Logger.Debug($"Saved indicator position for {_currentProcessName}: ({x}, {y})");
+                Logger.Debug($"Saved indicator position for {targetProcess}: ({x}, {y})");
             }
         }
         // Window 모드: 상대 저장은 드래그 원좌표 기준 유지, Show 만 화면 안으로.

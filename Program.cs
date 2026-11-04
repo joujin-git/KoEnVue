@@ -63,6 +63,12 @@ internal static partial class Program
     private static int _overlayDragOriginX;
     private static int _overlayDragOriginY;
 
+    // 드래그 시작(WM_ENTERSIZEMOVE) 시점의 배지 주인 앱. sizemove 모달 루프는 WM_POSITION_UPDATED 를 그대로
+    // 디스패치해 드래그 중 다른 앱이 앞으로 오면 _lastForegroundHwnd/_currentProcessName 이 바뀐다 — 놓은 위치는
+    // 사용자가 끌기 시작한 앱 기준으로 저장해야 한다(bug-hunt 2026-11-04 확정 #18). 메인 스레드 전용.
+    private static IntPtr _dragTargetHwnd;
+    private static string _dragTargetProcess = "";
+
     // 포그라운드 윈도우 + 앱별 위치 (메인 스레드 전용)
     private static IntPtr _lastForegroundHwnd;
     private static string _currentProcessName = "";
@@ -506,25 +512,45 @@ internal static partial class Program
                 return IntPtr.Zero;
 
             // === 시스템 메시지 ===
+            // 세 창(메인·배지·커서 헤일로)이 같은 WndProc 을 쓰고 셋 다 최상위 창이라, 시스템 브로드캐스트는
+            // **창마다 한 번씩** 온다. TaskbarCreated 처럼 메인 창 사본만 처리한다 — 거르지 않으면 강조색 변경
+            // 1회에 HandleSettingChange 가 3번(트레이 HICON 재생성·배지 재표시·헤일로 재적용 ×3) 돌았다
+            // (bug-hunt 2026-11-04 확정 #2).
 
             case Win32Constants.WM_POWERBROADCAST:
-                if ((uint)wParam == Win32Constants.PBT_APMRESUMESUSPEND)
+                if (hwnd == _hwndMain && (uint)wParam == Win32Constants.PBT_APMRESUMESUSPEND)
                     HandlePowerResume();
                 return IntPtr.Zero;
 
             case Win32Constants.WM_DISPLAYCHANGE:
-                HandleDisplayChange();
+                if (hwnd == _hwndMain)
+                    HandleDisplayChange();
                 return IntPtr.Zero;
 
             case Win32Constants.WM_SETTINGCHANGE:
             case Win32Constants.WM_THEMECHANGED:
             case Win32Constants.WM_DWMCOLORIZATIONCOLORCHANGED:
-                HandleSettingChange();
+                if (hwnd == _hwndMain)
+                    HandleSettingChange();
                 return IntPtr.Zero;
 
             case Win32Constants.WM_DPICHANGED:
-                HandleDpiChanged();
+                // 브로드캐스트가 아니라 **배율이 다른 모니터로 넘어간 그 창**에 오는 메시지다. 커서 헤일로 창은
+                // 15ms 마다 커서를 따라 움직여 모니터 경계를 넘을 때마다 받는데, 예전엔 그것까지 배지 처리로
+                // 보내 마우스만 옮겨도 숨어 가던 배지가 되살아났다(확정 #1). 헤일로 엔진은 ShowAtCenter 에서
+                // DPI 를 스스로 다시 잡으므로 배지 창 사본만 처리한다. 새 DPI 는 wParam LOWORD(X축).
+                if (hwnd == _hwndOverlay)
+                    HandleDpiChanged((uint)(wParam.ToInt64() & Win32Constants.LOWORD_MASK));
                 return IntPtr.Zero;
+
+            case Win32Constants.WM_CLOSE:
+                // 배지·헤일로 창은 앱이 직접 파괴한다(OnProcessExit·DisableCursorOverlay). 외부 도구가 보낸
+                // WM_CLOSE 를 DefWindowProc 에 넘기면 창만 죽고 엔진은 죽은 HWND·DC·DIB 를 쥔 채 남아 배지가
+                // 재시작 전까지 사라지고 GDI 가 샜다(확정 #4·#5). 두 창은 무시하고, 메인 창은 종전대로
+                // DefWindowProc(→ DestroyWindow → WM_DESTROY → PostQuitMessage) — 트레이 「관리자 권한」 토글 경로.
+                if (hwnd == _hwndOverlay || hwnd == _hwndCursorOverlay)
+                    return IntPtr.Zero;
+                return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
 
             case Win32Constants.WM_WTSSESSION_CHANGE:
                 HandleSessionChange((uint)wParam);
@@ -537,7 +563,7 @@ internal static partial class Program
             case Win32Constants.WM_DESTROY:
                 // **파괴 직후 해당 핸들 필드를 즉시 비운다.** AUDIT-2026-07-30 §N-42 가 세운 이
                 // invariant 의 구현은 OnProcessExit 한 곳에만 있었는데, 창이 그보다 **먼저** 죽는
-                // 경로가 있다 — WndProcCore 에 WM_CLOSE case 가 없어 DefWindowProcW 가 곧바로
+                // 경로가 있다 — 메인 창의 WM_CLOSE 는 DefWindowProcW 로 넘어가 곧바로
                 // DestroyWindow 를 수행하고, 뒤따르는 여기서는 PostQuitMessage 만 했다. 그 사이
                 // (메시지 큐가 WM_QUIT 까지 배수되고 MainImpl 이 반환할 때까지, 감지 루프의 sleep
                 // 한 틱 이상) 감지 스레드는 `!= IntPtr.Zero` 가드를 통과해 죽은 HWND 에 계속
@@ -619,7 +645,11 @@ internal static partial class Program
 
             case Win32Constants.WM_ENTERSIZEMOVE:
                 if (hwnd == _hwndOverlay)
+                {
+                    _dragTargetHwnd = _lastForegroundHwnd;
+                    _dragTargetProcess = _currentProcessName;
                     Overlay.BeginDrag(_config.SnapToWindows);
+                }
                 return IntPtr.Zero;
 
             case Win32Constants.WM_EXITSIZEMOVE:
@@ -653,9 +683,25 @@ internal static partial class Program
     /// </summary>
     private static void ShowIndicatorAtForeground(ImeState state, AppConfig resolved, bool imeChanged)
     {
+        if (IsHiddenByLock) return;
         _clickDismissed = false;
+        // 위치 계산(작업 영역 중앙·시스템 입력 높이·화면 끝 클램프)은 엔진의 현재 DIB 크기를 읽는다. 표시할
+        // per-app 스타일로 먼저 그려 두지 않으면 직전 앱이나 글로벌 기준 크기로 자리를 잡아, 앱별 indicator_scale
+        // 이 다른 배지가 폭 차이의 절반만큼 어긋났다(bug-hunt 2026-11-04 확정 #24). 블리트는 TriggerShow 가 한다.
+        PaintForPositioning(state, resolved);
         var (x, y) = GetAppPosition();
         _indicatorVisible = Animation.TriggerShow(x, y, state, resolved, imeChanged);
+    }
+
+    /// <summary>
+    /// 위치 계산 전에 표시할 스타일로 DIB 를 그려 크기를 확정한다(블리트 없음, 확정 #24). 비한국어 + 숨김이면
+    /// TriggerShow 가 표시 대신 페이드아웃하므로 건너뛴다 — 그리면 숨기기로 한 비한국어 배지가 사라지는 동안
+    /// 페이드 프레임에 그대로 보였다(리뷰 2026-11-04).
+    /// </summary>
+    private static void PaintForPositioning(ImeState state, AppConfig resolved)
+    {
+        if (state == ImeState.NonKorean && resolved.NonKoreanIme == NonKoreanImeMode.Hide) return;
+        Overlay.Paint(state, resolved);
     }
 
     private static void HandleImeStateChanged(ImeState newState)
@@ -668,6 +714,7 @@ internal static partial class Program
         _imeStateReceived = true;
 
         _lastImeState = newState;
+        ImeStatus.NotePublishedState(newState);
         Logger.Debug($"IME state: {newState}");
 
         // 트레이 아이콘은 항상 IME 상태 반영 — 트레이는 글로벌 영역 (per-app 비대상)
@@ -680,6 +727,11 @@ internal static partial class Program
 
         if (_config.UserHidden) return;
         if (_lastForegroundHwnd == IntPtr.Zero) return;
+        // 훅 경로는 필터 판정 없이 지금 포그라운드의 상태를 게시한다. 바탕화면·enabled:false 앱처럼 감지 루프가
+        // 위치를 알리지 않는 창이 앞에 있으면 _lastForegroundHwnd 는 **이전 앱**이라, 그 자리에 배지가 한 번
+        // 깜빡였다(bug-hunt 2026-11-04 확정 #52). 지금 포그라운드가 배지가 붙은 앱일 때만 표시 — 새로 앞에
+        // 온 앱이면 감지 루프의 WM_POSITION_UPDATED 가 곧 새 상태로 띄운다.
+        if (User32.GetForegroundWindow() != _lastForegroundHwnd) return;
 
         // PR-13: DisplayMode / EventTriggers / 렌더 인자 모두 per-app resolved 사용.
         // 좌클릭 일시 숨김(_clickDismissed) 중이면 EventTriggers 와 무관하게 한·영 변경으로 재표시.
@@ -702,6 +754,13 @@ internal static partial class Program
             || resolved.EventTriggers.OnFocusChange)
             ShowIndicatorAtForeground(_lastImeState, resolved, imeChanged: false);
     }
+
+    /// <summary>
+    /// 세션 잠금 + hide_on_lock_screen — 표시 경로가 모두 이 값을 본다. 잠금 게이트는 감지 스레드의 틱 시작에만
+    /// 있어서, 잠금 직전 틱이 늦게 보낸 메시지나 잠금 화면 비밀번호 칸의 한/영 전환(WinEvent 훅, 메인 스레드)이
+    /// HideOverlay 뒤에 배지를 다시 띄우면 잠금 내내 남았다(bug-hunt 2026-11-04 확정 #13).
+    /// </summary>
+    private static bool IsHiddenByLock => _sessionLocked && _config.HideOnLockScreen;
 
     private static void HandlePositionUpdated(IntPtr hwndForeground)
     {
@@ -726,8 +785,9 @@ internal static partial class Program
         // foregroundChanged가 false여도 위치를 재계산해 실제 시각 rect에 맞춰야 한다.
         bool sysInput = DefaultConfig.IsSystemInputProcess(_currentProcessName);
 
-        if (foregroundChanged || wasHidden || sysInput)
+        if ((foregroundChanged || wasHidden || sysInput) && !IsHiddenByLock)
         {
+            PaintForPositioning(_lastImeState, ResolveCurrent());  // 위치 계산 전 크기 확정 — 확정 #24
             var (x, y) = GetAppPosition();
             // hwnd/class 를 함께 남긴다 — 한 프로세스가 top-level 창을 여러 개 쓰는 앱(파일 관리자의
             // 내장 뷰어 등)에서 프로세스명만으로는 어느 창에 인디가 붙었는지 구분할 수 없어 진단이 막힌다.
@@ -816,7 +876,9 @@ internal static partial class Program
         if (DefaultConfig.IsSystemInputProcess(_currentProcessName))
             return Overlay.GetDefaultPosition(_lastForegroundHwnd, _currentProcessName);
 
-        if (_config.PositionMode == PositionMode.Window)
+        // per-app 기준 — 감지 스레드의 창 이동 추적(TrackWindowMove)도 per-app resolved 의 position_mode 를 본다.
+        // 여기만 글로벌이면 프로필로 모드를 바꾼 앱에서 두 스레드가 다른 모드로 움직였다(bug-hunt 2026-11-04 확정 #25).
+        if (ResolveCurrent().PositionMode == PositionMode.Window)
             return GetAppPositionWindow();
 
         return GetAppPositionFixed();
@@ -1206,7 +1268,10 @@ internal static partial class Program
         // forceHidden: Always 모드에서도 Idle이 아닌 완전 숨김으로 전환.
         // 시스템 필터(바탕화면/작업 표시줄), 트레이 토글 OFF 모두
         // "실제로 사라져야 하는" 의도이므로 Always 모드의 dim-idle 유지를 우회.
-        Animation.TriggerHide(_config, forceHidden: true);
+        // 숨김도 표시와 같은 per-app 기준으로 — 글로벌 _config 를 넘기면 애니메이터 스냅샷이 글로벌로 덮여, 앱별
+        // 프로필로 끈 페이드가 돌고 topmost 주기까지 글로벌로 바뀐 채 다음 표시까지 남았다(bug-hunt 2026-11-04
+        // 확정 #11). _lastForegroundHwnd 는 감지 스레드가 필터 구간에선 갱신하지 않으므로 배지가 붙어 있던 앱이다.
+        Animation.TriggerHide(ResolveCurrent(), forceHidden: true);
         _indicatorVisible = false;
     }
 

@@ -93,12 +93,15 @@ internal static partial class Program
             Tray.UpdateState(_lastImeState, _config);
     }
 
-    private static void HandleDpiChanged()
+    /// <summary>배지 창이 받은 WM_DPICHANGED (커서 헤일로 창 사본은 WndProc 에서 거른다 — 확정 #1).</summary>
+    /// <param name="newDpiX">wParam LOWORD. lParam(RECT* 권장 크기)은 미사용 — 레이어드 창이라 크기는 DIB 가 정한다.</param>
+    private static void HandleDpiChanged(uint newDpiX)
     {
-        // WM_DPICHANGED 페이로드(wParam: HIWORD/LOWORD=newDpiY/newDpiX, lParam: RECT* 권장 크기)는
-        // 현재 미사용 — Overlay 가 자체 DPI 재조회로 처리한다. per-monitor DPI 정밀 대응이 필요해지면
-        // dispatch 의 WM_DPICHANGED case 에서 wParam/lParam 을 다시 전달하면 된다(WndProc 에서 항상 가용).
-        Overlay.HandleDpiChanged();
+        // 숨긴 배지를 다른 배율 모니터에 처음 띄우면 Overlay.Show 가 이미 새 DPI 로 그린 뒤, 그 블리트
+        // (UpdateLayeredWindow) **안에서** 이 메시지가 동기로 도착한다. 할 일이 없는데 예전엔 캐시를 지워
+        // 빈 DIB 로 바꿨고, 가시 플래그는 TriggerShow 반환 뒤에야 서서 아래 재렌더도 건너뛰어 배지가 표시
+        // 시간 내내 투명했다(bug-hunt 2026-11-04 확정 #37·#63). 엔진 DPI 가 이미 같으면 무시한다.
+        if (!Overlay.HandleWindowDpiChanged(newDpiX)) return;
 
         // **후속 렌더가 반드시 필요하다.** Overlay.HandleDpiChanged 는 캐시를 무효화하고
         // PrepareResources 로 새 DIB 섹션을 만들지만 **그리지는 않는다** — 그 시점의 _memDC 는 전

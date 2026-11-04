@@ -14,7 +14,7 @@ Text label (`한` / `En` / `EN`) + `RoundedRect` shape. No style/shape selection
 
 ### CAPS LOCK border
 
-When CAPS LOCK is toggled on, a border in a lighter tint of the dedicated CAPS LOCK color (`OverlayStyle.CapsLockHex` ← `ColorHelper.MixWithWhite(config.CapsLockColor, CapsLockBorderWhiteMix = 0.45)`, default `#9333EA` → `#C48FF3` — the full-strength purple was too strong on the badge; the user picked 45% from 30/45/60% mock-ups, 2026-11-04. The cursor halo keeps the untinted color because its fog already mixes in 77% white, and a tinted purple vanished there in a render comparison) is drawn around the whole badge and replaces the user border (`BorderWidth`) while on. It is drawn by **filling**, not stroking: the whole badge `RoundRect(0,0,w,h,radius)` is filled with the CAPS LOCK color, then the inner `RoundRect(capsW, capsW, w-capsW, h-capsW, max(0, radius - 2·capsW))` is filled with the background color, with `capsW = max(1, Scale(OverlayStyle.CapsLockBorderWidthLogicalPx))`. That field is composed by the facade `BuildStyle` as `max(1, round(CapsLockBorderWidthPerScale (= 2.0) × IndicatorScale))` — 4 at the default scale 2.0, same as before. It follows `IndicatorScale` like every other badge dimension: a fixed 4px left only 4px inside a scale-1, height-12 badge, so the frame touched the glyphs (release-review 2026-11-04). The first version stroked it with a `PS_SOLID` pen inset by half the pen width and the same corner radius, which left a wedge of background color outside the frame at each corner (release-review 2026-11-04: ≈0.8px at 100%, ≈2.5px along the diagonal at 300%). Filling uses the same call as the background for the outer edge, so the silhouette matches exactly — measured with GDI at 100/125/150/200/300%: 0 background-colored edge pixels, 0 pixels outside the background shape. The CAPS LOCK brush is created/deleted in its own try/finally.
+When CAPS LOCK is toggled on, a border in a lighter tint of the dedicated CAPS LOCK color (`OverlayStyle.CapsLockHex` ← `ColorHelper.MixWithWhite(config.CapsLockColor, CapsLockBorderWhiteMix = 0.45)`, default `#9333EA` → `#C48FF3` — the full-strength purple was too strong on the badge; the user picked 45% from 30/45/60% mock-ups, 2026-11-04. The cursor halo keeps the untinted color because its fog already mixes in 77% white, and a tinted purple vanished there in a render comparison) is drawn around the whole badge and replaces the user border (`BorderWidth`) while on. It is drawn by **filling**, not stroking: the whole badge `RoundRect(0,0,w,h,radius)` is filled with the CAPS LOCK color, then the inner `RoundRect(capsW, capsW, w-capsW, h-capsW, max(0, radius - 2·capsW))` is filled with the background color, with `capsW = max(1, Scale(OverlayStyle.CapsLockBorderWidthLogicalPx))`. That field is composed by the facade `BuildStyle` as `max(1, round(CapsLockBorderWidthPerScale (= 2.0) × IndicatorScale))` — 4 at the default scale 2.0, same as before. It follows `IndicatorScale` like every other badge dimension: a fixed 4px left only 4px inside a scale-1, height-12 badge, so the frame touched the glyphs (release-review 2026-11-04). The first version stroked it with a `PS_SOLID` pen inset by half the pen width and the same corner radius, which left a wedge of background color outside the frame at each corner (release-review 2026-11-04: ≈0.8px at 100%, ≈2.5px along the diagonal at 300%). Filling uses the same call as the background for the outer edge, so the silhouette matches exactly — measured with GDI at 100/125/150/200/300%: 0 background-colored edge pixels, 0 pixels outside the background shape. The CAPS LOCK brush is created/deleted in its own try/finally. The DC's original brush is saved **once on entry** (`SelectObject(hdc, hBrush)`) and restored after both branches; if `CreateSolidBrush` for the CAPS LOCK color fails (GDI pressure) the badge is drawn without the frame. Previously the CAPS branch took the original from its first `SelectObject(hCapsBrush)` — a failed brush stored 0 there, the background brush stayed selected, and the `finally` `DeleteObject` was refused ("selected object"), leaking one brush per render (bug-hunt 2026-11-04 #57).
 
 **Pure black in the layered DIB**: GDI never writes alpha, so `LayeredOverlayBase.ApplyPremultipliedAlpha` treats `RGB != 0` as opaque and leaves `RGB == 0` transparent. A pure-black color therefore drew as a see-through hole (release-review 2026-11-04: CAPS LOCK color `#000000` made the border look like a transparent band, while the cursor halo — which writes ARGB itself — showed black). All four badge colors (background, text, user border, CAPS LOCK) now go through `ColorHelper.HexToLayeredColorRef`, which maps pure black (and invalid hex, which parses to black) to `#010101`.
 
@@ -64,6 +64,13 @@ Negative `biHeight` in the BITMAPINFO so `(0, 0)` is top-left. Keeps the pixel a
 The per-render skip uses `OverlayStyle` `record struct` value equality — `newStyle == _lastStyle` returns `true` when nothing visible has changed. Because `CapsLockOn` is a field inside the record, toggling it automatically breaks equality and forces a re-render.
 
 `CalculateFixedLabelWidth` also skips its own work via a 7-key measurement cache (`MeasureLabels` tuple + `PaddingXLogicalPx` + `LabelWidthLogicalPx` + `_currentDpiScale` + `_cachedFont{Family,Size,IsBold}`) + `_fixedLabelWidth > 0` guard. Cache hit elides three `GetTextExtentPoint32W` GDI calls, the `Max` reduction, and the downstream `EnsureDib` call — `EnsureResources` has already sized the DIB to `_fixedLabelWidth` before `CalculateFixedLabelWidth` runs, so no additional resize is needed. Invalidation is a single `_cachedLabelDpiScale = 0` write inside `HandleDpiChanged` (forces a DPI-match miss on next call); font-signature mismatch is caught automatically because `EnsureFont` updates `_cachedFont*` before `CalculateFixedLabelWidth` compares them.
+
+**Last-painted style survives invalidation (bug-hunt 2026-11-04 #10·#24·#30·#34·#37).** `HandleDpiChanged` also clears `_lastRenderedStyle` (the flip-flop key), and the resources rebuilt after it are a **fresh, all-zero DIB**. Any frame that only blits (`UpdateAlpha` fade-out, `UpdatePosition`, `UpdateScaledSize`) before the next `Render` puts that blank DIB on screen. The engine therefore keeps a second field, `_lastPaintedStyle`, which invalidation does **not** clear, and exposes three helpers:
+- **`RepaintLastPainted() → bool`** — redraws the DIB with the last painted style (no blit); false if nothing was painted yet. The facade's `Overlay.RebuildResources` (shared by `HandleDpiChanged` and `HandleConfigChanged`) calls it first and falls back to `PrepareResources(BuildStyle(_config, Hangul))` only before the first paint. Fixes the badge vanishing when a config save lands mid-fade-out (`_indicatorVisible` is already false there, so `RefreshVisibleIndicator` skips it — #10).
+- **`Paint(style)`** — draws into the DIB without blitting (no-op if already that style). Used (a) by `Animation.RefreshColor` during a highlight pop, so a CAPS LOCK toggle no longer blits one base-size frame mid-pop (#30), and (b) by `ShowIndicatorAtForeground` / `HandlePositionUpdated` **before** `GetAppPosition`, so position math (work-area center, system-input height, edge clamp) reads the DIB size of the per-app style about to be shown, not the previous app's or the global one (#24). Program wraps (b) in `PaintForPositioning`, which skips the pre-paint for NonKorean + `non_korean_ime=hide` — `TriggerShow` fades out instead of showing in that case, and a pre-painted NonKorean label would ride the fade-out frames (review 2026-11-04).
+- **`IsAtDpi(dpiX) → bool`** — whether the engine already holds resources for that DPI; see [DPI change handling](#dpi-change-handling-programhandledpichanged).
+
+`HandleMoving`'s drag-time DPI re-render also inherits `_lastPaintedStyle` instead of the facade's globally-composed style, so a badge restyled by an app profile keeps its look when dragged across a DPI boundary (#34).
 
 ---
 
@@ -146,6 +153,10 @@ IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 강조 �
 
 두 모드 전환은 `HandleConfigChanged` 의 "값 변경" 분기가 `KillTimer` + `SetTimer` 로 polling 주기를 즉시 교체해 흡수한다.
 
+**설정 적용 시 재그리기는 모션 타이머와 같은 경로 (bug-hunt 2026-11-04 확정 #3·#23)**: `CursorOverlay.HandleConfigChanged` 는 가시 중이면 `GetCursorPos` 로 커서 위치를 읽어 항상 표시 모드는 `ApplyMotionDimAndRender(cursor, moving: false)`, 숨김 모드는 `ResetMotionDim` + `SetDisplayAlpha(FullAlpha)` + `RenderAtCursor(cursor)` 로 그린다. 예전엔 `BuildStyle` 결과(안개 0·안개 여백 0·원 알파 1)를 위치 재계산 없이 바로 `Render` 해, 기본값(항상 표시 + 흐리게)에서 설정 저장마다 선명한 고리가 안개 여백(28 logical px)만큼 왼쪽 위로 한 프레임 튀었고, 숨김 모드(멈췄을 때만 표시)에서는 다음 렌더가 없어 크기가 바뀐 헤일로가 어긋난 채 남았다. 이동 딤 상태(`_motionDimActive`)는 항상 표시 모드에서 유지 — 표시 모드가 바뀌었으면 `AdvanceForMode` 가 새 모드로 판정한다. 커서 좌표를 못 읽는 드문 경우(보안 데스크톱 전환 등)만 종전처럼 제자리 `Render` + `UpdateAlpha(FullAlpha)`.
+
+**숨김 블리트는 선택된 DIB 크기 기준 (확정 #6)**: `LayeredCursorBase.Hide` 는 캐시 무효화(DPI·설정 변경)에 0 이 되는 `_currentWidth` 대신, DIB 를 바꿀 때만 갱신되는 `_dibWidth/_dibHeight` 로 알파 0 블리트한다. 이 창은 `SW_HIDE` 없이 알파 0 블리트로만 숨으므로, 무효화 직후 DIB 재생성이 실패(GDI 압박·300% 큰 bbox)하면 예전 가드(`_currentWidth > 0`)가 숨김을 건너뛰어 마지막 헤일로 프레임이 화면에 고착됐다.
+
 ### cursor 윈도우 z-order 정책 — `WS_EX_TOPMOST` 생성 시 제거 + 첫 표시 시 명시 set + 주기 재적용
 
 cursor 인디 enable 부팅 + 탐색기 실행 시 한/영 배지가 ~2.5초 후 사라지던 회귀의 **진짜 원인** — cursor 윈도우의 첫 `UpdateLayeredWindow(alpha=255)` 가 DWM 합성 단계에서 `WS_EX_TOPMOST` z-band 의 다른 윈도우 (`Shell_TrayWnd` 도 topmost) 재정렬 trigger → ~1초 후 `Shell_TrayWnd` 가 잠시 foreground 변경 → detection thread `SystemFilter` 매칭 → `WM_HIDE_INDICATOR` → 한/영 배지 hide. **explorer.exe** 가 shell process 라 `Shell_TrayWnd` 와 메시지 큐 공유 → race 빈도 높음. **Total Commander** 등 일반 third-party launcher 에서는 race 없음 (사용자 진단 확정).
@@ -171,7 +182,7 @@ fix:
 
 메뉴 체크 의미는 한/영 배지 `IDM_USER_HIDDEN` 과 동일 — 라벨 "커서 헤일로 숨김" + `MF_CHECKED` = **현재 숨김 상태** (= `CursorIndicatorEnabled = false`). 클릭 시 enabled 반전.
 
-OFF 토글 시 `DisableCursorOverlay()` 가 역순으로 `KillTimer` → `CursorOverlay.Dispose()` (엔진/DIB/GDI 핸들 해제) → `DestroyWindow(_hwndCursorOverlay)` → `_hwndCursorOverlay = IntPtr.Zero` (lazy 재생성 게이트 복귀). `OnProcessExit` 도 동일 cleanup 을 명시적으로 호출.
+OFF 토글 시 `DisableCursorOverlay()` 가 역순으로 `KillTimer` → `CursorOverlay.Dispose()` (엔진/DIB/GDI 핸들 해제) → `DestroyWindow(_hwndCursorOverlay)` → `_hwndCursorOverlay = IntPtr.Zero` (lazy 재생성 게이트 복귀). `OnProcessExit` 도 동일 cleanup 을 명시적으로 호출. `CursorOverlay.Initialize` 는 진입 시 `StopPop()` + 이전 엔진 `Dispose` 를 먼저 한다 — 정상 경로에선 `DisableCursorOverlay` 가 이미 정리해 no-op 이지만, 덮어쓰기만 하면 옛 엔진의 메모리 DC·DIB 가 회수되지 않고 팝 타이머가 살아 남았다 (bug-hunt 2026-11-04 확정 #4·#41).
 
 3 분기 (OFF→ON / ON→OFF / 값 변경) 는 `Program.ApplyCursorConfigChange()` 헬퍼로 추출되어 **두 경로**에서 호출된다: (1) `HandleConfigChanged()` — `koenvue_config.json` 직접 편집의 mtime 폴러 리로드 경로, (2) `HandleMenuCommand` 람다 — 트레이 메뉴 즉시 적용 경로. 후자가 헬퍼를 직접 호출하지 않으면 트레이 토글이 작동 안 한다 — 람다 내부 `Settings.Save` 는 mtime self-bump 로 `WM_CONFIG_CHANGED` 를 차단 (감지 스레드 폴러가 본인 변경을 다시 알리지 않게 막는 의도된 정책) 하므로 `HandleConfigChanged` 가 호출되지 않음.
 
@@ -213,6 +224,13 @@ short left-click temporarily hides the indicator (`_clickDismissed`); movement p
 Click-dismissed indicators reappear on focus change or IME (한/영) change — not via
 `UserHidden` (tray “한/영 배지 숨김” remains the persistent path). While hidden the
 overlay window is gone, so mouse clicks pass through to whatever is underneath.
+
+**Save target = the app the drag started on (bug-hunt 2026-11-04 #18).** The sizemove modal loop
+still dispatches `WM_POSITION_UPDATED`, so if another app comes to the foreground mid-drag,
+`_lastForegroundHwnd` / `_currentProcessName` change under the drag. `WM_ENTERSIZEMOVE` (badge
+window) records `_dragTargetHwnd` / `_dragTargetProcess`; `HandleOverlayDragEnd` saves the dropped
+position for that pair (falling back to the current values if no ENTERSIZEMOVE was seen), resolves
+`position_mode` from that app's profile, and clears both fields.
 
 ### Drag modifier (drag initiation gate)
 
@@ -366,7 +384,7 @@ Non-idempotent modifications (like snap) inside `WM_MOVING` accumulate drift bec
 
 ### WM_MOVING drag DPI
 
-`HandleMoving` → private `HandleDragDpiChange` detects monitor boundary crossing during drag, re-creates resources at new DPI, and calls `UpdateLayeredWindow` directly (bypassing `_isDragging` guard).
+`HandleMoving` → private `HandleDragDpiChange` detects monitor boundary crossing during drag, re-creates resources at new DPI, and calls `UpdateLayeredWindow` directly (bypassing `_isDragging` guard). The re-render uses the engine's `_lastPaintedStyle` (the per-app style actually on screen), falling back to the facade-supplied global style only if nothing was painted — see [Label DIB flip-flop prevention](#label-dib-flip-flop-prevention) (bug-hunt 2026-11-04 #34).
 
 ---
 
@@ -427,6 +445,8 @@ Idle dimming is driven by `FadeToIdle()` inside `OverlayAnimator`: Hold timer fi
 
 System filter and tray toggle off both pass `forceHidden: true` to `Animation.TriggerHide` so Always mode collapses fully instead of sliding into dim-idle. "Hide" from these sources means "actually disappear", distinct from Always-mode idle dimming.
 
+`HideOverlay` passes `ResolveCurrent()` (per-app resolved), not the global `_config` — the animator snapshots the config it is given, so the global one overwrote an app profile's fade-off and topmost interval until the next show (bug-hunt 2026-11-04 #11). `_lastForegroundHwnd` is still the app the badge was on, since the detection thread does not advance it during filtered ticks.
+
 ---
 
 ## Detection
@@ -453,7 +473,7 @@ Main thread:
 
 ### Detection loop resilience
 
-`DetectionService.RunLoop`의 while 본문은 `catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or COMException or ArgumentException)` 로 래핑되어 단일 폴링 예외(예: `WindowProcessInfo.GetProcessName` 실패, UAC 전환 중 일시적 `COMException`)가 감지 스레드를 종료시키지 않는다. 로직 버그(`NullReferenceException` 등) 는 이 필터에 걸리지 않아 표면화된다. `Thread.Sleep`은 try 밖에 위치하여 예외 후에도 폴링 간격이 유지된다. `_stopping` 필드는 `volatile`로 선언되어 `OnProcessExit`에서의 쓰기가 감지 스레드(`host.IsStopping()`)에서 즉시 가시적이다.
+`DetectionService.RunLoop`의 while 본문은 `catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or COMException or ArgumentException)` 로 래핑되어 단일 폴링 예외(예: `WindowProcessInfo.GetProcessName` 실패, UAC 전환 중 일시적 `COMException`)가 감지 스레드를 종료시키지 않는다. 로직 버그(`NullReferenceException` 등) 는 이 필터에 걸리지 않아 표면화된다. `Thread.Sleep`은 try 밖에 위치하여 예외 후에도 폴링 간격이 유지된다. `_stopping` 필드는 `volatile`로 선언되어 `OnProcessExit`에서의 쓰기가 감지 스레드(`host.IsStopping()`)에서 즉시 가시적이다. `ProcessDetectionTick` 은 config 스냅샷 직후 `host.GetHwndMain() == IntPtr.Zero` 면 그 틱을 건너뛴다 — 메인 창이 `OnProcessExit` 보다 먼저 파괴되는 경로(트레이 「관리자 권한」 토글의 `WM_CLOSE` → `WM_DESTROY` 가 필드를 Zero 로 내림)에서 Program 주석이 기대하던 "감지 스레드가 Zero 를 보고 멈춤" 가드가 실제로는 없어, `PostMessageW(NULL)` 이 감지 스레드 자신의 펌프되지 않는 큐로 쌓였다 (bug-hunt 2026-11-04 확정 #54).
 
 **메인 스레드 WndProc 도 대칭 catch**: 메인 윈도우 메시지 핸들러는 얇은 `[UnmanagedCallersOnly] WndProc` 래퍼 + 실제 디스패치 `WndProcCore` 로 분리되어 있다. 핸들러 예외가 unmanaged 경계(`DispatchMessageW`)를 넘으면 NativeAOT 가 예외를 전파하지 못해 **프로세스를 종료**시키므로 — 감지 스레드/`EnumWindows` 콜백([Snap callbacks](#enumwindows--enumchildwindows-nativeaot-callbacks))과 동일한 위험 — 래퍼가 `WndProcCore` 를 `try`로 감싸 예상 가능한 일시 예외(`Win32Exception`/`COMException`/`IOException`/`UnauthorizedAccessException`/`InvalidOperationException`/`ArgumentException`)만 잡아 `Logger.Error` 로그 후 `DefWindowProcW` 로 그 메시지만 스킵하고 메시지 루프를 유지한다. 로직 버그(`NullReferenceException` 등)는 필터 밖이라 그대로 전파돼 `AppDomain` 크래시 핸들러로 표면화된다 — 콜백 catch 정책과 대칭.
 
@@ -528,6 +548,11 @@ Detection loop only updates `lastHwndForeground` **after** `ShouldHide` passes. 
 
 IME 감지 경로는 두 가지다 — (1) 디텍션 스레드 80ms 폴링 (`DetectionService.RunLoop`), (2) 메인 스레드 `EVENT_OBJECT_IME_CHANGE` WinEvent 훅 (`ImeStatus.OnImeChange`). 둘 다 사용자가 `koenvue_config.json` 의 `"detection_method"` 로 선택한 단일-tier 경로(`ime_default` / `ime_context` / `keyboard_layout`) 를 따라야 하지만, 훅은 `WINEVENT_OUTOFCONTEXT` 콜백이라 `AppConfig` 인스턴스에 직접 접근할 수 없다. 해결: `ImeStatus` 가 `volatile DetectionMethod _detectionMethod` 정적 필드를 보유하고, 메인 스레드가 `RegisterHook(hwndMain, config.DetectionMethod)` 로 초기값 주입 + `UpdateDetectionMethod(config.DetectionMethod)` 로 핫 리로드 갱신(설정 다이얼로그 저장 + `koenvue_config.json` 외부 편집 + 트레이 메뉴 전환 3경로). `OnImeChange` 가 `Detect(hwndFg, threadId, _detectionMethod)` 3-파라미터 오버로드를 호출해 폴링 경로와 동일한 분기. `volatile` 은 메인 스레드가 쓰고 동일 스레드의 콜백이 읽어 현재 구조에서는 불필요하지만 향후 스레드 변경 방어.
 
+#### 두 게시자의 중복 제거 기준 공유 + 훅 경로의 포그라운드 확인 (bug-hunt 2026-11-04 확정 #14·#52)
+
+- **기준 공유 (#14)** — 훅의 중복 제거 필드 `ImeStatus._lastState` 는 훅이 **자기가 마지막으로 보낸 값**만 기억했다. 감지 루프가 다른 값을 게시한 뒤(다른 앱으로 전환 등)엔 기준이 낡아, 그 앱에서 첫 한/영 전환을 "변화 없음" 으로 삼켜 다음 폴링(최대 80ms)까지 늦게 반영됐다. 이제 `Program.HandleImeStateChanged` 가 받아들인 상태를 `ImeStatus.NotePublishedState(newState)` 로 기준에 반영한다(둘 다 메인 스레드 — 동기화 불필요).
+- **포그라운드 확인 (#52)** — 훅 경로는 필터 판정 없이 지금 포그라운드의 상태를 게시한다. 바탕화면·`enabled:false` 앱처럼 감지 루프가 위치를 알리지 않는 창이 앞에 있으면 `_lastForegroundHwnd` 는 **이전 앱**이라 그 자리에 배지가 한 번 깜빡였다. `HandleImeStateChanged` 는 `GetForegroundWindow() == _lastForegroundHwnd` 일 때만 표시한다 — 새로 앞에 온 앱이면 감지 루프의 `WM_POSITION_UPDATED` 가 곧 새 상태로 띄운다. 트레이 아이콘 갱신은 이 확인보다 앞이라 영향 없음.
+
 ### System filter (8 conditions)
 
 1. Secure desktop (no hwnd)
@@ -558,11 +583,17 @@ IME 감지 경로는 두 가지다 — (1) 디텍션 스레드 80ms 폴링 (`Det
 
 감지 스레드(`ProcessDetectionTick`) 는 진입 직후 `if (_sessionLocked && _config.HideOnLockScreen) { state.LastFiltered = true; return; }` 가드로 한 틱을 통째로 스킵한다. 이유: `SystemFilter` 의 기본 클래스 블랙리스트가 LogonUI 의 창 클래스(`CredentialDialogXamlHost` / `LockAppHost`) 를 포함하지 않아 잠금 화면 동안에도 필터가 뚫려 인디가 다시 표시될 수 있기 때문이다. WTS 이벤트는 LogonUI 보다 **먼저** 도착하므로 이 플래그가 감지 루프를 잠금 구간 동안 확실히 침묵시킨다. `LastFiltered = true` 는 잠금 해제 후 첫 정상 틱이 `foregroundChanged` 판정을 유도하도록 하는 sentinel.
 
+**메인 스레드 표시 경로도 잠금을 본다 (bug-hunt 2026-11-04 확정 #13).** 위 게이트는 감지 틱 **시작**에만 있어, 잠금 직전 틱이 늦게 보낸 메시지나 잠금 화면 비밀번호 칸의 한/영 전환(WinEvent 훅 — 메인 스레드)이 `HideOverlay` 뒤에 배지를 다시 띄우면 잠금 내내 남았다. `Program.IsHiddenByLock` (= `_sessionLocked && _config.HideOnLockScreen`) 을 `ShowIndicatorAtForeground` 첫 줄과 `HandlePositionUpdated` 의 재표시 조건이 확인한다.
+
 `Wtsapi32` P/Invoke 는 `Core/Native/Wtsapi32.cs` 에 `[LibraryImport]` 로 분리되어 있고 상수 4종 (`NOTIFY_FOR_THIS_SESSION = 0`, `WM_WTSSESSION_CHANGE = 0x02B1`, `WTS_SESSION_LOCK = 0x7`, `WTS_SESSION_UNLOCK = 0x8`) 은 `Core/Native/Win32Types.cs` 의 `Win32Constants` 블록에 있다(P3 매직 숫자 금지).
 
 ### DPI change handling (`Program.HandleDpiChanged`)
 
-`WM_DPICHANGED` 는 메인 윈도우 WndProc 에서 무인자 `HandleDpiChanged()` 로 디스패치되어 `Overlay.HandleDpiChanged()` → `RefreshVisibleIndicator()` 를 호출한다. **후속 렌더가 반드시 필요하다** — 엔진의 `HandleDpiChanged` 는 캐시를 무효화하고 새 DIB 섹션을 만들지만 **그리지는 않아서**, 그 상태에서 Render 없이 블리트만 하는 애니메이션 프레임(`UpdateAlpha`/`UpdatePosition`/`UpdateScaledSize`)이 먼저 돌면 전 픽셀 0 인 빈 DIB 가 `UpdateLayeredWindow` 로 올라가 배지가 통째로 사라진다. 형제 경로(`HandleDisplayChange`·`HandleSettingChange`·`HandleConfigChanged`)는 모두 직후 `RefreshVisibleIndicator` 를 부르는데 **이 경로와 전원 복귀(`HandlePowerResume`)만** 빠져 있었다 (bug-hunt 2026-08-02 G15). 메시지 페이로드(`wParam`: HIWORD/LOWORD = newDpiY/newDpiX, `lParam`: RECT* 권장 크기/위치)는 **현재 미사용** — 오버레이가 자체 DPI 재조회로 처리하기 때문이다(IMP-6, 2026-06-03 — `(wParam, lParam)` dead param 제거로 무인자 핸들러 그룹과 시그니처 일관성 확보). per-monitor DPI 정밀 대응이 필요해지면 dispatch 의 `WM_DPICHANGED` case 에서 `wParam`/`lParam` 을 다시 전달하면 된다(WndProc 인자라 항상 가용). 위 `Program.HandleDpiChanged`(메인 윈도우 메시지 핸들러)는 [Label DIB flip-flop prevention](#label-dib-flip-flop-prevention) 에서 다룬 `LayeredOverlayBase.HandleDpiChanged`(엔진 캐시 무효화)와는 별개 메서드이다.
+`WM_DPICHANGED` 는 브로드캐스트가 아니라 **배율이 다른 모니터로 넘어간 그 창**에 오는 메시지다. 세 창(메인·배지·커서 헤일로)이 같은 `WndProcCore` 를 쓰므로 **배지 창(`hwnd == _hwndOverlay`) 사본만** `HandleDpiChanged(uint newDpiX)` 로 디스패치한다 — 새 DPI 는 `wParam` LOWORD(`Win32Constants.LOWORD_MASK`). 커서 헤일로 창은 15ms 마다 커서를 따라 움직여 모니터 경계를 넘을 때마다 이 메시지를 받는데, 예전엔 그것까지 배지 처리로 보내 마우스만 옮겨도 숨어 가던 배지가 되살아났다(bug-hunt 2026-11-04 확정 #1). 헤일로 엔진은 `ShowAtCenter` 에서 DPI 를 스스로 다시 잡으므로 처리할 필요가 없다. `lParam`(RECT* 권장 크기)은 미사용 — 레이어드 창이라 크기는 DIB 가 정한다.
+
+핸들러는 `Overlay.HandleWindowDpiChanged(newDpiX)` 가 true 일 때만 `RefreshVisibleIndicator()` 로 이어진다. 파사드는 엔진이 **이미 그 DPI**(`LayeredOverlayBase.IsAtDpi`)면 아무것도 하지 않고 false 를 돌려준다 — 숨긴 배지를 다른 배율 모니터에 처음 띄우면 `Overlay.Show` 가 새 DPI 로 그린 뒤 그 블리트(`UpdateLayeredWindow`) **안에서** 이 메시지가 동기로 중첩 도착한다. 예전엔 여기서 캐시를 지워 빈 DIB 로 바꿨고, 가시 플래그는 `TriggerShow` 반환 뒤에야 서서 아래 재렌더도 건너뛰어 배지가 표시 시간 내내 투명했다(확정 #37·#63). DPI 가 실제로 다르면(모니터 배율 설정 변경 등) `Overlay.HandleDpiChanged()` 와 같이 재생성하고 true. 재생성은 `RepaintLastPainted` 로 마지막 모양을 즉시 다시 채운다([Label DIB flip-flop prevention](#label-dib-flip-flop-prevention)).
+
+**후속 렌더가 반드시 필요하다** — 엔진의 `HandleDpiChanged` 는 캐시를 무효화하고 새 DIB 섹션을 만들지만 **그리지는 않아서**, 그 상태에서 Render 없이 블리트만 하는 애니메이션 프레임(`UpdateAlpha`/`UpdatePosition`/`UpdateScaledSize`)이 먼저 돌면 전 픽셀 0 인 빈 DIB 가 `UpdateLayeredWindow` 로 올라가 배지가 통째로 사라진다. 형제 경로(`HandleDisplayChange`·`HandleSettingChange`·`HandleConfigChanged`)는 모두 직후 `RefreshVisibleIndicator` 를 부르는데 **이 경로와 전원 복귀(`HandlePowerResume`)만** 빠져 있었다 (bug-hunt 2026-08-02 G15). (2026-11-04 이후 파사드의 재생성이 `RepaintLastPainted` 로 빈 DIB 구간 자체를 없애지만, per-app 스타일·위치를 새 DPI 로 다시 계산하는 이 후속 렌더는 여전히 필요하다.) 페이로드는 IMP-6(2026-06-03)에서 dead param 으로 한때 제거됐다가 위 #37 가드를 위해 `newDpiX` 만 되살렸다(`lParam` 은 계속 미사용). `HandlePowerResume` 은 메시지 인자가 없어 종전대로 무조건 `Overlay.HandleDpiChanged()` 를 부른다. 위 `Program.HandleDpiChanged`(메인 윈도우 메시지 핸들러)는 [Label DIB flip-flop prevention](#label-dib-flip-flop-prevention) 에서 다룬 `LayeredOverlayBase.HandleDpiChanged`(엔진 캐시 무효화)와는 별개 메서드이다.
 
 ---
 
@@ -576,7 +607,7 @@ Polling lives on the **main thread** via `WM_TIMER` (`TIMER_ID_CAPS = 6`, 200 ms
 
 ### Hidden-state handling
 
-Conditionally re-invokes `Overlay.UpdateColor(_lastImeState)` only if `_indicatorVisible` so hidden-state transitions update the field without touching GDI.
+Conditionally re-invokes `Animation.RefreshColor(_lastImeState, ResolveCurrent())` only if `_indicatorVisible` so hidden-state transitions update the field without touching GDI. `RefreshColor` calls `Overlay.UpdateColor` (render + blit at base size) normally, but only `Overlay.Paint` (no blit) while a highlight pop is running (`OverlayAnimator.IsHighlightActive`) — the next highlight frame blits at the enlarged size. Blitting at base size mid-pop made the badge shrink for one frame and grow back, visible since the CAPS LOCK border redraws on every toggle (bug-hunt 2026-11-04 #30).
 
 ### Startup initial state
 
@@ -596,7 +627,7 @@ Read twice on startup — once inside `Overlay.Initialize` (so the very first `P
 
 1. **Deserialize** — reads and deserializes the JSON
 2. **`ApplyNullSafetyNet`** (EnsureSubObjects) — guards against null `AppProfiles` / `Advanced` etc. from malformed config
-3. **`PostDeserializeFixup`** (MergeWithDefaults) — serializes default `AppConfig` to JSON, overlays user keys, deserializes back. Works around STJ source-gen init-default loss (see [conventions.md](conventions.md#net-10-compatibility-notes))
+3. **`PostDeserializeFixup(config, mergedJson, userJson)`** — `mergedJson` is the `MergeWithDefaults` result (default `AppConfig` serialized to JSON with user keys overlaid, done **before** step 1's deserialize — works around STJ source-gen init-default loss, see [conventions.md](conventions.md#net-10-compatibility-notes)); `userJson` is the raw user file text **this load already read**. `AppSettingsManager` uses it for the `indicator_positions` manual re-parse and the PR-31 `cursor_motion_dim_enabled` → `cursor_display_mode` migration (`CursorDisplayModeMigration.TryResolveFromUserJson`). Hooks that need "is this key present in the user file" must use `userJson` and **not reopen the file** — the old migration did, and an atomic-replace editor's delete→rename gap read as "fresh install", overwriting sharp/motion with Soft (bug-hunt 2026-11-04 #12)
 4. **`Migrate`** — `JsonSettingsManager<T>` 의 pass-through virtual 훅. 현재 단독 사용자 단계라 `AppSettingsManager` 는 override 하지 않으며, 파일에 version 필드도 저장하지 않는다. 향후 공개 배포 전환 시 override 부활 예정
 5. **`Validate`** — range clamping and normalization
 6. **`ApplyTheme`** — theme preset overlay (if `theme != custom`). 프리셋 적용 시 기존 커스텀 색상을 `custom_backup_*` 필드에 백업하고, `custom` 복귀 시 복원 후 백업 소멸. `updateConfig` 콜백에서도 즉시 실행되어 상세 설정 변경이 앱 재시작 없이 반영됨
@@ -613,7 +644,11 @@ Locking the file to forbid deletion was rejected because atomic-replace editors 
 
 ### Corrupted config spam prevention
 
-`Settings.Load()`'s catch block updates `_lastConfigMtime` to the broken file's mtime even when `LoadFromFile` throws. Without this, the 5-second poll sees `mtime ≠ cached value`, re-posts `WM_CONFIG_CHANGED`, `Load()` fails with the same parse error, and the warning log spams forever.
+`JsonSettingsManager.TryLoad`'s catch block sets the polling baseline `_lastMtime` even when the load throws. Without this, the 5-second poll sees `mtime ≠ cached value`, re-posts `WM_CONFIG_CHANGED`, the load fails with the same parse error, and the warning log spams forever.
+
+The value is the **mtime taken before the failed read** (`mtimeBeforeRead`, declared outside the `try` so the catch can use it), never a fresh stat (bug-hunt 2026-11-04 #7). Re-statting in the catch let an editor finish writing good content between the failed read and the stat; that good version's mtime was then recorded as "already seen" and the fix never loaded. By failure kind:
+- **Content failure** (JSON / unsupported type): read-time mtime — spam stays blocked for the same broken file, and any later edit has a different mtime so the next poll reads it.
+- **Transient I/O failure** (`IsExpectedIoException` — editor's exclusive lock etc.): `DateTime.MinValue` — the content was never seen, so the next poll must re-read even if the mtime is unchanged after the lock releases. Retries happen only at the poll interval (5 s).
 
 Catch intentionally does NOT `Save()` — the user's broken file stays on disk so they can inspect and recover manually.
 
@@ -709,6 +744,8 @@ P5 (`app.manifest asInvoker`, PR-03, v0.9.3.0) intentionally drops the `requireA
 순서는 디스크 로드 경로(`JsonSettingsManager.Load`) 와 동일. 차이점은 `PostDeserializeFixup` (indicator_positions Dictionary 수동 재조립) 이 빠진다는 것 — 프로필은 글로벌의 indicator_positions 를 그대로 상속하며 머지 전 globalJson 캐시가 글로벌 인스턴스 단위로 1회 직렬화된다(같은 글로벌 → 캐시 hit). LRU 캐시는 50엔트리 상한, 글로벌 인스턴스 교체 / `WM_SETTINGCHANGE` · `WM_THEMECHANGED` 수신 시 클리어.
 
 **메인 스레드 — `ResolveCurrent()` 헬퍼로 렌더 경로까지 도달 (PR-13)**. 감지 스레드의 `resolved` AppConfig 는 처음에 `TryHandleFilter` / `TrackWindowMove` / `ImeStatus.Detect` 3개 분기에만 사용됐고 메인 스레드로 전달되는 메시지(`WM_FOCUS_CHANGED` / `WM_IME_STATE_CHANGED` / `WM_POSITION_UPDATED`) 는 `resolved` 를 페이로드로 싣지 않았다 — 시각 필드 override 가 렌더링까지 도달하지 않는 미배선 상태. PR-13 에서 메인 스레드에 `ResolveCurrent()` 정적 헬퍼를 도입해 같은 `Settings.ResolveForApp(_config, _lastForegroundHwnd)` 를 재호출하는 방식으로 해결 — LRU 캐시가 같은 프로세스명 키에서 즉시 hit 하므로 메인 스레드 핫패스 비용이 무시할 수 있다. `Animation.TriggerShow` / `Overlay.Show` / `Overlay.UpdateColor` 시그니처가 `AppConfig` 를 명시 인자로 받도록 확장되어, `HandleImeStateChanged` / `HandleFocusChanged` / `HandlePositionUpdated` / `HandleConfigChanged` / `HandleActivateRequest` / `HandleCapsLockTimer` / `HandleDisplayChange` / `HandleSettingChange` / `ApplyUserHiddenTransition` / `HandleMenuCommand` updateConfig lambda / `HandleOverlayDragEnd` 의 모든 렌더 호출(18개) 이 `ResolveCurrent()` 결과를 사용한다. 추가로 `HandleImeStateChanged` / `HandleFocusChanged` 의 `DisplayMode` + `EventTriggers` 평가도 `resolved` 기반으로 전환 — `display_mode` / `event_triggers` 의 per-app override 도 동시 활성. `Overlay._config` 필드는 렌더 경로에서 의존이 제거되었고 `HandleConfigChanged` 시점의 캐시 재빌드 + 드래그 경로(`HandleMoving`) + 기본 위치 계산(`GetDefaultPosition`) 의 글로벌-only 경로에만 잔존. 메시지 페이로드 마샬링 대신 메인 스레드 재호출을 택한 이유는 변경 표면 최소화 + race window 가 다음 틱에서 자연 수렴 + LRU 캐시 hit 비용 무시. 단점은 메인 스레드 `_lastForegroundHwnd` 와 감지 스레드 `state.LastHwndForeground` 가 일시적으로 다를 수 있다는 점이지만 80ms 폴링이 즉시 수렴시킨다.
+
+**글로벌로 남아 있던 자리 정리 (bug-hunt 2026-11-04 확정 #11·#24·#25·#34)**: `GetAppPosition` 의 `position_mode` 분기가 `ResolveCurrent().PositionMode` 를 본다 — 감지 스레드 `TrackWindowMove` 는 이미 per-app 을 봐서, 프로필로 모드를 바꾼 앱에서 두 스레드가 다른 모드로 움직였다(#25). `HideOverlay` 의 `TriggerHide` 인자(#11, [HideOverlay `forceHidden`](#hideoverlay-forcehidden)), 표시 전 위치 계산이 읽는 DIB 크기(#24 — `Overlay.Paint` 선행), 드래그 중 DPI 경계 재렌더 스타일(#34)도 per-app 기준이 됐다. `Overlay._config` 의 잔존 용도는 위 셋(캐시 재빌드·`GetDefaultPosition`·그린 적 없을 때의 드래그 폴백)이다.
 
 ### Window class name validation
 
@@ -1215,7 +1252,11 @@ if (msg != 0 && msg == _taskbarCreatedMsgId && hwnd == _hwndMain)
 
 `hwnd == _hwndMain` 체크는 오버레이 창도 최상위라 같은 브로드캐스트를 받는 문제를 피하기 위함 — 메인 창에서만 한 번 처리한다.
 
-`HandleTaskbarCreated` 는 `config.TrayEnabled` 확인 후 `Tray.Recreate(_lastImeState, _config)` 를 호출한다. `Recreate` 는 `Remove(TrayRemoveReason.Recreate)` (내부 상태 초기화, `NIM_DELETE` 는 셸 측 등록이 없으므로 실패해도 무해) → `Initialize` (`NotifyIconManager` 재생성 + `NIM_ADD` + `NIM_SETVERSION`) 순서로 아이콘을 복구한다.
+**같은 필터를 모든 시스템 브로드캐스트에 적용한다 (bug-hunt 2026-11-04 확정 #2).** 세 창(메인·배지·커서 헤일로)이 `WndProcCore` 하나를 공유하고 셋 다 최상위 창이라, 시스템 브로드캐스트는 **창마다 한 번씩** 온다. 위 필터가 `TaskbarCreated` 에만 있어 `WM_SETTINGCHANGE` / `WM_THEMECHANGED` / `WM_DWMCOLORIZATIONCOLORCHANGED` 1회에 `HandleSettingChange` 가 3번(트레이 HICON 재생성·배지 재표시·헤일로 재적용 ×3) 돌았다. 이제 이 셋과 `WM_DISPLAYCHANGE`(`HandleDisplayChange`), `WM_POWERBROADCAST`(`PBT_APMRESUMESUSPEND` → `HandlePowerResume`) 도 `hwnd == _hwndMain` 일 때만 처리한다. **예외 둘**: `WM_DPICHANGED` 는 브로드캐스트가 아니라 모니터를 넘은 창에 오는 메시지라 **배지 창 사본만** 처리한다([DPI change handling](#dpi-change-handling-programhandledpichanged), 확정 #1). `WM_WTSSESSION_CHANGE` 는 `WTSRegisterSessionNotification(_hwndMain)` 으로 메인 창에만 등록돼 필터가 필요 없다.
+
+**`WM_CLOSE` — 배지·헤일로 창은 무시 (확정 #4·#5).** 두 창은 앱이 직접 파괴한다(`OnProcessExit` · `DisableCursorOverlay`). 외부 도구가 보낸 `WM_CLOSE` 를 `DefWindowProcW` 에 넘기면 창만 죽고 엔진은 죽은 HWND·DC·DIB 를 쥔 채 남아 배지가 재시작 전까지 사라지고 GDI 가 샜다. `WndProcCore` 의 `WM_CLOSE` case 는 두 창이면 `IntPtr.Zero` 를 돌려주고, 메인 창이면 종전대로 `DefWindowProcW`(→ `DestroyWindow` → `WM_DESTROY` → `PostQuitMessage`) — 트레이 「관리자 권한」 토글의 종료 경로다.
+
+`HandleTaskbarCreated` 는 `config.TrayEnabled` 확인 후 `Tray.Recreate(_lastImeState, _config)` 를 호출한다. `Recreate` 는 `Remove(TrayRemoveReason.Recreate)` (내부 상태 초기화, `NIM_DELETE` 는 셸 측 등록이 없으므로 실패해도 무해) → `Initialize` (`NotifyIconManager` 재생성 + `NIM_ADD` + `NIM_SETVERSION`) 순서로 아이콘을 복구한다. 셸 호출 구간 안에서 도착한 `TaskbarCreated` 는 즉시 실행하지 않고 보류한다 — 아래 [트레이 셸 호출 프로토콜](#트레이-셸-호출-프로토콜--단일-진입점-bug-hunt-3차-ab) 계약 4.
 
 `Remove` 는 **종료 · 재생성 · `tray_enabled` 해제** 세 경로가 공유하므로 호출자가 `TrayRemoveReason` 으로 맥락을 명시한다(기본값 없음 — 새 호출부가 종료 문구를 조용히 물려받지 않도록). 로그가 이 값으로 갈린다: 문구는 `Tray icon removed (shutdown|recreate|tray disabled)`, `NIM_DELETE` 실패 심각도는 재생성만 `Logger.Debug` 이고 나머지 둘은 `Logger.Warning` 이다 — 위 "실패해도 무해" 가 바로 재생성 경로를 낮추는 근거다. 종전에는 셋이 종료 문구 하나를 공유해 **탐색기를 재시작할 때마다 `Failed to remove tray icon on shutdown` 이 찍혀 앱이 종료에 실패한 것처럼 읽혔다** (2026-08-03 B-2 후속).
 
@@ -1321,7 +1362,7 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 
 **소유자 하나만 막는 것으로는 부족하다 (G16).** `EnableWindow(owner, false)` 는 소유자를 갖지 않는 별도 최상위 창에 미치지 않는다. 배지(`WS_EX_TOPMOST`, `hWndParent = NULL`)가 그런 창이라 다이얼로그가 떠 있는 동안에도 드래그되고, `WM_NCLBUTTONDOWN`/`HTCAPTION` 승격이 `DefWindowProc` 의 sizemove 루프를 다이얼로그 루프 안에 **3중 중첩**시킨다. 드래그 종료(`HandleOverlayDragEnd`)는 `Settings.Save` 까지 수행하므로 **열려 있는 다이얼로그 뒤에서 설정이 갈아치워지고**, 그 뒤 「확인」 이 커밋 베이스로 그것을 되돌린다. `ModalDialogLoop.ExtraModalWindows` 공급자로 App 이 배지를 넘기고, `Run` 이 진입 시 조회해 함께 비활성화한 뒤 finally 에서 같은 목록을 되살린다 — Core 는 App 의 창을 알 수 없으므로(P6) 공급자 형태여야 한다. 커서 헤일로는 `WS_EX_TRANSPARENT` 로 입력을 아예 받지 않아 대상이 아니다.
 
-**창은 `OnProcessExit` 보다 먼저 죽을 수 있다 (G5).** §N-42 는 "파괴 직후 핸들 필드를 즉시 Zero" 를 세웠지만 구현이 `OnProcessExit` 한 곳에만 있었다. `WndProcCore` 에 `WM_CLOSE` case 가 없어 `DefWindowProcW` 가 곧바로 `DestroyWindow(_hwndMain)` 을 수행하고, 뒤따르는 `WM_DESTROY` 는 `PostQuitMessage` 만 했다 — **트레이 「관리자 권한」 토글이 `PostMessageW(hwndMain, WM_CLOSE)` 로 이 경로를 정상 동작으로 탄다.** 메시지 큐가 `WM_QUIT` 까지 배수되고 `MainImpl` 이 반환할 때까지(감지 루프 sleep 한 틱 이상) 세 volatile 필드가 죽은 값을 들고 있어, 감지 스레드가 `!= IntPtr.Zero` 가드를 통과해 계속 post 한다. 커널이 그 HWND 값을 재발급하면 무관한 창에 `WM_APP` 범위 메시지가 배달된다(§L 과 같은 재활용 문제). 이제 `WM_DESTROY` 가 파괴된 창을 판별해 해당 필드만 내린다(세 창이 같은 WndProc 을 공유한다). `OnProcessExit` 의 `DestroyWindow` 는 이미 Zero 를 보고 건너뛰므로 이중 파괴도 함께 막힌다.
+**창은 `OnProcessExit` 보다 먼저 죽을 수 있다 (G5).** §N-42 는 "파괴 직후 핸들 필드를 즉시 Zero" 를 세웠지만 구현이 `OnProcessExit` 한 곳에만 있었다. 메인 창의 `WM_CLOSE` 는 `DefWindowProcW` 로 넘어가 곧바로 `DestroyWindow(_hwndMain)` 을 수행하고(당시엔 `WM_CLOSE` case 자체가 없었다 — 2026-11-04 부터 배지·헤일로 창 사본만 무시하는 case 가 있다, [TaskbarCreated](#taskbarcreated--shell-restart-recovery) 절), 뒤따르는 `WM_DESTROY` 는 `PostQuitMessage` 만 했다 — **트레이 「관리자 권한」 토글이 `PostMessageW(hwndMain, WM_CLOSE)` 로 이 경로를 정상 동작으로 탄다.** 메시지 큐가 `WM_QUIT` 까지 배수되고 `MainImpl` 이 반환할 때까지(감지 루프 sleep 한 틱 이상) 세 volatile 필드가 죽은 값을 들고 있어, 감지 스레드가 `!= IntPtr.Zero` 가드를 통과해 계속 post 한다. 커널이 그 HWND 값을 재발급하면 무관한 창에 `WM_APP` 범위 메시지가 배달된다(§L 과 같은 재활용 문제). 이제 `WM_DESTROY` 가 파괴된 창을 판별해 해당 필드만 내린다(세 창이 같은 WndProc 을 공유한다). `OnProcessExit` 의 `DestroyWindow` 는 이미 Zero 를 보고 건너뛰므로 이중 파괴도 함께 막힌다.
 
 **모달 안에서 핫리로드가 재진입한다 (G17).** 리로드 실패 안내는 `MessageBoxW` 라 Win32 자체 모달 루프가 `_hwndMain` 앞으로 post 된 메시지를 계속 디스패치하고, 감지 스레드의 `CheckConfigFileChange` 는 모달 게이트보다 **앞**에 있어 억제되지 않는다. 사용자가 박스를 띄워 둔 채 파일을 고쳐 저장하면 안내 박스 **안에서** `HandleConfigChanged` 가 재진입하고, 그것이 성공하면 `_configReloadFailed` 래치가 풀려 "연속 실패당 1회"(§G)가 깨진다. 가드는 두 필드다 — `_configChangeInProgress` 로 재진입을 막고, `_configChangePending` 으로 그 변경을 **보류**한 뒤 바깥 프레임의 `do/while` 이 소비한다. 조용히 거부하면 "파일을 고쳤는데 반영이 안 된다" 가 되므로 버리지 않는 쪽을 택했다.
 
@@ -1335,7 +1376,7 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 
 종전에는 `ShowIndicatorAtForeground` 가 `TriggerShow` **전에** true 로 선-대입했다. 그런데 `Animation.TriggerShow` 는 `state == NonKorean && config.NonKoreanIme == Hide`(기본값)면 렌더 없이 `TriggerHide(forceHidden: true)` 로 빠지고, `OverlayAnimator.TriggerHide` 의 첫 줄이 `if (_phase == AnimPhase.Hidden) return;` 이라 **`_onHide()` 가 호출되지 않는다** — 그러면 `Animation.Initialize` 가 배선한 `onHidden` 훅(§N-34 가 놓은 안전망)도 발화하지 않아 플래그를 되돌릴 기회가 사라진다. `_phase` 초기값이 `Hidden` 이므로 **부팅 후 첫 NonKorean 알림에서 바로** 성립했다.
 
-수정은 `Animation.TriggerShow` 가 `bool`(실제로 표시했는지)을 반환하고 호출자가 그 결과를 대입하는 것이다. 회귀 가드는 invariant grep — `_indicatorVisible = true` 가 **0 매치**여야 한다. 대입 지점은 이제 넷뿐이다(`= Animation.TriggerShow(...)` 둘, `= false` 둘).
+수정은 `Animation.TriggerShow` 가 `bool`(실제로 표시했는지)을 반환하고 호출자가 그 결과를 대입하는 것이다. 회귀 가드는 invariant grep — `_indicatorVisible = true` 가 **0 매치**여야 한다. 대입 지점은 다섯뿐이다(`= Animation.TriggerShow(...)` 둘, `= false` 셋 — `HideOverlay`·드래그 종료 보류 숨김·애니메이션 `onHidden` 훅).
 
 **tick 간 래치는 config 교체를 인지해야 한다 (G14).** `DetectionService.TrackWindowMove` 의 `state.WindowMoving` 은 창 이동을 감지하면 서고 이동이 멎으면 풀리는데, **푸는 쪽이 `PositionMode == Window` 가드 뒤**에 있었다. 「숨김」과 「복구」 사이에 `position_mode` 가 `window → fixed` 로 바뀌면 매 틱 조기 return 하면서 래치가 영구 true 로 굳고 복구 경로 자체가 사라진다. 그 틱들에서 `foregroundChanged` 는 false(같은 hwnd·미필터)라 `EmitStateChanges` 도 아무것도 post 하지 않고, 메인 쪽 자기치유(`RefreshVisibleIndicator`)는 `_indicatorVisible` 이 false 라 no-op 이다.
 
@@ -1357,11 +1398,12 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 
 `Shell_NotifyIconW` 는 explorer 로 가는 블로킹 크로스프로세스 SendMessage 라 그 구간에 *sent* 메시지가 계속 디스패치된다(위 G8 절). 그 재진입을 다루는 장치는 **두 조각**이다 — `_shellCallInProgress` 가드와 보류 표식(`_updatePending`/`_pendingUpdateState`/`_pendingUpdateConfig`). **그 둘이 한 쌍인데 흩어져 있던 것이 3차 A·B 의 뿌리다.** 가드를 세우는 곳은 둘(`UpdateState`·`HandleAddRetryTimer`)인데 소비·정리하는 곳은 `UpdateState` 하나뿐이었고, 같은 블로킹 호출을 하는 `Initialize`·`Remove` 는 가드 자체가 없었다.
 
-이제 셸 호출 구간은 전부 `Tray.RunShellCall(Action call, bool drainPending)` 을 지나간다 (P4). 계약 셋:
+이제 셸 호출 구간은 전부 `Tray.RunShellCall(Action call, bool drainPending)` 을 지나간다 (P4). 계약 넷:
 
 1. **최외곽 프레임만 가드를 되돌린다** — `bool outermost = !_shellCallInProgress` 로 판정한다. 중첩 호출의 `finally` 가 바깥 구간의 가드를 먼저 내리면 그 구간의 재진입이 다시 열린다(`ModalDialogLoop.RunExternal` 의 스택형 복원과 같은 이유).
 2. **`Remove` 만 `drainPending: false`, 그러나 표식은 지우지 않는다** — 제거 중에 보류분을 재생하면 방금 지운 아이콘을 되살리고 그 시점 `_currentIcon`·`_notifyIcon` 은 정리된 뒤다. 그렇다고 버리면 `Recreate`(= `Remove` → `Initialize`) 의 제거 구간에 들어온 더 새로운 상태가 유실된다 — 그것은 뒤따르는 `Initialize` 의 드레인이 소비해야 한다. 종료 경로에서 남는 표식은 `_initialized == false` 라 아무도 읽지 않는다.
 3. **`_initialized` 전이는 셸 호출 밖에 둔다** — `Initialize` 는 NIM_ADD **전**에 true 로(그래야 그 구간의 재진입이 `_initialized` 가드에서 조용히 사라지지 않고 보류로 남는다), `Remove` 는 NIM_DELETE **전**에 false 로(그래야 재진입이 첫 줄에서 돌아가 방금 셸에 넘긴 HICON 을 만지지 않는다).
+4. **재등록(`Recreate`)도 셸 호출 구간 안에서는 보류한다** (bug-hunt 2026-11-04 확정 #16) — `TaskbarCreated` 브로드캐스트도 블로킹 호출 중에 배달된다. `Recreate` 는 `Remove`(`_currentIcon`·`_notifyIcon` 정리) + `Initialize` 라, 중첩 실행이 바깥 프레임이 쥔 아이콘을 치우면 바깥 프레임이 돌아와 해제된 핸들·새 아이콘을 덮어썼다. `_shellCallInProgress` 면 `_recreatePending`/`_pendingRecreateState`/`_pendingRecreateConfig` 에 적어 두고, 최외곽 `RunShellCall` 이 가드를 푼 **뒤** 대신 실행한다. `Remove` 구간에서 보류됐다면 `_initialized` 가 이미 false 라 `Recreate` 첫 줄에서 무시된다(종료·재등록 중 — 둘 다 옳다). 보류분은 호출자의 후처리보다 먼저 실행되므로, `Initialize`·`HandleAddRetryTimer` 는 셸 호출 전후 `_recreateGeneration` 이 바뀌었으면 자기 `added` 결과를 낡은 것으로 보고 후처리(재시도 타이머)를 건너뛴다(리뷰 2026-11-04).
 
 회귀 가드는 `WindowLifecycleTests` 2건(중첩 프레임이 바깥 가드를 풀지 않는가 · 제거 구간의 표식이 남는가). 둘 다 `_notifyIcon = null` + `_hwndMain = Zero` 로 셸·GDI 미접촉이다. **재시도 프레임이 보류를 실제로 소비하는지는 단위 테스트로 고정할 수 없다** — `UpdateStateCore` 가 GDI 에 닿는다. 구조가 단일 경로라는 사실로만 담보된다.
 
@@ -1428,7 +1470,7 @@ Enabled in [KoEnVue.csproj](../KoEnVue.csproj) — strips ICU from the NativeAOT
 
 **ARGB byte 순서 주의**: DWM 의 0xAARRGGBB (R 이 high byte) 와 `GetSysColor` 의 COLORREF 0x00BBGGRR (B 가 high byte) 는 R/B 순서가 반대다. 두 경로가 같은 `ColorHelper` 헬퍼를 공유하지 않고 각자 분리한다 — `ColorHelper.ColorRefToRgb` 는 COLORREF 전용이라 ARGB 에 그대로 쓰면 색이 뒤집힌다.
 
-**메시지 시그널** (모두 같은 `HandleSettingChange` 핸들러로 라우팅 — `ThemePresets.Apply`(theme=system 일 때) → `Settings.ClearProfileCache` → `Overlay.HandleConfigChanged` + `ApplyCursorConfigChange`(둘 다 theme=system 일 때) → `RefreshVisibleIndicator`(→ `Animation.TriggerShow`) → `Tray.UpdateState` 를 순서대로 트리거):
+**메시지 시그널** (모두 같은 `HandleSettingChange` 핸들러로 라우팅, **메인 창 사본만** — 세 창이 각자 받으므로 [TaskbarCreated](#taskbarcreated--shell-restart-recovery) 절의 `hwnd == _hwndMain` 필터, bug-hunt 2026-11-04 확정 #2 — `ThemePresets.Apply`(theme=system 일 때) → `Settings.ClearProfileCache` → `Overlay.HandleConfigChanged` + `ApplyCursorConfigChange`(둘 다 theme=system 일 때) → `RefreshVisibleIndicator`(→ `Animation.TriggerShow`) → `Tray.UpdateState` 를 순서대로 트리거):
 
 > **트레이 아이콘도 같이 갱신해야 한다** — `TrayIcon.CreateIcon` 이 배경/도형에 쓰는 색은 `ThemePresets.Apply` 가 재계산하는 Bg/Fg 6쌍과 같은 값이고, 셸은 `NIM_MODIFY` 를 받기 전까지 이전 HICON 을 계속 들고 있다. 마지막 `Tray.UpdateState` 가 빠지면 배지·헤일로만 새 색으로 바뀌고 **트레이 아이콘만 옛 색으로 남아** 다음 IME 전환까지 유지된다(v1.0.0.0 에서 수정). `HandleConfigChanged` 의 동일 갱신과 대칭을 맞춰야 하는 자리다.
 

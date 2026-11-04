@@ -93,6 +93,11 @@ internal sealed class LayeredOverlayBase : IDisposable
     // 위치/상태 추적
     private bool _isVisible;
     private OverlayStyle? _lastRenderedStyle;
+
+    // 마지막으로 DIB 에 **실제로 그린** 스타일. _lastRenderedStyle 과 달리 캐시 무효화(InvalidateDpiCaches)
+    // 에도 지우지 않는다 — 무효화 직후 새로 만든 빈 DIB 를 같은 모양으로 다시 채우는 데(RepaintLastPainted)와
+    // 드래그 중 DPI 경계 재렌더(HandleDragDpiChange)가 화면의 per-app 모양을 이어받는 데 쓴다.
+    private OverlayStyle? _lastPaintedStyle;
     private int _lastX;
     private int _lastY;
     private byte _lastAlpha;
@@ -304,7 +309,38 @@ internal sealed class LayeredOverlayBase : IDisposable
 
         ApplyPremultipliedAlpha(w, h);
         _lastRenderedStyle = style;
+        _lastPaintedStyle = style;
     }
+
+    /// <summary>
+    /// 마지막으로 그린 스타일로 DIB 를 다시 그린다(블리트 없음). 그린 적이 없거나 리소스가 없으면 false.
+    /// <para>
+    /// <see cref="HandleDpiChanged"/> 뒤의 리소스 재생성은 픽셀이 전부 0 인 새 DIB 를 고른다. 그 상태에서
+    /// Render 없이 블리트만 하는 애니메이션 프레임(페이드아웃 UpdateAlpha 등)이 돌면 배지가 뚝 사라진다 —
+    /// 페이드아웃 중 설정 저장(확정 #10), 숨긴 배지를 다른 배율 모니터에 처음 띄울 때 UpdateLayeredWindow
+    /// 안에서 중첩 도착한 WM_DPICHANGED(확정 #37). 파사드가 무효화 직후 이걸 불러 빈 DIB 구간을 없앤다.
+    /// </para>
+    /// </summary>
+    public bool RepaintLastPainted()
+        => _lastPaintedStyle is OverlayStyle style && PaintDib(style);
+
+    /// <summary>
+    /// <paramref name="style"/> 로 DIB 를 그리되 **블리트하지 않는다**(이미 그 스타일이면 no-op). 다음 블리트
+    /// 프레임(강조 UpdateScaledSize 등)이 새 픽셀을 올린다 — 강조 팝 도중 Render 가 기본 크기로 한 프레임
+    /// 블리트해 배지가 떨리던 문제(확정 #30), 위치 계산 전에 표시할 스타일의 크기를 확정하는 데(확정 #24) 쓴다.
+    /// </summary>
+    public void Paint(OverlayStyle style)
+    {
+        if (_lastRenderedStyle is OverlayStyle prev && prev == style) return;
+        PaintDib(style);
+    }
+
+    /// <summary>
+    /// 엔진이 지금 <paramref name="dpiX"/> 기준으로 리소스를 잡고 있는지. Show 가 이미 새 모니터 DPI 로
+    /// 맞춘 뒤 블리트 안에서 중첩 도착한 WM_DPICHANGED 를 걸러내는 데 쓴다(할 일 없음).
+    /// </summary>
+    public bool IsAtDpi(uint dpiX)
+        => Math.Abs(dpiX / (double)DpiHelper.BASE_DPI - _currentDpiScale) < DpiScaleTolerance;
 
     /// <summary>페이드 프레임: SourceConstantAlpha만 변경.</summary>
     public void UpdateAlpha(byte alpha)
@@ -488,7 +524,9 @@ internal sealed class LayeredOverlayBase : IDisposable
             WindowSnapHelper.ApplySnap(ref movingRect, xLocked, yLocked,
                 _currentDpiScale, snapThresholdPx, snapGapPx);
 
-        HandleDragDpiChange(movingRect.Left, movingRect.Top, style);
+        // 화면에 떠 있는 모양(per-app resolved)을 이어받는다 — 파사드가 넘기는 style 은 글로벌 config 로
+        // 합성돼, 앱별 프로필로 색·크기를 바꾼 배지가 경계를 넘는 순간 글로벌 모양으로 바뀌었다(확정 #34).
+        HandleDragDpiChange(movingRect.Left, movingRect.Top, _lastPaintedStyle ?? style);
 
         return true;
     }

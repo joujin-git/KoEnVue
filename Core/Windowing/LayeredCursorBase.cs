@@ -41,6 +41,11 @@ internal sealed class LayeredCursorBase : IDisposable
     private int _currentWidth;
     private int _currentHeight;
 
+    // _memDC 에 **실제로 선택된** DIB 의 크기. _currentWidth/Height 는 캐시 무효화(DPI·설정 변경)에 0 이 되지만
+    // 이 값은 DIB 를 바꿀 때만 바뀐다 — Hide 의 투명 블리트 기준(아래 Hide 주석).
+    private int _dibWidth;
+    private int _dibHeight;
+
     private bool _dibFailureLogged;
 
     private bool _isVisible;
@@ -130,8 +135,12 @@ internal sealed class LayeredCursorBase : IDisposable
     /// </summary>
     public void Hide()
     {
-        if (_hwnd != IntPtr.Zero && _currentWidth > 0)
-            BlitOverlay(_lastX, _lastY, _currentWidth, _currentHeight, 0, updateDisplayAlpha: false);
+        // 무효화된 캐시 크기(_currentWidth)가 아니라 선택된 DIB 크기로 숨긴다. 캐시 무효화 직후 DIB 재생성이
+        // 실패하면(GDI 압박·300% 큰 bbox) 옛 DIB 는 남고 _currentWidth 만 0 이라, 예전 가드는 숨김 블리트를
+        // 건너뛰어 마지막 헤일로 프레임이 화면에 고착됐다 — 이 창은 SW_HIDE 없이 알파 0 블리트로만 숨는다
+        // (bug-hunt 2026-11-04 확정 #6).
+        if (_hwnd != IntPtr.Zero && _dibWidth > 0)
+            BlitOverlay(_lastX, _lastY, _dibWidth, _dibHeight, 0, updateDisplayAlpha: false);
         _isVisible = false;
     }
 
@@ -248,6 +257,8 @@ internal sealed class LayeredCursorBase : IDisposable
         _currentBitmap = bitmap;
         _currentWidth = targetSize;
         _currentHeight = targetSize;
+        _dibWidth = targetSize;
+        _dibHeight = targetSize;
         _lastRenderedStyle = null;
     }
 

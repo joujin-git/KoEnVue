@@ -15,10 +15,18 @@ namespace KoEnVue.App.Detector;
 /// </summary>
 internal static class ImeStatus
 {
-    // 메인 스레드 전용. OnImeChange (WINEVENT_OUTOFCONTEXT 콜백) 만이 읽고 쓰며,
+    // 메인 스레드 전용. OnImeChange (WINEVENT_OUTOFCONTEXT 콜백) 와 NotePublishedState 만이 읽고 쓰며,
     // 훅은 RegisterHook 을 호출한 스레드(=메인)의 메시지 루프에서 발화하므로 동기화 불필요.
     // 감지 스레드의 Detect() 는 _lastState 를 건드리지 않는다.
     private static ImeState _lastState = ImeState.English;
+
+    /// <summary>
+    /// 앱이 실제로 받아들인 IME 상태를 훅의 중복 제거 기준에 반영한다(메인 스레드 — Program.HandleImeStateChanged).
+    /// 상태 게시자는 훅과 감지 루프 둘인데, 훅은 자기가 마지막으로 보낸 값만 기억했다. 감지 루프가 다른 값을
+    /// 게시한 뒤(다른 앱으로 전환 등)엔 훅 기준이 낡아, 그 앱에서 첫 한/영 전환을 "변화 없음" 으로 삼켜 다음
+    /// 폴링까지 늦게 반영됐다(bug-hunt 2026-11-04 확정 #14).
+    /// </summary>
+    public static void NotePublishedState(ImeState state) => _lastState = state;
     private static IntPtr _hEventHook;
     private static IntPtr _hwndMain;
 

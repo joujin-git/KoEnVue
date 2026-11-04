@@ -149,15 +149,18 @@ internal class JsonSettingsManager<T>
     {
         if (File.Exists(_filePath))
         {
+            // 읽기 시점 mtime — 실패 경로(catch)도 이 값을 쓴다. try 안에 선언하면 catch 에서 못 써서 실패
+            // 경로만 옛 "catch 에서 다시 stat" 패턴이 남았다(아래 catch 주석).
+            DateTime mtimeBeforeRead = DateTime.MinValue;
             try
             {
                 // **mtime 을 내용보다 먼저 찍는다** (bug-hunt 3차 N). 아래 파이프라인은 JsonDocument
-                // 2회 파싱 · 역직렬화 · PostDeserializeFixup(원본 파일 재개봉) · Migrate · Validate 를
+                // 2회 파싱 · 역직렬화 · PostDeserializeFixup · Migrate · Validate 를
                 // 지나 결코 짧지 않다. 나중에 찍으면 그 사이 저장된 편집의 mtime 이 **옛 내용**에
                 // 붙어 "이 내용과 동기화됨" 으로 확정되고, 폴링이 더는 차이를 보지 못해 그 편집을
                 // 영영 놓친다. 먼저 찍으면 오차가 "다음 폴링이 한 번 더 읽는다" 는 안전한 쪽으로
                 // 기운다 — 같은 내용을 한 번 더 읽는 것은 무해하다.
-                DateTime mtimeBeforeRead = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+                mtimeBeforeRead = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
 
                 string userJson = JsonSettingsFile.ReadAllTextStripBom(_filePath);
                 string mergedJson = MergeWithDefaults(userJson, _typeInfo);
@@ -172,7 +175,7 @@ internal class JsonSettingsManager<T>
                 }
 
                 config = ApplyNullSafetyNet(config);
-                config = PostDeserializeFixup(config, mergedJson);
+                config = PostDeserializeFixup(config, mergedJson, userJson);
                 config = Migrate(config);
                 config = Validate(config);
                 config = ApplyTheme(config);
@@ -197,11 +200,15 @@ internal class JsonSettingsManager<T>
                 // 정책 항목 1(타입 좁히기): I/O + JSON + 소스젠 비지원 타입만 잡고, 훅(Validate/Migrate/...)
                 // 의 로직 버그(NullRef 등)는 propagate 시켜 표면화하도록 한다.
                 LogProvider.Sink?.Warning($"Failed to load config from {_filePath}: {ex.Message}. Using defaults without overwriting.");
-                try
-                {
-                    lock (_mtimeLock) _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
-                }
-                catch (Exception innerEx) when (IsExpectedIoException(innerEx)) { }
+                // 폴링 기준을 **실패한 읽기 시점**으로 맞춘다 (bug-hunt 2026-11-04 확정 #7). 예전엔 여기서 mtime
+                // 을 다시 조회해, 읽기 실패와 이 조회 사이에 편집기가 정상 내용 쓰기를 마치면 그 완성본의 mtime
+                // 이 "이미 본 것" 으로 박혀 수정이 끝내 반영되지 않았다.
+                //  - 내용 문제(JSON 등): 읽기 시점 mtime — 같은 손상 파일로 5초마다 재발송하는 스팸은 계속
+                //    막고, 그 뒤의 편집은 mtime 이 달라 다음 폴링이 다시 읽는다.
+                //  - 일시적 I/O 실패(편집기의 배타 잠금 등): 내용을 못 봤으니 다음 폴링이 반드시 다시 읽도록
+                //    MinValue — 잠금이 풀린 뒤 mtime 이 그대로여도 놓치지 않는다. 재시도는 폴링 주기(5초)로만.
+                lock (_mtimeLock)
+                    _lastMtime = IsExpectedIoException(ex) ? DateTime.MinValue : mtimeBeforeRead;
                 value = new T();
                 return false;
             }
@@ -553,7 +560,12 @@ internal class JsonSettingsManager<T>
     /// </summary>
     /// <param name="config">역직렬화 직후의 T.</param>
     /// <param name="mergedJson">MergeWithDefaults 결과 JSON. JsonDocument.Parse 로 재파싱 가능.</param>
-    protected virtual T PostDeserializeFixup(T config, string mergedJson) => config;
+    /// <param name="userJson">
+    /// 이번 로드가 읽은 **원본 user 파일 내용**(디폴트 병합 전). 키 유무 판정이 필요한 훅은 파일을 다시 열지 말고
+    /// 이걸 쓴다 — 다시 열면 두 읽기 사이 편집·원자 교체(delete→rename) 중간 상태에 걸려 다른 버전 기준으로
+    /// 판정한다(bug-hunt 2026-11-04 확정 #12).
+    /// </param>
+    protected virtual T PostDeserializeFixup(T config, string mergedJson, string userJson) => config;
 
     /// <summary>
     /// 스키마 버전 기반 마이그레이션 체인. 기본 구현은 identity.

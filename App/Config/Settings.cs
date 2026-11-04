@@ -576,10 +576,10 @@ internal sealed partial class AppSettingsManager : JsonSettingsManager<AppConfig
     /// NativeAOT STJ source gen이 Dictionary&lt;string, int[]&gt; 역직렬화에 실패할 수 있음.
     /// JSON에서 indicator_positions를 수동 파싱하여 보정.
     /// </summary>
-    protected override AppConfig PostDeserializeFixup(AppConfig config, string mergedJson)
+    protected override AppConfig PostDeserializeFixup(AppConfig config, string mergedJson, string userJson)
     {
-        // PR-31: 구 cursor_motion_dim_enabled → cursor_display_mode (원본 user 파일 기준).
-        if (CursorDisplayModeMigration.TryResolveFromUserFile(FilePath, out CursorDisplayMode migratedMode))
+        // PR-31: 구 cursor_motion_dim_enabled → cursor_display_mode (원본 user 내용 기준 — 이번 로드가 읽은 그 내용).
+        if (CursorDisplayModeMigration.TryResolveFromUserJson(userJson, out CursorDisplayMode migratedMode))
         {
             if (config.CursorDisplayMode != migratedMode)
             {
