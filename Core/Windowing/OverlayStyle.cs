@@ -46,6 +46,7 @@ internal readonly record struct OverlayStyle(
     // 매 렌더마다 반영하므로 record 동등성 비교 시 state-transition 트리거로도 작동한다.
     bool CapsLockOn,
     string CapsLockHex,         // config.CapsLockColor (state-independent)
+    int CapsLockBorderWidthLogicalPx, // CAPS LOCK 테두리 두께 (배율당 상수 * IndicatorScale, 파사드가 합성)
 
     // === 라벨 측정용 (flip-flop fix 필수 — state-independent) ===
     // CalculateFixedLabelWidth는 상태와 무관하게 모든 라벨 후보를 측정해 최대 폭으로
@@ -77,6 +78,7 @@ internal readonly record struct OverlayStyle(
             && LabelText == other.LabelText
             && CapsLockOn == other.CapsLockOn
             && CapsLockHex == other.CapsLockHex
+            && CapsLockBorderWidthLogicalPx == other.CapsLockBorderWidthLogicalPx
             && MeasureLabels.AsSpan().SequenceEqual(other.MeasureLabels);
     }
 
@@ -97,6 +99,7 @@ internal readonly record struct OverlayStyle(
         hc.Add(LabelText);
         hc.Add(CapsLockOn);
         hc.Add(CapsLockHex);
+        hc.Add(CapsLockBorderWidthLogicalPx);
         foreach (string label in MeasureLabels)
             hc.Add(label);
         return hc.ToHashCode();

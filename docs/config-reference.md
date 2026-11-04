@@ -39,7 +39,7 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 | `english_fg` | string | `"#FFFFFF"` | `#RRGGBB` | 영문 모드 글자색 |
 | `non_korean_bg` | string | `"#6B7280"` | `#RRGGBB` | 비한국어 IME 모드 배경색 |
 | `non_korean_fg` | string | `"#FFFFFF"` | `#RRGGBB` | 비한국어 IME 모드 글자색 |
-| `caps_lock_color` | string | `"#9333EA"` | `#RRGGBB` | CAPS LOCK 전용 색 (기본 보라). CAPS LOCK ON 일 때 한/영 배지 둘레 테두리 (4 logical px, 켜져 있는 동안 사용자 외곽선 대신 표시. 순수 검정 `#000000` 도 검정으로 보이도록 `#010101` 로 그림) + 커서 헤일로 바깥 원 (Outer) 에 쓰임. IME 상태와 무관한 한 색이라 한/영 색과 헷갈리지 않음. 테마 프리셋이 바꾸지 않음. 상세 설정 「공통 — 색상」의 「CapsLock 색」 (2026-11-04) |
+| `caps_lock_color` | string | `"#9333EA"` | `#RRGGBB` | CAPS LOCK 전용 색 (기본 보라). CAPS LOCK ON 일 때 한/영 배지 둘레 테두리 (배지 배율(`indicator_scale`) 1당 2 logical px — 기본 배율 2.0 에서 4, 켜져 있는 동안 사용자 외곽선 대신 표시. 순수 검정 `#000000` 도 검정으로 보이도록 `#010101` 로 그림) + 커서 헤일로 바깥 원 (Outer) 에 쓰임. IME 상태와 무관한 한 색이라 한/영 색과 헷갈리지 않음. 테마 프리셋이 바꾸지 않음. 상세 설정 「공통 — 색상」의 「CapsLock 색」 (2026-11-04) |
 | `opacity` | double | `0.85` | 0.1 ~ 1.0 | `on_event` 모드 표시 시 불투명도 |
 | `idle_opacity` | double | `0.55` | 0.1 ~ 1.0 | `always` 모드 유휴 (`always_idle_timeout_ms` 경과 후) 불투명도 |
 | `active_opacity` | double | `0.95` | 0.1 ~ 1.0 | `always` 모드 활성 (이벤트 직후) 불투명도 |
@@ -180,7 +180,7 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 | `cursor_core_thickness` | int | `1` | 1 ~ 8 | 코어 (사용자 색상) 두께 (논리 px). 양옆 0.5px 분석적 AA 적용 |
 | `cursor_halo_thickness` | int | `12` | 0 ~ 12 | 헤일로 (흰색) 두께 (논리 px). 0 = 헤일로 끔. 코어 양옆 `(halo - core) / 2` 씩 외부 확장 |
 | `cursor_halo_opacity` | double | `0.5` | 0.0 ~ 1.0 | 헤일로 흰색 불투명도. 코어와 alpha 비교해 큰 쪽이 채택됨 |
-| `cursor_clear_radius` | int | `48` | 0 ~ 96 | 커서 주변 비움 반지름 (논리 px, DPI 적용). **안개 모드에서만**(흐릿하게 상시 / 이동 중 흐릿하게의 이동 중) 중심에서 이 반지름 안쪽 안개를 0 으로 비우고, 바깥으로 `DefaultConfig.CursorClearFadeWidth`(=16 논리 px)에 걸쳐 smoothstep 으로 서서히 나타나게 함 — 커서 바로 옆 글자가 안개로 부옇게 보이지 않도록. 0 = 끔. 전환 팝 배율과 무관한 고정 크기. 선명하게(`sharp`)는 가는 고리라 영향 없음. 키가 없는 기존 설정 파일은 기본 48 적용 (2026-11-04) |
+| `cursor_clear_radius` | int | `48` | 0 ~ 96 | 커서 주변 비움 반지름 (논리 px, DPI 적용). **안개 모드에서만**(흐릿하게 상시 / 이동 중 흐릿하게의 이동 중) 중심에서 이 반지름 안쪽 안개를 0 으로 비우고, 바깥으로 `DefaultConfig.CursorClearFadeWidth`(=16 논리 px)에 걸쳐 smoothstep 으로 서서히 나타나게 함 — 커서 바로 옆 글자가 안개로 부옇게 보이지 않도록. 0 = 끔. 전환 팝 배율과 무관한 고정 크기. 선명하게(`sharp`)는 가는 고리라 영향 없음. 비움 끝(반지름 + 16)은 한/영 원(중간·안쪽 중 큰 반지름) + 안개 σ×1.5 를 넘지 않음 — 원이 작거나 헤일로가 얇아 안개가 좁으면 비움이 자동으로 줄어 헤일로가 통째로 지워지지 않음 (현재 기본값은 한도 ≈122px 가 비움 끝 64px 보다 커서 영향 없음). 키가 없는 기존 설정 파일은 기본 48 적용 (2026-11-04) |
 | `cursor_idle_delay_ms` | int | `100` | 0 ~ 2000 | (정지 검출 모드) 마우스 정지 후 인디 표시까지 대기 시간 (ms). 0 = 즉시 |
 | `cursor_motion_threshold_px` | int | `5` | 1 ~ 32 | (정지 검출 모드) 직전 폴링 좌표와 맨해튼 거리 임계 (px). 초과 시 "이동" 으로 분류 — 인디 즉시 숨김 |
 

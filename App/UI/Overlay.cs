@@ -210,11 +210,13 @@ internal static class Overlay
         => _lastValidSystemInputFrame = default;
 
     /// <summary>
-    /// CAPS LOCK 테두리 두께 (logical px, DPI 스케일링 전). 배지 둘레에 CapsLock 색(기본 보라)으로 그린다 —
-    /// 예전 좌우 흰 막대는 글자 옆에 붙어 눈에 덜 띄었고, 막대를 보라로 바꾸면 파란 배지 위에서 묻혔다
-    /// (2026-11-04 시안 비교로 테두리 선택, 두께는 실기 확인으로 2→3→4). 켜져 있으면 사용자 보더(BorderWidth) 자리를 대신한다.
+    /// CAPS LOCK 테두리 두께 — IndicatorScale 1 당 logical px (DPI 스케일링 전). 배지 둘레에 CapsLock 색(기본 보라)으로
+    /// 그린다 — 예전 좌우 흰 막대는 글자 옆에 붙어 눈에 덜 띄었고, 막대를 보라로 바꾸면 파란 배지 위에서 묻혔다
+    /// (2026-11-04 시안 비교로 테두리 선택, 두께는 기본 배율 2.0 실기 확인으로 2→3→4 = 배율당 2).
+    /// 다른 배지 치수처럼 IndicatorScale 을 곱한다 — 고정 4px 이면 배율 1·높이 12 배지에서 안쪽이 4px 만 남아
+    /// 글자에 닿았다(release-review 2026-11-04). 켜져 있으면 사용자 보더(BorderWidth) 자리를 대신한다.
     /// </summary>
-    private const int CapsLockBorderWidthLogicalPx = 4;
+    private const double CapsLockBorderWidthPerScale = 2.0;
 
     /// <summary>
     /// 앱별 저장 위치가 없을 때 기본 위치.
@@ -485,6 +487,7 @@ internal static class Overlay
         int labelHeightPx = (int)Math.Round(config.LabelHeight * scale);
         int borderRadiusPx = (int)Math.Round(config.LabelBorderRadius * scale);
         int borderWidthPx = (int)Math.Round(config.BorderWidth * scale);
+        int capsBorderWidthPx = Math.Max(1, (int)Math.Round(CapsLockBorderWidthPerScale * scale));
         int paddingXPx = (int)Math.Round(DefaultConfig.LABEL_PADDING_X * scale);
         int fontSizePx = (int)Math.Round(config.FontSize * scale);
 
@@ -503,6 +506,7 @@ internal static class Overlay
             LabelText: labelText,
             CapsLockOn: _capsLockOn,
             CapsLockHex: config.CapsLockColor,
+            CapsLockBorderWidthLogicalPx: capsBorderWidthPx,
             MeasureLabels: [config.HangulLabel, config.EnglishLabel, config.NonKoreanLabel]
         );
     }
@@ -536,7 +540,7 @@ internal static class Overlay
                 //     펜 RoundRect(반폭 인셋)는 모서리에서 테두리 바깥에 배경색이 비집고 나왔다(release-review
                 //     2026-11-04, 300% 에서 대각선 ≈2.5px). 채우기는 바깥 윤곽이 배경과 같은 호출이라 어긋남 0
                 //     (100~300% GDI 실측). 안쪽 모서리 = 바깥 반지름 − 두께 (동심원).
-                int capsW = Math.Max(1, DpiHelper.Scale(CapsLockBorderWidthLogicalPx, metrics.DpiScale));
+                int capsW = Math.Max(1, DpiHelper.Scale(style.CapsLockBorderWidthLogicalPx, metrics.DpiScale));
                 IntPtr hCapsBrush = Gdi32.CreateSolidBrush(ColorHelper.HexToLayeredColorRef(style.CapsLockHex));
                 try
                 {

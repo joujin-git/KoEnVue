@@ -51,6 +51,11 @@ internal static class CursorRenderer
     // 1점 샘플 경로에서도 중심에서 이 거리(px) 안쪽 픽셀은 2×2 로 — 거리 함수가 중심에서 뾰족해(원뿔 꼭짓점)
     // 반지름이 작은 설정(σ≈9px)에서 중앙 픽셀만 4~5/255 어긋났다.
     private const double CenterSupersampleRadiusPx = 1.0;
+    // 커서 비움의 끝은 한/영 원(안쪽·중간 중 큰 반지름) + 안개 σ × 이 배수를 넘지 않는다 — 원이 작거나 안개가 좁은
+    // 설정에서 고정 크기 비움(기본 48px)이 안개 몸통을 통째로 지워 헤일로가 사라졌다(release-review 2026-11-04:
+    // v1.0.2.0 기본값 45/35/30·halo 2·soft 0.35 를 그대로 쓰는 업그레이드 사용자 — 최대 알파 0.4/255).
+    // 기본값(σ≈68px)은 한도가 비움보다 훨씬 커서 영향 없음.
+    private const double ClearMaxReachSigmas = 1.5;
 
     /// <summary>
     /// 중심 거리(px)에 따른 안개 알파 배수 — 두 구간의 smoothstep 곱.
@@ -131,6 +136,13 @@ internal static class CursorRenderer
         {
             clearStart = DpiHelper.Scale(style.ClearRadiusLogicalPx, metrics.DpiScale);
             clearEnd = clearStart + DpiHelper.Scale(DefaultConfig.CursorClearFadeWidth, metrics.DpiScale);
+            double fogBodyReach = Math.Max(middleR, innerR) + ClearMaxReachSigmas * fogSigma;
+            if (clearEnd > fogBodyReach)
+            {
+                double fadeWidth = clearEnd - clearStart;
+                clearEnd = fogBodyReach;
+                clearStart = Math.Max(0.0, clearEnd - fadeWidth);
+            }
         }
 
         // 그릴 범위가 DIB 내접원을 넘으면 경계 흐림 + 범위를 내접원으로 제한(모서리는 어차피 0).
@@ -220,7 +232,8 @@ internal static class CursorRenderer
     }
 
     /// <summary>
-    /// 픽셀 (x, y) 의 2×2 서브샘플 거리표 평균 — <see cref="ShadeDib"/> 와 같은 누적(알파 평균, 색은 알파 가중).
+    /// 픽셀 (x, y) 의 2×2 서브샘플 거리표 평균 (알파 평균, 색은 알파 가중) — 거리표 2×2 누적의 유일한 구현.
+    /// <see cref="ShadeDib"/> 의 거리표 분기와 1점 샘플 경로의 중심 보정이 함께 쓴다.
     /// </summary>
     private static void LookupFogSupersampled(
         int x, int y, double cx, double cy, double maxOuterRSq,
@@ -405,63 +418,63 @@ internal static class CursorRenderer
 
             for (int x = 0; x < halfW; x++)
             {
-                double accumA = 0.0;
-                double accumR = 0.0, accumG = 0.0, accumB = 0.0;
-
-                for (int sy = 0; sy < 2; sy++)
+                double avgAlpha;
+                byte pr, pg, pb;
+                if (fogLut)
                 {
-                    double subY = y + (sy == 0 ? SubSampleLow : SubSampleHigh);
-                    double dy = subY - cy;
-                    double dy2 = dy * dy;
-                    if (dy2 > maxOuterRSq) continue;
+                    // 거리표 2×2 누적은 LookupFogSupersampled 한 곳에만 둔다 (1점 샘플 경로의 중심 보정과 공유 — P4).
+                    LookupFogSupersampled(x, y, cx, cy, maxOuterRSq, out avgAlpha, out pr, out pg, out pb);
+                    if (avgAlpha < MinVisibleAlpha) continue;
+                }
+                else
+                {
+                    // 정밀 경로 — 샘플마다 SampleRings 직접 계산 (거리표 경로의 회귀 기준값).
+                    double accumA = 0.0;
+                    double accumR = 0.0, accumG = 0.0, accumB = 0.0;
 
-                    for (int sx = 0; sx < 2; sx++)
+                    for (int sy = 0; sy < 2; sy++)
                     {
-                        double subX = x + (sx == 0 ? SubSampleLow : SubSampleHigh);
-                        double dx = subX - cx;
-                        double distSq = dx * dx + dy2;
-                        if (distSq > maxOuterRSq) continue;
+                        double subY = y + (sy == 0 ? SubSampleLow : SubSampleHigh);
+                        double dy = subY - cy;
+                        double dy2 = dy * dy;
+                        if (dy2 > maxOuterRSq) continue;
 
-                        double d = Math.Sqrt(distSq);
+                        for (int sx = 0; sx < 2; sx++)
+                        {
+                            double subX = x + (sx == 0 ? SubSampleLow : SubSampleHigh);
+                            double dx = subX - cx;
+                            double distSq = dx * dx + dy2;
+                            if (distSq > maxOuterRSq) continue;
 
-                        double sampleAlpha;
-                        byte sampleR, sampleG, sampleB;
-                        if (fogLut)
-                        {
-                            LookupFog(d, out sampleAlpha, out sampleR, out sampleG, out sampleB);
-                        }
-                        else
-                        {
-                            SampleRings(d, outerR, middleR, innerR, coreHalf, haloHalf, haloOpacity, soft, fogSigma, capsOn,
-                                innerColorArgb, middleColorArgb, outerColorArgb,
+                            SampleRings(Math.Sqrt(distSq), outerR, middleR, innerR, coreHalf, haloHalf, haloOpacity,
+                                soft, fogSigma, capsOn, innerColorArgb, middleColorArgb, outerColorArgb,
                                 ringAlphaInner, ringAlphaMiddle, ringAlphaOuter, fade,
-                                out sampleAlpha, out sampleR, out sampleG, out sampleB);
-                        }
+                                out double sampleAlpha, out byte sampleR, out byte sampleG, out byte sampleB);
 
-                        if (sampleAlpha > 0.0)
-                        {
-                            accumA += sampleAlpha;
-                            accumR += sampleAlpha * sampleR;
-                            accumG += sampleAlpha * sampleG;
-                            accumB += sampleAlpha * sampleB;
+                            if (sampleAlpha > 0.0)
+                            {
+                                accumA += sampleAlpha;
+                                accumR += sampleAlpha * sampleR;
+                                accumG += sampleAlpha * sampleG;
+                                accumB += sampleAlpha * sampleB;
+                            }
                         }
                     }
+
+                    avgAlpha = accumA * InvSubSampleCount;
+                    if (avgAlpha < MinVisibleAlpha) continue;
+                    pb = (byte)Math.Round(accumB / accumA);
+                    pg = (byte)Math.Round(accumG / accumA);
+                    pr = (byte)Math.Round(accumR / accumA);
                 }
 
-                double avgAlpha = accumA * InvSubSampleCount;
-                if (avgAlpha >= MinVisibleAlpha)
-                {
-                    byte pb = (byte)Math.Round(accumB / accumA);
-                    byte pg = (byte)Math.Round(accumG / accumA);
-                    byte pr = (byte)Math.Round(accumR / accumA);
-                    byte pa = (byte)Math.Round(avgAlpha * ByteChannelMax);
-                    int left = x * DibSectionFactory.BytesPerPixel;
-                    int right = (w - 1 - x) * DibSectionFactory.BytesPerPixel;
-                    WritePixel(rowTop + left, pb, pg, pr, pa);
-                    WritePixel(rowTop + right, pb, pg, pr, pa);
-                    WritePixel(rowBot + left, pb, pg, pr, pa);
-                    WritePixel(rowBot + right, pb, pg, pr, pa);
-                }
+                byte pa = (byte)Math.Round(avgAlpha * ByteChannelMax);
+                int left = x * DibSectionFactory.BytesPerPixel;
+                int right = (w - 1 - x) * DibSectionFactory.BytesPerPixel;
+                WritePixel(rowTop + left, pb, pg, pr, pa);
+                WritePixel(rowTop + right, pb, pg, pr, pa);
+                WritePixel(rowBot + left, pb, pg, pr, pa);
+                WritePixel(rowBot + right, pb, pg, pr, pa);
             }
         }
     }

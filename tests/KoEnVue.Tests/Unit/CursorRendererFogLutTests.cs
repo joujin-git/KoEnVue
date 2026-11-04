@@ -234,6 +234,32 @@ public class CursorRendererFogLutTests
         return dWant < dOther;
     }
 
+    [Theory]
+    [InlineData(45, 35, 30, 2, 0.35)] // v1.0.2.0 기본값 — 업그레이드 사용자 설정 파일에 그대로 남아 있다
+    [InlineData(96, 20, 10, 2, 0.8)]  // 현재 원 + 얇은 헤일로
+    public void ClearZone_NeverErasesWholeFog(int outer, int middle, int inner, int halo, double soft)
+    {
+        // release-review 2026-11-04: 고정 크기 비움(기본 48px)이 작은 원·좁은 안개를 통째로 지워 헤일로가
+        // 사라졌다(최대 알파 0.4/255). 비움 끝을 한/영 원 + 1.5σ 로 제한한 뒤에는 안개 몸통이 남아야 한다.
+        var style = new CursorStyle(outer, middle, inner, 1, halo, 0.5, Blue, Blue, Orange, false,
+            MotionSoftness: soft, MotionFogPadLogicalPx: 28,
+            RingAlphaInner: 0.55, RingAlphaMiddle: 0.53, RingAlphaOuter: 0.52);
+        int maxNoClear = MaxAlpha(RenderToBytes(style, 1.0, useFogLut: true));
+        int maxCleared = MaxAlpha(RenderToBytes(style with { ClearRadiusLogicalPx = 48 }, 1.0, useFogLut: true));
+
+        Assert.True(maxNoClear > 64, "대조군: 비움 없이는 안개가 보여야 함");
+        // 기준: 비움 없을 때의 1/3 이상 + 눈에 보이는 32/255 이상. 한도를 더 풀면 커서 옆 글자가 다시 뿌옇게 되는
+        // 맞교환이라 「헤일로가 남는다」만 고정한다 (실측 2026-11-04: 얇은 헤일로 59/140, v1.0.2.0 기본값은 더 남음).
+        Assert.True(maxCleared * 3 >= maxNoClear && maxCleared >= 32, $"비움이 안개를 거의 다 지움: {maxCleared} vs {maxNoClear}");
+    }
+
+    private static int MaxAlpha(byte[] px)
+    {
+        int max = 0;
+        for (int i = 3; i < px.Length; i += 4) max = Math.Max(max, px[i]);
+        return max;
+    }
+
     [Fact]
     public void ClearZone_DoesNotAffectSharpMode()
     {
