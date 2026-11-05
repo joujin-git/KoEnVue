@@ -18,8 +18,8 @@ namespace KoEnVue.App.UI;
 /// 사용자 모델 — 동심원 3개 (Inner / Middle / Outer) + 헤일로. CAPS OFF 시 Outer 원 미표시.
 /// </para>
 /// <list type="bullet">
-///   <item><b>정지 시 표시 모드 (디폴트)</b>: 마우스 이동 → 즉시 숨김. 정지 후 <c>idle_delay_ms</c> 경과 → 표시.</item>
-///   <item><b>항상 표시 모드</b> (<see cref="AppConfig.CursorAlwaysShow"/> = true): 폴링으로 위치 추종, 숨김 안 함. 이동 중 시인성 저하(PR-29) 가능.</item>
+///   <item><b>항상 표시 모드 (디폴트)</b> (<see cref="AppConfig.CursorAlwaysShow"/> = true): 폴링으로 위치 추종, 숨김 안 함. 이동 중 시인성 저하(PR-29) 가능.</item>
+///   <item><b>정지 시 표시 모드</b> (<see cref="AppConfig.CursorAlwaysShow"/> = false): 마우스 이동 → 즉시 숨김. 정지 후 <c>cursor_idle_delay_ms</c> 경과 → 표시.</item>
 /// </list>
 /// <para>
 /// 색상 정책 — Inner/Middle 은 현재 IME 색상 (Hangul/English/NonKorean 각자), CapsLock Outer 는 전용 색
