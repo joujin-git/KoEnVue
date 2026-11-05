@@ -12,7 +12,7 @@
 고정 7단계:
 
 1. **`docs/improvement-plan/INDEX.md` 읽기** — 현 상태 파악
-2. **메모리 `improvement-plan.md` 읽기** — 결정 요약 + 마지막 세션 노트
+2. **[DECISIONS.md](DECISIONS.md) 읽기** — 결정 요약 (예전엔 메모리 `improvement-plan.md` 가 맡았으나 그 메모리 파일은 지금 없다 — 마지막 세션 노트는 INDEX 진행표·`docs/sessions/`)
 3. **타겟 `PR-NN-*.md` 읽기** — self-contained 명세 로드
 4. **`git status`/`git branch --show-current` 확인** — 시작점 확정
 5. **TodoWrite 초기화** — PR 명세 §2 체크리스트를 todo로 변환
@@ -59,7 +59,7 @@ dotnet publish -r win-x64 -c Release          # NativeAOT
 git grep "KoEnVue\.App"     Core/             # 0 매치
 git grep "ImeState"         Core/             # 0 매치
 git grep "NonKoreanImeMode" Core/             # 0 매치
-git grep "DllImport"                          # 0 매치
+git grep "DllImport" -- '*.cs'               # 0 매치
 ```
 
 ### Tier 2 — PR별 grep 가드

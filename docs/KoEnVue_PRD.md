@@ -19,7 +19,7 @@ Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관�
 
 | 원칙 | 설명 |
 |------|------|
-| **외부 패키지 제로** | .NET 10 BCL + Windows API 만 사용. NativeAOT 단일 exe (~4.9 MB) |
+| **외부 패키지 제로** | .NET 10 BCL + Windows API 만 사용. NativeAOT 단일 exe (~5 MB) |
 | **한글 우선 표시** | UI 텍스트는 한글 기본, 영어 시스템에서는 영어 fallback. 로그/config 키는 영문 |
 | **최소 기능 집합** | 필요한 기능만 구현. 인디케이터 스타일/도형 선택 없음 |
 | **완전 포터블** | exe 한 개로 동작. 첫 실행 시 같은 폴더에 `koenvue_config.json` 과 `koenvue.log` 자동 생성. 지울 때는 폴더 통째로 삭제 |
@@ -109,6 +109,16 @@ Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관�
 - **측정**: `LayeredOverlayBase.EnsureFont` 가 `Gdi32.GetTextMetricsW` 로 폰트 셀 메트릭을 한 번 측정해 오프셋을 캐시한다. 폰트 캐시 키(family + size + bold + DPI)에 편승하므로 부팅 1회 + 폰트/크기/굵기/DPI 변경 시에만 재실행된다
 - **적용**: `OverlayMetrics.TextVCenterOffsetPx` 로 노출. `Overlay.OnRenderToDib` 가 textRect 를 `{ Top = -vOffset, Bottom = h - vOffset }` 로 구성해 높이를 보존한 채 rect 자체를 위로 이동 — `DT_VCENTER` 자체는 정상 동작하고, 글리프 시각 중심이 정확히 `h/2` 에 위치한다
 - **한계**: 현재 라벨은 디센더가 없는 글자(`한`/`En`/`EN`)만 사용하므로 단일 보정값으로 충분. 향후 라벨에 디센더가 있는 글자를 도입하면 과보정이 되어 글리프별 메트릭 기반 재유도 필요
+
+### 2.8 커서 헤일로
+마우스 커서 주변에 동심원 3개(안쪽·중간·바깥) + 흰색 헤일로를 띄워 커서 옆에서 한/영 상태를 보여 주는 보조 인디케이터. 한/영 배지와 **별개 윈도우**(`WS_EX_TRANSPARENT` — 클릭은 항상 아래 창으로 통과, 드래그 이동·위치 저장 없음)이며 둘을 동시에 쓸 수 있다. 기본 켜짐.
+
+- **색**: 안쪽·중간 원은 현재 IME 상태의 배경색(한글/영문/비한국어). 바깥 원은 CAPS LOCK 이 켜졌을 때만 보이며 IME 상태와 무관하게 `caps_lock_color` 로 그린다 — 배지 CAPS 테두리(2.6)와 같은 계열 색
+- **표시 방식**: 항상 표시(마우스 추종, 기본) / 정지 시만 표시 (`cursor_always_show`)
+- **선명도**: 흐릿하게(가우시안 안개, 기본) / 선명하게 / 이동 중 흐릿하게 (`cursor_display_mode`, 트레이 「커서 헤일로 ▸ 선명도」). 안개 모드에서는 커서 바로 주변의 안개를 비워(`cursor_clear_radius`) 글자가 부옇게 보이지 않게 한다
+- **전환 강조**: 한/영 전환 시 동심원이 잠깐 커졌다 돌아온다 (트레이 「커서 헤일로 ▸ 전환 강조」, 「애니메이션 사용」 마스터에 종속 — 3장)
+- **숨김**: 트레이 「커서 헤일로 숨김」 또는 좌클릭 순환(4.1a). 포인터 위치 기반 숨김은 2.4
+- **설정**: 반지름·두께·불투명도·헤일로 농도/강도·비움 반지름·전환 배율/시간 등 `cursor_*` 키는 상세 설정 「커서 헤일로 — 동심원」/「커서 헤일로 — 전환 효과」 섹션(4.7) 또는 `koenvue_config.json` 에서 조정. 키·기본값·범위의 정본은 [config-reference.md → 커서 헤일로](config-reference.md#커서-헤일로-cursor-halo) — 여기에 복제하지 않는다
 
 ---
 
@@ -213,7 +223,7 @@ KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT
 - `schtasks /xml` 기반 등록/해제 (ONLOGON 트리거 + `<Delay>PT15S</Delay>`, 기본 `LeastPrivilege` — P5 asInvoker 와 일치, v0.9.3.0 부터 UAC 프롬프트 없음)
 - **로그온 15초 지연**: 부팅 자동 실행 시 explorer 트레이가 초기화되기 전에 앱이 떠서 `Shell_NotifyIconW NIM_ADD` 가 실패하는 레이스를 회피. (NIM_ADD 재시도로 복구되긴 하지만 매 부팅 warn 로그가 남는 문제 해소 목적)
 - **자동 동기화**: 앱 시작 시 백그라운드 스레드로 등록된 schtasks 항목의 `<Command>` 경로 / `<Delay>` 값 / `<RunLevel>` 을 조회해 현재 `Environment.ProcessPath` · `PT15S` · `expectedRunLevel`(`config.AdminElevation` 에서 derive) 와 비교. 경로가 바뀌었거나 `<Delay>` 가 없거나(구 버전 `/tr` 방식) `<RunLevel>` 이 기대값과 다르면 XML 방식으로 재등록. v0.9.2.x → v0.9.3.x 업그레이드 시 첫 부팅 후 자동 재등록되어 다음 부팅부터 UAC 프롬프트가 사라진다. exe 폴더를 옮겨도 다음 수동 실행부터는 복구된다(이사 직후 첫 자동 부팅은 구 경로를 찌르므로 한 번은 실패할 수 있음)
-- **v0.9.4.0 — 관리자 권한 실행 옵션 (PR-15)**: `config.admin_elevation: true` (트레이 메뉴 "관리자 권한으로 실행" 또는 상세 설정 → 시스템 섹션) 시 (1) 단일 실행 경로 — [App/Bootstrap/AdminElevation](../App/Bootstrap/AdminElevation.cs) 가 mutex 획득 전 `ShellExecuteW("runas")` 로 자기 재실행 (UAC 1회). (2) 부팅 자동 시작 경로 — schtasks `<RunLevel>HighestAvailable</RunLevel>` 분기로 등록 (등록 시 UAC 1회, 부팅마다 UAC 0). **트레이 메뉴로** 토글하면 등록된 schtasks 가 즉시 재등록된다 (`ReregisterIfAdminChanged`) — **상세 설정 토글은 재등록하지 않고**(결정 #4 사일런트) 다음 부팅의 `SyncStartupPathAsync` 가 맞추므로 UAC 없는 자동 시작은 한 부팅 늦게 붙는다. 매니페스트는 `asInvoker` 유지 (P5 invariant). UIPI (User Interface Privilege Isolation — Medium IL → High IL `WM_IME_CONTROL` 차단) 가 일반 권한 KoEnVue 의 관리자 콘솔 IME 감지를 막는 문제를 사용자 선택적으로 우회하기 위함. UAC 거부 시 안내 `MessageBoxW` 후 일반 권한으로 계속 진행
+- **v0.9.4.0 — 관리자 권한 실행 옵션 (PR-15)**: `config.admin_elevation: true` (트레이 메뉴 "관리자 권한으로 실행" 또는 상세 설정 → 「일반」 섹션) 시 (1) 단일 실행 경로 — [App/Bootstrap/AdminElevation](../App/Bootstrap/AdminElevation.cs) 가 mutex 획득 전 `ShellExecuteW("runas")` 로 자기 재실행 (UAC 1회). (2) 부팅 자동 시작 경로 — schtasks `<RunLevel>HighestAvailable</RunLevel>` 분기로 등록 (등록 시 UAC 1회, 부팅마다 UAC 0). **트레이 메뉴로** 토글하면 등록된 schtasks 가 즉시 재등록된다 (`ReregisterIfAdminChanged`) — **상세 설정 토글은 재등록하지 않고**(결정 #4 사일런트) 다음 부팅의 `SyncStartupPathAsync` 가 맞추므로 UAC 없는 자동 시작은 한 부팅 늦게 붙는다. 매니페스트는 `asInvoker` 유지 (P5 invariant). UIPI (User Interface Privilege Isolation — Medium IL → High IL `WM_IME_CONTROL` 차단) 가 일반 권한 KoEnVue 의 관리자 콘솔 IME 감지를 막는 문제를 사용자 선택적으로 우회하기 위함. UAC 거부 시 안내 `MessageBoxW` 후 일반 권한으로 계속 진행
 
 ### 4.4 기본 위치 설정
 - 저장 위치가 없는 앱을 열 때 인디케이터가 나타날 기본 위치를 사용자가 지정. 현재 위치 모드에 따라 저장 대상이 달라짐
@@ -242,7 +252,7 @@ KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT
 - DPI 스케일, 시스템 폰트, 메인 창 `EnableWindow(false)` + 중첩 메시지 루프 모달
 
 ### 4.7 상세 설정 대화상자
-"상세 설정" 메뉴 클릭 시 스크롤 가능한 모달 대화상자가 열려, 트레이 메뉴로는 노출되지 않는 설정 필드를 **12 개 섹션**(① 표시 모드, ② 외관 — 크기·테두리, ③ 외관 — 색상·투명도, ④ 외관 — 텍스트, ⑤ 외관 — 테마, ⑥ 애니메이션, ⑦ 감지 및 숨김, ⑧ 앱별 프로필, ⑨ 트레이, ⑩ 시스템, ⑪ 인디케이터 조작, ⑫ 고급)으로 묶어 `설명 | 입력 상자` 2 컬럼 테이블 형태로 노출한다.
+"상세 설정" 메뉴 클릭 시 스크롤 가능한 모달 대화상자가 열려, 트레이 메뉴로는 노출되지 않는 설정 필드를 **섹션**(「일반」, 「일반 — 트레이」, 「공통 — 색상」, 「한/영 배지 — 표시 모드」, 「한/영 배지 — 크기·테두리」, 「한/영 배지 — 글자색·투명도」, 「한/영 배지 — 텍스트」, 「한/영 배지 — 애니메이션」, 「한/영 배지 — 감지·숨김」, 「한/영 배지 — 앱별 프로필」, 「한/영 배지 — 조작」, 「커서 헤일로 — 동심원」, 「커서 헤일로 — 전환 효과」, 「고급」 — 구성·순서의 정본은 [SettingsDialog.Fields.cs](../App/UI/Dialogs/SettingsDialog.Fields.cs) 의 `BuildRowDefs`)으로 묶어 `설명 | 입력 상자` 2 컬럼 테이블 형태로 노출한다.
 
 - 입력 컨트롤 종류: 불리언 = 체크박스, 정수·실수·문자열·색상 = EDIT, 열거형 = COMBOBOX
 - 수직 스크롤바 + 마우스 휠 지원, 입력 상자 너비는 뷰포트 가용 폭에 맞춰 자동 축소되어 스크롤바에 가려지지 않음
@@ -250,15 +260,15 @@ KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT
 - 모든 필드 검증 통과 후 "확인" 시 일괄 적용(config 한 번 저장), "취소" 는 변경 사항 폐기
 - 룩앤필은 "위치 기록 정리" / "직접 지정" 대화상자와 동일 (맑은 고딕 9 pt, 시스템 버튼 배경, DPI 스케일, 중첩 메시지 루프 모달, Tab/Enter/ESC 키 처리)
 - **제외 항목**
-  - 트레이 메뉴로 이미 조작 가능한 항목: 투명도, 크기 배율, 기본 위치, 시작 프로그램 등록, 자석 스냅, 애니메이션 사용, 한/영 배지·커서 헤일로 전환 강조, 위치 데이터, 위치 기준, 드래그 활성 키
-  - **`koenvue_config.json` 직접 편집 전용 컬렉션 필드**: `app_profiles` (앱 프로필 맵 — 사용 예시는 [User_Guide.md](User_Guide.md)), `app_filter_mode` + `app_filter_list` (앱 화이트/블랙리스트), `system_hide_classes_user` / `system_hide_processes_user` (시스템 숨김 목록 사용자 확장)
+  - 트레이 메뉴로 이미 조작 가능한 항목: 크기 배율, 기본 위치, 시작 프로그램 등록, 자석 스냅, 애니메이션 사용, 한/영 배지·커서 헤일로 전환 강조, 위치 데이터, 위치 기준
+  - **`koenvue_config.json` 직접 편집 전용 컬렉션 필드**: `app_profiles` (앱 프로필 맵 — 사용 예시는 [User_Guide.md](User_Guide.md)), `app_filter_list` (앱 화이트/블랙리스트 목록 — 모드 `app_filter_mode` 와 매칭 기준 `app_profile_match` 는 「한/영 배지 — 앱별 프로필」 섹션 콤보로 노출), `system_hide_classes_user` / `system_hide_processes_user` (시스템 숨김 목록 사용자 확장)
   - **`koenvue_config.json` 직접 편집 전용 hidden 옵션**: `tray_enabled` (트레이 아이콘 자체 켜고 끔 — OFF 시 우클릭 메뉴가 사라지므로 이후 변경은 `koenvue_config.json` 재편집 또는 앱 재시작 필요), `advanced.overlay_class_name` (윈도우 클래스명, 내부 디버깅용)
 
 ### 4.8 업데이트 알림
 
 부팅 시 GitHub Releases API 를 1 회 조회해 새 버전이 있으면 트레이 메뉴 최상단의 항상 노출되는 헤더 라인의 라벨이 평소 "KoEnVue v{ver} — GitHub" 에서 "KoEnVue v{cur} → {newTag} — 다운로드" 로 자동 전환된다. 클릭하면 `ShellExecuteW` 로 기본 브라우저에서 릴리스 페이지(평소엔 레포 루트)를 연다. 자동 다운로드 / 자동 설치는 제공하지 않는다. 이 기능은 **v0.8.9.0** (2026-04-14, 첫 공개 릴리스) 에서 첫 배포된 후 v0.9.2.6 에서 별도 알림 블록이 헤더 라인 라벨 변형으로 통합되었다 (4.2 메뉴 헤더 라인 참조).
 
-- **버전 소스**: `DefaultConfig.AppVersion` 상수 (수동 편집, 4-part `major.minor.build.revision`). `Assembly.GetName().Version` 사용 시 NativeAOT 트리밍 문제와 `.csproj` `<Version>` 동기화 번거로움이 있어 의도적으로 상수로 관리한다. 릴리스를 내릴 때 이 상수를 `KoEnVue.csproj` 의 `<Version>` 요소와 **반드시 함께** bump 해야 한다 — csproj 값은 PE 헤더의 `AssemblyVersion` / `FileVersion` / `InformationalVersion` 3종에 박히고, `AppVersion` 은 `UpdateChecker` 가 `tag_name` 과 비교하는 값이라, 둘 중 하나만 올리면 파일 속성과 런타임 비교 값이 불일치한다. 구체적 릴리스 순서는 [README.md](../README.md) → 릴리즈 (Releasing) 절 참고
+- **버전 소스**: `DefaultConfig.AppVersion` 상수 (4-part `major.minor.build.revision`). `Assembly.GetName().Version` 사용 시 NativeAOT 트리밍 문제가 있어 의도적으로 상수로 관리한다. PR-11 D6 이후 이 상수는 손으로 편집하지 않는다 — [Directory.Build.targets](../Directory.Build.targets) 의 `GenerateVersionConstants` Target 가 `KoEnVue.csproj` 의 `<Version>` 에서 `obj/.../Version.g.cs` 로 자동 생성하므로, csproj `<Version>` 하나만 bump 하면 PE 헤더의 `AssemblyVersion` / `FileVersion` / `InformationalVersion` 3종과 `UpdateChecker` 가 `tag_name` 과 비교하는 `AppVersion` 이 함께 맞춰진다. 구체적 릴리스 순서는 [README.md](../README.md) → 릴리즈 (Releasing) 절 참고
 - **레포 소스**: `DefaultConfig.UpdateRepoOwner` / `UpdateRepoName` 상수. 포크 배포자는 두 상수만 바꾸면 자신의 릴리스 채널을 가리키게 할 수 있다
 - **조회 경로**: `https://api.github.com/repos/{owner}/{name}/releases/latest`. User-Agent 헤더 필수(누락 시 403), `Accept: application/vnd.github+json` 권장
 - **HTTP 스택**: `Core/Http/HttpClientLite` → `Core/Native/WinHttp.cs` P/Invoke. `System.Net.Http.HttpClient` 는 NativeAOT 퍼블리시에 ~2.5 MB 를 추가하지만 WinHTTP 경로는 ~40 KB 로 끝나므로 (약 60× 차이) 트레이 앱 크기 예산(P1 정신)에 맞춰 선택
@@ -269,7 +279,7 @@ KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT
 - **크로스 스레드 마샬링**: 백그라운드 스레드의 `onUpdateFound` 콜백 → `Program.OnUpdateCheckResult` 에서 `Program._pendingUpdate` (`private static volatile UpdateInfo?`) 에 쓰고 `User32.PostMessageW(hwndMain, WM_APP_UPDATE_FOUND, 0, 0)` 호출. 메인 스레드의 WndProc 가 메시지를 받아 `HandleUpdateFound` → `Tray.OnUpdateFound(info)` 를 호출. 감지 스레드와 동일한 `WM_APP+N` 패턴을 재사용해 크로스 스레드 신호 경로를 일관되게 유지
 - **트레이 메뉴 헤더 라인 라벨 전환**: `Tray._pendingUpdate` (비 volatile — WM_APP_UPDATE_FOUND 처리 이후는 메인 스레드 단독 접근) 가 non-null 이면 `ShowMenu` 가 헤더 라인의 라벨을 `KoEnVue v{cur} → {newTag} — 다운로드` 로 합성, null 이면 평소 라벨 `KoEnVue v{cur} — GitHub`. 별도 메뉴 항목·구분선 추가 없이 같은 `IDM_HOMEPAGE = 4010` 항목 한 줄에서 라벨만 전환되므로 메뉴 시각 구조가 두 모드 사이에 변하지 않는다 (v0.9.2.6 에서 v0.8.9.0 의 별도 `IDM_UPDATE_DOWNLOAD = 4008` 블록을 통합)
 - **다른 알림 수단을 의도적으로 선택 안 함**: (a) balloon `NIIF_INFO` — 침해적, (b) Windows Toast — `AppUserModelID` + Start 메뉴 바로가기 필요해 포터블 단일 exe 배포 모델과 충돌, (c) 트레이 툴팁 접두 "⚡ Update available — ..." — 너무 은은해서 발견성 낮음. 통합 헤더 라인은 메뉴 최상단 + `MF_DEFAULT` 볼드 + 라벨 변형(`→ {tag} — 다운로드`) 으로 발견성·침해성 균형. 우클릭만 하면 첫 줄에서 즉시 인지
-- **토글**: `config.update_check_enabled` (기본 `true`). Program 부팅 시 `if (_config.UpdateCheckEnabled)` 체크로 감싸진다. 상세 설정 다이얼로그 "[시스템]" 섹션의 **"부팅 시 업데이트 확인"** 체크박스로 on/off 가능(`koenvue_config.json` 직접 편집도 지원). OFF 로 두면 `WinHttpOpen` 자체가 호출되지 않아 WPAD 탐지·DNS 질의·TCP 연결 등 어떠한 네트워크 트래픽도 발생하지 않는다 — 폐쇄망 친화
+- **토글**: `config.update_check_enabled` (기본 `true`). Program 부팅 시 `if (_config.UpdateCheckEnabled)` 체크로 감싸진다. 상세 설정 다이얼로그 「일반」 섹션의 **"부팅 시 업데이트 확인"** 체크박스로 on/off 가능(`koenvue_config.json` 직접 편집도 지원). OFF 로 두면 `WinHttpOpen` 자체가 호출되지 않아 WPAD 탐지·DNS 질의·TCP 연결 등 어떠한 네트워크 트래픽도 발생하지 않는다 — 폐쇄망 친화
 
 ---
 
@@ -322,7 +332,7 @@ KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT
 
 - **머지 후처리 파이프라인** — 매칭된 프로필을 JSON 레벨에서 글로벌과 합친 결과는 디스크 로드 경로(`JsonSettingsManager.Load`)와 동일한 후처리를 거친다: `EnsureSubObjects` (null 보정) → `Validate` (범위 클램핑, enum 검증, `advanced.overlay_class_name` 폴백) → `ApplyTheme` (프리셋 색상 적용 + Custom 백업/복원). `Migrate` 는 App 레벨 override 가 없어(JsonSettingsManager identity) 현재 효과가 없지만 추후 스키마 진화 시 같은 진입점에서 호출된다
 - **실효 범위 — 감지 측 키** — 머지된 `resolved` AppConfig 는 감지 스레드의 `Settings.ResolveForApp` 가 반환하며, 같은 틱 안에서 (a) `SystemFilter.ShouldHide` 의 모든 파라미터(`system_hide_classes` / `system_hide_processes` / `hide_in_fullscreen` / `hide_when_no_focus` / `app_filter_mode` / `app_filter_list`), (b) `PositionMode` (`position_mode` 의 fixed/window 결정 + `TrackWindowMove` 의 활성 여부), (c) `ImeStatus.Detect` 의 `detection_method` 분기에 즉시 반영된다
-- **실효 범위 — 시각/표시 측 키 (PR-13 이후)** — 메인 스레드에 `ResolveCurrent()` 헬퍼가 추가되어 `_lastForegroundHwnd` 기반으로 `Settings.ResolveForApp` 를 LRU 캐시 hit 로 재호출한다. `HandleImeStateChanged` / `HandleFocusChanged` 의 `DisplayMode` + `EventTriggers` 평가, 모든 `Animation.TriggerShow` / `Overlay.Show` / `Overlay.UpdateColor` 호출(총 18 곳) 이 글로벌 `_config` 대신 `ResolveCurrent()` 결과를 사용. 따라서 프로필이 `theme` / 색 6쌍(`hangul_bg` / `english_bg` / `non_korean_bg` 의 fg/bg) / `opacity` / `idle_opacity` / `active_opacity` / `label_width` / `label_height` / `label_border_radius` / `border_width` / `border_color` / `indicator_scale` / `font_*` / `*_label` / `animation_*` / `*_duration_ms` / `slide_*` / `change_highlight` / `non_korean_ime` / `display_mode` / `event_triggers` 등 시각·표시 키를 override 하면 화면 색·크기·투명도·폰트·라벨·애니메이션·표시 모드가 즉시 해당 프로필 값으로 전환된다
+- **실효 범위 — 시각/표시 측 키 (PR-13 이후)** — 메인 스레드에 `ResolveCurrent()` 헬퍼가 추가되어 `_lastForegroundHwnd` 기반으로 `Settings.ResolveForApp` 를 LRU 캐시 hit 로 재호출한다. `HandleImeStateChanged` / `HandleFocusChanged` 의 `DisplayMode` + `EventTriggers` 평가, 모든 `Animation.TriggerShow` / `Overlay.Show` / `Overlay.UpdateColor` 호출이 글로벌 `_config` 대신 `ResolveCurrent()` 결과를 사용. 따라서 프로필이 `theme` / 색 6쌍(`hangul_bg` / `english_bg` / `non_korean_bg` 의 fg/bg) / `opacity` / `idle_opacity` / `active_opacity` / `label_width` / `label_height` / `label_border_radius` / `border_width` / `border_color` / `indicator_scale` / `font_*` / `*_label` / `animation_*` / `*_duration_ms` / `slide_*` / `change_highlight` / `non_korean_ime` / `display_mode` / `event_triggers` 등 시각·표시 키를 override 하면 화면 색·크기·투명도·폰트·라벨·애니메이션·표시 모드가 즉시 해당 프로필 값으로 전환된다
 - **글로벌-only 키** — `Tray.*` / `update_check_enabled` / `language` / `log_*` / `default_indicator_position*` / `snap_to_windows` / `snap_gap_px` / `drag_modifier` / `poll_interval_ms` 등은 프로세스-단위 의미가 약하거나(트레이 아이콘 1개, 언어 1개) 시스템-단위 인터랙션(드래그 모디파이어) 이라 현재 구조상 글로벌만 사용한다. 프로필에서 override 해도 효과 없음
 - **PollIntervalMs 의 한계** — 감지 루프(`DetectionService.RunLoop`) 는 `_config.PollIntervalMs` 글로벌 값만 사용하므로 프로필에서 이 키를 override 해도 실효 변화 없다
 - **LRU 캐시** — 매칭 결과는 프로세스명/클래스명/타이틀 키 기준 LRU(최대 50개)로 캐시되어 80ms 폴링 핫패스의 JSON roundtrip 비용을 흡수한다. 글로벌 인스턴스가 교체(핫 리로드 / 트레이 저장) 되면 자동 무효화되고, 시스템 비주얼 스타일 변경(`WM_SETTINGCHANGE` · `WM_THEMECHANGED`) 시에도 캐시가 클리어되어 `Theme.System` 을 상속한 프로필이 옛 강조색을 박제하지 않는다
@@ -342,7 +352,7 @@ KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT
 - `GetKeyboardLayout` LANGID 확인 (비한국어 IME 판별)
 - `WinEvent` 훅 (`EVENT_OBJECT_IME_CHANGE`) 보조
 
-### 6.2 시스템 필터 (9 조건)
+### 6.2 시스템 필터 (8 조건)
 1. 보안 데스크톱 (hwnd 없음)
 2. 비가시/최소화 창
 3. 다른 가상 데스크톱 (`IVirtualDesktopManager`)
@@ -400,11 +410,11 @@ Core / App 각 모듈의 책임·공개 API·재사용 지침은 별도 문서 *
 #### 레이어 분리 핵심 원칙
 
 - **Enum 경계 차단**: `ImeState` / `DisplayMode` / `NonKoreanImeMode` / `FontWeight` 는 App 전용 enum 이며 Core 에 유출되면 안 된다. Core 인터페이스는 primitive 로 표현한다:
-  - `OverlayStyle` 은 `LabelText : string` 과 `MeasureLabels : (string, string, string)` 튜플만 받으며, 현재 상태의 레이블은 파사드의 `Overlay.BuildStyle` 안에서 `ImeState` 를 해석해 한 번만 주입된다
+  - `OverlayStyle` 은 `LabelText : string` 과 `MeasureLabels : string[]` 만 받으며, 현재 상태의 레이블은 파사드의 `Overlay.BuildStyle` 안에서 `ImeState` 를 해석해 한 번만 주입된다
   - `OverlayStyle.IsBold : bool` 이 `FontWeight.Bold` 를 대신하고, `AnimationConfig.AlwaysMode : bool` 이 `DisplayMode.Always` 를 대신한다
   - `OverlayAnimator.SetDimMode(bool)` 이 `NonKoreanImeMode.Dim` 체크를 추상화한다
 - **DPI 소유권**: Core 엔진이 DPI 곱셈을 전담한다. 파사드는 `IndicatorScale` 만 먼저 곱해 `*LogicalPx` 필드로 전달하고, 엔진은 내부에서 `Kernel32.MulDiv(fontSize, dpiY, 72)` 로 정밀하게 산출 (`Math.Round` 대체는 일부 DPI 비율에서 레이블 폭 0~1 px 회귀가 있어 기각)
-- **플립-플롭 가드**: `OverlayStyle` 이 `record struct` 이므로 값 동등성으로 자동 비교되며, `Render(newStyle)` 은 `newStyle == _lastStyle` 이면 재렌더를 스킵한다. `MeasureLabels` 에 세 상태 레이블을 모두 넣는 것도 `_fixedLabelWidth` 를 상태 전환 시 churn 없이 max 에 고정하기 위함
+- **플립-플롭 가드**: `OverlayStyle` 은 `record struct` 이지만 `MeasureLabels` 가 `string[]` 라 컴파일러 생성 비교는 참조 비교로 떨어진다 — 그래서 `Equals`/`GetHashCode` 를 직접 구현해 `MeasureLabels` 는 시퀀스 동등성(`SequenceEqual`), 나머지 필드는 일반 비교로 값 동등성을 보장한다. `Render(newStyle)` 은 `newStyle == _lastStyle` 이면 재렌더를 스킵한다. `MeasureLabels` 에 세 상태 레이블을 모두 넣는 것도 `_fixedLabelWidth` 를 상태 전환 시 churn 없이 max 에 고정하기 위함
 - **엔진 인스턴스 + 정적 파사드 조합**: `Overlay` / `Animation` / `Tray` / `Settings` 파사드는 `private static` 필드에 Core 엔진 인스턴스를 보관하고 기존 정적 API 에서 엔진 메서드로 위임한다. 결과적으로 `Program.cs` · 다이얼로그 · Tray · Animation 서로 간의 호출 지점은 Stage 4 전후로 **바이트 동일**하며, 재구성의 영향은 파사드 내부에 국한된다
 - **`JsonSettingsManager<T>` 의 `JsonTypeInfo<T>` 주입**: `JsonSerializerIsReflectionEnabledByDefault=false` 환경에서는 STJ 소스 생성기 컨텍스트만이 유효하다. `AppSettingsManager` 는 생성자에 `AppConfigJsonContext.Default.AppConfig` 를 넘겨 NativeAOT 트리밍을 통과시킨다
 - **크기 예산**: Stage 6 업데이트 알림 추가 후 퍼블리시 exe 는 v0.8.9.0 기준 약 **4.94 MB** (Stage 2 기준 4,891,136 bytes 대비 +52 KB 내외). 같은 기능을 `System.Net.Http.HttpClient` 로 구현하면 NativeAOT 퍼블리시에 ~2.5 MB 가 추가되므로 WinHTTP P/Invoke 경로가 약 60 배 작다. v0.9.1.4 기준 약 **4.72 MB** — `StackTraceSupport=false` 등 진단 메타데이터 6종을 비활성화해 v0.9.1.3 대비 약 **407 KB (~7.9 %)** 추가 절감
@@ -427,7 +437,7 @@ dotnet build                          # 디버그 빌드
 dotnet publish -r win-x64 -c Release  # NativeAOT 릴리스 퍼블리시
 ```
 
-- NativeAOT 단일 exe (~4.9 MB)
+- NativeAOT 단일 exe (~5 MB)
 - .NET 런타임 설치 불필요
 - `app.manifest` : UAC `asInvoker` (P5, v0.9.3.0~). Program Files 등 user-non-writable 위치 설치 시 `%LOCALAPPDATA%\KoEnVue\` 로 config/log 자동 fallback. v0.9.4.0~ `config.admin_elevation: true` 시 런타임 self-elevation + schtasks `HighestAvailable` 분담 — 매니페스트는 그대로 (PR-15)
 - **디버그·릴리스 둘 다 빌드 필수** — 디버그만 돌리면 릴리스 exe 가 낡은 상태로 남음

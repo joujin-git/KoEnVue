@@ -196,7 +196,7 @@ OFF 토글 시 `DisableCursorOverlay()` 가 역순으로 `KillTimer` → `Cursor
 
 ### Render 후 SW_SHOW 호출자 패턴 + alpha 디폴트 255
 
-`LayeredCursorBase.Show(x, y)` 는 좌표/DPI 캐시만 갱신하고 `ShowWindow` 를 부르지 않는다. CursorOverlay (호출자) 가 `Render` 직후 명시 `ShowWindow(SW_SHOW)` 호출 — [dev-notes/2026-05-20-post-pr10-attempts-reverted.md](https://github.com/joujin-git/KoEnVue/blob/feat/v094-integration/docs/dev-notes/2026-05-20-post-pr10-attempts-reverted.md) 가설 A 함정 (Render 전 SW_SHOW 가 layered window 비트맵 없이 visible 캐싱 → 후속 UpdateLayeredWindow 가 화면에 안 나타남) 회피. 한/영 배지 ([Animation.cs:100](../App/UI/Animation.cs#L100)) 와 동일 `SW_SHOW` 사용.
+`LayeredCursorBase.Show(x, y)` 는 좌표/DPI 캐시만 갱신하고 `ShowWindow` 를 부르지 않는다. CursorOverlay (호출자) 가 `Render` 직후 명시 `ShowWindow(SW_SHOW)` 호출 — [dev-notes/2026-05-20-post-pr10-attempts-reverted.md](https://github.com/joujin-git/KoEnVue/blob/feat/v094-integration/docs/dev-notes/2026-05-20-post-pr10-attempts-reverted.md) 가설 A 함정 (Render 전 SW_SHOW 가 layered window 비트맵 없이 visible 캐싱 → 후속 UpdateLayeredWindow 가 화면에 안 나타남) 회피. 한/영 배지 ([`Animation.TriggerShow`](../App/UI/Animation.cs)) 와 동일 `SW_SHOW` 사용.
 
 `_displayAlpha` 디폴트 0 으로 두면 첫 `Render → UpdateLayeredWindow` 가 `SourceConstantAlpha=0` (완전 투명) 으로 그려져 사용자가 못 본다. cursor 인디는 페이드 없이 항상 100% 표시이므로 [`LayeredCursorBase`](../Core/Windowing/LayeredCursorBase.cs) 에서 `_displayAlpha = 255` 디폴트로 초기화. Hide/Prepare 의 임시 0 블리트는 `_displayAlpha` 를 덮지 않는다(PR-29 Commit0 — 과거 `_lastAlpha=0` 캐시 회귀 차단). 한/영 배지의 OverlayAnimator 알파 보간과 무관. 이동 딤(PR-29)도 창 알파는 Full 유지하고 셰이더 원별 알파만 낮춘다.
 
@@ -363,9 +363,9 @@ Shift can be pressed/released mid-drag — axis flips if the user drags far enou
 `config.SnapToWindows` (default `true`) toggles magnetic edge snapping to nearby top-level windows and the current monitor's work area. Tray menu toggle: `IDM_SNAP_TO_WINDOWS = 4004`.
 
 - **`BeginDrag(bool snapToWindows)`** captures `_dragHotPointX/Y` (cursor offset from window top-left via `GetCursorPos`) and, when enabled, enumerates candidates into `_snapRects` via `User32.EnumWindows` with a `[UnmanagedCallersOnly]` callback
-- **Filter**: excludes the overlay itself, non-visible windows, iconic windows, DWM-cloaked windows (`Dwmapi.IsCloaked` wrapping `DWMWA_CLOAKED = 14`), and anything smaller than `SnapMinWindowSizePx = 80`
+- **Filter**: excludes the overlay itself, non-visible windows, iconic windows, DWM-cloaked windows (`Dwmapi.IsCloaked` wrapping `DWMWA_CLOAKED = 14`), and anything smaller than `MinWindowSizePx = 80`
 - **Candidate rect source**: `Dwmapi.TryGetVisibleFrame` — snap aligns with the DWM visible frame, not `GetWindowRect`'s invisible resize border
-- **`HandleMoving(ref RECT, style, snapToWindows, snapThresholdPx, snapGapPx)`** picks the smallest X and Y edge-pair distances within `snapThresholdPx = 10` (DPI-scaled) via the private `ApplySnap` helper. Window edge snaps apply a configurable gap (`snapGapPx`, default 2, DPI-scaled) to prevent the indicator from overlapping with the target window's border; screen (work area) edges snap flush with zero gap. Only applied to axes not already locked by Shift
+- **`HandleMoving(ref RECT, style, snapToWindows, snapThresholdPx, snapGapPx)`** picks the smallest X and Y edge-pair distances within `snapThresholdPx = 10` (DPI-scaled) via the private `ApplySnap` helper. Window edge snaps apply a configurable gap (`snapGapPx`, default 10, DPI-scaled) to prevent the indicator from overlapping with the target window's border; screen (work area) edges snap flush with zero gap. Only applied to axes not already locked by Shift
 - **`EndDrag`** clears `_snapRects`
 
 ### EnumWindows / EnumChildWindows NativeAOT callbacks
@@ -431,7 +431,7 @@ Ease-out cubic interpolation: `1 - (1 - t)^3` via `TIMER_ID_SLIDE`. All animatio
 
 - **fade** — [`OverlayAnimator`](../Core/Animation/OverlayAnimator.cs) 가 fade-in / fade-out / dim-idle 3곳에서 `AnimationEnabled` 를 **직접** 본다 (`false` 면 `SnapToTargetAlpha` 로 즉시 표시/숨김). Core 자체 게이팅이라 PR-22 에서 불변.
 - **highlight / slide (한/영 배지)** — 엔진은 `AnimationConfig.ChangeHighlight` / `SlideAnimation` 만 보고 `AnimationEnabled` 와 무관하게 동작한다. 마스터 의미는 App 파사드 [`Animation.BuildAnimationConfig`](../App/UI/Animation.cs) **1지점**이 합성한다 — `ChangeHighlight: config.AnimationEnabled && config.ChangeHighlight`, `SlideAnimation: config.AnimationEnabled && config.SlideAnimation` (AND). 마스터 OFF 면 두 값이 `false` 로 합성돼 엔진의 slide/highlight 분기가 진입조차 안 하고, 마스터 ON 이면 개별 토글(`change_highlight` / `slide_animation`) 값이 그대로 보존된다.
-- **커서 헤일로 강조 팝** — 커서 헤일로는 별도 파사드([`CursorOverlay`](../App/UI/CursorOverlay.cs))라 `BuildAnimationConfig` 합성을 거치지 않는다. 초기 PR-22 는 이 경로를 놓쳐 마스터 OFF 시에도 커서 팝이 계속 떴다 — **후속 보강**으로 [`CursorOverlay.SetImeState`](../App/UI/CursorOverlay.cs) 의 팝 트리거를 `if (_config.AnimationEnabled && _config.CursorChangeHighlight) TriggerPop(); else _engine.Render(...)` 로 좁혀 한/영 배지 `AnimationEnabled && ChangeHighlight` (Animation.cs:154) 와 **평행한 AND 게이팅**을 줬다. 마스터 OFF 면 커서 팝도 정지(색만 즉시 갱신). 위 [IME 전환 스케일 팝 (PR-21)](#ime-전환-스케일-팝-pr-21) 의 `TriggerPop` 항목 참조.
+- **커서 헤일로 강조 팝** — 커서 헤일로는 별도 파사드([`CursorOverlay`](../App/UI/CursorOverlay.cs))라 `BuildAnimationConfig` 합성을 거치지 않는다. 초기 PR-22 는 이 경로를 놓쳐 마스터 OFF 시에도 커서 팝이 계속 떴다 — **후속 보강**으로 [`CursorOverlay.SetImeState`](../App/UI/CursorOverlay.cs) 의 팝 트리거를 `if (_config.AnimationEnabled && _config.CursorChangeHighlight) TriggerPop(); else _engine.Render(...)` 로 좁혀 한/영 배지 `AnimationEnabled && ChangeHighlight` (`Animation.BuildAnimationConfig`) 와 **평행한 AND 게이팅**을 줬다. 마스터 OFF 면 커서 팝도 정지(색만 즉시 갱신). 위 [IME 전환 스케일 팝 (PR-21)](#ime-전환-스케일-팝-pr-21) 의 `TriggerPop` 항목 참조.
 
 이 분담의 이유: 엔진 내부 가드 3곳(이미 `AnimationEnabled` 를 보는 fade) 외에 highlight/slide 분기마다 `AnimationEnabled &&` 를 산개하는 대신, "최종 플래그"를 App 이 한 곳에서 만들어 엔진에 넘기면 **Core 상태머신 분기가 무변경**으로 남는다 (`e253f2f` slide+highlight 합성 로직과의 상호작용 회귀 표면 0). P4(마스터 단일 진실원) + P6(App 이 합성, Core 는 `AnimationConfig` 만 소비) 정합. 회귀 가드: [tests/KoEnVue.Tests/Unit/AnimationFacadeTests.cs](../tests/KoEnVue.Tests/Unit/AnimationFacadeTests.cs) 4 Fact (마스터 OFF→highlight·slide 게이팅 / 마스터 ON→개별 토글 보존 / 마스터 ON+개별 OFF→AND 로 OFF 유지 / `AnimationEnabled` 플래그 통과).
 
@@ -822,14 +822,14 @@ Reset paths: (1) right-click tray → "한/영 배지 숨김" menu toggle (flips
 
 ### Startup task registration & path/delay auto-sync
 
-Registration uses `schtasks /create /xml` with an embedded `<LogonTrigger><Delay>PT15S</Delay></LogonTrigger>` (constant `Tray.StartupTaskDelay`). The 15-second logon delay avoids the "Shell_NotifyIconW NIM_ADD failed" race at boot where the task fires before `explorer.exe` has initialized the tray — the `NIM_ADD` retry timer still recovers if the delay is ever absent, but the delay prevents the warn log line from appearing on every boot. `RegisterStartupTaskWithXml` writes the XML to `%TEMP%\koenvue-task-{pid}.xml` as UTF-16 LE with BOM (the encoding schtasks expects) and deletes it in `finally`.
+Registration uses `schtasks /create /xml` with an embedded `<LogonTrigger><Delay>PT15S</Delay></LogonTrigger>` (constant `StartupTaskManager.StartupTaskDelay`). The 15-second logon delay avoids the "Shell_NotifyIconW NIM_ADD failed" race at boot where the task fires before `explorer.exe` has initialized the tray — the `NIM_ADD` retry timer still recovers if the delay is ever absent, but the delay prevents the warn log line from appearing on every boot. `RegisterStartupTaskWithXml` writes the XML to `%TEMP%\koenvue-task-{Guid:N}.xml` as UTF-16 LE with BOM (the encoding schtasks expects) and deletes it in `finally`.
 
-`Tray.SyncStartupPathAsync()` runs on a background thread immediately after `Tray.Initialize` in `Program.cs`. It:
+`StartupTaskManager.SyncStartupPathAsync()` runs on a background thread immediately after `Tray.Initialize` in `Program.cs`. It:
 
 1. Invokes `schtasks.exe /query /tn ... /xml ONE`
-2. Extracts the `<Command>` and `<Delay>` elements with plain string `IndexOf` (no `XmlDocument` — NativeAOT-friendly) via `ExtractTagFromXml`. Manually unescapes `&amp;` / `&quot;` / etc. for `Command` (Delay is raw ISO 8601 so no unescape).
+2. Extracts the `<Command>`, `<Delay>` and `<RunLevel>` elements with plain string `IndexOf` (no `XmlDocument` — NativeAOT-friendly) via `ExtractTagFromXml`. Manually unescapes `&amp;` / `&quot;` / etc. for `Command` (Delay is raw ISO 8601 so no unescape).
 3. Normalizes both paths via `Path.GetFullPath` + `OrdinalIgnoreCase`
-4. Re-registers the task via XML if either the stored path differs from `Environment.ProcessPath`, OR the stored `<Delay>` is missing/different from `PT15S` (this also migrates older `/tr`-registered tasks to the new XML form on the next launch)
+4. Re-registers the task via XML if the stored path differs from `Environment.ProcessPath`, OR the stored `<Delay>` is missing/different from `PT15S` (this also migrates older `/tr`-registered tasks to the new XML form on the next launch), OR the stored `<RunLevel>` differs from the one `config.AdminElevation` implies (PR-15 — `HighestAvailable` when on, `LeastPrivilege` when off)
 
 Handles the "user moved the exe" case: the first boot after a move still misses because Task Scheduler launches the old path, but on the next manual launch the sync runs and subsequent boots pick up the corrected path. `QueryRegisteredTask` wraps `Process.Start` in try/catch so schtasks being absent or non-zero exit is silently ignored.
 
@@ -917,7 +917,7 @@ Parsing uses `double.TryParse` + `CultureInfo.InvariantCulture`, so `"2.3"` work
 
 - **`SettingsDialog.cs`** (modal state, `Show`, `BuildChildren`(+윈도우 생성 헬퍼 5종), `TryCommit`, dialog WndProc)
 - **`SettingsDialog.Layout.cs`** (`SettingsLayout` 메트릭 record struct + `BuildLayout` 팩토리 — DPI 스케일·파생 좌표 순수 산술)
-- **`SettingsDialog.Fields.cs`** (`FieldType` enum, `FieldDef`/`RowDef` records, `BuildRowDefs` 13-section spec, 6 factory methods: `Bool`/`Int`/`Dbl`/`Str`/`ColorField`/`Combo`)
+- **`SettingsDialog.Fields.cs`** (`FieldType` enum, `FieldDef`/`RowDef` records, `BuildRowDefs` section spec, 6 factory methods: `Bool`/`Int`/`Dbl`/`Str`/`ColorField`/`Combo`)
 - **`SettingsDialog.Scroll.cs`** (scroll state, `SetupScrollbar`, `ScrollTo`, `ScrollFieldIntoView`, `ResolveVScrollPosition`, viewport WndProc)
 
 `partial class` shares all static state at compile time. No call-site changes — `SettingsDialog.Show(hwndMain, config, updateConfig)` is the same public entry point.
@@ -1002,7 +1002,7 @@ The tray menu item is discoverable (user sees it when they right-click to exit o
 
 ### Config toggle
 
-`AppConfig.UpdateCheckEnabled : bool = true` lives in the `[시스템]` section next to `LogMaxSizeMb`. Not exposed in the tray menu (low-frequency toggle) — users who want to disable it edit `koenvue_config.json` directly. Adding a row to [SettingsDialog.Fields.cs](../App/UI/Dialogs/SettingsDialog.Fields.cs) is a 3-line addition if needed later.
+`AppConfig.UpdateCheckEnabled : bool = true` lives in the 「일반」 section next to `LogMaxSizeMb`. Not exposed in the tray menu (low-frequency toggle) — users who want to disable it use that section's 「부팅 시 업데이트 확인」 checkbox ([SettingsDialog.Fields.cs](../App/UI/Dialogs/SettingsDialog.Fields.cs)) or edit `koenvue_config.json` directly.
 
 ### End-to-end validation
 
@@ -1463,7 +1463,7 @@ Enabled in [KoEnVue.csproj](../KoEnVue.csproj) — strips ICU from the NativeAOT
 
 ### `theme:system` 데이터 소스 및 시그널
 
-[App/Config/ThemePresets.cs:ApplySystemTheme](../App/Config/ThemePresets.cs#L111) 는 사용자가 `theme:system` 을 선택했을 때 시스템 강조색을 인디케이터 한글 배경에 직접 적용하고 영문 배경은 보색으로 계산한다. PR-14 이후 데이터 소스는 두 경로의 2단 분기:
+[App/Config/ThemePresets.cs:ApplySystemTheme](../App/Config/ThemePresets.cs) 는 사용자가 `theme:system` 을 선택했을 때 시스템 강조색을 인디케이터 한글 배경에 직접 적용하고 영문 배경은 보색으로 계산한다. PR-14 이후 데이터 소스는 두 경로의 2단 분기:
 
 1. **`Dwmapi.DwmGetColorizationColor(out uint argb, out bool opaqueBlend)`** — Win11 personalization accent 의 source-of-truth. "제목 표시줄과 창 테두리에 강조색 표시" 옵션 ON/OFF 와 무관하게 항상 최신 accent 를 반환한다. 반환값은 0xAARRGGBB ARGB DWORD — `Dwmapi.TryGetColorizationRgb` 헬퍼가 R/G/B 3 채널로 분리 (alpha 무시). HRESULT 비-0 이면 false.
 2. **`User32.GetSysColor(Win32Constants.COLOR_HIGHLIGHT)`** 폴백 — DWM composition 비활성 / 안전 모드 등 예외 경로용. Win11 에서 위 옵션이 OFF 면 personalization accent 변경이 `COLOR_HIGHLIGHT` 에 즉시 반영되지 않는 known limitation 이 있어 일반 환경에선 1번 경로가 절대 우선.

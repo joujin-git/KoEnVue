@@ -72,7 +72,7 @@ git grep "맑은 고딕"          Core/   # PR-08 한국어 폰트 어휘 게이
 git grep "requireAdministrator"     app.manifest   # P5: asInvoker only (manifest invariant)
 git grep "RunAsVerb"                App/Bootstrap/ # PR-15: 1+ (AdminElevation 의 verb="runas" const 추출 후 실 호출 site 검증 — PR-15 도입 당시 "ShellExecuteW.*runas" grep 은 doc comment 만 매치하고 ShellExecuteW(..., RunAsVerb, ...) 실 호출은 미매치되는 stale 상태)
 git grep "GetTokenInformation"      Core/Native/   # PR-15: ≥1 presence (선언·호출·주석 — 카운트 drift OK, Advapi32 RID 추출)
-git grep "RunLevelHighestAvailable" App/Startup/   # PR-15: 3 (const + BuildStartupTaskXml 사용 2)
+git grep "RunLevelHighestAvailable" App/Startup/   # PR-15: 3 (const + BuildStartupTaskXml 사용 1 + SyncStartupPathCore 기대값 비교 1)
 git grep "RelaunchParentPidEnvVarName" App/Bootstrap/   # PR-15 후속 fix: 4 (const + 사용 3 — KOENVUE_RELAUNCH_PARENT_PID)
 git grep "Win32Constants.MB_OK"        App/             # AUDIT 묶음 3 후: **3** (AdminElevation / SettingsDialog / Tray.ShowMessage). **핵심 invariant 는 카운트가 아니라** App/UI `MessageBoxW` 단일 OK 버튼이 100% named `Win32Constants.MB_OK` (positional uType=0 금지, 아래 두 줄) — 카운트는 헬퍼 추출마다 변하므로 정성 패턴이 단일 진실원
 git grep -E "uType:\s*0\b"             App/             # PR-15 후속 fix #2: 0 (named argument 형태의 매직 넘버 0 잔존 없음)
@@ -151,10 +151,10 @@ Both have single-line try bodies so wide catch poses no masking risk.
 
 ### 7. Stage 5 catch narrowing wave
 
-`JsonSettingsManager.Load`'s outer catch and all four `Tray.cs` schtasks-related catches (`IsStartupRegistered` had a *bare* catch violating rule 1, `ToggleStartupRegistration`, `SyncStartupPathCore`) were narrowed to:
+`JsonSettingsManager.Load`'s outer catch and all four schtasks-related catches (then in `Tray.cs`; since PR-04 in [App/Startup/StartupTaskManager.cs](../App/Startup/StartupTaskManager.cs)) (`IsStartupRegistered` had a *bare* catch violating rule 1, `ToggleStartupRegistration`, `SyncStartupPathCore`) were narrowed to:
 
 - **`Load` outer catch**: `IOException or UnauthorizedAccessException or JsonException or NotSupportedException`
-- **schtasks catches**: `Win32Exception or InvalidOperationException or PlatformNotSupportedException or FileNotFoundException`. `ToggleStartupRegistration` and `SyncStartupPathCore` additionally include `IOException or UnauthorizedAccessException` because the XML-based registration path writes a temp file (`%TEMP%\koenvue-task-{pid}.xml`) before handing it to `schtasks /xml`.
+- **schtasks catches**: `Win32Exception or InvalidOperationException or PlatformNotSupportedException or FileNotFoundException`. `ToggleStartupRegistration` and `SyncStartupPathCore` additionally include `IOException or UnauthorizedAccessException` because the XML-based registration path writes a temp file (`%TEMP%\koenvue-task-{Guid:N}.xml`) before handing it to `schtasks /xml`.
 
 Logic bugs in pipeline hooks (`Migrate`/`Validate`/`ApplyTheme`) and in path normalization helpers now propagate instead of being absorbed.
 

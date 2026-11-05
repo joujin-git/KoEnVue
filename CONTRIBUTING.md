@@ -27,11 +27,11 @@ dotnet build
 # 단위 테스트
 dotnet test tests/KoEnVue.Tests/
 
-# NativeAOT 단일 exe (~4.9 MB) — release exe 산출
+# NativeAOT 단일 exe (~5 MB) — release exe 산출
 dotnet publish -r win-x64 -c Release
 ```
 
-빌드 / 테스트 / publish 셋 모두 0 경고 0 오류여야 합니다. CI 가 같은 3 단계로 모든 PR 을 검증합니다.
+빌드 / 테스트 / publish 셋 모두 0 경고 0 오류여야 합니다. CI 는 모든 PR 과 main 푸시에서 빌드·테스트를 검증하고, publish 는 main 푸시에서만 돌립니다.
 
 ---
 
@@ -42,7 +42,7 @@ dotnet publish -r win-x64 -c Release
 1. [docs/improvement-plan/INDEX.md](docs/improvement-plan/INDEX.md) 의 진행 매트릭스에서 다음 ⏳ PR 선택.
 2. 해당 `PR-NN-*.md` 본문의 §1 목적 / §2 변경 범위 / §3 검증 기준 / §4 위험을 모두 읽기.
 3. `feat/pr-NN-*` 브랜치 생성 후 §2 의 체크리스트를 순서대로 처리.
-4. **Tier-1** (필수): `dotnet build` + `dotnet test` + `dotnet publish -r win-x64 -c Release` 모두 0 경고. invariant 4종 (`git grep "KoEnVue\.App" Core/` / `git grep "ImeState" Core/` / `git grep "NonKoreanImeMode" Core/` / `git grep "DllImport"`) 0 매치.
+4. **Tier-1** (필수): `dotnet build` + `dotnet test tests/KoEnVue.Tests/KoEnVue.Tests.csproj` (csproj 명시 — 루트에서 인자 없이 돌리면 메인 csproj 를 잡아 0개 실행·성공처럼 보인다) + `dotnet publish -r win-x64 -c Release` 모두 0 경고. invariant 4종 (`git grep "KoEnVue\.App" Core/` / `git grep "ImeState" Core/` / `git grep "NonKoreanImeMode" Core/` / `git grep "DllImport" -- '*.cs'`) 0 매치.
 5. **Tier-2** (필수): 각 PR §3 의 grep 가드 (rename-away / 신규 ns / 라인 카운트 슬립 등) 모두 통과.
 6. **Tier-3** (권장): 명세 §3 의 수동 smoke 항목 — 사용자 가시 동작이 의도대로 변하는지 실제로 띄워서 확인.
 7. PR 머지 후 `PR-NN-*.md §6` 와 `INDEX.md` 의 Sessions log 표에 진행 로그 한 줄 추가.
@@ -77,7 +77,7 @@ GitHub Issues 에 한국어 또는 영문으로 자유롭게 작성해 주세요
 핵심 워크플로우:
 1. 작업 시작 — `claude` 실행 → `SessionStart` hook 이 최근 세션 컨텍스트 자동 주입
 2. 다중 파일/새 기능/P규칙 변경 — `/plan` 으로 planner 위임
-3. 코드 변경 — Edit/Write hook 이 영향받는 docs 알림
+3. 코드 변경 — 턴이 끝날 때 Stop hook 의 doc-sync 리마인더가 영향받는 docs 알림
 4. commit 직전 — reviewer 서브에이전트가 P규칙 invariant 검증
 5. release 전 — verifier 서브에이전트가 `dotnet build` + `publish` + `test`
 6. 작업 마무리 — `/wrap-up` 으로 docs-keeper + historian 정리

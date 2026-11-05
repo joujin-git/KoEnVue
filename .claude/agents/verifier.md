@@ -68,7 +68,7 @@ sha256sum bin/Release/net10.0-windows/win-x64/publish/KoEnVue.exe
 ### UI 검증 요청
 다음은 자동 검증 불가 — 사용자 수동 확인 필요:
 - 한/En/EN 레이블 전환 (다른 IME 전환)
-- CAPS LOCK 바 표시
+- CAPS LOCK 표시 (배지 둘레 연보라 테두리 + 커서 헤일로 바깥 보라 띠)
 - 드래그/스냅
 - 트레이 메뉴
 - (이번 변경에서 영향받는 동작만 나열)
