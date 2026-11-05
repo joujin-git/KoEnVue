@@ -5,13 +5,25 @@ on:
     branches: [main]
   pull_request:
 
+# 이 워크플로는 저장소를 읽기만 한다 (빌드·테스트·publish smoke — 푸시·릴리스 생성 없음).
+# 기본 토큰 권한을 읽기 전용으로 좁혀, 액션이 침해돼도 저장소에 쓰지 못하게 한다.
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      # 액션은 태그(v7) 대신 커밋 SHA 로 고정 — 태그는 나중에 다른 커밋으로 옮길 수 있어
+      # 공급망 공격 경로가 된다. 끝 주석이 그 SHA 의 릴리스 버전.
+      # 올리는 법: `git ls-remote --tags https://github.com/actions/checkout.git` 로 새 태그의
+      # SHA 를 찾아 SHA 와 주석을 함께 바꾼다 (setup-dotnet 도 같은 방식).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # 이후 단계에 git 푸시가 없으므로 토큰을 .git/config 에 남기지 않는다.
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: '10.0.x'
 
