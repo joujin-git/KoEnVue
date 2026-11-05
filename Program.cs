@@ -1555,6 +1555,10 @@ internal static partial class Program
     private static void HandleRestoreIndicator()
     {
         if (Tray.ExitRequested || _config.UserHidden || _indicatorVisible || _clickDismissed || IsHiddenByLock) return;
+        // 처리 시점에 다시 확인한다 — 감지 스레드가 보낸 뒤 메뉴 명령이 우리 다이얼로그·안내 박스를 열었으면(그 모달 루프가 이
+        // 메시지를 디스패치한다) 그 위로 배지가 잠깐 떴다가 모달 게이트에 지워졌고, 사용자가 이미 다른 창으로 옮겼으면 옛 앱
+        // 자리에 떴다(릴리즈 리뷰 2회차 2026-11-05). 포그라운드가 아직 메인 창일 때만 되돌린다.
+        if (ModalDialogLoop.IsActive || User32.GetForegroundWindow() != _hwndMain) return;
         if (_lastForegroundHwnd == IntPtr.Zero || !TryResolveCurrent(out AppConfig resolved)) return;
         ShowIndicatorAtForeground(_lastImeState, resolved, imeChanged: false);
     }

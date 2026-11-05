@@ -342,6 +342,13 @@ internal sealed class LayeredOverlayBase : IDisposable
     public bool IsAtDpi(uint dpiX)
         => Math.Abs(dpiX / (double)DpiHelper.BASE_DPI - _currentDpiScale) < DpiScaleTolerance;
 
+    /// <summary>(<paramref name="x"/>,<paramref name="y"/>) 가 속한 모니터의 DPI 가 지금 리소스의 DPI 와 같은가 — 블리트 없이 판정만.</summary>
+    public bool IsAtDpiForPoint(int x, int y)
+    {
+        (uint dpiX, _) = DpiHelper.GetRawDpi(DpiHelper.GetMonitorFromPoint(x, y));
+        return IsAtDpi(dpiX);
+    }
+
     /// <summary>페이드 프레임: SourceConstantAlpha만 변경.</summary>
     public void UpdateAlpha(byte alpha)
     {

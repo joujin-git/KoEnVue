@@ -74,6 +74,9 @@ public sealed class OverlayAnimator : IDisposable
     // forceHidden 플래그 (FadingOut 완료 시 Hidden 강제)
     private bool _forceHidden;
 
+    // 강조·슬라이드 진행 중에 바뀐 투명도를 트랙이 끝날 때 올려야 하는가 (<see cref="SetAlphaAfterTracks"/>).
+    private bool _alphaBlitPending;
+
     // Dim 모드 (비한국어 IME Dim 판정은 파사드에서 수행 후 이 플래그로만 전달)
     private bool _dimmed;
 
@@ -379,10 +382,7 @@ public sealed class OverlayAnimator : IDisposable
         {
             _targetAlpha = GetTargetAlpha(active: true);
             if (_currentAlpha != _targetAlpha)
-            {
-                _currentAlpha = _targetAlpha;
-                _onAlphaChange(_targetAlpha);
-            }
+                SetAlphaAfterTracks(_targetAlpha);
         }
         else if (_phase == AnimPhase.FadingIn)
         {
@@ -406,10 +406,7 @@ public sealed class OverlayAnimator : IDisposable
             {
                 byte idleAlpha = GetTargetAlpha(active: false);
                 if (_currentAlpha != idleAlpha)
-                {
-                    _currentAlpha = idleAlpha;
-                    _onAlphaChange(idleAlpha);
-                }
+                    SetAlphaAfterTracks(idleAlpha);
             }
             else
             {
@@ -430,6 +427,32 @@ public sealed class OverlayAnimator : IDisposable
         StopMotionTracks();
         _lastX = x;
         _lastY = y;
+        FlushPendingAlpha();
+    }
+
+    /// <summary>
+    /// 투명도를 바꾼다 — 강조·슬라이드가 진행 중이면 블리트는 트랙이 끝날 때로 미룬다(<see cref="FlushPendingAlpha"/>). 알파 블리트는
+    /// 엔진의 기본 크기·기준 좌표로 올라가므로, 트랙 도중에 올리면 팝 중 한 프레임 줄거나 슬라이드 중 기준 좌표로 튄다(릴리즈 리뷰
+    /// 2회차 2026-11-05). 강조 프레임은 <see cref="_currentAlpha"/> 를 직접 쓰므로 그사이에도 새 투명도로 그린다.
+    /// </summary>
+    private void SetAlphaAfterTracks(byte alpha)
+    {
+        _currentAlpha = alpha;
+        if (_highlightActive || _slideActive)
+        {
+            _alphaBlitPending = true;
+            return;
+        }
+        _onAlphaChange(alpha);
+    }
+
+    /// <summary>트랙이 모두 끝났으면 미뤄 둔 투명도를 올린다.</summary>
+    private void FlushPendingAlpha()
+    {
+        if (!_alphaBlitPending || _highlightActive || _slideActive) return;
+        _alphaBlitPending = false;
+        if (_phase != AnimPhase.Hidden)
+            _onAlphaChange(_currentAlpha);
     }
 
     // ================================================================
@@ -557,6 +580,9 @@ public sealed class OverlayAnimator : IDisposable
             int restoreX = _slideActive ? _slideCurX : _lastX;
             int restoreY = _slideActive ? _slideCurY : _lastY;
             _onScaledSize(restoreX, restoreY, baseW, baseH, _currentAlpha);
+            // 복원 프레임이 현재 투명도로 그렸다 — 슬라이드가 남아 있지 않으면 미룬 블리트도 끝난 셈이다.
+            if (!_slideActive)
+                _alphaBlitPending = false;
         }
     }
 
@@ -594,6 +620,7 @@ public sealed class OverlayAnimator : IDisposable
                 _onTrackPosition(_slideToX, _slideToY);
             else
                 _onPositionOffset(_slideToX, _slideToY);
+            FlushPendingAlpha();
         }
     }
 

@@ -205,6 +205,9 @@ internal static class Overlay
     /// <summary>강조 중심점 계산용.</summary>
     public static (int x, int y) GetLastPosition() => _engine.GetLastPosition();
 
+    /// <summary>그 좌표의 모니터 DPI 가 지금 리소스와 같은가 (블리트 없음).</summary>
+    public static bool IsAtDpiForPoint(int x, int y) => _engine.IsAtDpiForPoint(x, y);
+
     /// <summary>현재 가시성.</summary>
     public static bool IsVisible => _engine.IsVisible;
 

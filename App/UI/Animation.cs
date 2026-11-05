@@ -156,25 +156,32 @@ internal static class Animation
         _animator.UpdateConfig(BuildAnimationConfig(config));
         _animator.SetDimMode(state == ImeState.NonKorean && config.NonKoreanIme == NonKoreanImeMode.Dim);
 
-        // 갱신 뒤에도 강조·슬라이드가 이어지는가 — 목적지가 바뀌면 애니메이터가 옛 슬라이드를 끊는다(아래 Refresh). 그리기를
-        // 먼저 하고 애니메이터를 나중에 갱신해야 투명도 변경 프레임이 옛 모양을 올리지 않는다.
-        bool trackContinues = _animator.IsHighlightActive || _animator.IsSlidingTo(x, y);
+        // 갱신 뒤에도 강조·슬라이드가 이어지는가 — 목적지가 바뀌면 애니메이터가 옛 슬라이드를 끊는다(아래 Refresh). 새 좌표의
+        // 모니터 배율이 다르면 이어 가지 않는다: 이 분기는 엔진 DPI 를 맞추지 않으므로 옛 배율 DIB 로 그리게 되고, 복구가 강조
+        // 프레임 안으로 중첩 도착하는 WM_DPICHANGED 에 기댔다(릴리즈 리뷰 2회차 2026-11-05). 그리기를 먼저 하고 애니메이터를
+        // 나중에 갱신해야 투명도 변경 프레임이 옛 모양을 올리지 않는다.
+        bool slidingToSameTarget = _animator.IsSlidingTo(x, y);
+        bool trackContinues = (_animator.IsHighlightActive || slidingToSameTarget) && Overlay.IsAtDpiForPoint(x, y);
         if (trackContinues)
         {
             // 진행 중인 강조·슬라이드가 다음 프레임에 올린다 — 여기서 기본 크기·목적지로 한 번 블리트하면 팝 도중 한 프레임
-            // 줄었다 커지거나 슬라이드 중 목적지로 튀었다 돌아왔다(릴리즈 리뷰 2026-11-05, RefreshColor 와 같은 이유).
-            // DIB 만 새 스타일로 그리고, 엔진 좌표는 새 목적지로 맞춰 둔다(트랙이 끝난 뒤 페이드 프레임이 쓰는 기준 — 슬라이드가
-            // 계속되면 다음 프레임이 보간 좌표로 덮는다).
+            // 줄었다 커지거나 슬라이드 중 목적지로 튀었다 돌아왔다(릴리즈 리뷰 2026-11-05, RefreshColor 와 같은 이유). DIB 만
+            // 새 스타일로 그린다. 같은 목적지로 슬라이드가 이어지면 엔진 좌표는 슬라이드 프레임이 쥐고 있으므로 건드리지 않고,
+            // 아니면(강조만 이어짐) 트랙이 끝난 뒤 페이드 프레임이 쓸 기준으로 새 좌표를 맞춘다.
             Overlay.Paint(state, config);
-            Overlay.TrackPosition(x, y);
+            if (!slidingToSameTarget)
+                Overlay.TrackPosition(x, y);
         }
         else
         {
-            // 새 스타일·좌표로 다시 그린다 (현재 투명도 그대로).
+            // 트랙이 남아 있으면(배율이 다른 모니터로 가는 경우) 끝내고 새 배율로 다시 그린다 (현재 투명도 그대로).
+            if (_animator.IsHighlightActive || _animator.IsSlideActive)
+                _animator.CancelMotion(x, y);
             Overlay.Show(x, y, state, config);
         }
 
-        // 애니메이터가 투명도 목표를 새 설정에 맞추고, 목적지가 바뀌었으면 옛 슬라이드를 끊는다.
+        // 애니메이터가 투명도 목표를 새 설정에 맞추고(트랙 진행 중이면 블리트는 트랙이 끝날 때로 미룬다), 목적지가 바뀌었으면
+        // 옛 슬라이드를 끊는다.
         _animator.Refresh(x, y);
         return _animator.IsVisiblePhase;
     }

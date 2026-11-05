@@ -291,6 +291,27 @@ public class BugHunt20261105AnimatorTests
     }
 
     [Fact]
+    public void 강조_팝_도중의_투명도_변경은_팝이_끝날_때_올린다()
+    {
+        // 릴리즈 리뷰 2회차: 제자리 갱신이 팝 도중 알파 블리트를 기본 크기로 올려 한 프레임 줄었다.
+        var alphas = new List<byte>();
+        var scaled = new List<byte>();
+        AnimationConfig cfg = MakeConfig() with { HighlightDurationMs = 20 };
+        var animator = Make(cfg, onAlphaChange: alphas.Add, onScaledSize: (_, _, _, _, a) => scaled.Add(a));
+
+        animator.TriggerShow(0, 0, 100, 100, highlightTrigger: true);   // Holding + 강조 팝
+        alphas.Clear();
+        animator.UpdateConfig(cfg with { Opacity = 0.5 });
+        animator.Refresh(100, 100);
+        Assert.Empty(alphas);                                             // 팝 도중엔 알파 블리트 없음
+
+        Thread.Sleep(30);
+        animator.OnWmTimer(HighlightId);                                  // 팝 완료 — 복원 프레임
+        byte target = (byte)(0.5 * byte.MaxValue);
+        Assert.Equal(target, scaled[^1]);                                 // 새 투명도로 복원
+    }
+
+    [Fact]
     public void 드래그_취소는_슬라이드와_강조를_끝낸다()
     {
         var posSpy = new List<(int X, int Y)>();
@@ -346,6 +367,43 @@ public class BugHunt20261105AnimatorTests
         ForceTopmostIntervalMs: 0,
         AnimationFrameMs: 16,
         DimOpacityFactor: 0.5);
+}
+
+/// <summary>릴리즈 리뷰 2회차(2026-11-05) — 감지 루프의 숨김 판정은 창마다 기억한다.</summary>
+public class BugHunt20261105SuppressionTests
+{
+    private const BindingFlags PrivateStatic = BindingFlags.NonPublic | BindingFlags.Static;
+
+    [Fact]
+    public void 숨김_판정은_창마다_남고_그_창이_통과해야_풀린다()
+    {
+        Type t = typeof(DetectionService);
+        FieldInfo store = t.GetField("s_suppressedWindows", PrivateStatic)!;
+        MethodInfo mark = t.GetMethod("MarkSuppressed", PrivateStatic)!;
+        MethodInfo show = t.GetMethod("MarkShowable", PrivateStatic)!;
+        object? saved = store.GetValue(null);
+        try
+        {
+            store.SetValue(null, Array.Empty<IntPtr>());
+            var fullscreenApp = (IntPtr)0x1111;
+            var desktop = (IntPtr)0x2222;
+
+            mark.Invoke(null, [fullscreenApp]);   // F11 전체화면
+            mark.Invoke(null, [desktop]);         // 바탕화면을 거쳐
+            // 단일 값이던 시절엔 바탕화면 판정이 전체화면 앱의 판정을 덮어, 돌아오자마자 누른 한/영이 배지를 띄웠다.
+            Assert.True(DetectionService.IsForegroundSuppressed(fullscreenApp));
+            Assert.True(DetectionService.IsForegroundSuppressed(desktop));
+
+            show.Invoke(null, [desktop]);         // 바탕화면 판정만 풀린다
+            Assert.False(DetectionService.IsForegroundSuppressed(desktop));
+            Assert.True(DetectionService.IsForegroundSuppressed(fullscreenApp));
+            Assert.False(DetectionService.IsForegroundSuppressed(IntPtr.Zero));
+        }
+        finally
+        {
+            store.SetValue(null, saved);
+        }
+    }
 }
 
 /// <summary>bug-hunt 2026-11-05 회귀 고정 — 트레이 메뉴 토글과 상세 설정 커밋.</summary>

@@ -68,18 +68,53 @@ internal static class DetectionService
     /// 히스테리시스 유예 구간(연속 N폴링 전)은 값을 바꾸지 않는다 — 감지 루프와 같은 기준이다.
     /// </para>
     /// </summary>
-    private static IntPtr s_suppressedForeground;
+    private static IntPtr[] s_suppressedWindows = [];
 
     /// <summary>
-    /// 감지 루프가 <paramref name="hwnd"/> 위의 배지를 숨김으로 판정해 둔 상태인가 (메인 스레드에서 읽는다).
-    /// 판정은 **그 창에 대한 것**이다 — 바탕화면에서 숨긴 판정이 다음 틱 전에 앱으로 돌아온 한/영 전환까지 막지 않도록
-    /// 창을 함께 게시한다(릴리즈 리뷰 2026-11-05 — 종전 bool 은 최대 1폴링 동안 다른 창의 표시까지 버렸다).
+    /// <see cref="s_suppressedWindows"/> 상한 — 오래된 판정부터 버린다. 판정이 남아 있어야 하는 창은 "숨김 판정을 받은 뒤 아직
+    /// 다시 통과하지 못한 창" 이라 몇 개를 넘지 않는다.
     /// </summary>
-    internal static bool IsForegroundSuppressed(IntPtr hwnd) =>
-        hwnd != IntPtr.Zero && Volatile.Read(ref s_suppressedForeground) == hwnd;
+    private const int MaxSuppressedWindows = 8;
 
-    /// <summary>숨김 판정을 게시한다 — <paramref name="hwnd"/> 가 Zero 면 해제.</summary>
-    private static void PublishSuppressed(IntPtr hwnd) => Volatile.Write(ref s_suppressedForeground, hwnd);
+    /// <summary>
+    /// 감지 루프가 <paramref name="hwnd"/> 위의 배지를 숨김으로 판정했고 그 창이 아직 다시 통과하지 않았는가 (메인 스레드에서 읽는다).
+    /// 판정은 **창마다** 기억한다 — 바탕화면에서 내린 판정이 다음 틱 전에 앱으로 돌아온 한/영 표시까지 막지 않고(릴리즈 리뷰
+    /// 1회차), 반대로 전체화면 앱 A 의 판정이 중간에 바탕화면·우리 메뉴를 거쳤다고 사라지지도 않게(릴리즈 리뷰 2회차) — 단일 값은
+    /// 둘 중 하나를 놓쳤다. 감지 스레드만 쓰는 copy-on-write 배열이라 읽기에 잠금이 없다.
+    /// </summary>
+    internal static bool IsForegroundSuppressed(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+        foreach (IntPtr h in Volatile.Read(ref s_suppressedWindows))
+        {
+            if (h == hwnd) return true;
+        }
+        return false;
+    }
+
+    /// <summary>숨김 판정을 기억한다 (감지 스레드 전용).</summary>
+    private static void MarkSuppressed(IntPtr hwnd)
+    {
+        IntPtr[] cur = s_suppressedWindows;
+        if (hwnd == IntPtr.Zero || Array.IndexOf(cur, hwnd) >= 0) return;
+        int keep = Math.Min(cur.Length, MaxSuppressedWindows - 1);
+        var next = new IntPtr[keep + 1];
+        Array.Copy(cur, cur.Length - keep, next, 0, keep);
+        next[keep] = hwnd;
+        Volatile.Write(ref s_suppressedWindows, next);
+    }
+
+    /// <summary>통과 판정 — 그 창의 숨김 판정을 지운다 (감지 스레드 전용).</summary>
+    private static void MarkShowable(IntPtr hwnd)
+    {
+        IntPtr[] cur = s_suppressedWindows;
+        int i = Array.IndexOf(cur, hwnd);
+        if (i < 0) return;
+        var next = new IntPtr[cur.Length - 1];
+        Array.Copy(cur, 0, next, 0, i);
+        Array.Copy(cur, i + 1, next, i, cur.Length - i - 1);
+        Volatile.Write(ref s_suppressedWindows, next);
+    }
 
     /// <summary>RECT 의 4 필드를 모두 비교해 동등 여부 판정.</summary>
     private static bool RectsEqual(in RECT a, in RECT b) =>
@@ -217,7 +252,10 @@ internal static class DetectionService
         TrackWindowMove(host, ref state, hwndForeground, appConfig, ref foregroundChanged);
 
         // 필터를 통과했다 — 창이 움직이는 중이 아니면 배지를 보여도 되는 상태다.
-        PublishSuppressed(state.WindowMoving ? hwndForeground : IntPtr.Zero);
+        if (state.WindowMoving)
+            MarkSuppressed(hwndForeground);
+        else
+            MarkShowable(hwndForeground);
 
         EmitStateChanges(host, ref state, hwndForeground, hwndFocus, threadId, appConfig, foregroundChanged);
     }
@@ -250,13 +288,16 @@ internal static class DetectionService
                 User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR, IntPtr.Zero, IntPtr.Zero);
                 state.OwnMenuHidVisibleBadge = true;
             }
-            PublishSuppressed(state.HwndMain);
         }
         else if (state.OwnMenuHidVisibleBadge)
         {
             state.OwnMenuHidVisibleBadge = false;
-            Logger.Debug("Pointer left own tray menu; restoring the badge hidden over it");
-            User32.PostMessageW(state.HwndMain, AppMessages.WM_RESTORE_INDICATOR, IntPtr.Zero, IntPtr.Zero);
+            // 메뉴 명령이 다이얼로그를 만드는 중이면(모달 표식은 창을 보이기 전에 선다) 되돌리지 않는다 — 그 위로 배지가 떴다.
+            if (!ModalDialogLoop.IsActive)
+            {
+                Logger.Debug("Pointer left own tray menu; restoring the badge hidden over it");
+                User32.PostMessageW(state.HwndMain, AppMessages.WM_RESTORE_INDICATOR, IntPtr.Zero, IntPtr.Zero);
+            }
         }
         state.LastFiltered = true;
         state.FilteredStreak = 0;
@@ -293,7 +334,7 @@ internal static class DetectionService
             User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                 IntPtr.Zero, IntPtr.Zero);
         }
-        PublishSuppressed(hwndForeground);
+        MarkSuppressed(hwndForeground);
         state.LastFiltered = true;
         return true;
     }
@@ -347,7 +388,7 @@ internal static class DetectionService
                 User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
             }
-            PublishSuppressed(hwndForeground);
+            MarkSuppressed(hwndForeground);
             // 파생 캐시(프로세스명·창 프레임)를 hwnd 와 **함께** 갱신한다. 종전에는 여기서
             // LastHwndForeground 만 앞당겨 세웠는데, UpdateForegroundProcessCache 는 그 필드 하나만
             // 보고 조기 반환하므로 필터가 풀린 뒤에도 이름과 프레임이 **영원히 이전 앱 값**으로
@@ -397,7 +438,7 @@ internal static class DetectionService
                 User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
             }
-            PublishSuppressed(hwndForeground);
+            MarkSuppressed(hwndForeground);
             // 위 Pointer suppress 분기와 같은 이유로 파생 캐시를 함께 갱신한다 (확정 #5).
             UpdateForegroundProcessCache(ref state, hwndForeground);
             state.LastHwndForeground = hwndForeground;
@@ -466,7 +507,7 @@ internal static class DetectionService
                 User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
             }
-            PublishSuppressed(hwndForeground);
+            MarkSuppressed(hwndForeground);
             state.LastHwndForeground = hwndForeground;
             state.LastHwndFocus = hwndFocus;
             state.LastSystemInputFrame = default;
@@ -482,7 +523,7 @@ internal static class DetectionService
         {
             User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                 IntPtr.Zero, IntPtr.Zero);
-            PublishSuppressed(hwndForeground);
+            MarkSuppressed(hwndForeground);
             // lastHwndForeground 미갱신 → 다음 틱에서 foreground 변경 감지 → 새 앱에 배지 표시
             state.LastHwndFocus = hwndFocus;
             state.LastSystemInputFrame = default;
