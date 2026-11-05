@@ -71,8 +71,8 @@ internal static class DetectionService
     private static IntPtr[] s_suppressedWindows = [];
 
     /// <summary>
-    /// <see cref="s_suppressedWindows"/> 상한 — 오래된 판정부터 버린다. 판정이 남아 있어야 하는 창은 "숨김 판정을 받은 뒤 아직
-    /// 다시 통과하지 못한 창" 이라 몇 개를 넘지 않는다.
+    /// <see cref="s_suppressedWindows"/> 상한 — 가장 오래 다시 판정되지 않은 창부터 버린다. 남는 항목은 "숨김 판정을 받은 뒤 아직
+    /// 다시 통과하지 못한 창" 인데, 바탕화면·작업 표시줄처럼 늘 걸리는 창도 들어오므로 상한이 필요하다(파괴된 창은 넣을 때 정리).
     /// </summary>
     private const int MaxSuppressedWindows = 8;
 
@@ -92,16 +92,28 @@ internal static class DetectionService
         return false;
     }
 
-    /// <summary>숨김 판정을 기억한다 (감지 스레드 전용).</summary>
+    /// <summary>
+    /// 숨김 판정을 기억한다 (감지 스레드 전용). **최근에 판정한 창이 맨 뒤** 다 — 이미 있으면 맨 뒤로 옮기고, 상한을 넘으면 맨
+    /// 앞(가장 오래 다시 판정되지 않은 창)부터 버린다. 파괴된 창은 먼저 정리한다. 처음 넣은 순서로만 버리던 때는 전체화면 앱처럼
+    /// 계속 유효한 판정이 다시는 쓰이지 않을 항목(닫힌 창)에 밀려났다(릴리즈 리뷰 3회차 2026-11-05). 필터 확정 분기는 그 창이 앞에
+    /// 있는 동안 매 틱 다시 판정하므로, 지금 쓰이는 판정은 늘 맨 뒤에 있다.
+    /// </summary>
     private static void MarkSuppressed(IntPtr hwnd)
     {
+        if (hwnd == IntPtr.Zero) return;
         IntPtr[] cur = s_suppressedWindows;
-        if (hwnd == IntPtr.Zero || Array.IndexOf(cur, hwnd) >= 0) return;
-        int keep = Math.Min(cur.Length, MaxSuppressedWindows - 1);
-        var next = new IntPtr[keep + 1];
-        Array.Copy(cur, cur.Length - keep, next, 0, keep);
-        next[keep] = hwnd;
-        Volatile.Write(ref s_suppressedWindows, next);
+        if (cur.Length > 0 && cur[^1] == hwnd) return;   // 이미 맨 뒤 — 흔한 경로(필터 확정이 매 틱 다시 판정)
+
+        var list = new List<IntPtr>(cur.Length + 1);
+        foreach (IntPtr h in cur)
+        {
+            if (h != hwnd && User32.IsWindow(h))
+                list.Add(h);
+        }
+        list.Add(hwnd);
+        if (list.Count > MaxSuppressedWindows)
+            list.RemoveRange(0, list.Count - MaxSuppressedWindows);
+        Volatile.Write(ref s_suppressedWindows, list.ToArray());
     }
 
     /// <summary>통과 판정 — 그 창의 숨김 판정을 지운다 (감지 스레드 전용).</summary>
@@ -233,7 +245,7 @@ internal static class DetectionService
         // 모달 게이트용 PID 와 GUITHREADINFO 용 threadId 를 한 번에 확보.
         uint threadId = User32.GetWindowThreadProcessId(hwndForeground, out uint fgPid);
 
-        if (TryHandleModalGate(host, ref state, hwndForeground, fgPid)) return;
+        if (TryHandleModalGate(host, ref state, fgPid)) return;
 
         IntPtr hwndFocus = ResolveFocusWindow(threadId, hwndForeground);
 
@@ -313,7 +325,7 @@ internal static class DetectionService
     /// 틱에서 foregroundChanged=true 를 유도 → 자연 재표시.
     /// </summary>
     /// <returns>tick 종료 필요 시 true.</returns>
-    private static bool TryHandleModalGate(DetectionHost host, ref DetectionState state, IntPtr hwndForeground, uint fgPid)
+    private static bool TryHandleModalGate(DetectionHost host, ref DetectionState state, uint fgPid)
     {
         // **자기 프로세스 창이면 모달 플래그와 무관하게 숨긴다** (bug-hunt 2026-11-05). 메인·배지·헤일로 세 창은 앞에서
         // 걸렀으므로 여기 오는 자기 창은 다이얼로그·안내 박스뿐이다. 플래그(s_activeDialog)는 다이얼로그가 화면에 뜨고
@@ -334,7 +346,8 @@ internal static class DetectionService
             User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                 IntPtr.Zero, IntPtr.Zero);
         }
-        MarkSuppressed(hwndForeground);
+        // 우리 창(다이얼로그·안내 박스)은 배지 주인이 될 수 없어(_lastForegroundHwnd 가 되지 않는다) 판정을 기억할 이유가 없다 —
+        // 열 때마다 새 창이라 목록만 채워 쓸모 있는 판정을 밀어냈다(릴리즈 리뷰 3회차).
         state.LastFiltered = true;
         return true;
     }

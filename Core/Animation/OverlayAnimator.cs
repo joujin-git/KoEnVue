@@ -669,20 +669,25 @@ public sealed class OverlayAnimator : IDisposable
         return (byte)(raw * byte.MaxValue);
     }
 
-    /// <summary>진행 중인 슬라이드를 끝낸다 (위치는 마지막 프레임 그대로).</summary>
+    /// <summary>
+    /// 진행 중인 슬라이드를 끝낸다 (위치는 마지막 프레임 그대로). 트랙이 모두 끝났으면 미뤄 둔 투명도를 올린다 — 새 슬라이드 없이
+    /// 끊기는 경로(다른 모니터로의 표시 등)가 이것을 빠뜨려 배지가 표시 시간 내내 옛 투명도로 남았다(릴리즈 리뷰 3회차 2026-11-05).
+    /// </summary>
     private void StopSlide()
     {
         if (!_slideActive) return;
         User32.KillTimer(_hwndTimer, _timerIds.Slide);
         _slideActive = false;
+        FlushPendingAlpha();
     }
 
-    /// <summary>슬라이드·강조 팝 두 트랙을 모두 끝낸다 — 타이머와 활성 플래그를 함께 내린다.</summary>
+    /// <summary>슬라이드·강조 팝 두 트랙을 모두 끝낸다 — 타이머와 활성 플래그를 함께 내리고, 미뤄 둔 투명도를 올린다.</summary>
     private void StopMotionTracks()
     {
         User32.KillTimer(_hwndTimer, _timerIds.Highlight);
         _highlightActive = false;
         StopSlide();
+        FlushPendingAlpha();
     }
 
     /// <summary>현재 투명도에서 0 으로 페이드한 뒤 Hidden (애니메이션이 꺼져 있으면 즉시).</summary>

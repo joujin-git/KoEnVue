@@ -312,6 +312,25 @@ public class BugHunt20261105AnimatorTests
     }
 
     [Fact]
+    public void 새_슬라이드_없이_끊긴_슬라이드도_미뤄_둔_투명도를_올린다()
+    {
+        // 릴리즈 리뷰 3회차: 슬라이드 중 미룬 투명도가, 새 슬라이드 없이 끊기는 표시(다른 모니터 등)에서는 올라가지 않았다.
+        var alphas = new List<byte>();
+        AnimationConfig cfg = MakeConfig() with { ChangeHighlight = false };
+        var animator = Make(cfg, onAlphaChange: alphas.Add);
+
+        animator.TriggerShow(0, 0, 100, 100, highlightTrigger: false);    // Holding
+        animator.TriggerShow(100, 100, 200, 200, highlightTrigger: false); // 슬라이드 시작
+        animator.UpdateConfig(cfg with { Opacity = 0.5 });
+        animator.Refresh(200, 200);                                        // 같은 목적지 슬라이드 중 → 투명도 미룸
+        alphas.Clear();
+
+        animator.TriggerShow(150, 150, 150, 150, highlightTrigger: false); // 새 슬라이드 없음 → 옛 슬라이드 정지
+        byte target = (byte)(0.5 * byte.MaxValue);
+        Assert.Contains(target, alphas);
+    }
+
+    [Fact]
     public void 드래그_취소는_슬라이드와_강조를_끝낸다()
     {
         var posSpy = new List<(int X, int Y)>();
@@ -377,6 +396,80 @@ public class BugHunt20261105SuppressionTests
     [Fact]
     public void 숨김_판정은_창마다_남고_그_창이_통과해야_풀린다()
     {
+        WithSuppressionStore((mark, show) =>
+        {
+            IntPtr fullscreenApp = NewHiddenWindow();
+            IntPtr desktop = NewHiddenWindow();
+            try
+            {
+                mark(fullscreenApp);   // F11 전체화면
+                mark(desktop);         // 바탕화면을 거쳐
+                // 단일 값이던 시절엔 바탕화면 판정이 전체화면 앱의 판정을 덮어, 돌아오자마자 누른 한/영이 배지를 띄웠다.
+                Assert.True(DetectionService.IsForegroundSuppressed(fullscreenApp));
+                Assert.True(DetectionService.IsForegroundSuppressed(desktop));
+
+                show(desktop);         // 바탕화면 판정만 풀린다
+                Assert.False(DetectionService.IsForegroundSuppressed(desktop));
+                Assert.True(DetectionService.IsForegroundSuppressed(fullscreenApp));
+                Assert.False(DetectionService.IsForegroundSuppressed(IntPtr.Zero));
+            }
+            finally
+            {
+                User32.DestroyWindow(fullscreenApp);
+                User32.DestroyWindow(desktop);
+            }
+        });
+    }
+
+    [Fact]
+    public void 다시_판정된_창은_밀려나지_않고_닫힌_창은_정리된다()
+    {
+        // 릴리즈 리뷰 3회차: 처음 넣은 순서로만 버려, 계속 유효한 전체화면 앱의 판정이 닫힌 창들에 밀려났다.
+        WithSuppressionStore((mark, _) =>
+        {
+            var others = new List<IntPtr>();
+            IntPtr fullscreenApp = NewHiddenWindow();
+            try
+            {
+                mark(fullscreenApp);
+                for (int i = 0; i < 7; i++)
+                {
+                    IntPtr h = NewHiddenWindow();
+                    others.Add(h);
+                    mark(h);
+                }
+                mark(fullscreenApp);              // 필터 확정이 매 틱 다시 판정 — 맨 뒤로
+                IntPtr extra = NewHiddenWindow();
+                others.Add(extra);
+                mark(extra);                      // 상한 초과 — 가장 오래 다시 판정되지 않은 창부터 버림
+                Assert.True(DetectionService.IsForegroundSuppressed(fullscreenApp));
+                Assert.False(DetectionService.IsForegroundSuppressed(others[0]));
+
+                User32.DestroyWindow(others[1]);  // 닫힌 창은 다음 기록 때 정리
+                IntPtr closed = others[1];
+                IntPtr another = NewHiddenWindow();
+                others.Add(another);
+                mark(another);
+                Assert.False(DetectionService.IsForegroundSuppressed(closed));
+            }
+            finally
+            {
+                User32.DestroyWindow(fullscreenApp);
+                foreach (IntPtr h in others) User32.DestroyWindow(h);
+            }
+        });
+    }
+
+    private static IntPtr NewHiddenWindow()
+    {
+        IntPtr h = User32.CreateWindowExW(0, "STATIC", "", 0, 0, 0, 0, 0,
+            IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        Assert.NotEqual(IntPtr.Zero, h);
+        return h;
+    }
+
+    private static void WithSuppressionStore(Action<Action<IntPtr>, Action<IntPtr>> body)
+    {
         Type t = typeof(DetectionService);
         FieldInfo store = t.GetField("s_suppressedWindows", PrivateStatic)!;
         MethodInfo mark = t.GetMethod("MarkSuppressed", PrivateStatic)!;
@@ -385,19 +478,7 @@ public class BugHunt20261105SuppressionTests
         try
         {
             store.SetValue(null, Array.Empty<IntPtr>());
-            var fullscreenApp = (IntPtr)0x1111;
-            var desktop = (IntPtr)0x2222;
-
-            mark.Invoke(null, [fullscreenApp]);   // F11 전체화면
-            mark.Invoke(null, [desktop]);         // 바탕화면을 거쳐
-            // 단일 값이던 시절엔 바탕화면 판정이 전체화면 앱의 판정을 덮어, 돌아오자마자 누른 한/영이 배지를 띄웠다.
-            Assert.True(DetectionService.IsForegroundSuppressed(fullscreenApp));
-            Assert.True(DetectionService.IsForegroundSuppressed(desktop));
-
-            show.Invoke(null, [desktop]);         // 바탕화면 판정만 풀린다
-            Assert.False(DetectionService.IsForegroundSuppressed(desktop));
-            Assert.True(DetectionService.IsForegroundSuppressed(fullscreenApp));
-            Assert.False(DetectionService.IsForegroundSuppressed(IntPtr.Zero));
+            body(h => mark.Invoke(null, [h]), h => show.Invoke(null, [h]));
         }
         finally
         {

@@ -174,10 +174,11 @@ internal static class Animation
         }
         else
         {
-            // 트랙이 남아 있으면(배율이 다른 모니터로 가는 경우) 끝내고 새 배율로 다시 그린다 (현재 투명도 그대로).
+            // 새 배율·좌표로 다시 그린 뒤(현재 투명도 그대로) 남은 트랙(배율이 다른 모니터로 가는 경우)을 끝낸다. 순서가 반대면
+            // 트랙을 끝낼 때 올리는 미뤄 둔 투명도가 옛 좌표·기본 크기로 한 프레임 먼저 올라갔다(릴리즈 리뷰 3회차 2026-11-05).
+            Overlay.Show(x, y, state, config);
             if (_animator.IsHighlightActive || _animator.IsSlideActive)
                 _animator.CancelMotion(x, y);
-            Overlay.Show(x, y, state, config);
         }
 
         // 애니메이터가 투명도 목표를 새 설정에 맞추고(트랙 진행 중이면 블리트는 트랙이 끝날 때로 미룬다), 목적지가 바뀌었으면
