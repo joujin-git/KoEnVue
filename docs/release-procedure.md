@@ -94,6 +94,15 @@ git push origin vX.Y.Z.W  # 태그 푸시
 
 5~10 초 후 트레이 메뉴 최상단 헤더 라벨이 `KoEnVue v{old} → v{new} — 다운로드` 로 자동 전환되면 [UpdateChecker](../App/Update/UpdateChecker.cs) 가 새 릴리스를 정상 감지한 것.
 
+**트레이를 열지 않고 로그로 확인하는 방법** (2026-11-05 v1.0.3.0 → v1.0.4.0 에서 실측):
+
+1. 이전 버전 asset 을 **새 빈 폴더**에 받는다 — `gh release download v{old} -p KoEnVue.exe -p KoEnVue.exe.sha256.txt -D <빈 폴더>` 후 해시 대조. exe 폴더가 쓰기 가능하면 설정·로그가 그 폴더에 생기므로([PortablePath](../App/Config/PortablePath.cs)) 쓰던 설정을 건드리지 않는다. 기본값이 `log_to_file=true`·`update_check_enabled=true` 라 설정 파일을 미리 만들 필요도 없다.
+2. 쓰던 KoEnVue 가 실행 중이면 먼저 트레이에서 종료한다 — 단일 인스턴스라 이전 버전이 바로 끝난다.
+3. 실행 후 그 폴더의 `koenvue.log` 에 `UpdateChecker: new version available — current={old} latest=v{new}` 와 `Tray: update available — v{new}` 두 줄이 찍히면 통과 (실측 0.3초).
+4. 종료는 트레이 「종료」. 무인으로 할 때 `taskkill /PID`(무 `/F`)는 숨은 메인 창에 닿지 않아 안 꺼진다 — `KoEnVueMain` 클래스 창에 `WM_CLOSE` 를 보내면 트레이 아이콘까지 정리하고 끝난다(로그 `KoEnVue stopped`).
+
+> **주의 — 시작 프로그램 등록**: 등록돼 있으면 이전 버전이 기동 직후 [StartupTaskManager](../App/Startup/StartupTaskManager.cs) 의 경로 동기화로 작업 경로를 **빈 폴더의 exe 로 바꿔 등록**한다. 확인 전에 `schtasks /query /tn KoEnVue` 로 등록 여부를 보고, 등록돼 있었다면 끝난 뒤 쓰던 exe 를 한 번 실행해 경로를 되돌린다(같은 동기화가 다시 고친다).
+
 ## 6. 문서 갱신
 
 **손대야 하는 곳은 한 군데뿐이다** — 나머지는 낡지 않도록 써 두었다.
