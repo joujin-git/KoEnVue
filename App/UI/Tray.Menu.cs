@@ -1,7 +1,6 @@
 using KoEnVue.App.Bootstrap;
 using KoEnVue.App.Config;
 using KoEnVue.App.Localization;
-using KoEnVue.App.Messaging;
 using KoEnVue.App.Models;
 using KoEnVue.App.Startup;
 using KoEnVue.App.UI.Dialogs;
@@ -272,8 +271,6 @@ internal static partial class Tray
         User32.TrackPopupMenu(hMenu, Win32Constants.TPM_RIGHTBUTTON,
             pt.X, pt.Y, 0, hwndMain, IntPtr.Zero);
         User32.PostMessageW(hwndMain, Win32Constants.WM_NULL, IntPtr.Zero, IntPtr.Zero);
-        // 메뉴 명령(WM_COMMAND, 이미 큐에 있다) 뒤에 처리되도록 닫힘 알림을 이어서 post — AppMessages 주석 참조.
-        User32.PostMessageW(hwndMain, AppMessages.WM_APP_TRAY_MENU_CLOSED, IntPtr.Zero, IntPtr.Zero);
 
         // DestroyMenu 는 MF_POPUP 로 부착된 서브메뉴를 **재귀적으로** 파괴한다 — 대분류 도입으로
         // 중첩이 2단(hMenu → hBadgeMenu → hOpacityMenu 등)이 됐지만 해제는 이 한 줄로 끝난다.

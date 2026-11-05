@@ -52,6 +52,21 @@ internal static class JsonSettingsFile
     public static void CommitTemp(string tmpPath, string path) => File.Move(tmpPath, path, overwrite: true);
 
     /// <summary>
+    /// 저장 실패 뒤 남은 <c>path + ".tmp"</c> 를 지운다. 지우지 못해도(잠김·권한) 다음 저장이 덮어쓰므로 무시한다.
+    /// </summary>
+    public static void TryDeleteTemp(string path)
+    {
+        try
+        {
+            File.Delete(path + ".tmp");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _ = ex;   // 다음 WriteTemp 가 덮어쓴다 — 복구할 것이 없다
+        }
+    }
+
+    /// <summary>
     /// 파일 mtime(UTC). 존재하지 않는 파일은 <see cref="File.GetLastWriteTimeUtc"/> 의
     /// 1601-01-01 센티널을 그대로 반환하므로, 호출자는 반드시 먼저
     /// <see cref="File.Exists"/> 로 가드할 것.

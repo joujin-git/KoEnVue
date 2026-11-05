@@ -97,11 +97,11 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// 중복 실행 시 기존(실행 중) 인스턴스를 찾아 활성화 신호를 전송한다.
-    /// 메인 윈도우 클래스명으로 <c>FindWindowW</c> 탐색 → <c>PostMessageW</c> 로
-    /// <see cref="AppMessages.WM_APP_ACTIVATE"/> 게시. 기존 인스턴스는 WndProc 에서 이를 받아
-    /// 한/영 배지를 즉시 표시한다.
-    /// 탐색 실패(기존 창이 막 파괴 중이거나 클래스명이 달라진 경우)는 조용히 무시한다.
+    /// 중복 실행 시 기존(실행 중) 인스턴스를 찾아 활성화 신호를 보내고 생존을 확인한다.
+    /// 메인 윈도우 클래스명으로 <c>FindWindowW</c> 탐색 → <c>SendMessageTimeoutW</c> 로
+    /// <see cref="AppMessages.WM_APP_ACTIVATE"/> 전송. 기존 인스턴스는 WndProc 에서 이를 받아
+    /// 한/영 배지를 즉시 표시하고 <see cref="AppMessages.ActivateAck"/> 를 돌려준다.
+    /// 탐색 실패·응답 없음은 "종료 중" 으로 보고 false — 호출자가 <see cref="WaitForMutexHandover"/> 로 이어받는다.
     /// </summary>
     /// <returns>
     /// 기존 인스턴스가 살아서 응답했으면 true. false 면 기존 인스턴스가 <b>종료 중</b>이다 — 창을 찾지 못했거나(WM_CLOSE 종료
@@ -171,7 +171,7 @@ internal static partial class Program
         if (!_wtsRegistered || hwndMain == IntPtr.Zero) return;
         _wtsRegistered = false;
         if (!Wtsapi32.WTSUnRegisterSessionNotification(hwndMain))
-            Logger.Debug($"WTSUnRegisterSessionNotification failed: error={Marshal.GetLastPInvokeError()}");
+            Logger.Debug($"WTSUnRegisterSessionNotification rejected: error={Marshal.GetLastPInvokeError()}");
     }
 
     // ================================================================

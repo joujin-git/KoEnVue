@@ -56,11 +56,12 @@ internal static class AppMessages
     public const uint WM_APP_UPDATE_FOUND = Win32Constants.WM_APP + 6;
 
     /// <summary>
-    /// 중복 실행된 두 번째 인스턴스가 기존(실행 중) 인스턴스에 활성화를 요청.
+    /// 중복 실행된 두 번째 인스턴스가 기존(실행 중) 인스턴스에 활성화를 요청 — <c>SendMessageTimeoutW</c> 로 보낸다.
     /// 수신 시 현재 포그라운드 앱 기준으로 한/영 배지를 즉시 표시해 사용자에게
     /// "이미 실행 중" 이라는 시각 피드백을 준다.
     /// wParam: 0
     /// lParam: 0
+    /// 반환: 살아 있는 인스턴스면 <see cref="ActivateAck"/>, 종료 중이면 0.
     /// </summary>
     public const uint WM_APP_ACTIVATE = Win32Constants.WM_APP + 7;
 
@@ -71,12 +72,13 @@ internal static class AppMessages
     public const nint ActivateAck = 1;
 
     /// <summary>
-    /// 트레이 우클릭 메뉴가 닫혔다 — <c>Tray.ShowMenu</c> 가 TrackPopupMenu 뒤에 post 한다. 메뉴 명령의 WM_COMMAND 보다 큐
-    /// 뒤에 서므로 명령이 적용된 다음에 처리된다. 메뉴를 쓰는 동안(작업 표시줄 포커스·메뉴 위 포인터) 숨은 「항상 표시」 배지를
-    /// 되돌리는 데 쓴다 — 메뉴가 닫혀도 포그라운드는 보이지 않는 메인 창이라 감지 루프가 재표시하지 못한다 (리뷰 2026-11-05).
+    /// 우리 트레이 메뉴 위 포인터 때문에 숨겼던 배지를 되돌린다 — 감지 스레드가 보낸다(<c>DetectionService.HandleOwnMainForeground</c>).
+    /// 메뉴가 열린 동안 포그라운드는 보이지 않는 메인 창이라, 다른 앱 메뉴처럼 "필터 통과 → 재표시" 로 돌아오지 못한다. 그래서
+    /// 숨길 때 배지가 보이고 있었던 경우에만, 포인터가 메뉴를 벗어나면(메뉴가 닫힌 경우 포함) 이 메시지로 되돌린다 — 그 배지는
+    /// 직전까지 배지 주인 앱 위에 보이던 것이므로 필터를 다시 판정하지 않는다 (릴리즈 리뷰 2026-11-05).
     /// wParam: 0 / lParam: 0
     /// </summary>
-    public const uint WM_APP_TRAY_MENU_CLOSED = Win32Constants.WM_APP + 8;
+    public const uint WM_RESTORE_INDICATOR = Win32Constants.WM_APP + 8;
 
     // --- Timer IDs (WM_TIMER wParam) ---
 

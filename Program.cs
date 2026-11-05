@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using KoEnVue.App.Bootstrap;
 using KoEnVue.App.Config;
@@ -347,7 +348,7 @@ internal static partial class Program
 
         // 8a-2. WM_APP_ACTIVATE 도 동일 UIPI 화이트리스트에 등록. admin(High IL) 으로 실행 중인데
         //       2nd 인스턴스가 Medium IL 로 남는 경로 (admin_elevation 재실행 UAC 취소, admin 환경
-        //       외부 spawn, 설정 변경 과도기) 에서 NotifyExistingInstance 의 PostMessageW(WM_APP_ACTIVATE)
+        //       외부 spawn, 설정 변경 과도기) 에서 NotifyExistingInstance 의 SendMessageTimeoutW(WM_APP_ACTIVATE)
         //       가 UIPI 로 차단돼 "이미 실행 중" 배지 즉시 표시 피드백이 소실된다. 화이트리스트로 복구.
         //       동일 IL(일반 사용자) 이면 무해한 no-op. 정적 상수라 RegisterWindowMessage 불요.
         if (!User32.ChangeWindowMessageFilterEx(_hwndMain, AppMessages.WM_APP_ACTIVATE,
@@ -533,8 +534,8 @@ internal static partial class Program
                 HandleUpdateFound();
                 return IntPtr.Zero;
 
-            case AppMessages.WM_APP_TRAY_MENU_CLOSED:
-                HandleTrayMenuClosed();
+            case AppMessages.WM_RESTORE_INDICATOR:
+                HandleRestoreIndicator();
                 return IntPtr.Zero;
 
             case AppMessages.WM_APP_ACTIVATE:
@@ -768,7 +769,15 @@ internal static partial class Program
 
     private static void HandleImeStateChanged(ImeState newState, long sampleStamp)
     {
-        // 두 생산자의 순서 역전 차단 — 필드 주석 참조. 0 은 "시각 모름" 이라 그대로 받는다.
+        // wParam 은 우리 enum 이어야 한다 — 메인 창은 소유자 없는 최상위 창이라 다른 앱이 WM_APP 범위를 잘못 브로드캐스트하면
+        // 이 메시지를 받는다(릴리즈 리뷰 2026-11-05).
+        if (!Enum.IsDefined(newState)) return;
+
+        // 두 생산자의 순서 역전 차단 — 필드 주석 참조. 0 은 "시각 모름" 이라 그대로 받는다. **지금보다 미래의 시각은 믿지 않는다**:
+        // 엉뚱한 lParam 하나가 _lastImeSampleStamp 를 미래로 박으면 그 뒤 정상 샘플이 전부 "낡음" 으로 버려져 배지·트레이의
+        // 한/영 상태가 재시작 전까지 굳었다(릴리즈 리뷰 2026-11-05).
+        if (sampleStamp > Stopwatch.GetTimestamp())
+            sampleStamp = 0;
         if (sampleStamp != 0)
         {
             if (sampleStamp < _lastImeSampleStamp)
@@ -808,7 +817,7 @@ internal static partial class Program
         if (User32.GetForegroundWindow() != _lastForegroundHwnd) return;
         // 같은 창이 **그 자리에서** 필터 대상이 된 경우(F11 전체화면·리로드로 enabled:false·창 이동 중)는 위 검사를
         // 통과한다 — 감지 루프가 숨김을 확정해 두었으면 그 판정을 따른다 (bug-hunt 2026-11-05).
-        if (DetectionService.IsForegroundSuppressed) return;
+        if (DetectionService.IsForegroundSuppressed(_lastForegroundHwnd)) return;
 
         // PR-13: DisplayMode / EventTriggers / 렌더 인자 모두 per-app resolved 사용.
         // 좌클릭 일시 숨김(_clickDismissed) 중이면 EventTriggers 와 무관하게 한·영 변경으로 재표시.
@@ -947,16 +956,10 @@ internal static partial class Program
     {
         IntPtr hwndFg = User32.GetForegroundWindow();
 
-        // 트레이 우클릭 메뉴는 TrackPopupMenu 앞에서 보이지 않는 메인 창을 포그라운드로 만들고, 메뉴가 닫혀도 사용자가
-        // 다른 창을 누를 때까지 그대로다. 메뉴의 「한/영 배지 숨김」 해제가 이 경로로 들어오는데, 종전엔 "쓸 수 있는
-        // 포그라운드 없음" 으로 건너뛰어 배지가 바로 돌아오지 않았다(bug-hunt 2026-11-05). 사용자가 보고 있던 앱 —
-        // 배지 주인 앱 — 을 대상으로 판정한다. 모달 중(우리 다이얼로그가 떠 있음)이면 대상으로 삼지 않는다.
-        if (hwndFg == _hwndMain && _hwndMain != IntPtr.Zero && !ModalDialogLoop.IsActive
-            && _lastForegroundHwnd != IntPtr.Zero && User32.IsWindowVisible(_lastForegroundHwnd))
-        {
-            Logger.Debug("Forced show: foreground is the hidden main window (tray menu); targeting the badge owner app");
-            hwndFg = _lastForegroundHwnd;
-        }
+        // 포그라운드가 보이지 않는 메인 창이면(트레이 우클릭 메뉴 직후 — 메뉴의 「한/영 배지 숨김」 해제가 이 경로) 대상이 없다.
+        // 배지 주인 앱으로 바꿔 판정하던 시도는 걷어냈다(릴리즈 리뷰 2026-11-05): 배경으로 밀려난 앱은 포커스가 0 이라 기본 설정
+        // (hide_when_no_focus)에서 늘 필터에 걸렸고, 통과하는 조건에서는 바탕화면에서 연 메뉴 뒤에 엉뚱한 앱 자리로 배지를 띄웠다.
+        // 대신 감지 루프가 이 상태에서 래치(LastFiltered)를 세워, 사용자가 원래 앱으로 돌아오는 첫 틱이 배지를 띄운다.
 
         if (hwndFg == IntPtr.Zero
             || hwndFg == _hwndMain
@@ -1224,18 +1227,26 @@ internal static partial class Program
 
     private static void HandleConfigChangedCore()
     {
+        bool notifyReloadFailed;
         BeginConfigTxn();
         try
         {
-            ReloadConfigFromDisk();
+            notifyReloadFailed = ReloadConfigFromDisk();
         }
         finally
         {
             EndConfigTxn();
         }
+
+        // 안내 박스는 **트랜잭션 밖에서** 띄운다 (릴리즈 리뷰 2026-11-05). 박스는 사용자가 파일을 고치는 동안 오래 열려 있을 수
+        // 있는데, 그동안 트랜잭션이 열려 있으면 시스템 색·다크 모드·작업 영역 변경이 박스를 닫을 때까지 전부 보류됐다.
+        // 박스 안에서 재진입한 리로드는 HandleConfigChanged 의 보류 표식이 처리한다(종전과 같다).
+        if (notifyReloadFailed)
+            Tray.ShowConfigReloadFailed();
     }
 
-    private static void ReloadConfigFromDisk()
+    /// <returns>사용자에게 「읽지 못했다」 안내를 띄워야 하면 true — 호출자가 트랜잭션을 닫은 뒤 띄운다.</returns>
+    private static bool ReloadConfigFromDisk()
     {
         AppConfig prev = _config;
 
@@ -1248,9 +1259,13 @@ internal static partial class Program
         {
             Logger.Info("Config changed on disk while in-memory changes were unsaved; merging them instead of replacing");
             SaveAndSync();
-            if (Settings.HasUnsavedChanges)
-                Logger.Warning("Config still could not be saved; keeping in-memory settings until the next change");
-            return;
+            if (!Settings.HasUnsavedChanges)
+                return false;
+
+            // 또 저장하지 못했다 — 쓰기 권한이 없는 위치(Program Files 에 옮긴 기존 설정)·읽기 전용 파일처럼 영구적인 경우가
+            // 있다. 여기서 물러나면 그 뒤 모든 외부 편집이 같은 분기에서 버려져 핫리로드가 재시작 전까지 죽었다(릴리즈 리뷰
+            // 2026-11-05). 저장할 수 없는 메모리 변경은 포기하고 디스크 편집을 받아들인다 — 이 분기가 생기기 전과 같은 결과다.
+            Logger.Warning("Config could not be saved; discarding unsaved in-memory changes and reloading the file");
         }
 
         // 파싱 실패를 성공과 구분한다 (AUDIT-2026-07-30 §G). 실패 시 Load 가 돌려주는 전 필드 디폴트를
@@ -1268,9 +1283,9 @@ internal static partial class Program
             if (why == LoadFailure.Content && !_configReloadFailed)
             {
                 _configReloadFailed = true;
-                Tray.ShowConfigReloadFailed();
+                return true;
             }
-            return;
+            return false;
         }
         _configReloadFailed = false;
 
@@ -1279,12 +1294,23 @@ internal static partial class Program
 
         Logger.Info("Config reloaded");
 
-        if (_bootSideEffectsDeferred)
-        {
-            _bootSideEffectsDeferred = false;
-            Logger.Info("Running startup side effects skipped at boot (settings file is readable now)");
-            RunBootSideEffects();
-        }
+        RunDeferredBootSideEffectsIfSynced();
+        return false;
+    }
+
+    /// <summary>
+    /// 부팅 때 미룬 부수효과를 **디스크와 정상 동기화된 뒤** 한 번 실행한다(<see cref="_bootSideEffectsDeferred"/>). 동기화 경로는
+    /// 핫리로드만이 아니다 — 첫 폴링 전에 트레이·드래그로 저장하면 그 저장의 병합 되읽기가 디스크를 읽고 self-bump 로 리로드가
+    /// 돌지 않는다(릴리즈 리뷰 2026-11-05). 기준: 마지막 로드가 성공(<see cref="LoadFailure.None"/>)했고 미저장 변경이 없다.
+    /// 깨진 파일 위에 기본값을 덮어쓴 저장은 되읽기를 하지 않아 실패 상태가 남으므로 여기 해당하지 않는다(다운그레이드 방지).
+    /// </summary>
+    private static void RunDeferredBootSideEffectsIfSynced()
+    {
+        if (!_bootSideEffectsDeferred) return;
+        if (Settings.LastLoadFailure != LoadFailure.None || Settings.HasUnsavedChanges) return;
+        _bootSideEffectsDeferred = false;
+        Logger.Info("Running startup side effects skipped at boot (settings file is readable now)");
+        RunBootSideEffects();
     }
 
     /// <summary>
@@ -1521,18 +1547,16 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// 트레이 우클릭 메뉴가 닫힌 뒤(명령 적용 후). 「항상 표시」 배지가 메뉴를 쓰는 동안 숨었으면 배지 주인 앱 기준으로 되돌린다
-    /// (리뷰 2026-11-05). 메뉴를 열면 작업 표시줄이 포그라운드가 돼 FG 필터가, 메뉴 위에서는 Pointer 축이 배지를 숨기는데,
-    /// 메뉴가 닫혀도 포그라운드는 보이지 않는 메인 창이라 감지 루프는 사용자가 다른 창을 누를 때까지 재표시하지 않는다 —
-    /// 메뉴로 바꾼 투명도·배율이 바로 보이지 않았다. 이벤트 표시 모드에서 숨은 상태는 평상시라 건드리지 않는다. 사용자가 이미
-    /// 다른 창으로 옮겼거나(감지 루프 몫) 명령이 다이얼로그를 열었으면(포그라운드가 우리 다이얼로그) 아무것도 하지 않는다.
+    /// 우리 트레이 메뉴 위 포인터 때문에 숨겼던 배지를 되돌린다 (WM_RESTORE_INDICATOR — AppMessages 주석 참조). 그 배지는 숨기기
+    /// 직전까지 배지 주인 앱 위에 보이던 것이라 필터를 다시 판정하지 않는다 — 종전 「메뉴 닫힘 뒤 강제 표시」 는 배경으로
+    /// 밀려난 앱(포커스 0)을 필터로 다시 판정해 기본 설정에서 늘 건너뛰었고, 통과하는 조건에서는 바탕화면에서 연 메뉴 뒤에
+    /// 엉뚱한 앱 자리로 배지를 띄웠다(릴리즈 리뷰 2026-11-05). 메뉴 명령이 배지를 숨김으로 바꿨거나 종료 중이면 띄우지 않는다.
     /// </summary>
-    private static void HandleTrayMenuClosed()
+    private static void HandleRestoreIndicator()
     {
-        if (Tray.ExitRequested || _config.UserHidden || _indicatorVisible || _clickDismissed) return;
-        if (_lastForegroundHwnd == IntPtr.Zero || User32.GetForegroundWindow() != _hwndMain) return;
-        if (!TryResolveCurrent(out AppConfig resolved) || resolved.DisplayMode != DisplayMode.Always) return;
-        TryShowIndicatorIfForegroundAllowed(_lastImeState, imeChanged: false);
+        if (Tray.ExitRequested || _config.UserHidden || _indicatorVisible || _clickDismissed || IsHiddenByLock) return;
+        if (_lastForegroundHwnd == IntPtr.Zero || !TryResolveCurrent(out AppConfig resolved)) return;
+        ShowIndicatorAtForeground(_lastImeState, resolved, imeChanged: false);
     }
 
     private static void HideOverlay(string source = "?")
@@ -1618,6 +1642,7 @@ internal static partial class Program
             // 그 뒤 사용자가 파일을 다시 깨뜨려도 안내 없이 편집이 조용히 무시됐다.
             if (!Settings.HasUnsavedChanges)
                 _configReloadFailed = false;
+            RunDeferredBootSideEffectsIfSynced();
 
             if (ReferenceEquals(saved, before)) return;
 

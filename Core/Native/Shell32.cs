@@ -4,7 +4,9 @@ namespace KoEnVue.Core.Native;
 
 internal static partial class Shell32
 {
-    [LibraryImport("shell32.dll")]
+    // SetLastError — 호출자(NotifyIconManager)가 실패 시 오류 코드를 로그에 남긴다. 없으면 직전의 다른 P/Invoke 값이 찍혔다
+    // (릴리즈 리뷰 2026-11-05).
+    [LibraryImport("shell32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool Shell_NotifyIconW(uint dwMessage, ref NOTIFYICONDATAW lpData);
 

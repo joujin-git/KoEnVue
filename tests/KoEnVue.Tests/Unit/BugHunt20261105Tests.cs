@@ -164,6 +164,24 @@ public class BugHunt20261105ConfigTests : IDisposable
     }
 
     [Fact]
+    public void 디스크를_다시_읽으면_미저장_표식이_풀리고_실패한_저장의_임시_파일은_남지_않는다()
+    {
+        // 릴리즈 리뷰 2026-11-05: 저장이 계속 실패하면 리로드가 병합 저장만 반복하다 물러나 핫리로드가 세션 내내 죽었다.
+        // 이제 리로드가 디스크를 받아들이면 미저장 변경은 포기된다(표식 해제). 실패한 저장은 .tmp 를 남기지 않는다.
+        File.WriteAllText(_path, "{ \"font_size\": 20 }");
+        var mgr = NewManager();
+        Assert.True(mgr.TryLoad(out AppConfig cfg));
+
+        File.SetAttributes(_path, FileAttributes.ReadOnly);
+        mgr.Save(cfg with { SnapToWindows = !cfg.SnapToWindows });
+        Assert.True(mgr.HasUnsavedChanges);
+        Assert.False(File.Exists(_path + ".tmp"));
+
+        Assert.True(mgr.TryLoad(out _));
+        Assert.False(mgr.HasUnsavedChanges);
+    }
+
+    [Fact]
     public void 시스템_테마는_전경색을_사용자_백업에서_가져온다()
     {
         // 고대비 분기만 전경색을 덮어, 고대비를 껐다 켜면 고대비 글자색이 남았다.

@@ -50,6 +50,12 @@ public sealed class OverlayAnimator : IDisposable
 
     /// <summary>강조 팝 진행 중인지 — 진행 중이면 블리트는 강조 프레임(확대 크기)이 맡는다.</summary>
     public bool IsHighlightActive => _highlightActive;
+
+    /// <summary>슬라이드 진행 중인지 — 진행 중이면 위치 블리트는 슬라이드 프레임이 맡는다.</summary>
+    public bool IsSlideActive => _slideActive;
+
+    /// <summary>(<paramref name="x"/>,<paramref name="y"/>) 로 가는 슬라이드가 진행 중인가 — <see cref="Refresh"/> 뒤에도 계속될 슬라이드.</summary>
+    public bool IsSlidingTo(int x, int y) => _slideActive && _slideToX == x && _slideToY == y;
     private long _highlightStartTick;
     private double _highlightStartScale;
 

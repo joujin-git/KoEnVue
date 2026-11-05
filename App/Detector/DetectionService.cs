@@ -48,6 +48,12 @@ internal static class DetectionService
 
         /// <summary>마지막 설정 파일 확인 시각(<see cref="Environment.TickCount64"/>).</summary>
         public long LastConfigCheckTick;
+
+        /// <summary>
+        /// 우리 트레이 메뉴 위 포인터 때문에 <b>보이던</b> 배지를 숨겼다 — 포인터가 메뉴를 벗어나면 WM_RESTORE_INDICATOR 로
+        /// 되돌린다(<see cref="HandleOwnMainForeground"/>). 포그라운드가 메인 창을 떠나면 내린다(그 뒤는 일반 경로 몫).
+        /// </summary>
+        public bool OwnMenuHidVisibleBadge;
     }
 
     /// <summary>
@@ -62,10 +68,18 @@ internal static class DetectionService
     /// 히스테리시스 유예 구간(연속 N폴링 전)은 값을 바꾸지 않는다 — 감지 루프와 같은 기준이다.
     /// </para>
     /// </summary>
-    private static volatile bool s_foregroundSuppressed;
+    private static IntPtr s_suppressedForeground;
 
-    /// <summary><see cref="s_foregroundSuppressed"/> 읽기 (메인 스레드).</summary>
-    internal static bool IsForegroundSuppressed => s_foregroundSuppressed;
+    /// <summary>
+    /// 감지 루프가 <paramref name="hwnd"/> 위의 배지를 숨김으로 판정해 둔 상태인가 (메인 스레드에서 읽는다).
+    /// 판정은 **그 창에 대한 것**이다 — 바탕화면에서 숨긴 판정이 다음 틱 전에 앱으로 돌아온 한/영 전환까지 막지 않도록
+    /// 창을 함께 게시한다(릴리즈 리뷰 2026-11-05 — 종전 bool 은 최대 1폴링 동안 다른 창의 표시까지 버렸다).
+    /// </summary>
+    internal static bool IsForegroundSuppressed(IntPtr hwnd) =>
+        hwnd != IntPtr.Zero && Volatile.Read(ref s_suppressedForeground) == hwnd;
+
+    /// <summary>숨김 판정을 게시한다 — <paramref name="hwnd"/> 가 Zero 면 해제.</summary>
+    private static void PublishSuppressed(IntPtr hwnd) => Volatile.Write(ref s_suppressedForeground, hwnd);
 
     /// <summary>RECT 의 4 필드를 모두 비교해 동등 여부 판정.</summary>
     private static bool RectsEqual(in RECT a, in RECT b) =>
@@ -175,6 +189,7 @@ internal static class DetectionService
             HandleOwnMainForeground(host, ref state, cfg);
             return;
         }
+        state.OwnMenuHidVisibleBadge = false;
         IntPtr hwndCursor = host.GetHwndCursorOverlay();
         if (hwndForeground == host.GetHwndOverlay()
             || (hwndCursor != IntPtr.Zero && hwndForeground == hwndCursor))
@@ -183,7 +198,7 @@ internal static class DetectionService
         // 모달 게이트용 PID 와 GUITHREADINFO 용 threadId 를 한 번에 확보.
         uint threadId = User32.GetWindowThreadProcessId(hwndForeground, out uint fgPid);
 
-        if (TryHandleModalGate(host, ref state, fgPid)) return;
+        if (TryHandleModalGate(host, ref state, hwndForeground, fgPid)) return;
 
         IntPtr hwndFocus = ResolveFocusWindow(threadId, hwndForeground);
 
@@ -202,7 +217,7 @@ internal static class DetectionService
         TrackWindowMove(host, ref state, hwndForeground, appConfig, ref foregroundChanged);
 
         // 필터를 통과했다 — 창이 움직이는 중이 아니면 배지를 보여도 되는 상태다.
-        s_foregroundSuppressed = state.WindowMoving;
+        PublishSuppressed(state.WindowMoving ? hwndForeground : IntPtr.Zero);
 
         EmitStateChanges(host, ref state, hwndForeground, hwndFocus, threadId, appConfig, foregroundChanged);
     }
@@ -217,6 +232,13 @@ internal static class DetectionService
     /// 같은 창을 다시 눌러도 포그라운드 변화로 보이지 않았다 — 메뉴로 「배지 숨김」을 풀었는데 배지가 끝내 돌아오지
     /// 않는 경로였다. 원래 앱으로 돌아오는 첫 틱이 재게시하도록 래치를 세운다.
     /// </para>
+    ///
+    /// <para>
+    /// 포인터 숨김은 <b>되돌릴 수 있어야 한다</b> (릴리즈 리뷰 2026-11-05). 메뉴가 닫혀도 포그라운드는 이 창이라 다른 앱 메뉴처럼
+    /// 필터 통과로 돌아오지 못한다 — 그래서 숨길 때 배지가 보이고 있었으면 표식을 남기고, 포인터가 메뉴를 벗어나면
+    /// WM_RESTORE_INDICATOR 로 되돌린다. 숨기기 전에 이미 숨어 있던 배지(작업 표시줄 클릭의 FG 필터 등)는 건드리지 않는다 —
+    /// 사용자가 원래 앱으로 돌아오면 위 래치가 띄운다.
+    /// </para>
     /// </summary>
     private static void HandleOwnMainForeground(DetectionHost host, ref DetectionState state, AppConfig cfg)
     {
@@ -226,8 +248,15 @@ internal static class DetectionService
             {
                 Logger.Info("Pointer suppress HIDE (own tray menu)");
                 User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR, IntPtr.Zero, IntPtr.Zero);
+                state.OwnMenuHidVisibleBadge = true;
             }
-            s_foregroundSuppressed = true;
+            PublishSuppressed(state.HwndMain);
+        }
+        else if (state.OwnMenuHidVisibleBadge)
+        {
+            state.OwnMenuHidVisibleBadge = false;
+            Logger.Debug("Pointer left own tray menu; restoring the badge hidden over it");
+            User32.PostMessageW(state.HwndMain, AppMessages.WM_RESTORE_INDICATOR, IntPtr.Zero, IntPtr.Zero);
         }
         state.LastFiltered = true;
         state.FilteredStreak = 0;
@@ -243,7 +272,7 @@ internal static class DetectionService
     /// 틱에서 foregroundChanged=true 를 유도 → 자연 재표시.
     /// </summary>
     /// <returns>tick 종료 필요 시 true.</returns>
-    private static bool TryHandleModalGate(DetectionHost host, ref DetectionState state, uint fgPid)
+    private static bool TryHandleModalGate(DetectionHost host, ref DetectionState state, IntPtr hwndForeground, uint fgPid)
     {
         // **자기 프로세스 창이면 모달 플래그와 무관하게 숨긴다** (bug-hunt 2026-11-05). 메인·배지·헤일로 세 창은 앞에서
         // 걸렀으므로 여기 오는 자기 창은 다이얼로그·안내 박스뿐이다. 플래그(s_activeDialog)는 다이얼로그가 화면에 뜨고
@@ -264,7 +293,7 @@ internal static class DetectionService
             User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                 IntPtr.Zero, IntPtr.Zero);
         }
-        s_foregroundSuppressed = true;
+        PublishSuppressed(hwndForeground);
         state.LastFiltered = true;
         return true;
     }
@@ -318,7 +347,7 @@ internal static class DetectionService
                 User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
             }
-            s_foregroundSuppressed = true;
+            PublishSuppressed(hwndForeground);
             // 파생 캐시(프로세스명·창 프레임)를 hwnd 와 **함께** 갱신한다. 종전에는 여기서
             // LastHwndForeground 만 앞당겨 세웠는데, UpdateForegroundProcessCache 는 그 필드 하나만
             // 보고 조기 반환하므로 필터가 풀린 뒤에도 이름과 프레임이 **영원히 이전 앱 값**으로
@@ -368,7 +397,7 @@ internal static class DetectionService
                 User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
             }
-            s_foregroundSuppressed = true;
+            PublishSuppressed(hwndForeground);
             // 위 Pointer suppress 분기와 같은 이유로 파생 캐시를 함께 갱신한다 (확정 #5).
             UpdateForegroundProcessCache(ref state, hwndForeground);
             state.LastHwndForeground = hwndForeground;
@@ -437,7 +466,7 @@ internal static class DetectionService
                 User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
             }
-            s_foregroundSuppressed = true;
+            PublishSuppressed(hwndForeground);
             state.LastHwndForeground = hwndForeground;
             state.LastHwndFocus = hwndFocus;
             state.LastSystemInputFrame = default;
@@ -453,7 +482,7 @@ internal static class DetectionService
         {
             User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                 IntPtr.Zero, IntPtr.Zero);
-            s_foregroundSuppressed = true;
+            PublishSuppressed(hwndForeground);
             // lastHwndForeground 미갱신 → 다음 틱에서 foreground 변경 감지 → 새 앱에 배지 표시
             state.LastHwndFocus = hwndFocus;
             state.LastSystemInputFrame = default;

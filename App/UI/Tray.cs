@@ -151,8 +151,8 @@ internal static partial class Tray
     private static bool _recreatePending;
 
     /// <summary>
-    /// 메뉴의 「종료」 가 눌렸다 — WM_QUIT 는 큐의 다른 메시지가 다 처리된 뒤에야 나오므로, 그 사이 메뉴 닫힘 알림
-    /// (WM_APP_TRAY_MENU_CLOSED)이 배지를 되돌리지 않도록 Program 이 본다. 메인 스레드 전용.
+    /// 메뉴의 「종료」 가 눌렸다 — WM_QUIT 는 큐의 다른 메시지가 다 처리된 뒤에야 나오므로, 그 사이 도착한 배지 복원 요청
+    /// (WM_RESTORE_INDICATOR)이 배지를 다시 띄우지 않도록 Program 이 본다. 메인 스레드 전용.
     /// </summary>
     internal static bool ExitRequested { get; private set; }
 

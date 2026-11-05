@@ -156,8 +156,25 @@ internal static class Animation
         _animator.UpdateConfig(BuildAnimationConfig(config));
         _animator.SetDimMode(state == ImeState.NonKorean && config.NonKoreanIme == NonKoreanImeMode.Dim);
 
-        // 새 스타일·좌표로 다시 그린다 (현재 투명도 그대로). 그 뒤 애니메이터가 투명도 목표만 새 설정에 맞춘다.
-        Overlay.Show(x, y, state, config);
+        // 갱신 뒤에도 강조·슬라이드가 이어지는가 — 목적지가 바뀌면 애니메이터가 옛 슬라이드를 끊는다(아래 Refresh). 그리기를
+        // 먼저 하고 애니메이터를 나중에 갱신해야 투명도 변경 프레임이 옛 모양을 올리지 않는다.
+        bool trackContinues = _animator.IsHighlightActive || _animator.IsSlidingTo(x, y);
+        if (trackContinues)
+        {
+            // 진행 중인 강조·슬라이드가 다음 프레임에 올린다 — 여기서 기본 크기·목적지로 한 번 블리트하면 팝 도중 한 프레임
+            // 줄었다 커지거나 슬라이드 중 목적지로 튀었다 돌아왔다(릴리즈 리뷰 2026-11-05, RefreshColor 와 같은 이유).
+            // DIB 만 새 스타일로 그리고, 엔진 좌표는 새 목적지로 맞춰 둔다(트랙이 끝난 뒤 페이드 프레임이 쓰는 기준 — 슬라이드가
+            // 계속되면 다음 프레임이 보간 좌표로 덮는다).
+            Overlay.Paint(state, config);
+            Overlay.TrackPosition(x, y);
+        }
+        else
+        {
+            // 새 스타일·좌표로 다시 그린다 (현재 투명도 그대로).
+            Overlay.Show(x, y, state, config);
+        }
+
+        // 애니메이터가 투명도 목표를 새 설정에 맞추고, 목적지가 바뀌었으면 옛 슬라이드를 끊는다.
         _animator.Refresh(x, y);
         return _animator.IsVisiblePhase;
     }

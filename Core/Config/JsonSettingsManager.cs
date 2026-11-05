@@ -248,6 +248,8 @@ internal class JsonSettingsManager<T>
                 }
                 LogProvider.Sink?.Info($"Config loaded from {_filePath}");
                 _lastLoadFailure = LoadFailure.None;
+                // 디스크 내용을 받아들였다 — 저장하지 못한 인메모리 변경은 더 이상 의미가 없다(호출자가 이 값으로 교체한다).
+                _hasUnsavedChanges = false;
                 value = config;
                 return true;
             }
@@ -395,6 +397,8 @@ internal class JsonSettingsManager<T>
             // 정책 항목 1(타입 좁히기): 로직 버그(NullRef 등)는 전파되어 표면화되도록 한다.
             LogProvider.Sink?.Warning($"Failed to save config: {ex.Message}");
             _hasUnsavedChanges = true;
+            // 교체(rename)에서 실패했으면 임시 파일이 남는다 — 읽기 전용 대상처럼 실패가 반복되는 경우 저장마다 남지 않게 지운다.
+            JsonSettingsFile.TryDeleteTemp(_filePath);
         }
 
         return value;
