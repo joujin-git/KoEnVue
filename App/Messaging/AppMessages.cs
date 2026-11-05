@@ -65,15 +65,17 @@ internal static class AppMessages
 
     // --- Timer IDs (WM_TIMER wParam) ---
 
-    public const nuint TIMER_ID_FADE          = 1;  // ~16ms, 페이드 애니메이션
+    // 프레임 타이머 주기 = DefaultConfig.AnimationFrameMs (15 → SetTimer 양자화로 실배달 ~15.6ms).
+    // 16 으로 적지 말 것 — uElapse=16 은 ~31ms 로 배달된다 (dev-notes/2026-07-22-settimer-tick-quantization.md).
+    public const nuint TIMER_ID_FADE          = 1;  // AnimationFrameMs, 페이드 애니메이션
     public const nuint TIMER_ID_HOLD          = 2;  // one-shot, 유지 시간
-    public const nuint TIMER_ID_HIGHLIGHT     = 3;  // ~16ms, 강조 스케일
+    public const nuint TIMER_ID_HIGHLIGHT     = 3;  // AnimationFrameMs, 강조 스케일
     public const nuint TIMER_ID_TOPMOST       = 4;  // 5000ms, TOPMOST 재적용
-    public const nuint TIMER_ID_SLIDE         = 5;  // ~16ms, 슬라이드 위치 보간
+    public const nuint TIMER_ID_SLIDE         = 5;  // AnimationFrameMs, 슬라이드 위치 보간
     public const nuint TIMER_ID_CAPS          = 6;  // 200ms, CAPS LOCK 토글 폴링 (메인 스레드)
     public const nuint TIMER_ID_TRAY_ADD_RETRY = 7; // 1000ms, NIM_ADD 재시도 (부팅 레이스 복구)
-    public const nuint TIMER_ID_CURSOR_MOTION  = 8; // 50ms (정지 검출) 또는 16ms (항상 표시 모드), 커서 헤일로 마우스 모션 폴링
-    public const nuint TIMER_ID_CURSOR_POP     = 9; // ~16ms, 커서 헤일로 IME 전환 스케일 팝
+    public const nuint TIMER_ID_CURSOR_MOTION  = 8; // CursorMotionPollMs (정지 검출) 또는 CursorAlwaysPollMs (항상 표시 모드, 실배달 ~15.6ms), 커서 헤일로 마우스 모션 폴링
+    public const nuint TIMER_ID_CURSOR_POP     = 9; // AnimationFrameMs, 커서 헤일로 IME 전환 스케일 팝
 
     // --- WM_USER 기반 ---
 
