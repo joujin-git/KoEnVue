@@ -35,12 +35,12 @@ internal class JsonSettingsManager<T>
     private readonly string _filePath;
     private readonly JsonTypeInfo<T> _typeInfo;
 
-    // _lastMtime 은 메인 스레드(Save/Load)와 감지 스레드(CheckReload)가 공유한다. DateTime 은
-    // 64비트 값이라 volatile 키워드를 받지 못하므로 lock 으로 read/write 원자성·가시성을 보장한다.
+    // _lastStamp 은 메인 스레드(Save/Load)와 감지 스레드(CheckReload)가 공유한다. FileStamp 는
+    // 여러 필드 구조체라 volatile 키워드를 받지 못하므로 lock 으로 read/write 원자성·가시성을 보장한다.
     //
     // **파일 쓰기와 mtime 조회까지 이 lock 안에서 수행한다** (AUDIT-2026-07-30 §F). 이전에는
     // "I/O 는 lock 밖" 이라 Save 의 쓰기와 mtime 갱신 사이에 틈이 있었고, 그 틈에 감지 스레드가
-    // CheckReload 를 돌면 새 mtime ≠ 옛 _lastMtime 이라 **자기 저장을 외부 편집으로 오인**해
+    // CheckReload 를 돌면 새 mtime ≠ 옛 _lastStamp 이라 **자기 저장을 외부 편집으로 오인**해
     // 불필요한 전체 리로드를 유발했다(배지 깜빡임 + 메모리 전용 변경 소실). 그 리로드가 §B 의
     // WM_CONFIG_CHANGED 재진입 트리거를 늘리는 것이 더 큰 문제였다.
     //
@@ -57,7 +57,7 @@ internal class JsonSettingsManager<T>
     /// 자기치유 경로다 (확정 #19). 스팸 차단 목적과 방향이 반대라 여기 명시한다.
     /// </para>
     /// </summary>
-    private DateTime _lastMtime = DateTime.MinValue;
+    private FileStamp _lastStamp = FileStamp.None;
 
     /// <summary>
     /// <b>동기화 기준</b> mtime — <see cref="_lastPersistedJson"/> 이 나타내는 내용의 mtime.
@@ -66,7 +66,7 @@ internal class JsonSettingsManager<T>
     /// 상태에서 "동기화됨" 을 주장하면 다음 저장이 병합을 건너뛰기 때문 (확정 #19).
     ///
     /// <para>
-    /// <see cref="_lastMtime"/> 과 <b>반드시 분리</b>돼야 한다. 하나로 쓰면 두 의미가 섞인다 —
+    /// <see cref="_lastStamp"/> 과 <b>반드시 분리</b>돼야 한다. 하나로 쓰면 두 의미가 섞인다 —
     /// 감지 스레드의 <c>CheckReload</c> 는 "변경을 눈치챘다" 는 뜻으로 올리는데, 3-way 병합 가드는
     /// "메모리가 그 내용을 반영했다" 는 뜻을 필요로 한다. 겹쳐 쓰면 <b>파일이 바뀐 것을 눈치채기만 하고
     /// 읽지는 못한 상태</b>(편집기가 파일을 잡고 있어 로드가 IOException 으로 실패한 경우)에서
@@ -74,7 +74,21 @@ internal class JsonSettingsManager<T>
     /// (bug-hunt 2026-08-02 확정 #1·#14 — §N-48 이 막으려던 바로 그 손실).
     /// </para>
     /// </summary>
-    private DateTime _syncedMtime = DateTime.MinValue;
+    private FileStamp _syncedStamp = FileStamp.None;
+
+    /// <summary>
+    /// 마지막 <see cref="TryLoad"/> 가 실패한 이유. 호출자(핫리로드)가 사용자에게 알릴지 정한다 — 편집기의 짧은
+    /// 배타 잠금이나 원자 교체 중간의 "파일 없음" 은 다음 폴링이 저절로 읽는 일시 상태라, 첫 실패에서 "읽지
+    /// 못했다" 안내를 띄우면 정상 저장에 대한 거짓 경보가 된다(bug-hunt 2026-11-05). 메인 스레드 전용.
+    /// </summary>
+    private LoadFailure _lastLoadFailure;
+
+    /// <summary>
+    /// 저장에 실패해 <b>메모리에만 있는 변경</b>이 남아 있는가 (NF-25 — 실패 시 인메모리 유지). 이 상태에서 디스크가
+    /// 외부에서 바뀌면 핫리로드가 디스크 내용으로 통째 교체해 그 변경(트레이 토글·드래그 위치)을 조용히 버렸다.
+    /// 호출자가 이 표식을 보고 리로드 대신 병합 저장을 택한다(bug-hunt 2026-11-05). 메인 스레드 전용.
+    /// </summary>
+    private bool _hasUnsavedChanges;
 
     /// <summary>
     /// 일시적 잠금(IOException)으로 연달아 실패한 로드 횟수. 한도까지는 다음 폴링이 다시 읽게 하고(편집기의 짧은
@@ -85,6 +99,12 @@ internal class JsonSettingsManager<T>
 
     /// <summary><see cref="_consecutiveLockFailures"/> 한도 — 폴링 5초 × 6 ≈ 30초 동안 재시도.</summary>
     private const int MaxLockRetryLoads = 6;
+
+    /// <summary>
+    /// <see cref="Save"/> 가 "병합 판정 → 임시 파일 쓰기" 사이에 외부 저장을 발견했을 때 다시 병합하는 최대 횟수(첫 시도 포함).
+    /// 편집기가 계속 쓰는 극단적인 경우에도 저장이 끝나도록 상한을 둔다.
+    /// </summary>
+    private const int MaxSaveMergeAttempts = 3;
 
     /// <summary>
     /// 앱이 <b>마지막으로 디스크와 동기화된 시점</b>의 설정을 직렬화한 것. <see cref="TryLoad"/> 성공과
@@ -108,6 +128,31 @@ internal class JsonSettingsManager<T>
 
     /// <summary>현재 대상 파일 절대 경로.</summary>
     public string FilePath => _filePath;
+
+    /// <summary>마지막 <see cref="TryLoad"/> 의 실패 이유 (성공이면 <see cref="LoadFailure.None"/>).</summary>
+    public LoadFailure LastLoadFailure => _lastLoadFailure;
+
+    /// <summary>저장 실패로 디스크에 닿지 못한 인메모리 변경이 있는지 — <see cref="_hasUnsavedChanges"/>.</summary>
+    public bool HasUnsavedChanges => _hasUnsavedChanges;
+
+    /// <summary>
+    /// 디스크 파일이 지금 JSON 으로 읽히는가(내용 검증 없이 문법만). 파일이 없거나 읽을 수 없으면 false.
+    /// 저장 실패로 남은 인메모리 변경을 디스크 위에 병합할지 판단할 때 쓴다 — 깨진 파일 위에는 병합할 수 없다.
+    /// </summary>
+    public bool IsDiskContentParsable()
+    {
+        try
+        {
+            if (!File.Exists(_filePath)) return false;
+            using JsonDocument doc = JsonDocument.Parse(JsonSettingsFile.ReadAllTextStripBom(_filePath), UserJsonDocOptions);
+            return doc.RootElement.ValueKind == JsonValueKind.Object;
+        }
+        catch (Exception ex) when (IsExpectedLoadException(ex))
+        {
+            LogProvider.Sink?.Debug($"Config file not parsable right now: {ex.Message}");
+            return false;
+        }
+    }
 
     // ================================================================
     // Load — 12 단계 파이프라인
@@ -161,7 +206,7 @@ internal class JsonSettingsManager<T>
         {
             // 읽기 시점 mtime — 실패 경로(catch)도 이 값을 쓴다. try 안에 선언하면 catch 에서 못 써서 실패
             // 경로만 옛 "catch 에서 다시 stat" 패턴이 남았다(아래 catch 주석).
-            DateTime mtimeBeforeRead = DateTime.MinValue;
+            FileStamp mtimeBeforeRead = FileStamp.None;
             try
             {
                 // **mtime 을 내용보다 먼저 찍는다** (bug-hunt 3차 N). 아래 파이프라인은 JsonDocument
@@ -170,7 +215,7 @@ internal class JsonSettingsManager<T>
                 // 붙어 "이 내용과 동기화됨" 으로 확정되고, 폴링이 더는 차이를 보지 못해 그 편집을
                 // 영영 놓친다. 먼저 찍으면 오차가 "다음 폴링이 한 번 더 읽는다" 는 안전한 쪽으로
                 // 기운다 — 같은 내용을 한 번 더 읽는 것은 무해하다.
-                mtimeBeforeRead = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
+                mtimeBeforeRead = JsonSettingsFile.GetStamp(_filePath);
 
                 string userJson = JsonSettingsFile.ReadAllTextStripBom(_filePath);
                 string mergedJson = MergeWithDefaults(userJson, _typeInfo);
@@ -180,6 +225,7 @@ internal class JsonSettingsManager<T>
                 {
                     // 유효 JSON 이지만 리터럴 null — 파싱 실패와 같은 등급으로 다룬다.
                     LogProvider.Sink?.Warning($"Config at {_filePath} deserialized to null. Keeping previous settings.");
+                    _lastLoadFailure = LoadFailure.Content;
                     value = new T();
                     return false;
                 }
@@ -193,14 +239,15 @@ internal class JsonSettingsManager<T>
                 lock (_mtimeLock)
                 {
                     // 성공 로드 — 폴링 기준과 동기화 기준이 함께 **읽기 시점**으로 맞춰진다.
-                    _lastMtime = mtimeBeforeRead;
-                    _syncedMtime = _lastMtime;
+                    _lastStamp = mtimeBeforeRead;
+                    _syncedStamp = _lastStamp;
                     _consecutiveLockFailures = 0;
                     // 방금 디스크와 동기화됐다 — 다음 Save 의 3-way 병합 기준선을 여기서 세운다 (§N-48).
                     // 파일 원문이 아니라 **앱의 표현**으로 저장해야 주석·포맷 차이가 diff 를 오염시키지 않는다.
                     _lastPersistedJson = JsonSerializer.Serialize(config, _typeInfo);
                 }
                 LogProvider.Sink?.Info($"Config loaded from {_filePath}");
+                _lastLoadFailure = LoadFailure.None;
                 value = config;
                 return true;
             }
@@ -224,7 +271,12 @@ internal class JsonSettingsManager<T>
                 if (!retryLock)
                     _consecutiveLockFailures = 0;
                 lock (_mtimeLock)
-                    _lastMtime = retryLock ? DateTime.MinValue : mtimeBeforeRead;
+                    _lastStamp = retryLock ? FileStamp.None : mtimeBeforeRead;
+                // 원자 교체 편집기의 delete→rename 사이(파일 없음)와 재시도 중인 잠금은 일시 상태다 — 다음 폴링이 읽는다.
+                // 재시도 한도를 넘긴 잠금·권한 거부·JSON 오류는 사용자가 알아야 하는 내용 문제로 분류한다.
+                _lastLoadFailure = ex is FileNotFoundException ? LoadFailure.Missing
+                    : retryLock ? LoadFailure.Locked
+                    : LoadFailure.Content;
                 value = new T();
                 return false;
             }
@@ -235,6 +287,7 @@ internal class JsonSettingsManager<T>
         // 호출자는 "지금 들고 있는 인스턴스를 유지" 해야 한다 (bug-hunt 3차 E).
         LogProvider.Sink?.Warning(
             $"Config not found at {_filePath}; keeping caller's current state (no defaults written)");
+        _lastLoadFailure = LoadFailure.Missing;
         value = new T();
         return false;
     }
@@ -250,7 +303,7 @@ internal class JsonSettingsManager<T>
     /// <para>
     /// <b>반환값은 실제로 디스크에 확정된 설정이다</b> — 3-way 병합이 일어났으면 <paramref name="value"/>
     /// 와 다르다. 호출자는 이 값을 인메모리에 반영해야 한다. 그러지 않으면 병합 결과가 메모리에
-    /// 없는 채로 <c>_lastMtime</c> 이 self-bump 되어 핫리로드도 돌지 않고, <b>다음 저장이 옛 인메모리
+    /// 없는 채로 <c>_lastStamp</c> 이 self-bump 되어 핫리로드도 돌지 않고, <b>다음 저장이 옛 인메모리
     /// 값으로 사용자 편집을 다시 덮는다</b> — 병합이 손실을 한 번만 지연시키는 셈이 된다
     /// (릴리즈 리뷰 2026-08-01 확정 #1·#3·#5, 대조군으로 실측 재현됨).
     /// </para>
@@ -267,22 +320,46 @@ internal class JsonSettingsManager<T>
 
             lock (_mtimeLock)
             {
-                // 디스크가 우리가 마지막으로 본 상태에서 벗어났으면, **이번에 바꾼 필드만** 그 위에
-                // 얹는다 (§N-48). 그러지 않으면 사용자가 방금 파일에 넣은 편집이 앱이 손대지도 않은
-                // 필드까지 통째로 되돌아간다.
-                string merged = MergeOntoDiskIfChanged(rawJson, out didMerge);
-                string json = FormatJson(merged);
+                string merged;
+                FileStamp written;
+                for (int attempt = 1; ; attempt++)
+                {
+                    // 디스크가 우리가 마지막으로 본 상태에서 벗어났으면, **이번에 바꾼 필드만** 그 위에
+                    // 얹는다 (§N-48). 그러지 않으면 사용자가 방금 파일에 넣은 편집이 앱이 손대지도 않은
+                    // 필드까지 통째로 되돌아간다.
+                    FileStamp diskBefore = JsonSettingsFile.GetStamp(_filePath);
+                    merged = MergeOntoDiskIfChanged(rawJson, diskBefore, out didMerge);
+                    string json = FormatJson(merged);
 
-                JsonSettingsFile.WriteAllText(_filePath, json);
-                _lastMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
-                _syncedMtime = _lastMtime;
+                    string tmpPath = JsonSettingsFile.WriteTemp(_filePath, json);
+                    // **스탬프는 교체 전 임시 파일에서 찍는다** (bug-hunt 2026-11-05). rename 은 mtime 을 보존하므로
+                    // 교체 뒤 대상의 값과 같다. 교체 **뒤에** 대상을 다시 조회하면, 그 사이 편집기·동기화
+                    // 클라이언트가 저장한 편집의 mtime 이 "우리 저장" 으로 박혀 폴러도 병합도 그 편집을 영영 못 본다
+                    // — 3차 N 이 TryLoad 쪽에서 닫은 것과 같은 결함이 이 경로에 남아 있었다.
+                    written = JsonSettingsFile.GetStamp(tmpPath);
+
+                    // 병합 판정 뒤 쓰기까지 수 ms 동안 외부 저장이 끼었으면 그 편집 위에 다시 병합한다 —
+                    // _mtimeLock 은 다른 프로세스를 막지 못한다. 창을 교체 직전의 µs 로 좁힐 뿐 완전히 닫지는 못한다.
+                    if (attempt < MaxSaveMergeAttempts && JsonSettingsFile.GetStamp(_filePath) != diskBefore)
+                    {
+                        LogProvider.Sink?.Debug("Config changed on disk while saving; re-merging before replace");
+                        continue;
+                    }
+
+                    JsonSettingsFile.CommitTemp(tmpPath, _filePath);
+                    break;
+                }
+
+                _lastStamp = written;
+                _syncedStamp = written;
                 // 기준선은 **실제로 쓴 내용**이어야 다음 저장의 diff 가 정확하다.
                 _lastPersistedJson = merged;
             }
+            _hasUnsavedChanges = false;
             LogProvider.Sink?.Debug($"Config saved to {_filePath}");
 
             // 병합이 있었으면 디스크와 메모리가 갈라진 상태다. 방금 쓴 파일을 다시 읽어 호출자에게
-            // 돌려줘야 인메모리가 따라잡는다 — TryLoad 가 _lastMtime·_lastPersistedJson 도 정규
+            // 돌려줘야 인메모리가 따라잡는다 — TryLoad 가 _lastStamp·_lastPersistedJson 도 정규
             // 표현으로 다시 세우므로 다음 저장의 diff 기준선까지 한 번에 정리된다.
             if (didMerge)
             {
@@ -292,7 +369,7 @@ internal class JsonSettingsManager<T>
                 // 방금 쓴 파일을 되읽지 못했다 — 백신·에디터·동기화 클라이언트가 순간적으로 잡는 경로다.
                 // 이때 디스크와 기준선에는 **병합 결과**가, 호출자에게 돌려줄 인메모리에는 **병합 전** 값이
                 // 있다. 그 상태를 "디스크와 동기화됨" 으로 남겨두면 다음 저장이 두 번 배신한다 —
-                // (1) diskMtime == _syncedMtime 이라 3-way 병합을 통째로 건너뛰고,
+                // (1) diskMtime == _syncedStamp 이라 3-way 병합을 통째로 건너뛰고,
                 // (2) 설령 병합하더라도 기준선이 병합 결과라 사용자 편집 필드가 "앱이 이번에 바꿨다" 로
                 //     오분류돼 앱의 옛 값이 이긴다.
                 // 어느 쪽이든 방금 살아남은 사용자 편집을 되돌려 쓴다 (bug-hunt 2026-08-02 확정 #19).
@@ -303,8 +380,8 @@ internal class JsonSettingsManager<T>
                 // TryLoad 성공이 인메모리·기준선·양쪽 mtime 을 한 번에 정상화한다.
                 lock (_mtimeLock)
                 {
-                    _lastMtime = DateTime.MinValue;
-                    _syncedMtime = DateTime.MinValue;
+                    _lastStamp = FileStamp.None;
+                    _syncedStamp = FileStamp.None;
                     _lastPersistedJson = rawJson;
                 }
                 LogProvider.Sink?.Warning(
@@ -317,6 +394,7 @@ internal class JsonSettingsManager<T>
             // NF-25: 저장 실패 시 로그 경고 + 인메모리 유지.
             // 정책 항목 1(타입 좁히기): 로직 버그(NullRef 등)는 전파되어 표면화되도록 한다.
             LogProvider.Sink?.Warning($"Failed to save config: {ex.Message}");
+            _hasUnsavedChanges = true;
         }
 
         return value;
@@ -339,39 +417,37 @@ internal class JsonSettingsManager<T>
     /// </para>
     ///
     /// <para>
-    /// 병합할 수 없는 상황(기준선 없음 · 디스크 읽기/파싱 실패 · 최상위가 객체가 아님)에서는
-    /// <paramref name="nextJson"/> 을 그대로 쓴다. 저장 자체를 포기하면 사용자의 트레이 조작이 조용히
-    /// 무시되므로, 그쪽이 더 나쁘다.
+    /// 병합할 수 없는 상황(디스크 읽기/파싱 실패 · 최상위가 객체가 아님)에서는 <paramref name="nextJson"/> 을
+    /// 그대로 쓴다. 저장 자체를 포기하면 사용자의 트레이 조작이 조용히 무시되므로, 그쪽이 더 나쁘다. 단 파싱할 수
+    /// 없는 파일은 덮기 전에 사본으로 보관한다(<see cref="BrokenFileBackupSuffix"/>).
+    /// </para>
+    ///
+    /// <para>
+    /// <b>기준선이 없으면 기본값을 기준선으로 쓴다</b> (bug-hunt 2026-11-05). 부팅 로드가 실패해 기본값으로 시작한
+    /// 경우인데, 예전엔 여기서 곧장 <paramref name="nextJson"/>(전 필드 기본값 + 방금 바꾼 값)을 써서 사용자 파일이
+    /// 트레이 클릭 한 번에 기본값으로 덮였다. 기본값 대비 바뀐 필드만 앱이 이기게 하면, 디스크가 읽히는 한(일시 잠금이
+    /// 풀린 뒤 등) 사용자 값이 살아남는다.
     /// </para>
     /// </summary>
     /// <remarks><see cref="_mtimeLock"/> 을 보유한 상태에서 호출한다.</remarks>
+    /// <param name="diskStamp">호출자가 방금 찍은 디스크 표식(<see cref="FileStamp.None"/> = 파일 없음).</param>
     /// <param name="didMerge">실제로 병합이 수행됐으면 true — 호출자가 인메모리를 재동기화해야 한다.</param>
-    private string MergeOntoDiskIfChanged(string nextJson, out bool didMerge)
+    private string MergeOntoDiskIfChanged(string nextJson, FileStamp diskStamp, out bool didMerge)
     {
         didMerge = false;
-        if (_lastPersistedJson is null) return nextJson;
-
-        DateTime diskMtime;
-        try
-        {
-            if (!File.Exists(_filePath)) return nextJson;
-            diskMtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
-        }
-        catch (Exception ex) when (IsExpectedIoException(ex))
-        {
-            return nextJson;
-        }
+        if (diskStamp == FileStamp.None) return nextJson;
 
         // 우리가 마지막으로 **읽어 반영한** 그대로면 덮어써도 잃을 것이 없다 (흔한 경로라 파싱 비용을 아낀다).
-        // 여기서 _lastMtime 을 보면 안 된다 — 그것은 "변경을 눈치챘다" 는 뜻일 뿐이라, 파일이 바뀐 것을
+        // 여기서 _lastStamp 을 보면 안 된다 — 그것은 "변경을 눈치챘다" 는 뜻일 뿐이라, 파일이 바뀐 것을
         // 알았지만 읽지는 못한 상태에서도 같아져 가드가 무장 해제된다 (확정 #1·#14).
-        if (diskMtime == _syncedMtime) return nextJson;
+        if (_lastPersistedJson is not null && diskStamp == _syncedStamp) return nextJson;
 
+        string baseJson = _lastPersistedJson ?? JsonSerializer.Serialize(new T(), _typeInfo);
         try
         {
             string diskJson = JsonSettingsFile.ReadAllTextStripBom(_filePath);
 
-            using var baseDoc = JsonDocument.Parse(_lastPersistedJson);
+            using var baseDoc = JsonDocument.Parse(baseJson);
             using var nextDoc = JsonDocument.Parse(nextJson);
             using var diskDoc = JsonDocument.Parse(diskJson, UserJsonDocOptions);
 
@@ -399,10 +475,33 @@ internal class JsonSettingsManager<T>
         }
         catch (Exception ex) when (IsExpectedLoadException(ex))
         {
-            // 디스크가 깨져 있으면 병합할 대상이 없다 — 앱 값을 그대로 쓴다.
+            // 디스크가 깨져 있으면 병합할 대상이 없다 — 앱 값을 그대로 쓴다. 덮기 전에 깨진 원본을 보관한다.
             LogProvider.Sink?.Warning(
                 $"Could not merge onto on-disk config ({ex.Message}); writing in-memory settings as-is");
+            if (ex is JsonException)
+                BackUpBrokenFile();
             return nextJson;
+        }
+    }
+
+    /// <summary>
+    /// 파싱할 수 없는 설정 파일을 덮기 전에 <c>{파일}{<see cref="BrokenFileBackupSuffix"/>}</c> 로 복사해 둔다. 사용자가
+    /// 편집하다 문법 오류를 낸 파일은 대부분 고칠 수 있는 내용인데, 앱 저장 한 번이 그것을 통째로 지웠다
+    /// (bug-hunt 2026-11-05). 같은 이름의 이전 사본은 덮는다 — 가장 최근에 깨진 내용이 복구 대상이다.
+    /// </summary>
+    private void BackUpBrokenFile()
+    {
+        string? suffix = BrokenFileBackupSuffix;
+        if (string.IsNullOrEmpty(suffix)) return;
+        string backupPath = _filePath + suffix;
+        try
+        {
+            File.Copy(_filePath, backupPath, overwrite: true);
+            LogProvider.Sink?.Warning($"Unreadable config backed up to {backupPath} before overwrite");
+        }
+        catch (Exception ex) when (IsExpectedIoException(ex))
+        {
+            LogProvider.Sink?.Warning($"Could not back up unreadable config to {backupPath}: {ex.Message}");
         }
     }
 
@@ -531,10 +630,12 @@ internal class JsonSettingsManager<T>
             // 외부 편집으로 오인한다 (§F).
             lock (_mtimeLock)
             {
-                DateTime mtime = JsonSettingsFile.GetLastWriteTimeUtc(_filePath);
-                if (mtime != _lastMtime)
+                // mtime 과 길이를 함께 본다 — mtime 해상도가 거친 볼륨(FAT32 2초)에서 같은 칸에 떨어진 편집을
+                // 놓치지 않도록 (bug-hunt 2026-11-05).
+                FileStamp stamp = JsonSettingsFile.GetStamp(_filePath);
+                if (stamp != FileStamp.None && stamp != _lastStamp)
                 {
-                    _lastMtime = mtime;
+                    _lastStamp = stamp;
                     return true;
                 }
             }
@@ -603,6 +704,12 @@ internal class JsonSettingsManager<T>
     /// 기본 구현은 identity (변환 없음).
     /// </summary>
     protected virtual string FormatJson(string json) => json;
+
+    /// <summary>
+    /// 파싱할 수 없는 파일을 덮기 전에 만드는 사본의 접미사. null 이면 보관하지 않는다(Core 기본값).
+    /// App 측 하위 클래스가 파일명 규칙을 정한다 — Core 는 App 상수를 참조할 수 없다(P6).
+    /// </summary>
+    protected virtual string? BrokenFileBackupSuffix => null;
 
     // ================================================================
     // MergeWithDefaults — T-독립 병합 로직
@@ -705,4 +812,24 @@ internal class JsonSettingsManager<T>
 
         writer.WriteEndObject();
     }
+}
+
+/// <summary>
+/// <see cref="JsonSettingsManager{T}.TryLoad"/> 의 실패 이유. 호출자가 사용자에게 알릴지 정하는 데 쓴다.
+/// </summary>
+internal enum LoadFailure
+{
+    /// <summary>성공 (실패 없음).</summary>
+    None,
+
+    /// <summary>
+    /// 내용 문제 — JSON 문법·타입 오류, 권한 거부, 재시도 한도를 넘긴 잠금. 사용자가 고쳐야 하는 상태라 알린다.
+    /// </summary>
+    Content,
+
+    /// <summary>일시적 잠금(편집기·백신·동기화 클라이언트) — 다음 폴링이 다시 읽는다. 알리지 않는다.</summary>
+    Locked,
+
+    /// <summary>파일 없음 — 원자 교체 편집기의 delete→rename 사이 등. 알리지 않는다.</summary>
+    Missing,
 }

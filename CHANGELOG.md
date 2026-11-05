@@ -5,6 +5,42 @@
 
 ## [Unreleased]
 
+### Added
+
+- **설정 파일을 읽지 못한 채 시작하면 알려 줍니다** — 앱을 켤 때 `koenvue_config.json` 에 문법 오류나 잘못된 값이 있어 읽지 못하면, 예전에는 로그 한 줄만 남기고 조용히 기본 설정으로 시작해서, 모르는 채 트레이를 누르면 그 파일이 기본값으로 덮였습니다. 이제 「설정 파일(koenvue_config.json)을 읽지 못해 기본 설정으로 시작했습니다」 안내가 뜨고, 시작 프로그램 등록 갱신과 업데이트 확인은 파일을 정상으로 읽을 때까지 미룹니다(기본값 기준으로 돌면 관리자 권한 시작 작업이 일반 권한으로 바뀌거나 꺼 둔 업데이트 확인이 실행됐습니다). 고치기 전에 앱에서 설정을 바꿔도, 파일에 있던 값은 앱이 바꾼 항목 외에는 그대로 남습니다. (`Settings.LastLoadFailure`·`I18n.ConfigBootLoadFailed`; 기준선 없는 저장은 기본값을 기준선으로 3-way 병합)
+
+- **문법이 깨진 설정 파일은 덮어쓰기 전에 `koenvue_config.json.broken` 으로 보관합니다** — 편집하다 쉼표 하나를 빠뜨린 파일도 트레이 조작 한 번이면 통째로 사라졌습니다. 이제 앱이 그 파일을 덮어쓰기 전에 같은 폴더에 사본을 남기므로 내용을 되살릴 수 있습니다(가장 최근 것 하나 — 복구 방법은 사용 설명서 「자주 묻는 질문」). (`JsonSettingsManager.BrokenFileBackupSuffix` ← `DefaultConfig.BrokenConfigBackupSuffix`)
+
+### Changed
+
+- **설정 파일 변경을 폴링 간격과 상관없이 약 5초마다 확인합니다** — 예전에는 감지 폴링 62번마다 확인해서 `poll_interval_ms` 를 키우면 31초, 감지 오류로 대기 시간이 늘면 2분 넘게 반영이 늦었고, 화면이 잠긴 동안에는 확인이 멈췄습니다. 이제 시간 기준으로, 잠긴 동안에도 확인합니다. 수정 시각과 함께 파일 크기도 비교해, 수정 시각이 2초 단위인 FAT32(포터블 USB)에서 같은 2초 안에 두 번 저장해도 놓치지 않습니다(크기까지 같으면 여전히 놓칠 수 있음). (`DefaultConfig.ConfigCheckIntervalPolls` 삭제 → `ConfigCheckIntervalMs = 5000`, 잠금 게이트 앞; `FileStamp(MtimeUtc, Length)` 가 변경 감지와 3-way 병합 기준을 모두 대체)
+
+- **상세 설정 「확인」은 바꾼 칸만 적용합니다** — 상세 설정 창을 열어 둔 동안 `koenvue_config.json` 을 직접 고쳐 저장하면, 「확인」 한 번에 창이 보여 주던 옛 값으로 조용히 되돌아갔습니다. 이제 바꾼 칸만 그 시점의 최신 설정 위에 얹고, 바꾼 칸이 없으면 저장하지 않습니다. (`SettingsDialog` — `FieldDef.IsDirty`/`Transfer`, `_pendingCommit` + `ComposeCommit`)
+
+- **설정 파일 「읽지 못했다」 안내는 파일 내용에 문제가 있을 때만 뜹니다** — 편집기·백신·동기화 프로그램이 저장하는 순간 파일을 잠깐 잡거나 교체 저장 중 파일이 잠깐 없을 때도 안내가 떠서 정상 저장에 거짓 경보가 났습니다. 이제 문법·값 오류, 권한 문제, 30초 넘게 풀리지 않는 잠금일 때만 알립니다. (`LoadFailure { None, Content, Locked, Missing }`)
+
+### Fixed
+
+- **설정 파일에 빈 항목이 있으면 앱이 켤 때마다 종료되던 문제** — `system_hide_classes_user` 같은 목록에 `null`·빈 문자열이 있거나 `indicator_positions` 의 값이 `null`(위치를 지우려는 편집)이면, 앱이 켜지자마자(또는 그 앱을 앞에 둘 때마다) 종료됐고 파일에 남아 있어 다시 켜도 똑같았습니다. 이제 그런 항목은 읽을 때 무시합니다(경고 로그). (`AppSettingsManager.DropBlankEntries`/`DropShortEntries`, `SystemFilter.MatchesAny` null 안전 — 실측 0xC0000409)
+
+- **설정 저장·리로드가 사용자 편집이나 앱 변경을 잃던 경계 조건** — ① 앱이 저장하는 바로 그 순간 겹친 외부 편집이 「앱의 저장」 으로 기록돼 영영 반영·병합되지 않던 문제(이제 교체 전 임시 파일 기준으로 기록하고, 그 사이 디스크가 바뀌면 다시 병합) ② 저장에 실패해 메모리에만 남은 변경(트레이 토글·드래그 위치)이 외부 편집 리로드 때 사라지던 문제(이제 디스크 위에 병합) ③ 깨진 파일 위에 앱이 저장한 뒤 다시 깨뜨리면 안내 없이 편집이 무시되던 문제 ④ 파일에서 배지 위치 좌표를 고쳐도 옛 드래그 좌표로 다시 그려지던 문제. (`JsonSettingsFile.WriteTemp`/`CommitTemp`·`MaxSaveMergeAttempts`, `HasUnsavedChanges`, 안내 래치를 정상 저장에서도 해제, `InvalidateSessionPositions` 를 표시 갱신 앞으로)
+
+- **설정 저장·Windows 설정 변경 때 사라져 가던 배지가 되살아나거나 흐린 배지가 밝아지던 문제** — 설정 저장, 강조색·라이트/다크 테마 변경, 배경화면·작업 표시줄 이동 같은 시스템 알림, 디스플레이·배율 변경, 절전 복귀 때마다 사라지는 중이던 배지가 다시 나타나 표시 시간이 처음부터 흘렀고, 「항상 표시」 모드에서 흐려져 있던 배지가 한/영 전환 없이 밝아졌습니다. 이제 모양·위치만 그 자리에서 갱신합니다. 또 리로드로 지금 앱의 프로필이 `"enabled": false` 가 되면 바로 숨기고, 파일에서 `display_mode` 를 `always` 로(또는 `non_korean_ime` 를 `hide` 에서 다른 값으로) 바꾸면 다음 이벤트를 기다리지 않고 바로 표시하며, 잠긴 동안 「잠금 화면에서 숨기기」를 켜도 바로 숨깁니다. (`Animation.Refresh`/`OverlayAnimator.Refresh`, `TryResolveCurrent`, `ShowPolicyBecameVisible`)
+
+- **전체화면·창 이동 중에 한/영을 누르면 숨겨 둔 배지가 깜빡이던 문제** — F11 전체화면, 창을 끌어 옮기는 중, 앱별 설정으로 끈 앱처럼 같은 창이 그 자리에서 숨김 대상이 되면 한/영을 누를 때마다 배지가 강조 효과와 함께 떴다 사라졌습니다. 한/영을 바꾸는 순간 배지·트레이가 잠깐 반대 상태로 돌아가는 경우도 고쳤습니다. (`DetectionService.IsForegroundSuppressed` — 감지 루프의 숨김 판정을 훅 경로가 공유; `WM_IME_STATE_CHANGED` lParam = 샘플 시각, 더 이른 샘플 폐기)
+
+- **설정 창 위에 배지가 붙던 문제** — 상세 설정·위치 기록 정리 창이 열리거나 닫히는 순간 배지가 그 창 위에 붙어, 그 뒤로 설정 창에서 한/영을 칠 때마다 배지가 깜빡였습니다. 이제 KoEnVue 자신의 창이 앞에 있으면 언제나 배지를 숨깁니다. (감지 루프 모달 게이트 = 포그라운드 PID 단독, `ModalDialogLoop.MarkActive`/`MarkInactive`)
+
+- **트레이 메뉴 동작 문제** — ① 메뉴의 「한/영 배지 숨김」을 풀어도 배지가 바로 돌아오지 않던 문제(다른 창을 눌러야 나타남) ② 메뉴가 열린 사이 설정 파일이 바뀌면 체크 항목이 화면에서 본 것과 반대로 적용되던 문제(이제 메뉴에 보였던 체크의 반대로, 투명도는 메뉴에 보였던 값으로) ③ 앱별 프로필로 「창 기준」 위치를 쓰는 앱에서 「기본 위치」 메뉴가 고정 위치용 값을 바꾸던 문제 ④ KoEnVue 자신의 트레이 메뉴 위에서는 다른 앱 메뉴와 달리 배지가 숨지 않던 문제(메뉴를 닫으면 「항상 표시」 배지는 바로 돌아와 메뉴로 바꾼 투명도·배율이 곧장 보입니다). (`Tray._menuSnapshot`, `Tray.EffectivePositionMode`, `DetectionService.HandleOwnMainForeground`, `WM_APP_TRAY_MENU_CLOSED` → `Program.HandleTrayMenuClosed`)
+
+- **배지를 끌어 옮길 때의 문제** — ① 보이지 않는 커서 헤일로 창 가장자리에 배지가 달라붙던 문제(자석 스냅에서 KoEnVue 자신의 창 제외) ② 놓은 직후 배지가 원래 자리로 튀던 문제 ③ 끄는 도중 다른 앱이 앞으로 오면 놓은 자리에 새 앱의 모양으로 남던 문제(이제 지금 앞의 앱 기준으로 다시 배치) ④ 전환 강조로 커진 동안 끌면 위치가 반쯤 어긋나 저장되던 문제. (`WindowSnapHelper` 자기 PID 제외, `Animation.CancelMotion`, `ShowAfterDrop`, `LayeredOverlayBase.EndDrag` 기본 크기 환산)
+
+- **관리자 권한 토글 뒤 다시 실행하면 KoEnVue 가 아예 꺼져 있던 문제** — 이전 실행이 종료되는 중에 다시 실행하면, 새 실행은 「이미 실행 중」 으로 보고 끝나고 이전 실행도 곧 끝나 실행 중인 KoEnVue 가 없었습니다. 이제 이전 실행이 종료 중이면 새 실행이 그 자리를 이어받아 시작합니다(최대 10초 대기). (`WM_APP_ACTIVATE` 를 `SendMessageTimeoutW` 로 보내 `ActivateAck` 응답 확인 → 없으면 `WaitForMutexHandover`)
+
+- **`theme: system` 에서 고대비를 껐을 때 글자색이 사용자 색으로 돌아오지 않던 문제** — 고대비 모드를 켰다 끄면 고대비용 검정/흰 글자색이 남았고, 그 값이 저장되면 재시작해도 복구되지 않았습니다. 이제 사용자 커스텀 글자색으로 돌아옵니다. (`ThemePresets.ApplySystemTheme` — 전경색을 `custom_backup_*_fg` 에서)
+
+- **드문 조건에서 생기던 문제 묶음** — ① `advanced.overlay_class_name` 에 앱 내부·시스템 컨트롤·셸 창의 클래스 이름을 넣으면 설정 창이 닫히지 않아 트레이가 영구히 막히거나 앱이 종료되던 문제(이제 기본값으로 대체) ② 설정 창이 예상 밖의 경로로 닫히면 트레이 메뉴(종료 포함)가 다시 열리지 않던 문제 ③ 탐색기가 바쁠 때 트레이 아이콘이 실제로는 등록됐는데 실패로 처리돼 우클릭 메뉴가 열리지 않고 종료 뒤 유령 아이콘이 남던 문제 ④ 트레이를 우클릭할 때마다 시스템 핸들이 조금씩 쌓이던 문제 ⑤ Windows 설정 알림이 설정 저장·리로드와 겹치면 새 시스템 색이 옛 값으로 덮이고, 탐색기 재시작과 테마 변경이 겹치면 트레이 아이콘이 옛 색으로 다시 등록되던 문제 ⑥ 부팅 중 테마 알림이 겹치면 보이지 않는 커서 헤일로 창이 하나 더 생기던 문제 ⑦ 창 제목으로 앱별 프로필을 고르는 설정(`app_profile_match: "title"`)에서 제목이 바뀌는 순간 배지 크기와 위치가 서로 다른 프로필로 계산되던 문제 ⑧ 전환 강조 도중 앱별 설정이 바뀌면 배율이 튀고, 슬라이드 중 다른 모니터의 앱으로 바꾸면 배지가 원래 모니터에 남아 깜빡이던 문제 ⑨ 관리자 권한 토글로 종료할 때 세션 알림 등록이 풀리지 않고, 종료 직후 도착한 업데이트 확인 결과가 파괴된 창으로 가던 문제 ⑩ 로그 설정을 바꾸는 순간의 로그 줄이 순서가 뒤바뀌거나 파일 로깅을 끈 뒤에도 파일에 쓰이던 문제 ⑪ 비정상 종료 때 트레이 아이콘이 남을 수 있던 문제. (`DefaultConfig.IsReservedWindowClassName`, `ModalDialogLoop.Run` 의 `IsWindow` 종료 조건, `NotifyIconManager` NIM_ADD 실패 시 NIM_MODIFY 확인·`Remove` 는 항상 NIM_DELETE, `StartupTaskManager.RunSchtasksCapture` 리더 해제, `Program._configTxnDepth` 설정 갱신 트랜잭션, `Tray._removingForRecreate`, `EnableCursorOverlay` 중복 생성 가드, `GetAppPosition(resolved)`, 강조 지속시간 시작 시 고정·옛 슬라이드 정지, `UnregisterSessionNotification`, `OnUpdateCheckResult` 가 현재 `_hwndMain` 을 읽음, `Logger` 적재 뒤 라우트 재확인) (bug-hunt 2026-11-05, 8라운드 확정 115건 → 서로 다른 결함 38개)
+
 ## [1.0.4.0] — 2026-11-04 — 커서 주변 비움 · CapsLock 보라색 · 안개 고리 아이콘 · 안정성 수정
 
 ### Added

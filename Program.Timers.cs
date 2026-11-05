@@ -18,6 +18,12 @@ internal static partial class Program
     /// </summary>
     private static void EnableCursorOverlay()
     {
+        // 이미 있으면 만들지 않는다 (bug-hunt 2026-11-05). 부팅 9e 는 게이트 없이 이 함수를 부르는데, 그 앞 9b 의 블로킹
+        // NIM_ADD 대기 중 sent 로 끼어든 WM_SETTINGCHANGE(theme=system) 가 ApplyCursorConfigChange 로 먼저 창을 만들 수 있다.
+        // 두 번째 생성이 필드를 덮으면 첫 창은 아무도 파괴하지 않는 고아(WS_VISIBLE·layered·alpha 0)로 프로세스 끝까지 남아
+        // 배지 드래그의 스냅 후보로도 잡혔다.
+        if (_hwndCursorOverlay != IntPtr.Zero) return;
+
         _hwndCursorOverlay = CreateCursorOverlayWindow();
         if (_hwndCursorOverlay == IntPtr.Zero)
         {

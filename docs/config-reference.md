@@ -2,7 +2,9 @@
 
 KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 — **101 항목** (top-level 91 + 중첩 10). 중첩 10 은 `event_triggers.*` 2 + `advanced.*` 2 + `default_indicator_position.*` 3 + `default_indicator_position_relative.*` 3 이다 (`app_profiles` 는 값이 자유형 override 객체라 그 자체가 top-level 1행). 실측 invariant: `grep -cE '^\| \`[a-z_0-9.]+\`' docs/config-reference.md` → **101** (2026-11-04 `cursor_clear_radius` 추가로 99→100, 같은 날 `caps_lock_color` 추가로 100→101). (2026-07-29 정정: 종전 서술은 "101" 이었으나 실제는 줄곧 99 로 2 과다 표기였다.) 내역: 커서 헤일로 17 키 = 동심원 11 + 표시모드·안개 3 + 전환 효과 3, PR-15 `admin_elevation` 포함. 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
 
-`koenvue_config.json` 의 위치: exe 폴더 (기본 — 폴더에 이미 있거나 쓰기 가능할 때). exe 폴더에 쓸 수 없으면 `%LOCALAPPDATA%\KoEnVue\koenvue_config.json` 으로 폴백 ([PortablePath](../App/Config/PortablePath.cs)). 자세한 결정 절차는 [README §다운로드](../README.md) 의 권장 설치 위치 절을 참고하세요. 저장 즉시 **핫 리로드** 됩니다 (감지 스레드의 mtime 폴링, ~5초 간격 — 바뀌면 메인 스레드에 `WM_CONFIG_CHANGED` 통지).
+`koenvue_config.json` 의 위치: exe 폴더 (기본 — 폴더에 이미 있거나 쓰기 가능할 때). exe 폴더에 쓸 수 없으면 `%LOCALAPPDATA%\KoEnVue\koenvue_config.json` 으로 폴백 ([PortablePath](../App/Config/PortablePath.cs)). 자세한 결정 절차는 [README §다운로드](../README.md) 의 권장 설치 위치 절을 참고하세요. 저장하면 **핫 리로드** 됩니다 — 감지 스레드가 **약 5초마다** 파일의 수정 시각과 크기를 확인해 바뀌면 메인 스레드에 `WM_CONFIG_CHANGED` 를 통지합니다. 주기는 시간 기준이라 `poll_interval_ms` 와 무관하고 화면 잠금 중에도 확인합니다 (`DefaultConfig.ConfigCheckIntervalMs` = 5000 — 2026-11-05 전에는 "62폴링" 이라 `poll_interval_ms` 를 키우면 31초~2분 넘게 늦어졌습니다). 크기까지 보는 이유는 FAT32(포터블 USB) 처럼 수정 시각이 2초 단위인 드라이브에서 같은 2초 안의 두 저장을 구분하기 위해서입니다.
+
+> **읽을 수 없는 파일** — JSON 문법 오류·잘못된 enum 값처럼 파일을 읽지 못하면 앱은 직전 설정(부팅 때라면 기본값)으로 계속 동작하고 파일은 덮어쓰지 않습니다. 실행 중 편집이면 「설정 파일을 읽지 못했다」 안내가 한 번, **부팅 때면 「기본 설정으로 시작했다」 안내**가 뜨며 시작 프로그램 작업 동기화·업데이트 확인은 파일을 정상으로 읽을 때까지 미룹니다. 편집기가 저장하는 순간의 짧은 잠금이나 교체 저장 중의 「파일 없음」 에는 안내하지 않습니다. 파일을 고쳐 저장하면 바로 반영됩니다. 고치기 전에 앱에서 설정을 바꾸면 앱이 그 변경을 파일에 씁니다 — **JSON 문법 자체가 깨진 파일**은 덮기 전에 `koenvue_config.json.broken` 으로 복사해 두고(이전 사본은 덮어씀), 문법은 맞고 값만 틀린 파일은 앱이 바꾼 항목만 고쳐 쓰고 나머지 내용은 그대로 둡니다.
 
 > 키 표기: JSON 은 `snake_case`, C# 소스 (`AppConfig`) 는 `PascalCase`. 본 문서는 JSON 표기 기준. **enum 값은 표에 적힌 소문자 표기 그대로** 써야 합니다 (예: `"bold"`, `"top_right"`) — `"Bold"`·`"TopRight"` 처럼 대소문자나 표기가 다르면 **파일 전체 읽기가 실패해 기본값으로 동작**합니다 (파일은 덮어쓰지 않고 로그에 `Failed to load config … Path: $.font_weight` 경고 — 2026-11-05 실측). 클램프 범위는 [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) 의 `Min/MaxX` const 쌍이 단일 진실원 — [Settings.Validate](../App/Config/Settings.cs) 가 범위를 벗어나면 silent 보정합니다.
 
@@ -12,7 +14,7 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 
 | 키 | 타입 | 기본값 | 범위 | 설명 |
 |---|---|---|---|---|
-| `display_mode` | enum | `"always"` | `always` / `on_event` | `always` 는 인디케이터를 항상 표시 (유휴 시 `idle_opacity`). `on_event` 는 IME / 포커스 변경 이벤트 시에만 페이드인 → 유지 → 페이드아웃 |
+| `display_mode` | enum | `"always"` | `always` / `on_event` | `always` 는 인디케이터를 항상 표시 (유휴 시 `idle_opacity`). `on_event` 는 IME / 포커스 변경 이벤트 시에만 페이드인 → 유지 → 페이드아웃. 실행 중 `always` 로 바꾸면(파일 편집 포함) 표시 시간이 끝나 사라져 있던 배지가 다음 이벤트를 기다리지 않고 바로 나타남 (「한/영 배지 숨김」 상태면 제외) (`non_korean_ime` 를 `hide` 에서 바꾼 경우도 같음, 2026-11-05) |
 | `event_display_duration_ms` | int | `2000` | 500 ~ 10000 | `on_event` 모드의 유지 시간 (ms) |
 | `always_idle_timeout_ms` | int | `3000` | 1000 ~ 30000 | `always` 모드에서 유휴 전환 (`idle_opacity` 로 dim) 까지 대기 시간 (ms). 범위 밖 값은 보정 (예: 0 → 1000) |
 | `event_triggers.on_focus_change` | bool | `true` | — | 포그라운드 윈도우 변경 시 인디 표시 트리거 |
@@ -89,11 +91,11 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 | `non_korean_ime` | enum | `"hide"` | `hide` / `show` / `dim` | 비한국어 IME (일/중 등) 활성 시 행동. `hide` 숨김 / `show` 그대로 표시 / `dim` 50% 투명도로 표시 |
 | `hide_in_fullscreen` | bool | `true` | — | 전체화면 독점 앱 (게임 등) 에서 인디 숨김 |
 | `hide_when_no_focus` | bool | `true` | — | 키보드 포커스 없는 창에서 인디 숨김 |
-| `hide_on_lock_screen` | bool | `true` | — | 잠금 화면 (WTS 이벤트) 에서 인디 즉시 숨김. 잠금 해제 후 첫 포커스 변경 시 복원 |
+| `hide_on_lock_screen` | bool | `true` | — | 잠금 화면 (WTS 이벤트) 에서 인디 즉시 숨김. 잠금 해제 후 첫 포커스 변경 시 복원. 잠긴 동안 이 값을 켜도 바로 숨김 (2026-11-05) |
 
 ## 동작 — 시스템 창 필터 (System Window Filter)
 
-`SystemFilter` 의 클래스명/프로세스명 블랙리스트 — 8조건 단락 평가 중 4·5. `*_user` 변형은 사용자 추가용 (기본 리스트와 합쳐서 매칭).
+`SystemFilter` 의 클래스명/프로세스명 블랙리스트 — 8조건 단락 평가 중 4·5. `*_user` 변형은 사용자 추가용 (기본 리스트와 합쳐서 매칭). 이 절의 목록과 `app_filter_list` 에 든 **`null`·빈 문자열 원소는 로드 때 무시**됩니다 (경고 로그 1줄 — 2026-11-05 전에는 `[null]` 한 줄이 실행할 때마다 앱을 종료시켰습니다).
 
 | 키 | 타입 | 기본값 | 설명 |
 |---|---|---|---|
@@ -148,9 +150,9 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 | 키 | 타입 | 기본값 | 설명 |
 |---|---|---|---|
 | `position_mode` | enum | `"window"` | `fixed` / `window`. `fixed` = 화면 작업영역 기준 절대 좌표, `window` = 포그라운드 창 DWM 프레임 기준 상대 오프셋 (창 이동 시 인디도 따라감) |
-| `indicator_positions` | object | `{}` | (고정 모드) 프로세스명 → `[x, y]` 절대 좌표. 드래그 종료 시 자동 저장 |
-| `indicator_positions_relative` | object | `{}` | (창 기준 모드) 프로세스명 → `[corner, deltaX, deltaY]`. `corner`: 0=TopLeft / 1=TopRight / 2=BottomLeft / 3=BottomRight |
-| `default_indicator_position` | object? | `null` | (고정 모드) 저장 위치 없는 앱의 기본 위치. 형식 예: `{"corner": "top_right", "delta_x": -40, "delta_y": 10}`. `null` = 포그라운드 모니터 작업 영역 정중앙 (트레이「한/영 배지 ▸ 기본 위치 ▸ 현재 위치로 설정」으로 Corner+delta 저장) |
+| `indicator_positions` | object | `{}` | (고정 모드) 프로세스명 → `[x, y]` 절대 좌표. 드래그 종료 시 자동 저장. 값이 `null` 이거나 원소가 2개보다 적은 항목은 로드 때 무시 (2026-11-05 전에는 그 앱을 앞에 둘 때마다 앱이 종료) |
+| `indicator_positions_relative` | object | `{}` | (창 기준 모드) 프로세스명 → `[corner, deltaX, deltaY]`. `corner`: 0=TopLeft / 1=TopRight / 2=BottomLeft / 3=BottomRight. 값이 `null` 이거나 원소가 3개보다 적은 항목은 로드 때 무시 |
+| `default_indicator_position` | object? | `null` | (고정 모드) 저장 위치 없는 앱의 기본 위치. 형식 예: `{"corner": "top_right", "delta_x": -40, "delta_y": 10}`. `null` = 포그라운드 모니터 작업 영역 정중앙 (트레이「한/영 배지 ▸ 기본 위치 ▸ 현재 위치로 설정」으로 Corner+delta 저장 — 이 메뉴는 배지가 붙은 앱의 위치 기준(앱별 프로필의 `position_mode` 포함)이 고정일 때 이 키를, 창 기준일 때 `default_indicator_position_relative` 를 바꿈) |
 | `default_indicator_position.corner` | enum | `"top_right"` | `top_left` / `top_right` / `bottom_left` / `bottom_right`. 작업영역 모서리 앵커 (객체 존재 시 init 디폴트) |
 | `default_indicator_position.delta_x` | int | `0` | 앵커에서 X 오프셋 (음수 = 왼쪽). 논리 px |
 | `default_indicator_position.delta_y` | int | `0` | 앵커에서 Y 오프셋 (양수 = 아래쪽). 논리 px |
@@ -209,7 +211,7 @@ IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 스케일
 | 키 | 타입 | 기본값 | 설명 |
 |---|---|---|---|
 | `advanced.force_topmost_interval_ms` | int | `5000` | TopmostWatchdog 가 인디를 `HWND_TOPMOST` 로 재고정하는 주기. 0 = 비활성. 일부 풀스크린 / 게임 모드 / 가상 데스크톱 잔재가 z-order 를 깨는 케이스 방어 |
-| `advanced.overlay_class_name` | string | `"KoEnVueOverlay"` | 오버레이 윈도우의 Win32 클래스명. 1~255자 ASCII 영문/숫자/언더스코어만 허용. [Settings.ValidateAdvanced](../App/Config/Settings.cs) (`IsValidWindowClassName`) 에서 비정상 값은 디폴트로 폴백. **런타임 변경은 반영되지 않는다** (2026-08-01, AUDIT §H) — 윈도우 클래스는 부팅 시 1회 등록이라 실행 중 값을 바꾸면 경고 로그 1회만 남기고 무시한다. 적용하려면 재시작 |
+| `advanced.overlay_class_name` | string | `"KoEnVueOverlay"` | 오버레이 윈도우의 Win32 클래스명. 1~255자 ASCII 영문/숫자/언더스코어만 허용. **다른 창이 쓰는 이름도 거부** (대소문자 무관, 2026-11-05) — `KoEnVue` 로 시작하는 앱 내부 클래스 이름(기본값 `KoEnVueOverlay` 제외), 시스템 컨트롤 클래스(`Button`·`ComboBox`·`ComboLBox`·`Edit`·`ListBox`·`MDIClient`·`ScrollBar`·`Static`·`Message`), `system_hide_classes` 기본 목록의 셸 클래스. 같은 이름을 먼저 등록하면 설정 창·컨트롤이 엉뚱한 창 처리기를 받아 트레이가 막히거나 앱이 종료됐다. [Settings.ValidateAdvanced](../App/Config/Settings.cs) (`IsValidWindowClassName` → `DefaultConfig.IsReservedWindowClassName`) 에서 비정상 값은 디폴트로 폴백 (경고 로그). **런타임 변경은 반영되지 않는다** (2026-08-01, AUDIT §H) — 윈도우 클래스는 부팅 시 1회 등록이라 실행 중 값을 바꾸면 경고 로그 1회만 남기고 무시한다. 적용하려면 재시작 |
 
 ---
 

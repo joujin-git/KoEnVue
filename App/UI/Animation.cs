@@ -138,6 +138,37 @@ internal static class Animation
     }
 
     /// <summary>
+    /// 보이는 배지를 새 스타일·좌표로 <b>제자리에서</b> 갱신한다 — 리로드·시스템 색·디스플레이·DPI·전원 복귀용. 표시 이벤트가
+    /// 아니므로 애니메이션 단계와 타이머를 되돌리지 않는다(<see cref="OverlayAnimator.Refresh"/>, bug-hunt 2026-11-05).
+    /// </summary>
+    /// <returns>갱신 뒤에도 보이는 단계면 true — 호출자가 가시 플래그로 쓴다.</returns>
+    public static bool Refresh(int x, int y, ImeState state, AppConfig config)
+    {
+        if (_animator is null || !_animator.IsVisiblePhase) return false;
+
+        // NonKoreanImeMode.Hide 가드 — TriggerShow 와 같은 판정 (비한국어 숨김으로 바뀐 경우).
+        if (state == ImeState.NonKorean && config.NonKoreanIme == NonKoreanImeMode.Hide)
+        {
+            TriggerHide(config, forceHidden: true);
+            return false;
+        }
+
+        _animator.UpdateConfig(BuildAnimationConfig(config));
+        _animator.SetDimMode(state == ImeState.NonKorean && config.NonKoreanIme == NonKoreanImeMode.Dim);
+
+        // 새 스타일·좌표로 다시 그린다 (현재 투명도 그대로). 그 뒤 애니메이터가 투명도 목표만 새 설정에 맞춘다.
+        Overlay.Show(x, y, state, config);
+        _animator.Refresh(x, y);
+        return _animator.IsVisiblePhase;
+    }
+
+    /// <summary>
+    /// 진행 중인 슬라이드·강조 팝을 끝내고 애니메이터 기준 좌표를 맞춘다 — 배지 드래그의 시작·끝에서 부른다
+    /// (<see cref="OverlayAnimator.CancelMotion"/>).
+    /// </summary>
+    public static void CancelMotion(int x, int y) => _animator?.CancelMotion(x, y);
+
+    /// <summary>
     /// 표시 중인 배지의 색·모양만 갱신(CapsLock 토글 등). 강조 팝 진행 중이면 그리기만 하고 블리트는 다음 강조
     /// 프레임에 맡긴다 — <see cref="Overlay.UpdateColor"/> 는 기본 크기로 블리트해 팝 도중 한 프레임 줄었다가 다시
     /// 커지는 떨림이 났다(bug-hunt 2026-11-04 확정 #30, CapsLock 테두리로 토글마다 다시 그리게 되며 눈에 띔).

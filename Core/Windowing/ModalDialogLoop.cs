@@ -105,6 +105,17 @@ internal static class ModalDialogLoop
     }
 
     /// <summary>
+    /// 활성 다이얼로그 표식을 세운다 — <see cref="Run"/> 의 <c>callerOwnsActiveFlag</c> 경로용. 창을 만든 직후, 보이기 전에 부른다.
+    /// </summary>
+    public static void MarkActive(IntPtr hwndDialog) => Volatile.Write(ref s_activeDialog, hwndDialog);
+
+    /// <summary>
+    /// <see cref="MarkActive"/> 로 세운 표식을 내린다 — 다이얼로그를 파괴한 뒤에 부른다. 다른 다이얼로그의 표식이면 건드리지 않는다.
+    /// </summary>
+    public static void MarkInactive(IntPtr hwndDialog) =>
+        Interlocked.CompareExchange(ref s_activeDialog, IntPtr.Zero, hwndDialog);
+
+    /// <summary>
     /// 소유자 비활성화 → 중첩 메시지 루프 → 소유자 재활성화 + 포그라운드 복원.
     /// 진입 시 <see cref="s_activeDialog"/> 에 현재 다이얼로그 HWND 를 기록하고,
     /// try/finally 로 해제를 보장한다 (예외가 전파되어도 가드가 누수되지 않음).
@@ -114,7 +125,12 @@ internal static class ModalDialogLoop
     /// <param name="hwndDialog">다이얼로그 윈도우 핸들. IsDialogMessageW 전처리 대상.</param>
     /// <param name="hwndOwner">모달 소유자(= 메인 윈도우) 핸들.</param>
     /// <param name="isClosedFlag">WndProc 가 true 로 전환하면 루프 종료.</param>
-    public static void Run(IntPtr hwndDialog, IntPtr hwndOwner, ref bool isClosedFlag)
+    /// <param name="callerOwnsActiveFlag">
+    /// true 면 활성 표식(<see cref="IsActive"/>)을 호출자가 세우고 내린다 — 다이얼로그를 보이기 **전**에 세우고 파괴한
+    /// **뒤**에 내려야 그 사이에 걸린 감지 틱이 우리 다이얼로그를 일반 앱으로 보지 않는다(<see cref="MarkActive"/>,
+    /// bug-hunt 2026-11-05). false 면 종전대로 이 메서드가 진입·종료 시 세우고 내린다.
+    /// </param>
+    public static void Run(IntPtr hwndDialog, IntPtr hwndOwner, ref bool isClosedFlag, bool callerOwnsActiveFlag = false)
     {
         Volatile.Write(ref s_activeDialog, hwndDialog);
         User32.EnableWindow(hwndOwner, false);
@@ -131,7 +147,10 @@ internal static class ModalDialogLoop
 
         try
         {
-            while (!isClosedFlag)
+            // 다이얼로그 창이 사라졌으면 닫힘 플래그와 무관하게 끝낸다 (bug-hunt 2026-11-05). 플래그는 다이얼로그 WndProc 이
+            // 세우는데, 창이 다른 경로(DefWindowProc 의 WM_CLOSE → DestroyWindow 등)로 파괴되면 아무도 세우지 않아 루프가
+            // 영구히 돌았다 — 소유자 비활성화와 RejectReentry 가 풀리지 않아 트레이 메뉴(종료 포함)가 다시는 열리지 않았다.
+            while (!isClosedFlag && User32.IsWindow(hwndDialog))
             {
                 int ret = User32.GetMessageW(out MSG msg, IntPtr.Zero, 0, 0);
                 if (ret <= 0)
@@ -167,7 +186,8 @@ internal static class ModalDialogLoop
             if (User32.IsWindowVisible(hwndOwner))
                 User32.SetForegroundWindow(hwndOwner);
 
-            Volatile.Write(ref s_activeDialog, IntPtr.Zero);
+            if (!callerOwnsActiveFlag)
+                Volatile.Write(ref s_activeDialog, IntPtr.Zero);
         }
 
         // WM_QUIT 가 이 중첩 루프에서 소비되었으므로 외부 메시지 루프에 재전달

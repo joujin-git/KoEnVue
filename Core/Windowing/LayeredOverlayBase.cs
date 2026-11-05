@@ -450,8 +450,11 @@ internal sealed class LayeredOverlayBase : IDisposable
         if (_hwndOverlay != IntPtr.Zero
             && User32.GetWindowRect(_hwndOverlay, out RECT rc))
         {
-            _lastX = rc.Left;
-            _lastY = rc.Top;
+            // 강조 팝으로 확대된 채 드래그가 시작되면 창 사각형이 기본 크기보다 크다. 그 왼쪽 위를 그대로 저장하면 놓는 순간
+            // 기본 크기로 줄며 중심이 (배율-1)·폭/2 만큼 어긋난 자리가 저장됐다 (bug-hunt 2026-11-05). 같은 중심의 기본 크기
+            // 사각형으로 환산한다 — 크기가 같으면 종전과 같은 값이다.
+            _lastX = rc.Left + ((rc.Right - rc.Left) - _currentWidth) / 2;
+            _lastY = rc.Top + ((rc.Bottom - rc.Top) - _currentHeight) / 2;
         }
 
         // 드래그 중 보류된 숨김을 지금 적용 (§M). 위치를 먼저 확정한 뒤라 저장 경로는 영향받지 않는다.

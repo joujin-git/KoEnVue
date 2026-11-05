@@ -1,6 +1,7 @@
 using KoEnVue.App.Bootstrap;
 using KoEnVue.App.Config;
 using KoEnVue.App.Localization;
+using KoEnVue.App.Messaging;
 using KoEnVue.App.Models;
 using KoEnVue.App.Startup;
 using KoEnVue.App.UI.Dialogs;
@@ -16,9 +17,27 @@ namespace KoEnVue.App.UI;
 internal static partial class Tray
 {
     /// <summary>
+    /// 메뉴를 그릴 때 쓴 설정 — 체크 표시·투명도 라벨이 이 값으로 그려진다. 토글 명령은 **이 값의 반대**를 목표로 삼는다
+    /// (<see cref="HandleMenuCommand"/>). 메뉴가 열려 있는 동안(TrackPopupMenu 의 모달 루프) 리로드가 끼면 현재 값이 화면과
+    /// 달라지는데, 현재 값을 뒤집으면 사용자가 본 체크와 반대 방향으로 적용됐다 (bug-hunt 2026-11-05). 메인 스레드 전용.
+    /// </summary>
+    private static AppConfig? _menuSnapshot;
+
+    /// <summary>
+    /// 기본 위치 메뉴가 다루는 위치 모드 — 배지 주인 앱의 per-app 해석. 배지 위치는 앱별 position_mode 로 계산되는데
+    /// (2026-11-04 #25), 이 메뉴만 전역 값을 봐서 창 기준 프로필 앱 위에서 「현재 위치로 설정」 을 누르면 고정 모드용 기본
+    /// 위치가 바뀌었다 (bug-hunt 2026-11-05).
+    /// </summary>
+    internal static PositionMode EffectivePositionMode(AppConfig config, IntPtr hwndForeground) =>
+        hwndForeground != IntPtr.Zero
+            ? Settings.ResolveForApp(config, hwndForeground)?.PositionMode ?? config.PositionMode
+            : config.PositionMode;
+
+    /// <summary>
     /// 트레이 우클릭 팝업 메뉴 표시.
     /// </summary>
-    internal static void ShowMenu(IntPtr hwndMain, AppConfig config)
+    /// <param name="hwndForeground">배지 주인 앱 — 기본 위치 메뉴의 위치 모드 판정용.</param>
+    internal static void ShowMenu(IntPtr hwndMain, AppConfig config, IntPtr hwndForeground)
     {
         if (!_initialized) return;
 
@@ -92,7 +111,7 @@ internal static partial class Tray
         IntPtr hDefaultPosMenu = User32.CreatePopupMenu();
         User32.AppendMenuW(hDefaultPosMenu, Win32Constants.MF_STRING,
             (nuint)IDM_DEFAULT_POS_SET_CURRENT, I18n.MenuDefaultPosSetCurrent);
-        bool hasDefault = config.PositionMode == PositionMode.Window
+        bool hasDefault = EffectivePositionMode(config, hwndForeground) == PositionMode.Window
             ? config.DefaultIndicatorPositionRelative is not null
             : config.DefaultIndicatorPosition is not null;
         uint resetFlags = Win32Constants.MF_STRING
@@ -247,11 +266,14 @@ internal static partial class Tray
         User32.AppendMenuW(hMenu, Win32Constants.MF_STRING, (nuint)IDM_EXIT, I18n.MenuExit);
 
         // --- 표시 (워크어라운드 적용) ---
+        _menuSnapshot = config;
         User32.GetCursorPos(out POINT pt);
         User32.SetForegroundWindow(hwndMain);
         User32.TrackPopupMenu(hMenu, Win32Constants.TPM_RIGHTBUTTON,
             pt.X, pt.Y, 0, hwndMain, IntPtr.Zero);
         User32.PostMessageW(hwndMain, Win32Constants.WM_NULL, IntPtr.Zero, IntPtr.Zero);
+        // 메뉴 명령(WM_COMMAND, 이미 큐에 있다) 뒤에 처리되도록 닫힘 알림을 이어서 post — AppMessages 주석 참조.
+        User32.PostMessageW(hwndMain, AppMessages.WM_APP_TRAY_MENU_CLOSED, IntPtr.Zero, IntPtr.Zero);
 
         // DestroyMenu 는 MF_POPUP 로 부착된 서브메뉴를 **재귀적으로** 파괴한다 — 대분류 도입으로
         // 중첩이 2단(hMenu → hBadgeMenu → hOpacityMenu 등)이 됐지만 해제는 이 한 줄로 끝난다.

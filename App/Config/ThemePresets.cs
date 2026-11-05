@@ -139,7 +139,16 @@ internal static class ThemePresets
         string hangulBg = ColorHelper.RgbToHex(r, g, b);
         // 보색 계산
         string englishBg = ColorHelper.RgbToHex((byte)(255 - r), (byte)(255 - g), (byte)(255 - b));
-        return config with { HangulBg = hangulBg, EnglishBg = englishBg };
+        // 전경색은 **백업(사용자 커스텀 색)에서** 가져온다 (bug-hunt 2026-11-05). 이 함수는 WM_SETTINGCHANGE 마다 이미 파생된
+        // config 위에 다시 적용되는데, 고대비 분기만 전경색을 덮고 이 분기는 그대로 두어 고대비를 껐다 켜면 고대비 글자색
+        // (#000000/#FFFFFF)이 남았다 — 그 값이 저장되면 재시작해도 복구되지 않았다. 백업은 Apply 가 EnsureBackup 으로 보장한다.
+        return config with
+        {
+            HangulBg = hangulBg,
+            EnglishBg = englishBg,
+            HangulFg = config.CustomBackupHangulFg ?? config.HangulFg,
+            EnglishFg = config.CustomBackupEnglishFg ?? config.EnglishFg,
+        };
     }
 
     private static string SysColorHex(int sysColorIndex)

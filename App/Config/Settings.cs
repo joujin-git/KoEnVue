@@ -135,6 +135,21 @@ internal static class Settings
         return _manager.Save(config);
     }
 
+    /// <summary>
+    /// 마지막 로드(<see cref="Load"/>·<see cref="TryLoad"/>)가 실패한 이유. 핫리로드·부팅이 사용자에게 알릴지 정한다 —
+    /// <see cref="LoadFailure.Content"/> 만 사용자가 고쳐야 하는 문제다.
+    /// </summary>
+    public static LoadFailure LastLoadFailure => _manager?.LastLoadFailure ?? LoadFailure.None;
+
+    /// <summary>
+    /// 저장 실패로 디스크에 닿지 못한 인메모리 변경이 남아 있는지. 핫리로드는 이때 디스크 내용으로 통째 교체하지 말고
+    /// 그 변경을 디스크 위에 병합해야 한다 (bug-hunt 2026-11-05).
+    /// </summary>
+    public static bool HasUnsavedChanges => _manager?.HasUnsavedChanges ?? false;
+
+    /// <summary>디스크의 설정 파일이 지금 JSON 으로 읽히는지 (문법만, 값 검증 없음).</summary>
+    public static bool IsDiskContentParsable() => _manager?.IsDiskContentParsable() ?? false;
+
     // ================================================================
     // Validate — 범위 클램핑 (앱 프로필 머지 등에서 직접 호출됨)
     // ================================================================
@@ -247,7 +262,8 @@ internal static class Settings
         {
             Logger.Warning(
                 $"Invalid overlay_class_name '{adv.OverlayClassName}' (must be 1-255 chars, "
-                + "ASCII letters/digits/underscore). Falling back to default.");
+                + "ASCII letters/digits/underscore, and must not reuse an internal/system window class name). "
+                + "Falling back to default.");
             return adv with { OverlayClassName = DefaultConfig.DefaultOverlayClassName, ForceTopmostIntervalMs = clampedMs };
         }
 
@@ -264,7 +280,9 @@ internal static class Settings
             if (!(char.IsAsciiLetterOrDigit(c) || c == '_'))
                 return false;
         }
-        return true;
+        // 문자 집합만 보면 내부·시스템 클래스 이름이 그대로 통과한다 — 그 이름으로 오버레이 클래스가 먼저 등록되면
+        // 같은 이름을 쓰는 다이얼로그·컨트롤이 엉뚱한 WndProc 을 받는다 (bug-hunt 2026-11-05).
+        return !DefaultConfig.IsReservedWindowClassName(name);
     }
 
     // ================================================================
@@ -566,6 +584,9 @@ internal sealed partial class AppSettingsManager : JsonSettingsManager<AppConfig
     {
     }
 
+    /// <summary>깨진 설정 파일을 덮기 전 보관 사본 — <c>koenvue_config.json.broken</c>.</summary>
+    protected override string? BrokenFileBackupSuffix => DefaultConfig.BrokenConfigBackupSuffix;
+
     /// <summary>
     /// STJ 소스 생성기는 JSON에 없는 init 속성의 기본값을 보존하지 않을 수 있다.
     /// 역직렬화 직후 모든 참조 타입 하위 객체를 null 체크하여 기본값으로 보정.
@@ -718,6 +739,52 @@ internal sealed partial class AppSettingsManager : JsonSettingsManager<AppConfig
     private static partial Regex NumberPattern();
 
     /// <summary>
+    /// null·공백 원소를 뺀 배열. 배열 자체가 null 이면 null(호출자가 기본값으로 보정), 걸러낼 것이 없으면 같은 인스턴스.
+    /// </summary>
+    internal static string[]? DropBlankEntries(string[]? list)
+    {
+        if (list is null) return null;
+        int blank = 0;
+        foreach (string? s in list)
+        {
+            if (string.IsNullOrWhiteSpace(s)) blank++;
+        }
+        if (blank == 0) return list;
+
+        Logger.Warning($"Ignoring {blank} empty or null entries in a config string list");
+        var kept = new string[list.Length - blank];
+        int i = 0;
+        foreach (string? s in list)
+        {
+            if (!string.IsNullOrWhiteSpace(s)) kept[i++] = s;
+        }
+        return kept;
+    }
+
+    /// <summary>
+    /// 값이 null 이거나 <paramref name="minLength"/> 보다 짧은 위치 항목을 뺀 사전. 사전 자체가 null 이면 null,
+    /// 걸러낼 것이 없으면 같은 인스턴스(참조 비교로 변경을 판정하는 호출자가 있다 — InvalidateSessionPositions).
+    /// </summary>
+    internal static Dictionary<string, int[]>? DropShortEntries(Dictionary<string, int[]>? positions, int minLength)
+    {
+        if (positions is null) return null;
+        int bad = 0;
+        foreach (int[]? v in positions.Values)
+        {
+            if (v is null || v.Length < minLength) bad++;
+        }
+        if (bad == 0) return positions;
+
+        Logger.Warning($"Ignoring {bad} null or incomplete indicator position entries");
+        var kept = new Dictionary<string, int[]>(positions.Count - bad, positions.Comparer);
+        foreach (var (key, v) in positions)
+        {
+            if (v is not null && v.Length >= minLength) kept[key] = v;
+        }
+        return kept;
+    }
+
+    /// <summary>
     /// System.Text.Json 소스 생성기는 JSON에 없는 init 속성의 기본값을 보존하지 않을 수 있다.
     /// 역직렬화 직후 모든 참조 타입 하위 객체를 null 체크하여 기본값으로 보정.
     /// </summary>
@@ -728,14 +795,22 @@ internal sealed partial class AppSettingsManager : JsonSettingsManager<AppConfig
             EventTriggers = config.EventTriggers ?? new(),
             Advanced = config.Advanced ?? new(),
             // DefaultConfig 단일 진실원 참조 (AUDIT 묶음 2) — AppConfig init 디폴트와 같은 const/property.
-            SystemHideClasses = config.SystemHideClasses ?? DefaultConfig.DefaultSystemHideClasses,
-            SystemHideClassesUser = config.SystemHideClassesUser ?? [],
-            SystemHideProcesses = config.SystemHideProcesses ?? DefaultConfig.DefaultSystemHideProcesses,
-            SystemHideProcessesUser = config.SystemHideProcessesUser ?? [],
+            // **원소 단위 null 도 거른다** (bug-hunt 2026-11-05). 배열 자체의 null 만 보정하면 `[null]` 이
+            // string[]{null} 로 들어와 감지 스레드·헤일로 타이머의 `s.Equals(...)` 가 NullReferenceException 을
+            // 던지고, 그 예외는 어느 catch 필터에도 걸리지 않아 프로세스가 종료됐다. 파일에 남으므로 실행할
+            // 때마다 첫 틱에 다시 죽는 크래시 루프였다(실측 0xC0000409).
+            SystemHideClasses = DropBlankEntries(config.SystemHideClasses) ?? DefaultConfig.DefaultSystemHideClasses,
+            SystemHideClassesUser = DropBlankEntries(config.SystemHideClassesUser) ?? [],
+            SystemHideProcesses = DropBlankEntries(config.SystemHideProcesses) ?? DefaultConfig.DefaultSystemHideProcesses,
+            SystemHideProcessesUser = DropBlankEntries(config.SystemHideProcessesUser) ?? [],
             AppProfiles = config.AppProfiles ?? new(),
-            IndicatorPositions = config.IndicatorPositions ?? new(),
-            IndicatorPositionsRelative = config.IndicatorPositionsRelative ?? new(),
-            AppFilterList = config.AppFilterList ?? [],
+            // 위치 기록도 같다 — `"notepad": null` 은 위치를 지우려는 자연스러운 편집인데, 조회 경로의 `pos.Length`
+            // 가 메인 스레드에서 NRE 를 던져 그 앱을 앞에 둘 때마다 종료됐다.
+            IndicatorPositions =
+                DropShortEntries(config.IndicatorPositions, DefaultConfig.FixedPositionEntryLength) ?? new(),
+            IndicatorPositionsRelative =
+                DropShortEntries(config.IndicatorPositionsRelative, DefaultConfig.RelativePositionEntryLength) ?? new(),
+            AppFilterList = DropBlankEntries(config.AppFilterList) ?? [],
             TrayQuickOpacityPresets = config.TrayQuickOpacityPresets ?? DefaultConfig.TrayQuickOpacityPresets,
             BorderColor = config.BorderColor ?? DefaultConfig.DefaultBorderColor,
             HangulBg = config.HangulBg ?? DefaultConfig.DefaultHangulBg,

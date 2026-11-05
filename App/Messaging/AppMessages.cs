@@ -14,7 +14,8 @@ internal static class AppMessages
     /// <summary>
     /// IME 상태 변경.
     /// wParam: (IntPtr)(int)ImeState enum 값
-    /// lParam: 0
+    /// lParam: 샘플 시각(<see cref="System.Diagnostics.Stopwatch.GetTimestamp"/>, 0 = 모름) — 감지 루프와 WinEvent 훅이
+    ///         각자 보내므로 수신부가 더 이른 샘플을 버리는 데 쓴다 (bug-hunt 2026-11-05).
     /// </summary>
     public const uint WM_IME_STATE_CHANGED = Win32Constants.WM_APP + 1;
 
@@ -62,6 +63,20 @@ internal static class AppMessages
     /// lParam: 0
     /// </summary>
     public const uint WM_APP_ACTIVATE = Win32Constants.WM_APP + 7;
+
+    /// <summary>
+    /// <see cref="WM_APP_ACTIVATE"/> 에 살아 있는 기존 인스턴스가 돌려주는 값. 종료 중이거나 응답이 없으면 0 이다 —
+    /// 두 번째 인스턴스는 이때 뮤텍스를 기다렸다 이어받는다 (bug-hunt 2026-11-05).
+    /// </summary>
+    public const nint ActivateAck = 1;
+
+    /// <summary>
+    /// 트레이 우클릭 메뉴가 닫혔다 — <c>Tray.ShowMenu</c> 가 TrackPopupMenu 뒤에 post 한다. 메뉴 명령의 WM_COMMAND 보다 큐
+    /// 뒤에 서므로 명령이 적용된 다음에 처리된다. 메뉴를 쓰는 동안(작업 표시줄 포커스·메뉴 위 포인터) 숨은 「항상 표시」 배지를
+    /// 되돌리는 데 쓴다 — 메뉴가 닫혀도 포그라운드는 보이지 않는 메인 창이라 감지 루프가 재표시하지 못한다 (리뷰 2026-11-05).
+    /// wParam: 0 / lParam: 0
+    /// </summary>
+    public const uint WM_APP_TRAY_MENU_CLOSED = Win32Constants.WM_APP + 8;
 
     // --- Timer IDs (WM_TIMER wParam) ---
 

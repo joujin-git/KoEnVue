@@ -149,10 +149,13 @@ internal static class SystemFilter
     /// </summary>
     internal static bool MatchesAny(string name, string[] baseList, string[] userList)
     {
+        // 정적 string.Equals — 원소가 null 이어도 던지지 않는다. 로드 파이프라인이 null 원소를 거르지만
+        // (Settings.DropBlankEntries), 이 함수는 감지 스레드·헤일로 타이머에서 매 틱 돌아 예외 하나가 곧
+        // 프로세스 종료라 이중으로 막는다 (bug-hunt 2026-11-05).
         foreach (string s in baseList)
-            if (s.Equals(name, StringComparison.OrdinalIgnoreCase)) return true;
+            if (string.Equals(s, name, StringComparison.OrdinalIgnoreCase)) return true;
         foreach (string s in userList)
-            if (s.Equals(name, StringComparison.OrdinalIgnoreCase)) return true;
+            if (string.Equals(s, name, StringComparison.OrdinalIgnoreCase)) return true;
         return false;
     }
 

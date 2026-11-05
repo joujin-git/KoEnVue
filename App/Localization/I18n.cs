@@ -97,7 +97,7 @@ internal static class I18n
 
         // 트레이 메시지 박스
         TrayPositionUnavailable, TrayPositionHistoryEmpty,
-        ConfigReloadFailed, StartupTaskBusy,
+        ConfigReloadFailed, ConfigBootLoadFailed, StartupTaskBusy,
 
         // 트레이 툴팁
         TooltipHangul, TooltipEnglish, TooltipNonKorean,
@@ -214,6 +214,14 @@ internal static class I18n
             "Could not read the settings file; keeping the previous settings.\n\n"
                 + "If you are editing koenvue_config.json, finish saving it first — changing settings in the app "
                 + "before then will overwrite your edits."),
+
+        [I18nKey.ConfigBootLoadFailed]      = (
+            "설정 파일(koenvue_config.json)을 읽지 못해 기본 설정으로 시작했습니다.\n\n"
+                + "파일을 고쳐 저장하면 바로 반영됩니다. 고치기 전에 앱에서 설정을 바꾸면 원래 파일은 "
+                + "koenvue_config.json.broken 으로 보관한 뒤 덮어씁니다.",
+            "Could not read the settings file (koenvue_config.json), so KoEnVue started with default settings.\n\n"
+                + "Fix and save the file to apply it right away. If you change settings in the app first, the original "
+                + "file is kept as koenvue_config.json.broken before it is overwritten."),
 
         // 트레이 툴팁
         [I18nKey.TooltipHangul]             = ("한글 모드", "Hangul Mode"),
@@ -361,6 +369,9 @@ internal static class I18n
     /// (편집 중 저장이 반복되면 매번 뜨는 것이 더 방해가 된다).
     /// </summary>
     public static string ConfigReloadFailed       => Get(I18nKey.ConfigReloadFailed);
+
+    /// <summary>부팅 때 설정 파일을 읽지 못해 기본값으로 시작했음을 알린다 (bug-hunt 2026-11-05).</summary>
+    public static string ConfigBootLoadFailed     => Get(I18nKey.ConfigBootLoadFailed);
 
     /// <summary>배경 schtasks 동기화와 겹쳐 시작 프로그램 토글이 무시됐을 때의 안내.</summary>
     public static string StartupTaskBusy         => Get(I18nKey.StartupTaskBusy);

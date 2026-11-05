@@ -154,6 +154,10 @@ internal static class DialogShell
             Metrics = metrics,
         };
 
+        // 모달 표식은 **보이기 전에 세우고 파괴한 뒤에 내린다** (bug-hunt 2026-11-05). ModalDialogLoop.Run 이 진입·종료 때
+        // 세우고 내리면 ShowWindow(활성화 포함)·SetForegroundWindow 뒤에야 서고 DestroyWindow 앞에서 내려가, 그 틈에 걸린
+        // 감지 틱이 포그라운드인 우리 다이얼로그를 일반 앱으로 보았다. 안내 박스(RunExternal)는 원래 이 순서였다.
+        ModalDialogLoop.MarkActive(hwndDlg);
         try
         {
             buildChildren(ctx);
@@ -161,11 +165,12 @@ internal static class DialogShell
             if (bringToForeground)
                 User32.SetForegroundWindow(hwndDlg);
             onAfterShow?.Invoke(ctx);
-            ModalDialogLoop.Run(hwndDlg, hwndOwner, ref isClosedFlag);
+            ModalDialogLoop.Run(hwndDlg, hwndOwner, ref isClosedFlag, callerOwnsActiveFlag: true);
         }
         finally
         {
             User32.DestroyWindow(hwndDlg);
+            ModalDialogLoop.MarkInactive(hwndDlg);
         }
         return true;
     }

@@ -47,6 +47,19 @@ internal static partial class SettingsDialog
 
         public required Func<AppConfig, IntPtr, string, (AppConfig? Config, string? Error)> Commit { get; init; }
 
+        /// <summary>
+        /// 컨트롤 값이 다이얼로그를 열 때 채운 값과 다른가 — 사용자가 이 칸을 바꿨는가 (bug-hunt 2026-11-05). 첫 인자는 연
+        /// 시점의 설정(<c>_initialConfig</c>). 바꾸지 않은 칸은 커밋하지 않는다 — 열려 있는 동안 리로드로 반영된 외부 편집이
+        /// 「확인」 한 번에 열 때 값으로 되돌아가지 않도록.
+        /// </summary>
+        public required Func<AppConfig, IntPtr, bool> IsDirty { get; init; }
+
+        /// <summary>
+        /// 이 필드의 값을 <c>src</c> 에서 <c>dst</c> 로 옮긴 설정. 커밋 값을 <b>적용 시점</b>의 최신 설정 위에 다시 얹는 데 쓴다
+        /// (컨트롤은 그때 이미 파괴됐다).
+        /// </summary>
+        public required Func<AppConfig, AppConfig, AppConfig> Transfer { get; init; }
+
         public string[]? EnumLabels { get; init; }
     }
 
@@ -403,13 +416,9 @@ internal static partial class SettingsDialog
             LabelKo = ko,
             LabelEn = en,
             GetBool = get,
-            Commit = (cfg, hwnd, _) =>
-            {
-                IntPtr state = User32.SendMessageW(hwnd, Win32Constants.BM_GETCHECK,
-                    IntPtr.Zero, IntPtr.Zero);
-                bool v = state == (IntPtr)Win32Constants.BST_CHECKED;
-                return (set(cfg, v), null);
-            },
+            Commit = (cfg, hwnd, _) => (set(cfg, ReadCheck(hwnd)), null),
+            IsDirty = (initial, hwnd) => ReadCheck(hwnd) != get(initial),
+            Transfer = (src, dst) => set(dst, get(src)),
         };
     }
 
@@ -422,6 +431,8 @@ internal static partial class SettingsDialog
             LabelKo = ko,
             LabelEn = en,
             GetString = cfg => get(cfg).ToString(CultureInfo.InvariantCulture),
+            IsDirty = (initial, hwnd) => ReadEdit(hwnd) != get(initial).ToString(CultureInfo.InvariantCulture),
+            Transfer = (src, dst) => set(dst, get(src)),
             Commit = (cfg, hwnd, label) =>
             {
                 string text = ReadEdit(hwnd);
@@ -445,6 +456,9 @@ internal static partial class SettingsDialog
             LabelKo = ko,
             LabelEn = en,
             GetString = cfg => get(cfg).ToString(DoubleFieldDisplayFormat, CultureInfo.InvariantCulture),
+            IsDirty = (initial, hwnd) =>
+                ReadEdit(hwnd) != get(initial).ToString(DoubleFieldDisplayFormat, CultureInfo.InvariantCulture),
+            Transfer = (src, dst) => set(dst, get(src)),
             Commit = (cfg, hwnd, label) =>
             {
                 string text = ReadEdit(hwnd);
@@ -470,6 +484,8 @@ internal static partial class SettingsDialog
             LabelKo = ko,
             LabelEn = en,
             GetString = get,
+            IsDirty = (initial, hwnd) => ReadEdit(hwnd) != get(initial),
+            Transfer = (src, dst) => set(dst, get(src)),
             Commit = (cfg, hwnd, label) =>
             {
                 string text = ReadEdit(hwnd);
@@ -490,6 +506,8 @@ internal static partial class SettingsDialog
             LabelKo = ko,
             LabelEn = en,
             GetString = get,
+            IsDirty = (initial, hwnd) => ReadEdit(hwnd) != get(initial),
+            Transfer = (src, dst) => set(dst, get(src)),
             Commit = (cfg, hwnd, label) =>
             {
                 string text = ReadEdit(hwnd);
@@ -511,11 +529,11 @@ internal static partial class SettingsDialog
             LabelEn = en,
             EnumLabels = labels,
             GetEnumIndex = getIdx,
+            IsDirty = (initial, hwnd) => ReadComboIndex(hwnd) != getIdx(initial),
+            Transfer = (src, dst) => setIdx(dst, getIdx(src)),
             Commit = (cfg, hwnd, _) =>
             {
-                IntPtr sel = User32.SendMessageW(hwnd, Win32Constants.CB_GETCURSEL,
-                    IntPtr.Zero, IntPtr.Zero);
-                int idx = (int)sel.ToInt64();
+                int idx = ReadComboIndex(hwnd);
                 // 인덱스를 [0, labels.Length-1] 로 클램프한 뒤 setIdx 에 넘긴다 — 각 setIdx 람다는
                 // 이미 검증된 유효 인덱스를 받으므로 enum 캐스트 전 추가 Clamp 가 불필요 (HC-18: 방어 단일화).
                 // labels 는 enum 값 순서와 1:1 이라 [0, labels.Length-1] 인덱스의 enum 캐스트는 안전.
@@ -525,6 +543,15 @@ internal static partial class SettingsDialog
             },
         };
     }
+
+    /// <summary>체크박스 상태.</summary>
+    private static bool ReadCheck(IntPtr hwnd) =>
+        User32.SendMessageW(hwnd, Win32Constants.BM_GETCHECK, IntPtr.Zero, IntPtr.Zero)
+            == (IntPtr)Win32Constants.BST_CHECKED;
+
+    /// <summary>콤보 박스 선택 인덱스 (선택 없음이면 -1).</summary>
+    private static int ReadComboIndex(IntPtr hwnd) =>
+        (int)User32.SendMessageW(hwnd, Win32Constants.CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero).ToInt64();
 
     // ================================================================
     // 헬퍼

@@ -292,6 +292,9 @@ internal static class Logger
 
         int stranded = 0;
         while (_preInitBuffer.TryDequeue(out _)) stranded++;
+        // drain 은 이미 멈췄다(모든 호출 경로가 StopDrainThread 뒤) — 그 마지막 배수 뒤에 큐로 들어온 줄도 소비자가 없다.
+        // 남겨 두면 파일 로깅을 다시 켤 때 새 줄보다 먼저 옛 줄이 쓰이거나, 꺼진 상태에서 종료 때 파일에 쓰였다 (bug-hunt 2026-11-05).
+        while (_logQueue.TryDequeue(out _)) stranded++;
         stranded += Interlocked.Exchange(ref _preInitDroppedCount, 0);
 
         if (stranded > 0)
@@ -398,15 +401,42 @@ internal static class Logger
             while (_preInitBuffer.Count >= MaxQueueSize && _preInitBuffer.TryDequeue(out _))
                 Interlocked.Increment(ref _preInitDroppedCount);
             _preInitBuffer.Enqueue(formatted);
-            return;
+        }
+        else
+        {
+            // Count 비교는 대략치이지만 상한 근처에서만 오버슈트 가능 — 허용.
+            while (_logQueue.Count >= MaxQueueSize && _logQueue.TryDequeue(out _))
+                Interlocked.Increment(ref _droppedCount);
+
+            _logQueue.Enqueue(formatted);
+            _drainSignal.Set();
         }
 
-        // Count 비교는 대략치이지만 상한 근처에서만 오버슈트 가능 — 허용.
-        while (_logQueue.Count >= MaxQueueSize && _logQueue.TryDequeue(out _))
-            Interlocked.Increment(ref _droppedCount);
+        // **판정 뒤 라우트가 바뀌었으면 방금 넣은 줄을 새 라우트로 넘긴다** (bug-hunt 2026-11-05). 판정(위 1회 읽기)과 적재는
+        // 원자적이지 않고, 전이 쪽도 "_route 대입 → 옛 버퍼 배수" 두 단계라, 그 사이에 선점된 스레드의 줄이 이미 비운 버퍼에
+        // 들어가 소비자 없이 갇혔다 — 다음 재초기화·종료 때 옛 타임스탬프로 로그 끝에 순서가 뒤바뀐 채 쓰이거나, 파일 로깅을
+        // 끈 뒤에도 종료 때 파일에 쓰였다. 전이는 "대입 뒤 배수" 순서라, 여기서 대입을 보지 못했다면 그 배수가 이 줄을 담는다.
+        FileLogRoute after = _route;
+        if (after != route)
+            ReconcileAfterRouteChange(after);
+    }
 
-        _logQueue.Enqueue(formatted);
-        _drainSignal.Set();
+    /// <summary>
+    /// 라우트 전이와 겹친 적재의 뒷정리 — <see cref="EnqueueToFile"/> 참조. Queue 가 됐으면 pre-init 버퍼를 큐로 옮기고,
+    /// Drop 이 됐으면 두 버퍼를 비운다(파일 로깅이 꺼진 상태라 소비자가 없다). PreInit(재초기화 중)이면 둔다 — 뒤이은
+    /// Initialize 가 Queue 로 옮기거나 Drop 으로 비운다.
+    /// </summary>
+    private static void ReconcileAfterRouteChange(FileLogRoute route)
+    {
+        if (route == FileLogRoute.Queue)
+        {
+            FlushPreInitBuffer();
+        }
+        else if (route == FileLogRoute.Drop)
+        {
+            while (_preInitBuffer.TryDequeue(out _)) { }
+            while (_logQueue.TryDequeue(out _)) { }
+        }
     }
 
     /// <summary>

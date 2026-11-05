@@ -57,8 +57,17 @@ internal sealed class NotifyIconManager
         if (!Shell32.Shell_NotifyIconW(Win32Constants.NIM_ADD, ref nid))
         {
             int err = Marshal.GetLastPInvokeError();
-            LogProvider.Sink?.Warning($"Shell_NotifyIconW NIM_ADD failed: error={err}");
-            return false;
+            // **실패가 "등록 안 됨" 을 뜻하지는 않는다** (bug-hunt 2026-11-05). Shell_NotifyIconW 는 explorer 로 가는
+            // SendMessageTimeout 이라, explorer 가 바쁘면 시간 초과로 FALSE 를 돌려준 뒤에 이미 전달된 요청을 처리해 아이콘을
+            // 실제로 등록한다. 그 상태를 미등록으로 확정하면 재시도 NIM_ADD 는 같은 GUID 가 있어 계속 실패하고, NIM_SETVERSION
+            // 이 불리지 않아 우클릭 메뉴(종료 포함)가 열리지 않으며, 종료 때 NIM_DELETE 도 건너뛰어 유령 아이콘이 남았다.
+            // 같은 GUID 로 NIM_MODIFY 가 성공하면 이미 등록된 것이다.
+            if (!Shell32.Shell_NotifyIconW(Win32Constants.NIM_MODIFY, ref nid))
+            {
+                LogProvider.Sink?.Warning($"Shell_NotifyIconW NIM_ADD failed: error={err}");
+                return false;
+            }
+            LogProvider.Sink?.Info($"Shell_NotifyIconW NIM_ADD reported failure (error={err}) but the icon exists; adopting it");
         }
 
         // NOTIFYICON_VERSION_4 활성화 — WM_CONTEXTMENU 전달 + NIF_SHOWTIP 요구 사항의 전제.
@@ -142,8 +151,10 @@ internal sealed class NotifyIconManager
     /// </summary>
     public unsafe bool Remove()
     {
-        if (!_added) return true;
-
+        // 등록 여부와 무관하게 NIM_DELETE 를 보낸다 (bug-hunt 2026-11-05) — NIF_GUID 기반이라 멱등이고, 앱이 "미등록" 으로 아는
+        // 아이콘이 셸에는 남아 있는 경우(시간 초과 뒤 늦게 처리된 NIM_ADD)를 지운다. 등록한 적이 없으면 실패가 정상이라
+        // 성공으로 본다 — 호출자는 false 를 "지우지 못한 좀비" 로 보고한다.
+        bool wasAdded = _added;
         NOTIFYICONDATAW nid = default;
         nid.cbSize = (uint)sizeof(NOTIFYICONDATAW);
         nid.uFlags = Win32Constants.NIF_GUID;
@@ -151,7 +162,7 @@ internal sealed class NotifyIconManager
 
         bool removed = Shell32.Shell_NotifyIconW(Win32Constants.NIM_DELETE, ref nid);
         _added = false;
-        return removed;
+        return removed || !wasAdded;
     }
 
     /// <summary>

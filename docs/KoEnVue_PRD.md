@@ -87,6 +87,8 @@ Windows 에서 텍스트를 입력할 때 현재 한글/영문 모드를 직관�
 - 비한국어 IME + `NonKoreanIme = Hide` 설정
 - 포커스 없는 창 (`hide_when_no_focus`)
 - 앱별 블랙/화이트 리스트 (`app_filter_mode` + `app_filter_list`)
+- KoEnVue 자신의 창(상세 설정·위치 기록 정리·크기 직접 지정·안내 박스)이 앞에 있을 때 — 감지 루프와 강제 표시 경로 모두 **포그라운드 PID** 로 판정 (bug-hunt 2026-11-05 에 모달 플래그 조건 제거 — 플래그가 창보다 늦게 서고 먼저 내려가 그 틈에 배지가 설정 창 위에 붙었다)
+- 위 조건들로 숨겨진 **같은 창**에서 한/영을 눌러도 다시 뜨지 않는다 (F11 전체화면·창 이동 중 등 — 감지 루프의 숨김 판정을 WinEvent 훅 경로가 공유, bug-hunt 2026-11-05)
 
 ### 2.5 크기 배율
 - **범위**: 1.0 배 ~ 5.0 배, 소수점 첫째 자리 (0.1 단위)
@@ -216,7 +218,9 @@ KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT
 
 - **헤더 라인 (KoEnVue v… — GitHub / → v… — 다운로드)** 은 항상 메뉴 최상단에 노출되는 단일 라인이며 두 모드로 동작한다. 평소엔 `KoEnVue v{DefaultConfig.AppVersion} — GitHub` 라벨에 `MF_DEFAULT` 플래그를 부여해 시스템이 자동 볼드로 그리고 (팝업 메뉴당 1개만 가능), 바로 아래 separator 가 메뉴 구조를 분할 — 위치(최상단) + 볼드 + 분리선 3종이 합쳐져 "메뉴 헤더" 역할을 명시한다. `_pendingUpdate is not null` 일 때 라벨이 `KoEnVue v{cur} → {newTag} — 다운로드` 로 자동 전환되어 같은 헤더 위치에서 새 버전 가용을 알린다 (별도 알림 블록 없음). 클릭 시 `IDM_HOMEPAGE` 단일 진입점이 `_pendingUpdate` 유무로 분기 — `OpenUpdatePage()` (`info.HtmlUrl` prefix 검증 후 릴리스 페이지) 또는 `OpenHomepage()` (`https://github.com/{UpdateRepoOwner}/{UpdateRepoName}` 컴파일 타임 합성, 외부 입력 검증 불필요). 라벨의 한·영 분기는 마지막 행위 단어(`I18n.MenuDownload` = "다운로드"/"Download") 만, 브랜드명·버전 숫자·화살표 부분은 공통. `_pendingUpdate.Version` 이 GitHub release `tag_name` 형식("v1.0.1") 이라 `→ {tag}` 로 합성해야 v 가 중복되지 않음. 자동 업데이트는 아니며 사용자가 직접 새 exe 를 받아 교체. `config.update_check_enabled = false` 로 GitHub 조회 자체를 비활성화 가능 (이때 헤더는 평소 모드만 노출)
 - **블록 순서**: 숨김 토글(한/영 배지·커서 헤일로) → 대분류 2종 → 공통(애니메이션 마스터) → 앱(시작·관리자) → 상세설정 → 종료. 설정 항목은 대상별 서브메뉴로 접어 최상위를 짧게 유지하되, **숨김 토글만은 접지 않고 맨 위에 남긴다** — 가장 자주 쓰는 항목이자 좌클릭 순환을 끈 환경의 유일한 해제 경로이기 때문. 대분류 안에서는 부모가 대상을 밝히므로 자식 라벨에 접두를 두지 않는다("한/영 배지 ▸ 전환 강조"). 자석 스냅·애니메이션·전환 강조는 기본 켜짐
-- **한/영 배지 숨김**은 `config.user_hidden` 체크 토글 — 좌클릭 동작을 `"settings"`/`"none"` 으로 바꾸어 좌클릭 토글 경로가 막힌 경우에도 우클릭 메뉴로 항상 숨김 해제가 가능하도록 4.1a 의 dead-end 방지용. 내부적으로 `HandleTrayToggle` 과 동일한 `ApplyUserHiddenTransition` 헬퍼로 오버레이/트레이 아이콘 상태를 즉시 동기화하며, 토글 즉시 `Settings.Save` 로 koenvue_config.json 에 영구 저장
+- **한/영 배지 숨김**은 `config.user_hidden` 체크 토글 — 좌클릭 동작을 `"settings"`/`"none"` 으로 바꾸어 좌클릭 토글 경로가 막힌 경우에도 우클릭 메뉴로 항상 숨김 해제가 가능하도록 4.1a 의 dead-end 방지용. 내부적으로 `HandleTrayToggle` 과 동일한 `ApplyUserHiddenTransition` 헬퍼로 오버레이/트레이 아이콘 상태를 즉시 동기화하며, 토글 즉시 `Settings.Save` 로 koenvue_config.json 에 영구 저장. 해제 시 포그라운드가 메뉴 때문에 보이지 않는 메인 창이어도 배지 주인 앱 기준으로 바로 다시 표시한다 (bug-hunt 2026-11-05)
+- **체크 토글의 목표값 = 메뉴에 보였던 값의 반대** (bug-hunt 2026-11-05) — 메뉴가 열려 있는 동안(`TrackPopupMenu` 모달 루프) 핫리로드로 그 필드가 바뀌어도 사용자가 본 체크와 반대로 적용된다. 투명도 프리셋도 메뉴 라벨에 보였던 값. 적용의 베이스는 그 시점의 현재 설정(외부 편집 보존)
+- 메뉴가 떠 있는 동안 포인터가 메뉴 위에 있으면 한/영 배지는 다른 앱의 메뉴와 같이 숨는다(PR-32 Pointer 축 — 2026-11-05 전엔 KoEnVue 자신의 트레이 메뉴만 평가되지 않았다)
 - **상세 설정**은 구분선으로 묶어 종료 바로 위에 배치 — 트레이 메뉴로 노출되지 않는 나머지 필드를 편집하는 진입점. 색상 섹션 제목은 **"공통 — 색상"** (`Shared — Colors`) — 메인/커서 배경색·CapsLock 색·테마 공용
 
 ### 4.3 시작 프로그램 등록
@@ -226,7 +230,7 @@ KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT
 - **v0.9.4.0 — 관리자 권한 실행 옵션 (PR-15)**: `config.admin_elevation: true` (트레이 메뉴 "관리자 권한으로 실행" 또는 상세 설정 → 「일반」 섹션) 시 (1) 단일 실행 경로 — [App/Bootstrap/AdminElevation](../App/Bootstrap/AdminElevation.cs) 가 mutex 획득 전 `ShellExecuteW("runas")` 로 자기 재실행 (UAC 1회). (2) 부팅 자동 시작 경로 — schtasks `<RunLevel>HighestAvailable</RunLevel>` 분기로 등록 (등록 시 UAC 1회, 부팅마다 UAC 0). **트레이 메뉴로** 토글하면 등록된 schtasks 가 즉시 재등록된다 (`ReregisterIfAdminChanged`) — **상세 설정 토글은 재등록하지 않고**(결정 #4 사일런트) 다음 부팅의 `SyncStartupPathAsync` 가 맞추므로 UAC 없는 자동 시작은 한 부팅 늦게 붙는다. 매니페스트는 `asInvoker` 유지 (P5 invariant). UIPI (User Interface Privilege Isolation — Medium IL → High IL `WM_IME_CONTROL` 차단) 가 일반 권한 KoEnVue 의 관리자 콘솔 IME 감지를 막는 문제를 사용자 선택적으로 우회하기 위함. UAC 거부 시 안내 `MessageBoxW` 후 일반 권한으로 계속 진행
 
 ### 4.4 기본 위치 설정
-- 저장 위치가 없는 앱을 열 때 인디케이터가 나타날 기본 위치를 사용자가 지정. 현재 위치 모드에 따라 저장 대상이 달라짐
+- 저장 위치가 없는 앱을 열 때 인디케이터가 나타날 기본 위치를 사용자가 지정. 배지가 붙은 앱의 **실효** 위치 모드(앱별 프로필의 `position_mode` 포함 — `Tray.EffectivePositionMode`, bug-hunt 2026-11-05)에 따라 저장 대상이 달라짐 (초기화·비활성화 판정도 같은 기준)
 - **현재 위치로 설정**: 현재 인디케이터 위치에서 가장 가까운 모서리를 맨해튼 거리로 자동 선정해 `Corner` anchor + delta 로 저장
   - **고정 모드** → `config.default_indicator_position` (작업 영역 기준)
   - **창 기준 모드** → `config.default_indicator_position_relative` (포그라운드 창 기준)
@@ -257,7 +261,7 @@ KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT
 - 입력 컨트롤 종류: 불리언 = 체크박스, 정수·실수·문자열·색상 = EDIT, 열거형 = COMBOBOX
 - 수직 스크롤바 + 마우스 휠 지원, 입력 상자 너비는 뷰포트 가용 폭에 맞춰 자동 축소되어 스크롤바에 가려지지 않음
 - 검증 실패(숫자 형식·범위·색상 형식·빈 값) 시 오류 메시지 박스 → 해당 행으로 자동 스크롤 → 입력 상자 포커스 + 텍스트 전체 선택
-- 모든 필드 검증 통과 후 "확인" 시 일괄 적용(config 한 번 저장), "취소" 는 변경 사항 폐기
+- "확인" 시 **바꾼 칸만** 검증·적용(config 한 번 저장 — 바꾼 칸이 없으면 저장하지 않음), "취소" 는 변경 사항 폐기. 적용은 그 시점의 현재 설정 위에 바꾼 칸의 값만 얹으므로, 창이 열려 있는 동안 `koenvue_config.json` 에서 바뀐 값(다이얼로그가 보여 주는 칸 포함)을 되돌리지 않는다 (bug-hunt 2026-11-05 — 종전엔 모든 칸을 열 때 값으로 덮었다)
 - 룩앤필은 "위치 기록 정리" / "직접 지정" 대화상자와 동일 (맑은 고딕 9 pt, 시스템 버튼 배경, DPI 스케일, 중첩 메시지 루프 모달, Tab/Enter/ESC 키 처리)
 - **제외 항목**
   - 트레이 메뉴로 이미 조작 가능한 항목: 크기 배율, 기본 위치, 시작 프로그램 등록, 자석 스냅, 애니메이션 사용, 한/영 배지·커서 헤일로 전환 강조, 위치 데이터, 위치 기준
@@ -291,7 +295,9 @@ KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT
 - `koenvue.log` 도 동일 fallback. `koenvue_config.json:log_file_path` 사용자 지정 값은 `PortablePath.SanitizeLogPath` 가 허용 루트(BaseDirectory / `%LOCALAPPDATA%\KoEnVue`) 하위인지 검증해 위반 시 기본 경로로 폴백 + `Logger.Warning`
 - **첫 실행**: 파일이 없으면 기본 `AppConfig` 를 즉시 디스크에 저장해 사용자 눈에 바로 보이게 한다
 - **원자적 저장**: `JsonSettingsFile.WriteAllText` 는 `path + ".tmp"` 로 먼저 쓴 뒤 `File.Move(tmp, path, overwrite: true)` — 내부적으로 `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` 이므로 같은 볼륨에서 원자적 교체가 보장된다. 저장 중 크래시 / 전원 차단이 일어나도 잘린 `koenvue_config.json` 이 남지 않으며, 핫 리로드의 "삭제 감지" 가드와 호환된다
-- **파싱 실패**: 기본값을 메모리에서만 사용하고 디스크는 덮어쓰지 않는다(수동 복구 여지 보존). 동시에 손상된 파일의 mtime 을 캐시에 반영해 5 초 폴링이 `WM_CONFIG_CHANGED` 를 무한 재발송하지 않도록 한다
+- **파싱 실패**: 기본값(부팅) 또는 직전 설정(실행 중)을 메모리에서만 사용하고 디스크는 덮어쓰지 않는다(수동 복구 여지 보존). 동시에 손상된 파일의 표식(mtime+길이)을 캐시에 반영해 5 초 폴링이 `WM_CONFIG_CHANGED` 를 무한 재발송하지 않도록 한다
+  - **부팅 때 실패** (bug-hunt 2026-11-05): 내용 문제면 안내 박스(`I18n.ConfigBootLoadFailed`)를 띄우고, 실패 종류와 무관하게 되돌릴 수 없는 부팅 1회 부수효과(시작 프로그램 작업 동기화·업데이트 확인)를 첫 정상 리로드까지 미룬다 — 기본값으로 돌리면 `admin_elevation` 작업이 다운그레이드되거나 꺼 둔 업데이트 확인이 실행됐다
+  - **그 상태에서 앱이 저장할 때**: 기준선이 없으면 기본값을 기준선으로 3-way 병합해 디스크의 사용자 값을 보존하고, 디스크가 JSON 으로 파싱되지 않으면 덮기 전에 `koenvue_config.json.broken` 으로 복사한다(이전 사본은 덮어씀)
 - **완전 삭제**: 포터블 경로면 exe 폴더만 지우면 끝. fallback 경로를 쓴 경우 `%LOCALAPPDATA%\KoEnVue\` 도 함께 지워야 `koenvue_config.json` + `koenvue.log` 가 모두 제거된다 (§ 9 참고)
 
 ### 5.2 주요 설정 카테고리
@@ -339,9 +345,12 @@ KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT
 - **타이틀 모드의 ReDoS 가드** — `title` 모드는 각 프로필 키를 정규식으로 평가하며 100ms 매칭 타임아웃을 적용한다. `koenvue_config.json` 이 user-writable 이라 악의적 패턴의 지수 백트래킹이 들어와도 한 틱 안에서 컷오프된다
 
 ### 5.5 핫 리로드
-- 감지 스레드가 ~5 초마다 `koenvue_config.json` mtime 체크
+- 감지 스레드가 ~5 초마다 `koenvue_config.json` 의 mtime + 파일 길이 체크 — **시간 기준**(`ConfigCheckIntervalMs`)이라 `poll_interval_ms`·감지 루프 백오프와 무관하고, 화면 잠금 중에도 확인한다 (bug-hunt 2026-11-05 — 종전 "62 폴링" 은 폴링 간격에 따라 31 초~2 분 넘게 늘어났다). 길이를 함께 보는 이유는 FAT32 의 2 초 mtime 해상도
 - 변경 감지 시 `WM_CONFIG_CHANGED` → 자동 리로드
-- **삭제 안전**: mtime 체크 전에 `File.Exists` 가드를 통과해야 한다. 파일이 삭제된 상태에서는 `GetLastWriteTimeUtc` 가 `1601-01-01` 센티널을 반환해 "변경됨" 으로 오인되는데, 이를 통과시키면 `Load()` 가 기본값으로 리셋하고 다음 `Save()` 가 파일을 재생성하면서 사용자 설정을 덮어써 버린다. 에디터의 원자적 교체(`delete → rename`) 저장 방식과도 호환되어야 하므로 파일 잠금이 아닌 읽기 측 가드로 해결
+- **실패 안내는 내용 문제만** — JSON·타입 오류·권한 거부·재시도 한도를 넘긴 잠금일 때 연속 실패당 1회. 편집기의 짧은 잠금·원자 교체 중의 "파일 없음" 은 다음 폴링이 저절로 읽으므로 알리지 않는다 (`LoadFailure` — bug-hunt 2026-11-05)
+- **저장 실패로 메모리에만 남은 변경**이 있으면 리로드가 디스크 내용으로 통째 교체하지 않고 그 변경을 디스크 위에 병합 저장한다 (bug-hunt 2026-11-05)
+- 숨김 상태에서 "항상 보여야 하는" 정책으로 바뀌는 리로드(`display_mode` on_event→always, `non_korean_ime` hide→show/dim)는 즉시 표시하고, 배지 주인 앱의 프로필이 `enabled:false` 가 되면 즉시 숨긴다. 보이는 배지의 스타일 갱신은 **제자리 갱신**이라 흐려진 배지가 밝아지거나 사라지던 배지가 되살아나지 않는다 (bug-hunt 2026-11-05)
+- **삭제 안전**: 표식 체크 전에 `File.Exists` 가드를 통과해야 한다. 파일이 삭제된 상태에서는 `GetLastWriteTimeUtc` 가 `1601-01-01` 센티널을 반환해 "변경됨" 으로 오인되는데, 이를 통과시키면 `Load()` 가 기본값으로 리셋하고 다음 `Save()` 가 파일을 재생성하면서 사용자 설정을 덮어써 버린다. 에디터의 원자적 교체(`delete → rename`) 저장 방식과도 호환되어야 하므로 파일 잠금이 아닌 읽기 측 가드로 해결
 
 ---
 
@@ -381,12 +390,12 @@ KoEnVue v{cur} — GitHub                ← 항상 최상단 헤더 (MF_DEFAULT
   1. 매 폴링마다 ResolveForApp + SystemFilter.ShouldHide 평가
      - 필터 진입 시(이전 미필터 → 현재 필터):   WM_HIDE_INDICATOR
      - 필터 해소 또는 포그라운드 변경:          WM_POSITION_UPDATED(hwndForeground)
-  2. IME 상태 변경 → WM_IME_STATE_CHANGED(ImeState)
+  2. IME 상태 변경 → WM_IME_STATE_CHANGED(ImeState, 샘플 시각)
   3. 포커스 변경   → WM_FOCUS_CHANGED(hwndFocus)
 
 메인 스레드:
   WM_POSITION_UPDATED  → 포그라운드 변경 또는 이전 숨김 상태였다면 앱별 위치 조회 + TriggerShow
-  WM_IME_STATE_CHANGED → 트레이 갱신 + TriggerShow
+  WM_IME_STATE_CHANGED → 더 이른 샘플이면 버림 → 트레이 갱신 + TriggerShow (감지 루프가 숨김을 확정한 창이면 표시 생략)
   WM_FOCUS_CHANGED     → TriggerShow
   WM_HIDE_INDICATOR    → Animation.TriggerHide(forceHidden: true) — Always 모드에서도 완전 숨김
   WM_MOVING            → Shift 축 잠금 + 드래그 중 모니터 변경 시 DPI 재계산
@@ -421,8 +430,8 @@ Core / App 각 모듈의 책임·공개 API·재사용 지침은 별도 문서 *
 
 ### 7.4 다중 인스턴스 및 트레이 복구
 
-- **단일 인스턴스 보장**: 고정 GUID 기반 Named Mutex (`KoEnVue_{GUID}`) 로 동시 실행 1개만 허용. 두 번째 실행은 즉시 종료
-- **활성화 신호 전달**: 두 번째 실행이 감지되면 `FindWindowW` 로 실행 중인 메인 윈도우를 찾아 `WM_APP_ACTIVATE` 를 `PostMessageW` 로 전송한다. 기존 인스턴스는 현재 포그라운드 앱 기준으로 인디케이터를 즉시 표시해 "이미 실행 중" 시각 피드백을 제공 (`DisplayMode` / `EventTriggers` 설정과 무관하게 강제 표시)
+- **단일 인스턴스 보장**: 고정 GUID 기반 Named Mutex (`KoEnVue_{GUID}`) 로 동시 실행 1개만 허용. 두 번째 실행은 기존 인스턴스가 응답하면 종료하고, **기존 인스턴스가 종료 중이면 뮤텍스를 기다렸다(최대 10 초) 이어받아 기동**한다 (bug-hunt 2026-11-05 — 종전엔 둘 다 사라져 실행 중인 인스턴스가 0 개가 됐다. 트레이 「관리자 권한」 토글 뒤 재실행이 이 경로)
+- **활성화 신호 전달**: 두 번째 실행이 감지되면 `FindWindowW` 로 실행 중인 메인 윈도우를 찾아 `WM_APP_ACTIVATE` 를 `SendMessageTimeoutW` 로 보내고 응답(`AppMessages.ActivateAck`)으로 생존을 확인한다(종료 중인 인스턴스는 0 을 돌려준다). 기존 인스턴스는 현재 포그라운드 앱 기준으로 인디케이터를 즉시 표시해 "이미 실행 중" 시각 피드백을 제공 (`DisplayMode` / `EventTriggers` 설정과 무관하게 강제 표시)
 - **크래시 잔재 정리**: 이전 실행이 크래시로 트레이 아이콘을 남긴 경우, Mutex 획득 성공 (= 경쟁 인스턴스 없음 확정) 후에만 `Shell_NotifyIconW(NIM_DELETE)` 로 정리한다. 순서가 반대면 두 번째 실행이 실행 중인 첫 번째 인스턴스의 아이콘을 지우는 부작용 발생
 - **쉘 재시작 복구**: `RegisterWindowMessageW("TaskbarCreated")` 로 쉘 브로드캐스트 메시지 ID 를 등록하고 WndProc 에서 수신 시 트레이 아이콘을 재등록 (`NIM_ADD` + `NIM_SETVERSION`). `explorer.exe` 재시작·쉘 업데이트·수동 프로세스 종료 모두 커버
 

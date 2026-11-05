@@ -45,8 +45,11 @@ internal static class StartupTaskManager
     /// <b>UI 경로는 절대 무제한 대기하면 안 된다.</b> 백그라운드 <see cref="SyncStartupPathAsync"/> 는
     /// 이 락을 <c>QueryRegisteredTask</c>(최대 3s) + <c>RegisterStartupTaskWithXml</c>(최대 5s) 동안
     /// 보유하는데, 토글은 <c>WM_COMMAND</c> → <c>WndProcCore</c> 스택에서 돌므로 <c>Monitor.Enter</c> 로
-    /// 붙잡히면 <b>메시지 루프가 그만큼 멈춘다</b>(<c>Monitor</c> 는 메시지를 펌프하지 않는다) —
-    /// 배지·헤일로가 응답을 잃는다 (bug-hunt 2026-08-02 확정 #4).
+    /// 붙잡히면 <b>메시지 루프가 그만큼 멈춘다</b> — 배지·헤일로가 응답을 잃는다 (bug-hunt 2026-08-02 확정 #4).
+    /// 단 "멈춘다" 는 posted 메시지·타이머 얘기다. STA 메인 스레드의 대기(<c>Monitor</c> 경합·<c>Thread.Join</c>·
+    /// <c>Process.WaitForExit</c>)는 CoWaitForMultipleHandles 를 거쳐 <b>sent 메시지는 디스패치한다</b>(bug-hunt 2026-11-05
+    /// 실측, NativeAOT 동일) — 대기 구간 안으로 WM_SETTINGCHANGE 류 핸들러가 중첩될 수 있다는 뜻이라, 대기를 사이에 둔
+    /// 다단계 상태 갱신은 재진입을 전제로 짜야 한다(Program._configTxnDepth 참조).
     /// </para>
     ///
     /// <para>
@@ -117,24 +120,8 @@ internal static class StartupTaskManager
     {
         try
         {
-            var psi = new ProcessStartInfo("schtasks.exe", $"/query /tn \"{TaskName}\"")
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-            using var proc = Process.Start(psi);
-            if (proc is null) return false;
-            // stdout/stderr 를 비동기로 흡수해 파이프 버퍼 포화 데드락 방지 (exit code 만 사용).
-            _ = proc.StandardOutput.ReadToEndAsync();
-            _ = proc.StandardError.ReadToEndAsync();
-            if (!proc.WaitForExit(SchtasksQueryTimeoutMs))
-            {
-                KillTimedOutChild(proc, "/query");
-                return false;
-            }
-            return proc.ExitCode == 0;
+            SchtasksResult r = RunSchtasksCapture($"/query /tn \"{TaskName}\"", SchtasksQueryTimeoutMs, "/query");
+            return r.Completed && r.ExitCode == 0;
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
             or PlatformNotSupportedException or FileNotFoundException)
@@ -379,26 +366,10 @@ internal static class StartupTaskManager
     {
         try
         {
-            var psi = new ProcessStartInfo("schtasks.exe", $"/query /tn \"{TaskName}\" /xml ONE")
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-            using var proc = Process.Start(psi);
-            if (proc is null) return (null, null, null);
-            // stdout/stderr 동시 비동기 읽기 — stderr 를 안 읽으면 schtasks 가 stderr 를 채울 때
-            // 파이프 버퍼 포화로 데드락할 수 있다 (stdout ReadToEnd 가 EOF 대기 중 블록).
-            Task<string> xmlTask = proc.StandardOutput.ReadToEndAsync();
-            _ = proc.StandardError.ReadToEndAsync();
-            if (!proc.WaitForExit(SchtasksQueryTimeoutMs))
-            {
-                KillTimedOutChild(proc, "/query /xml");
-                return (null, null, null);
-            }
-            if (proc.ExitCode != 0) return (null, null, null);
-            string xml = xmlTask.GetAwaiter().GetResult();
+            SchtasksResult r = RunSchtasksCapture(
+                $"/query /tn \"{TaskName}\" /xml ONE", SchtasksQueryTimeoutMs, "/query /xml");
+            if (!r.Completed || r.ExitCode != 0) return (null, null, null);
+            string xml = r.Stdout;
             return (ExtractTagFromXml(xml, "Command", unescape: true),
                     ExtractTagFromXml(xml, "Delay", unescape: false),
                     ExtractTagFromXml(xml, "RunLevel", unescape: false));
@@ -507,6 +478,44 @@ internal static class StartupTaskManager
     /// </summary>
     private static bool RunSchtasks(string arguments)
     {
+        SchtasksResult r = RunSchtasksCapture(arguments, SchtasksCommandTimeoutMs, arguments);
+        if (!r.Started)
+        {
+            Logger.Warning($"schtasks {arguments}: Process.Start returned null");
+            return false;
+        }
+        if (!r.Completed) return false;
+        if (r.ExitCode != 0)
+        {
+            Logger.Warning(
+                $"schtasks {arguments}: ExitCode={r.ExitCode}, "
+                + $"stderr={r.Stderr.Trim()}, stdout={r.Stdout.Trim()}");
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>schtasks 실행 결과. <c>Completed</c> = 시간 안에 끝났고 출력도 다 읽었다.</summary>
+    private readonly record struct SchtasksResult(bool Started, bool Completed, int ExitCode, string Stdout, string Stderr);
+
+    /// <summary>
+    /// 자식이 출력 파이프를 닫은 뒤(종료·강제 종료 후) 리더 작업이 끝나기를 기다리는 상한 (ms).
+    /// </summary>
+    private const int SchtasksPipeDrainTimeoutMs = 1000;
+
+    /// <summary>
+    /// schtasks.exe 를 출력 리다이렉트로 실행하는 <b>단일 구현</b> (P4) — 조회 2곳과 명령 1곳이 공유한다.
+    ///
+    /// <para>
+    /// <b>리다이렉트 리더를 직접 닫는다</b> (bug-hunt 2026-11-05). <c>StandardOutput</c>/<c>StandardError</c> 를 한 번이라도
+    /// 꺼내면 <c>Process.Close()</c> 는 그 스트림을 "사용자가 쥐었다" 고 보고 닫지 않아, <c>using var proc</c> 이 끝나도 파이프
+    /// 핸들 2개가 GC 파이널라이저까지 남았다 — 트레이 우클릭마다 호출되는 경로라 상주 앱에서 쌓였다(실측: 리더 미해제 30회
+    /// +100 핸들, 해제 시 +5). 확정 #12 의 수정은 자식 Kill 만 넣었고 파이프는 그대로였다.
+    /// </para>
+    /// </summary>
+    /// <exception cref="System.ComponentModel.Win32Exception">schtasks.exe 실행 실패 — 호출자가 흡수한다.</exception>
+    private static SchtasksResult RunSchtasksCapture(string arguments, int timeoutMs, string label)
+    {
         var psi = new ProcessStartInfo("schtasks.exe", arguments)
         {
             CreateNoWindow = true,
@@ -515,30 +524,56 @@ internal static class StartupTaskManager
             RedirectStandardError = true,
         };
         using var proc = Process.Start(psi);
-        if (proc is null)
+        if (proc is null) return new(Started: false, Completed: false, ExitCode: -1, "", "");
+
+        using StreamReader stdoutReader = proc.StandardOutput;
+        using StreamReader stderrReader = proc.StandardError;
+        // stdout/stderr 동시 비동기 읽기 — 한쪽만 읽으면 schtasks 가 다른 쪽 파이프 버퍼를 채울 때 데드락할 수 있다.
+        Task<string> stdoutTask = stdoutReader.ReadToEndAsync();
+        Task<string> stderrTask = stderrReader.ReadToEndAsync();
+
+        if (!proc.WaitForExit(timeoutMs))
         {
-            Logger.Warning($"schtasks {arguments}: Process.Start returned null");
-            return false;
+            KillTimedOutChild(proc, label);
+            // 강제 종료로 파이프가 닫히면 읽기 작업이 끝난다 — 리더를 닫기 전에 잠깐 기다려 진행 중 읽기와 겹치지 않게 한다.
+            WaitPipeReaders(stdoutTask, stderrTask);
+            return new(Started: true, Completed: false, ExitCode: -1, "", "");
         }
-        // stdout/stderr 동시 비동기 읽기로 파이프 버퍼 포화 데드락 방지.
-        Task<string> stdoutTask = proc.StandardOutput.ReadToEndAsync();
-        Task<string> stderrTask = proc.StandardError.ReadToEndAsync();
-        bool exited = proc.WaitForExit(SchtasksCommandTimeoutMs);
-        if (!exited)
-        {
-            // 이쪽은 반환값을 이미 확인하고 있었지만 자식을 남긴 채 돌아갔다 — 정리까지 함께 한다.
-            KillTimedOutChild(proc, arguments);
-            return false;
-        }
-        string stdout = stdoutTask.GetAwaiter().GetResult();
-        string stderr = stderrTask.GetAwaiter().GetResult();
-        if (proc.ExitCode != 0)
-        {
-            Logger.Warning(
-                $"schtasks {arguments}: ExitCode={proc.ExitCode}, "
-                + $"stderr={stderr.Trim()}, stdout={stdout.Trim()}");
-            return false;
-        }
-        return true;
+
+        if (!WaitPipeReaders(stdoutTask, stderrTask))
+            return new(Started: true, Completed: false, ExitCode: proc.ExitCode, "", "");
+
+        return new(Started: true, Completed: true, proc.ExitCode,
+            stdoutTask.GetAwaiter().GetResult(), stderrTask.GetAwaiter().GetResult());
     }
+
+    /// <summary>
+    /// 두 리더 작업이 끝나기를 상한까지 기다린다. 끝나지 않았거나 실패했으면 false. 상한 안에 끝나지 않은 작업은 뒤이은 리더
+    /// Dispose 로 나중에 실패할 수 있으므로 예외를 관측해 둔다 — 그러지 않으면 UnobservedTaskException 으로 진단 파일에 남는다.
+    /// </summary>
+    private static bool WaitPipeReaders(Task<string> stdoutTask, Task<string> stderrTask)
+    {
+        bool done;
+        try
+        {
+            done = Task.WaitAll([stdoutTask, stderrTask], SchtasksPipeDrainTimeoutMs);
+        }
+        catch (AggregateException ex)
+        {
+            Logger.Debug($"schtasks output read incomplete: {ex.InnerException?.Message}");
+            return false;
+        }
+
+        if (!done)
+        {
+            ObserveFault(stdoutTask);
+            ObserveFault(stderrTask);
+        }
+        return done;
+    }
+
+    /// <summary>끝나지 않은 읽기 작업이 나중에 실패하면 그 예외를 관측 처리한다 (UnobservedTaskException 방지).</summary>
+    private static void ObserveFault(Task task) =>
+        task.ContinueWith(static t => _ = t.Exception, CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 }

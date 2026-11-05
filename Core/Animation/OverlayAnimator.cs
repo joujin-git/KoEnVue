@@ -53,6 +53,11 @@ public sealed class OverlayAnimator : IDisposable
     private long _highlightStartTick;
     private double _highlightStartScale;
 
+    // 강조 지속시간 — **시작 시점에 고정**한다(페이드·슬라이드와 같은 규칙). 매 프레임 설정 스냅샷에서 다시 읽으면, 팝
+    // 도중 다른 per-app 프로필로 전환되거나 리로드로 값이 바뀔 때 같은 시작 시각에 새 길이가 적용돼 배율이 튀었다
+    // (bug-hunt 2026-11-05).
+    private int _highlightDurationMs;
+
     // 슬라이드 보간
     private bool _slideActive;
     private long _slideStartTick;
@@ -228,6 +233,11 @@ public sealed class OverlayAnimator : IDisposable
         }
         else // Hidden
         {
+            // 숨은 동안 남은 위치·크기 트랙이 있으면 지운다 — 새 좌표에 그린 배지를 옛 슬라이드가 끌고 가거나 강조 팝이 아닌
+            // 표시가 확대 상태로 나타났다 (bug-hunt 2026-11-05). 정상 경로(TriggerHide·자연 페이드 완료)에서도 정리하지만
+            // 이 분기는 상태 머신의 입구라 한 번 더 막는다.
+            StopMotionTracks();
+
             if (_config.AnimationEnabled)
             {
                 BeginFadeIn(0);
@@ -302,10 +312,7 @@ public sealed class OverlayAnimator : IDisposable
         // 1. 모든 타이머 정리
         User32.KillTimer(_hwndTimer, _timerIds.Fade);
         User32.KillTimer(_hwndTimer, _timerIds.Hold);
-        User32.KillTimer(_hwndTimer, _timerIds.Highlight);
-        User32.KillTimer(_hwndTimer, _timerIds.Slide);
-        _highlightActive = false;
-        _slideActive = false;
+        StopMotionTracks();
 
         // 2. 모드별 분기
         if (_config.AlwaysMode && !forceHidden)
@@ -330,6 +337,93 @@ public sealed class OverlayAnimator : IDisposable
                 _currentAlpha = 0;
             }
         }
+    }
+
+    // ================================================================
+    // Refresh — 표시 이벤트가 아닌 제자리 갱신
+    // ================================================================
+
+    /// <summary>표시 단계(페이드인·유지·페이드아웃·유휴) 중인가 — Hidden 이 아니면 true.</summary>
+    public bool IsVisiblePhase => _phase != AnimPhase.Hidden;
+
+    /// <summary>
+    /// 보이는 배지를 새 설정·좌표로 <b>제자리에서</b> 갱신한다 — 파사드가 새 스타일로 이미 그린 뒤 부른다. 단계와 타이머를
+    /// 되돌리지 않는다는 점이 <see cref="TriggerShow"/> 와 다르다 (bug-hunt 2026-11-05).
+    ///
+    /// <para>
+    /// 리로드·시스템 색 변경·디스플레이 변경 같은 <b>사용자 이벤트가 아닌</b> 갱신이 TriggerShow 를 재사용하면, 자연 페이드아웃
+    /// 중인 배지가 되살아나 표시 시간이 다시 흐르고 Always 모드의 흐려진 배지가 밝아졌다. 여기서는 투명도 목표만 새 설정에
+    /// 맞춘다 — 유지 중이면 활성 투명도, 유휴면 유휴 투명도. 진행 중인 페이드는 끝을 맺게 둔다.
+    /// </para>
+    /// </summary>
+    public void Refresh(int newX, int newY)
+    {
+        if (_phase == AnimPhase.Hidden) return;
+
+        // 위치가 바뀌었으면(디스플레이·작업 영역 변경 등) 옛 목적지로 가던 슬라이드를 끊는다. 강조는 새 중심에서 이어진다.
+        if (_slideActive && (newX != _slideToX || newY != _slideToY))
+            StopSlide();
+        _lastX = newX;
+        _lastY = newY;
+
+        // 다음 유지 구간부터 새 설정의 길이를 쓴다 (진행 중인 Hold 타이머는 그대로).
+        _holdDurationMs = _config.AlwaysMode ? _config.AlwaysIdleTimeoutMs : _config.EventDisplayDurationMs;
+
+        if (_phase == AnimPhase.Holding)
+        {
+            _targetAlpha = GetTargetAlpha(active: true);
+            if (_currentAlpha != _targetAlpha)
+            {
+                _currentAlpha = _targetAlpha;
+                _onAlphaChange(_targetAlpha);
+            }
+        }
+        else if (_phase == AnimPhase.FadingIn)
+        {
+            // 진행 중인 페이드인이 새 활성 투명도에서 끝나게 한다.
+            _targetAlpha = GetTargetAlpha(active: true);
+            _fadeEndAlpha = _targetAlpha;
+        }
+        else if (_phase == AnimPhase.FadingOut && !_forceHidden)
+        {
+            // 스스로 사라지거나 흐려지는 중 — 새 설정의 종착점으로 다시 겨눈다. on_event→always 로 바뀌었는데 0 을 향해 가던
+            // 페이드를 그대로 두면, 완료 분기가 Always 를 보고 Idle 로 전이하면서 투명도 0 인 채 "보이는 단계" 에 갇혔다
+            // (리뷰 2026-11-05). 반대로 always→on_event 면 유휴 투명도가 아니라 0 까지 내려가 숨는다. idle_opacity 변경도 반영.
+            // 강제 숨김(HideOverlay)의 페이드는 그대로 끝까지 간다.
+            byte end = _config.AlwaysMode ? GetTargetAlpha(active: false) : (byte)0;
+            if (end != _fadeEndAlpha)
+                StartFade(_currentAlpha, end, _config.FadeOutMs);
+        }
+        else if (_phase == AnimPhase.Idle)
+        {
+            if (_config.AlwaysMode)
+            {
+                byte idleAlpha = GetTargetAlpha(active: false);
+                if (_currentAlpha != idleAlpha)
+                {
+                    _currentAlpha = idleAlpha;
+                    _onAlphaChange(idleAlpha);
+                }
+            }
+            else
+            {
+                // always → on_event 로 바뀌었다 — 유휴 상태는 더는 의미가 없으니 이벤트 표시가 끝난 것처럼 사라진다.
+                BeginFadeOutToHidden();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 진행 중인 위치·크기 트랙(슬라이드·강조 팝)을 끝내고 기준 좌표를 <paramref name="x"/>,<paramref name="y"/> 로 맞춘다.
+    /// 배지 드래그의 시작과 끝에서 부른다 (bug-hunt 2026-11-05). sizemove 모달 루프 동안에도 두 트랙의 타이머는 돌고 블리트만
+    /// 막혀 있어서, 놓은 직후 남은 프레임이 드래그 전 좌표로 블리트해 배지가 놓은 자리에서 옛 자리로 튀었다(설정에는 놓은
+    /// 자리가 저장된 채). 강조로 확대된 크기의 복원은 호출자가 이어서 그리는 기본 크기 Show 가 맡는다.
+    /// </summary>
+    public void CancelMotion(int x, int y)
+    {
+        StopMotionTracks();
+        _lastX = x;
+        _lastY = y;
     }
 
     // ================================================================
@@ -389,7 +483,10 @@ public sealed class OverlayAnimator : IDisposable
             {
                 if (_forceHidden || !_config.AlwaysMode)
                 {
-                    // OnEvent 모드 또는 forceHidden → 완전 숨김
+                    // OnEvent 모드 또는 forceHidden → 완전 숨김. 위치·크기 트랙도 함께 끝낸다 — 슬라이드가 표시 시간보다 길면
+                    // (slide_speed_ms 2000 > 표시 500 + 페이드 0 같은 허용 조합) 숨은 창에 계속 블리트하며 엔진 좌표를 옛
+                    // 목적지 쪽으로 덮었다 (bug-hunt 2026-11-05).
+                    StopMotionTracks();
                     _onHide();
                     _phase = AnimPhase.Hidden;
                     _currentAlpha = 0;
@@ -427,8 +524,8 @@ public sealed class OverlayAnimator : IDisposable
         if (!_highlightActive) return;
 
         double elapsed = GetElapsedMs(_highlightStartTick);
-        double ratio = _config.HighlightDurationMs > 0
-            ? Math.Clamp(elapsed / _config.HighlightDurationMs, 0.0, 1.0) : 1.0;
+        double ratio = _highlightDurationMs > 0
+            ? Math.Clamp(elapsed / _highlightDurationMs, 0.0, 1.0) : 1.0;
 
         double scale = _highlightStartScale + (1.0 - _highlightStartScale) * ratio;
 
@@ -539,6 +636,41 @@ public sealed class OverlayAnimator : IDisposable
         return (byte)(raw * byte.MaxValue);
     }
 
+    /// <summary>진행 중인 슬라이드를 끝낸다 (위치는 마지막 프레임 그대로).</summary>
+    private void StopSlide()
+    {
+        if (!_slideActive) return;
+        User32.KillTimer(_hwndTimer, _timerIds.Slide);
+        _slideActive = false;
+    }
+
+    /// <summary>슬라이드·강조 팝 두 트랙을 모두 끝낸다 — 타이머와 활성 플래그를 함께 내린다.</summary>
+    private void StopMotionTracks()
+    {
+        User32.KillTimer(_hwndTimer, _timerIds.Highlight);
+        _highlightActive = false;
+        StopSlide();
+    }
+
+    /// <summary>현재 투명도에서 0 으로 페이드한 뒤 Hidden (애니메이션이 꺼져 있으면 즉시).</summary>
+    private void BeginFadeOutToHidden()
+    {
+        User32.KillTimer(_hwndTimer, _timerIds.Hold);
+        if (_config.AnimationEnabled && _currentAlpha > 0)
+        {
+            StartFade(_currentAlpha, 0, _config.FadeOutMs);
+            _phase = AnimPhase.FadingOut;
+            User32.SetTimer(_hwndTimer, _timerIds.Fade, _config.AnimationFrameMs, IntPtr.Zero);
+        }
+        else
+        {
+            StopMotionTracks();
+            _onHide();
+            _phase = AnimPhase.Hidden;
+            _currentAlpha = 0;
+        }
+    }
+
     private void StartFade(byte from, byte to, int durationMs)
     {
         _fadeStartAlpha = from;
@@ -551,6 +683,7 @@ public sealed class OverlayAnimator : IDisposable
     {
         _highlightActive = true;
         _highlightStartScale = _config.HighlightScale;
+        _highlightDurationMs = _config.HighlightDurationMs;
         _highlightStartTick = Stopwatch.GetTimestamp();
         User32.SetTimer(_hwndTimer, _timerIds.Highlight, _config.AnimationFrameMs, IntPtr.Zero);
     }
@@ -595,7 +728,14 @@ public sealed class OverlayAnimator : IDisposable
             // 이전 위치로 즉시 복원 (같은 프레임 — DWM이 수집 전)
             _onPositionOffset(prevX, prevY);
             StartSlide(prevX, prevY, newX, newY, _config.SlideSpeedMs);
+            return;
         }
+
+        // 새 슬라이드를 시작하지 않으면 **진행 중인 옛 슬라이드를 끊는다** (bug-hunt 2026-11-05). 파사드가 이미 새 목적지에
+        // 그려 두었는데 옛 슬라이드가 살아 있으면 다음 프레임이 배지를 옛 목적지로 끌고 갔다 — 다른 모니터의 앱으로 바꾼
+        // 경우(모니터 간에는 슬라이드하지 않는다) 배지가 표시 시간 내내 원래 모니터에 남았고, 배율이 다른 모니터면 프레임마다
+        // DPI 변경이 중첩돼 두 모니터를 오가며 깜빡였다.
+        StopSlide();
     }
 
     /// <summary>

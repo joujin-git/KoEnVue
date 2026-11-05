@@ -23,6 +23,19 @@ internal static partial class Program
 
     private static Mutex? _mutex;
 
+    // 세션 알림 등록 여부 (메인 스레드 전용). 해제는 창 파괴 전 한 번 — WM_DESTROY(WM_CLOSE 종료 경로)와 OnProcessExit
+    // (WM_QUIT 종료 경로) 중 먼저 닿는 쪽이 한다.
+    private static bool _wtsRegistered;
+
+    /// <summary>
+    /// 기존 인스턴스가 종료 중일 때 두 번째 인스턴스가 뮤텍스를 기다리는 상한 (ms). 옛 인스턴스의 정리(감지 스레드 Join 0.5s
+    /// + 로거 종료 최대 수 초)보다 넉넉하게 잡는다.
+    /// </summary>
+    private const int MutexHandoverTimeoutMs = 10000;
+
+    /// <summary>두 번째 인스턴스가 기존 인스턴스의 활성화 응답을 기다리는 상한 (ms).</summary>
+    private const uint ActivateAckTimeoutMs = 2000;
+
     // TaskbarCreated 브로드캐스트 메시지 ID — Explorer 재시작 시 셸이 모든 최상위 창에 브로드캐스트.
     // RegisterWindowMessageW 의 반환값 (0이면 등록 실패 → 핸들러 비활성).
     // 동적 ID 라 WndProc switch 에 넣지 못하므로 switch 앞단의 if 분기에서 비교한다.
@@ -90,19 +103,75 @@ internal static partial class Program
     /// 한/영 배지를 즉시 표시한다.
     /// 탐색 실패(기존 창이 막 파괴 중이거나 클래스명이 달라진 경우)는 조용히 무시한다.
     /// </summary>
-    private static void NotifyExistingInstance()
+    /// <returns>
+    /// 기존 인스턴스가 살아서 응답했으면 true. false 면 기존 인스턴스가 <b>종료 중</b>이다 — 창을 찾지 못했거나(WM_CLOSE 종료
+    /// 경로는 메인 창이 먼저 파괴된다) 메시지 루프가 이미 끝나 응답하지 않는다. 예전엔 이 경우에도 그냥 종료해, 옛 인스턴스가
+    /// 곧 끝나면서 <b>실행 중인 인스턴스가 0개</b>가 됐다 — 트레이 「관리자 권한」 토글은 사용자에게 재실행을 요구하는 경로라
+    /// 재실행이 옛 인스턴스의 정리와 겹치기 쉽다(bug-hunt 2026-11-05).
+    /// </returns>
+    private static bool NotifyExistingInstance()
     {
         IntPtr hwndExisting = User32.FindWindowW(MainClassName, null);
         if (hwndExisting == IntPtr.Zero)
         {
-            Logger.Debug("NotifyExistingInstance: no existing window found");
-            return;
+            Logger.Info("NotifyExistingInstance: no existing window found (instance shutting down?)");
+            return false;
         }
 
-        if (!User32.PostMessageW(hwndExisting, AppMessages.WM_APP_ACTIVATE, IntPtr.Zero, IntPtr.Zero))
-            Logger.Warning("NotifyExistingInstance: PostMessageW failed");
-        else
-            Logger.Debug("NotifyExistingInstance: WM_APP_ACTIVATE posted to existing instance");
+        // Send — 응답 값으로 생존을 확인한다(종료 중이면 0, 루프가 끝났으면 시간 초과). Post 는 펌프하지 않는 창에도 성공한다.
+        IntPtr sent = User32.SendMessageTimeoutW(hwndExisting, AppMessages.WM_APP_ACTIVATE, IntPtr.Zero, IntPtr.Zero,
+            Win32Constants.SMTO_ABORTIFHUNG, ActivateAckTimeoutMs, out IntPtr result);
+        if (sent != IntPtr.Zero && result == AppMessages.ActivateAck)
+        {
+            Logger.Debug("NotifyExistingInstance: existing instance acknowledged WM_APP_ACTIVATE");
+            return true;
+        }
+
+        Logger.Info("NotifyExistingInstance: existing instance did not acknowledge (shutting down?)");
+        return false;
+    }
+
+    /// <summary>
+    /// 종료 중인 기존 인스턴스가 뮤텍스를 놓기를 기다렸다 이어받는다. 성공하면 이 프로세스가 새 주 인스턴스가 된다.
+    /// 옛 인스턴스는 트레이 아이콘을 지운 뒤에야 뮤텍스를 놓으므로(OnProcessExit 순서) 아이콘이 겹치지 않는다.
+    /// </summary>
+    private static bool WaitForMutexHandover()
+    {
+        Mutex? mutex = null;
+        try
+        {
+            mutex = new Mutex(false, DefaultConfig.MutexName);
+            if (mutex.WaitOne(MutexHandoverTimeoutMs))
+            {
+                Logger.Info("Previous instance exited; taking over as the running instance");
+                _mutex = mutex;
+                return true;
+            }
+            Logger.Info($"Previous instance did not exit within {MutexHandoverTimeoutMs}ms; exiting");
+        }
+        catch (AbandonedMutexException)
+        {
+            // 옛 인스턴스가 놓지 않고 끝났다 — 소유권은 이미 우리에게 넘어왔다 (TryAcquireMutex 와 같은 해석).
+            Logger.Info("Previous instance exited (mutex abandoned); taking over as the running instance");
+            _mutex = mutex;
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.Warning($"Mutex handover inaccessible (likely integrity-level mismatch): {ex.Message}");
+        }
+
+        mutex?.Dispose();
+        return false;
+    }
+
+    /// <summary>세션 알림 등록을 한 번만 푼다 — 창 파괴 전에 불러야 한다 (<see cref="_wtsRegistered"/>).</summary>
+    private static void UnregisterSessionNotification(IntPtr hwndMain)
+    {
+        if (!_wtsRegistered || hwndMain == IntPtr.Zero) return;
+        _wtsRegistered = false;
+        if (!Wtsapi32.WTSUnRegisterSessionNotification(hwndMain))
+            Logger.Debug($"WTSUnRegisterSessionNotification failed: error={Marshal.GetLastPInvokeError()}");
     }
 
     // ================================================================
@@ -283,8 +352,7 @@ internal static partial class Program
         ImeStatus.UnregisterHook();
 
         // 1a. 세션 알림 해제 — DestroyWindow 전에 풀어야 wtsapi32 내부 핸들 매핑이 깔끔히 정리됨.
-        if (_hwndMain != IntPtr.Zero)
-            Wtsapi32.WTSUnRegisterSessionNotification(_hwndMain);
+        UnregisterSessionNotification(_hwndMain);
 
         // 2. CAPS LOCK 폴링 타이머 명시적 해제
         if (_hwndMain != IntPtr.Zero)

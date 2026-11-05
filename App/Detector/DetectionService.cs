@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using KoEnVue.App.Config;
 using KoEnVue.App.Models;
@@ -36,8 +37,35 @@ internal static class DetectionService
         public bool LastFiltered;
         public int FilteredStreak;   // 연속 filtered 폴링 수 — HIDE 디바운스(flip-flop 흡수)용
         public ImeState LastImeState;
-        public int PollCount;
+
+        /// <summary>
+        /// 이 틱이 시작될 때 읽은 메인 창 핸들 — 틱 안의 모든 post 가 같은 값을 쓴다 (bug-hunt 2026-11-05).
+        /// 틱 시작의 Zero 가드(확정 #54) 뒤에 post 마다 volatile 필드를 다시 읽으면, 그 사이 WM_DESTROY 가 Zero 로
+        /// 내린 경우 PostMessageW(NULL) 이 이 스레드의 펌프되지 않는 큐에 쌓였다 — #54 가 막으려던 바로 그 현상.
+        /// 파괴된 HWND 로의 post 는 ERROR_INVALID_WINDOW_HANDLE 로 깨끗하게 실패한다.
+        /// </summary>
+        public IntPtr HwndMain;
+
+        /// <summary>마지막 설정 파일 확인 시각(<see cref="Environment.TickCount64"/>).</summary>
+        public long LastConfigCheckTick;
     }
+
+    /// <summary>
+    /// 감지 루프가 "지금 포그라운드 위의 배지는 숨겨져 있어야 한다" 고 판정했는지 — 메인 스레드의 WinEvent 훅
+    /// 경로(<c>Program.HandleImeStateChanged</c>)가 읽는다 (bug-hunt 2026-11-05).
+    ///
+    /// <para>
+    /// 숨김 판정(필터 확정·모달·포인터 suppress·창 이동)은 이 스레드의 로컬 상태에만 있었다. 훅 경로는
+    /// "포그라운드가 배지 주인 앱과 같은가" 만 보는데(확정 #52), 필터 구간에서는 WM_POSITION_UPDATED 를 보내지
+    /// 않으므로 <b>같은 창이 그 자리에서 필터 대상이 된 경우</b>(F11 전체화면, 리로드로 enabled:false, 창 이동 중)
+    /// 그 검사를 그대로 통과했다 — 한/영을 누를 때마다 숨겨 둔 배지가 강조 팝과 함께 떴다가 다음 틱에 사라졌다.
+    /// 히스테리시스 유예 구간(연속 N폴링 전)은 값을 바꾸지 않는다 — 감지 루프와 같은 기준이다.
+    /// </para>
+    /// </summary>
+    private static volatile bool s_foregroundSuppressed;
+
+    /// <summary><see cref="s_foregroundSuppressed"/> 읽기 (메인 스레드).</summary>
+    internal static bool IsForegroundSuppressed => s_foregroundSuppressed;
 
     /// <summary>RECT 의 4 필드를 모두 비교해 동등 여부 판정.</summary>
     private static bool RectsEqual(in RECT a, in RECT b) =>
@@ -49,6 +77,8 @@ internal static class DetectionService
         {
             LastForegroundProcessName = string.Empty,
             LastImeState = ImeState.English,
+            // 부팅 로드 직후라 첫 확인은 한 주기 뒤에 — 종전 "62번째 폴링" 과 같은 위치.
+            LastConfigCheckTick = Environment.TickCount64,
         };
 
         // 연속 실패 누적용 로컬 상태. 지수 백오프로 로그 홍수·CPU 낭비 차단.
@@ -110,8 +140,20 @@ internal static class DetectionService
         // 메인 창이 이미 파괴됐으면(트레이 「관리자 권한」 토글의 WM_CLOSE → WM_DESTROY 가 핸들을 Zero 로 내림,
         // 프로세스 종료 전까지 이 스레드는 계속 돈다) 이 틱은 보낼 곳이 없다. Program 의 WM_DESTROY·OnProcessExit
         // 주석이 기대하던 "감지 스레드가 Zero 를 보고 멈춤" 가드가 실제로는 없어, PostMessageW(NULL) 이 이 스레드의
-        // 펌프되지 않는 큐로 쌓였다(bug-hunt 2026-11-04 확정 #54).
-        if (host.GetHwndMain() == IntPtr.Zero) return;
+        // 펌프되지 않는 큐로 쌓였다(bug-hunt 2026-11-04 확정 #54). 값은 **한 번만** 읽어 이 틱의 모든 post 에 쓴다
+        // (DetectionState.HwndMain 참조).
+        IntPtr hwndMain = host.GetHwndMain();
+        if (hwndMain == IntPtr.Zero) return;
+        state.HwndMain = hwndMain;
+
+        // 0. koenvue_config.json 변경 감지 (~5초마다, 시간 기준). 잠금 게이트보다 앞이다 — 잠긴 동안 저장된 편집도
+        //    반영돼야 하고, 폴링 횟수로 세던 시절엔 잠금 중 확인 자체가 멈췄다 (bug-hunt 2026-11-05).
+        long now = Environment.TickCount64;
+        if (now - state.LastConfigCheckTick >= DefaultConfig.ConfigCheckIntervalMs)
+        {
+            state.LastConfigCheckTick = now;
+            Settings.CheckConfigFileChange(hwndMain);
+        }
 
         // 세션 잠금 중이고 HideOnLockScreen 활성 상태면 상태 전파 자체를 건너뜀.
         // LastFiltered=true 로 세팅해 잠금 해제 후 첫 정상 틱에서 foregroundChanged 가 유도되도록 한다.
@@ -121,12 +163,6 @@ internal static class DetectionService
             return;
         }
 
-        state.PollCount++;
-
-        // 0. koenvue_config.json 변경 감지 (~5초마다)
-        if (state.PollCount % DefaultConfig.ConfigCheckIntervalPolls == 0)
-            Settings.CheckConfigFileChange(host.GetHwndMain());
-
         // 1. 포그라운드 윈도우 확인 — 자기 자신 무시 (메인/오버레이/커서 헤일로 3 hwnd 모두).
         // Zero 선행: 커서 OFF 시 GetHwndCursorOverlay()==Zero 라 FG=0 이 self-hwnd 로
         // 오인되는 틱 스킵을 막는다 (Program.TryShowIndicatorIfForegroundAllowed 와 대칭).
@@ -134,9 +170,13 @@ internal static class DetectionService
         // 클래스 평가하는 race 차단 (안전망).
         IntPtr hwndForeground = User32.GetForegroundWindow();
         if (hwndForeground == IntPtr.Zero) return;
+        if (hwndForeground == hwndMain)
+        {
+            HandleOwnMainForeground(host, ref state, cfg);
+            return;
+        }
         IntPtr hwndCursor = host.GetHwndCursorOverlay();
-        if (hwndForeground == host.GetHwndMain()
-            || hwndForeground == host.GetHwndOverlay()
+        if (hwndForeground == host.GetHwndOverlay()
             || (hwndCursor != IntPtr.Zero && hwndForeground == hwndCursor))
             return;
 
@@ -161,7 +201,36 @@ internal static class DetectionService
         TrackSystemInputFrame(ref state, hwndForeground, ref foregroundChanged);
         TrackWindowMove(host, ref state, hwndForeground, appConfig, ref foregroundChanged);
 
+        // 필터를 통과했다 — 창이 움직이는 중이 아니면 배지를 보여도 되는 상태다.
+        s_foregroundSuppressed = state.WindowMoving;
+
         EmitStateChanges(host, ref state, hwndForeground, hwndFocus, threadId, appConfig, foregroundChanged);
+    }
+
+    /// <summary>
+    /// 포그라운드가 보이지 않는 메인 창이다 — 트레이 우클릭 메뉴가 TrackPopupMenu 앞에서 SetForegroundWindow(hwndMain)
+    /// 을 부른 뒤, 사용자가 다른 창을 누를 때까지 이 상태가 이어진다 (bug-hunt 2026-11-05).
+    ///
+    /// <para>
+    /// 예전엔 self-HWND 가드로 그냥 돌아갔다. 그 결과 (1) 우리 메뉴 위에서는 Pointer 축(PR-32)이 평가되지 않아 다른 앱
+    /// 메뉴와 달리 배지가 메뉴 위에 남았고(헤일로는 숨는데), (2) <c>LastFiltered</c> 가 서지 않아 사용자가 원래 앱의
+    /// 같은 창을 다시 눌러도 포그라운드 변화로 보이지 않았다 — 메뉴로 「배지 숨김」을 풀었는데 배지가 끝내 돌아오지
+    /// 않는 경로였다. 원래 앱으로 돌아오는 첫 틱이 재게시하도록 래치를 세운다.
+    /// </para>
+    /// </summary>
+    private static void HandleOwnMainForeground(DetectionHost host, ref DetectionState state, AppConfig cfg)
+    {
+        if (OverlaySuppressProbe.IsPointerOverSuppressSurface(cfg, OverlaySuppressTarget.Badge))
+        {
+            if (host.IsIndicatorVisible())
+            {
+                Logger.Info("Pointer suppress HIDE (own tray menu)");
+                User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR, IntPtr.Zero, IntPtr.Zero);
+            }
+            s_foregroundSuppressed = true;
+        }
+        state.LastFiltered = true;
+        state.FilteredStreak = 0;
     }
 
     /// <summary>
@@ -176,7 +245,12 @@ internal static class DetectionService
     /// <returns>tick 종료 필요 시 true.</returns>
     private static bool TryHandleModalGate(DetectionHost host, ref DetectionState state, uint fgPid)
     {
-        if (!ModalDialogLoop.IsActive || fgPid != (uint)Environment.ProcessId)
+        // **자기 프로세스 창이면 모달 플래그와 무관하게 숨긴다** (bug-hunt 2026-11-05). 메인·배지·헤일로 세 창은 앞에서
+        // 걸렀으므로 여기 오는 자기 창은 다이얼로그·안내 박스뿐이다. 플래그(s_activeDialog)는 다이얼로그가 화면에 뜨고
+        // 포그라운드가 된 **뒤에** 서고, 닫힐 때는 창이 파괴되기 **전에** 내려간다 — 그 틈에 걸린 틱이 우리 설정 창을
+        // 일반 앱으로 보고 배지를 그 위에 띄운 뒤 `_lastForegroundHwnd` 를 다이얼로그로 박았다. 배지가 우리 창에 붙을
+        // 이유는 없으므로 판정을 PID 하나로 단순화한다.
+        if (fgPid != (uint)Environment.ProcessId)
             return false;
 
         // PR-26: 레벨 트리거 — LastFiltered 래치와 무관하게 가시 중이면 HIDE.
@@ -187,9 +261,10 @@ internal static class DetectionService
                 Logger.Info($"ModalGate triggered HIDE: fgPid={fgPid}, processId={Environment.ProcessId}, ModalActive={ModalDialogLoop.IsActive}");
             else if (Logger.IsEnabled(LogLevel.Debug))
                 Logger.Debug($"ModalGate re-HIDE while still visible: fgPid={fgPid}");
-            User32.PostMessageW(host.GetHwndMain(), AppMessages.WM_HIDE_INDICATOR,
+            User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                 IntPtr.Zero, IntPtr.Zero);
         }
+        s_foregroundSuppressed = true;
         state.LastFiltered = true;
         return true;
     }
@@ -240,9 +315,10 @@ internal static class DetectionService
                     Logger.Info("Pointer suppress HIDE");
                 else if (Logger.IsEnabled(LogLevel.Debug))
                     Logger.Debug("Pointer suppress re-HIDE while still visible");
-                User32.PostMessageW(host.GetHwndMain(), AppMessages.WM_HIDE_INDICATOR,
+                User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
             }
+            s_foregroundSuppressed = true;
             // 파생 캐시(프로세스명·창 프레임)를 hwnd 와 **함께** 갱신한다. 종전에는 여기서
             // LastHwndForeground 만 앞당겨 세웠는데, UpdateForegroundProcessCache 는 그 필드 하나만
             // 보고 조기 반환하므로 필터가 풀린 뒤에도 이름과 프레임이 **영원히 이전 앱 값**으로
@@ -289,9 +365,10 @@ internal static class DetectionService
                     Logger.Info($"Filter triggered HIDE: hwndFg=0x{hwndForeground.ToInt64():X}, hwndFocus=0x{hwndFocus.ToInt64():X}, resolved_null={resolved is null}, fgClass={WindowProcessInfo.GetClassName(hwndForeground)}, streak={state.FilteredStreak}");
                 else if (Logger.IsEnabled(LogLevel.Debug))
                     Logger.Debug($"Filter re-HIDE while still visible: hwndFg=0x{hwndForeground.ToInt64():X}, fgClass={WindowProcessInfo.GetClassName(hwndForeground)}");
-                User32.PostMessageW(host.GetHwndMain(), AppMessages.WM_HIDE_INDICATOR,
+                User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
             }
+            s_foregroundSuppressed = true;
             // 위 Pointer suppress 분기와 같은 이유로 파생 캐시를 함께 갱신한다 (확정 #5).
             UpdateForegroundProcessCache(ref state, hwndForeground);
             state.LastHwndForeground = hwndForeground;
@@ -357,9 +434,10 @@ internal static class DetectionService
         {
             if (host.IsIndicatorVisible())
             {
-                User32.PostMessageW(host.GetHwndMain(), AppMessages.WM_HIDE_INDICATOR,
+                User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
             }
+            s_foregroundSuppressed = true;
             state.LastHwndForeground = hwndForeground;
             state.LastHwndFocus = hwndFocus;
             state.LastSystemInputFrame = default;
@@ -373,8 +451,9 @@ internal static class DetectionService
             && !DefaultConfig.IsSystemInputProcess(state.LastForegroundProcessName)
             && host.IsIndicatorVisible())
         {
-            User32.PostMessageW(host.GetHwndMain(), AppMessages.WM_HIDE_INDICATOR,
+            User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                 IntPtr.Zero, IntPtr.Zero);
+            s_foregroundSuppressed = true;
             // lastHwndForeground 미갱신 → 다음 틱에서 foreground 변경 감지 → 새 앱에 배지 표시
             state.LastHwndFocus = hwndFocus;
             state.LastSystemInputFrame = default;
@@ -447,7 +526,7 @@ internal static class DetectionService
             // 남았다. 이제 실제로 보낸 경우에만 래치가 서므로 다음 틱이 만회한다.
             if (host.IsIndicatorVisible() && !state.HideSentForMove)
             {
-                User32.PostMessageW(host.GetHwndMain(), AppMessages.WM_HIDE_INDICATOR,
+                User32.PostMessageW(state.HwndMain, AppMessages.WM_HIDE_INDICATOR,
                     IntPtr.Zero, IntPtr.Zero);
                 state.HideSentForMove = true;
             }
@@ -472,25 +551,27 @@ internal static class DetectionService
         // 3. 포그라운드 변경 시 위치 갱신
         if (foregroundChanged)
         {
-            User32.PostMessageW(host.GetHwndMain(), AppMessages.WM_POSITION_UPDATED,
+            User32.PostMessageW(state.HwndMain, AppMessages.WM_POSITION_UPDATED,
                 hwndForeground, IntPtr.Zero);
             state.LastHwndForeground = hwndForeground;
         }
 
-        // 4. IME 상태 감지
+        // 4. IME 상태 감지 — 샘플 시각은 조회 **시작** 시점이다. 대상 앱이 응답한 값은 그 뒤 어느 순간의 상태이므로, 같은 구간에
+        //    WinEvent 훅이 더 늦게 찍은 샘플이 있으면 메인이 이쪽을 낡은 값으로 버린다 (AppMessages.WM_IME_STATE_CHANGED 참조).
+        long sampleStamp = Stopwatch.GetTimestamp();
         ImeState currentIme = ImeStatus.Detect(hwndFocus, threadId, appConfig.DetectionMethod);
         if (currentIme != state.LastImeState || foregroundChanged)
         {
             state.LastImeState = currentIme;
-            User32.PostMessageW(host.GetHwndMain(), AppMessages.WM_IME_STATE_CHANGED,
-                (IntPtr)(int)currentIme, IntPtr.Zero);
+            User32.PostMessageW(state.HwndMain, AppMessages.WM_IME_STATE_CHANGED,
+                (IntPtr)(int)currentIme, (IntPtr)sampleStamp);
         }
 
         // 5. 포커스 변경 감지
         if (hwndFocus != state.LastHwndFocus || foregroundChanged)
         {
             state.LastHwndFocus = hwndFocus;
-            User32.PostMessageW(host.GetHwndMain(), AppMessages.WM_FOCUS_CHANGED,
+            User32.PostMessageW(state.HwndMain, AppMessages.WM_FOCUS_CHANGED,
                 hwndFocus, IntPtr.Zero);
         }
     }

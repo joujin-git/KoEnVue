@@ -31,6 +31,13 @@ internal static class JsonSettingsFile
     /// </para>
     /// </summary>
     public static void WriteAllText(string path, string json)
+        => CommitTemp(WriteTemp(path, json), path);
+
+    /// <summary>
+    /// <see cref="WriteAllText"/> 의 앞 절반 — <c>path + ".tmp"</c> 에 전체를 쓰고 그 경로를 돌려준다. 대상 파일은
+    /// 아직 그대로다. 호출자는 교체(<see cref="CommitTemp"/>) 직전에 디스크를 다시 확인할 수 있다.
+    /// </summary>
+    public static string WriteTemp(string path, string json)
     {
         string? dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
@@ -38,8 +45,11 @@ internal static class JsonSettingsFile
 
         string tmpPath = path + ".tmp";
         File.WriteAllText(tmpPath, json, Encoding.UTF8);
-        File.Move(tmpPath, path, overwrite: true);
+        return tmpPath;
     }
+
+    /// <summary><see cref="WriteTemp"/> 가 만든 임시 파일로 대상을 원자적으로 교체한다. rename 은 mtime 을 보존한다.</summary>
+    public static void CommitTemp(string tmpPath, string path) => File.Move(tmpPath, path, overwrite: true);
 
     /// <summary>
     /// 파일 mtime(UTC). 존재하지 않는 파일은 <see cref="File.GetLastWriteTimeUtc"/> 의
@@ -47,4 +57,25 @@ internal static class JsonSettingsFile
     /// <see cref="File.Exists"/> 로 가드할 것.
     /// </summary>
     public static DateTime GetLastWriteTimeUtc(string path) => File.GetLastWriteTimeUtc(path);
+
+    /// <summary>
+    /// mtime + 길이. 존재하지 않으면 <see cref="FileStamp.None"/>. 길이를 함께 보는 이유는 mtime 해상도다 —
+    /// FAT32(포터블 USB) 는 2초 단위라 같은 칸에 떨어진 두 저장의 mtime 이 같아진다(bug-hunt 2026-11-05).
+    /// </summary>
+    public static FileStamp GetStamp(string path)
+    {
+        var info = new FileInfo(path);
+        return info.Exists ? new FileStamp(info.LastWriteTimeUtc, info.Length) : FileStamp.None;
+    }
+}
+
+/// <summary>
+/// 설정 파일의 "버전" 표식 — mtime 과 길이. 둘 중 하나라도 다르면 내용이 바뀐 것으로 본다. mtime 만으로는
+/// FAT32 처럼 해상도가 거친 볼륨에서 같은 2초 칸의 외부 편집을 놓쳐, 감지도 3-way 병합도 건너뛰고 앱 저장이
+/// 그 편집을 덮었다. 길이까지 같은 편집(같은 칸·같은 길이)은 남는 한계다.
+/// </summary>
+internal readonly record struct FileStamp(DateTime MtimeUtc, long Length)
+{
+    /// <summary>"아직 모름/파일 없음" — 어떤 실제 파일 표식과도 같지 않다.</summary>
+    public static readonly FileStamp None = new(DateTime.MinValue, -1);
 }

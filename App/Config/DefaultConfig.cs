@@ -276,6 +276,34 @@ internal static partial class DefaultConfig
     // 오버레이 윈도우 클래스명 (AdvancedConfig.OverlayClassName 디폴트 + ValidateAdvanced 폴백).
     public const string DefaultOverlayClassName    = "KoEnVueOverlay";
 
+    /// <summary>
+    /// 앱 내부 창 클래스 이름 접두어(KoEnVueMain·KoEnVueSettingsDlg·KoEnVueSettingsViewport 등). <c>overlay_class_name</c>
+    /// 이 이 접두어로 시작하면(기본값 제외) 거부한다 — 부팅 때 그 이름이 Program.WndProc 로 먼저 등록되면, 나중에
+    /// 다이얼로그가 같은 이름을 등록할 때 "이미 있음" 으로 그 클래스를 재사용해 엉뚱한 WndProc 을 받는다. 설정 창이
+    /// 닫히지 않는 채로 트레이가 영구히 막히거나, 스크롤 뷰포트끼리 메시지를 주고받다 스택 오버플로로 죽었다
+    /// (bug-hunt 2026-11-05).
+    /// </summary>
+    public const string InternalClassNamePrefix = "KoEnVue";
+
+    /// <summary>
+    /// <c>overlay_class_name</c> 으로 쓰면 안 되는 시스템 컨트롤 클래스. 같은 이름의 앱 전용 클래스가 등록되면 이
+    /// 프로세스 안의 해당 컨트롤 생성(다이얼로그의 버튼·입력칸 등)이 전부 우리 클래스로 바뀐다.
+    /// </summary>
+    private static readonly string[] ReservedSystemClassNames =
+    [
+        "Button", "ComboBox", "ComboLBox", "Edit", "ListBox", "MDIClient", "ScrollBar", "Static", "Message",
+    ];
+
+    /// <summary>
+    /// <c>overlay_class_name</c> 으로 쓸 수 없는 이름인지 (대소문자 무관). 앱 내부 클래스(<see cref="InternalClassNamePrefix"/>,
+    /// 기본값 제외)·시스템 컨트롤 클래스·셸 클래스(다른 앱의 <c>FindWindow</c> 가 최상위인 우리 배지를 잡는다)를 거른다.
+    /// </summary>
+    public static bool IsReservedWindowClassName(string name) =>
+        (name.StartsWith(InternalClassNamePrefix, StringComparison.OrdinalIgnoreCase)
+            && !name.Equals(DefaultOverlayClassName, StringComparison.OrdinalIgnoreCase))
+        || ContainsIgnoreCase(ReservedSystemClassNames, name)
+        || ContainsIgnoreCase(DefaultSystemHideClasses, name);
+
     // 시스템 숨김 클래스/프로세스 (메인 SystemFilter FG 축 + OverlaySuppressProbe WFP 축 공용 기본 목록).
     // 단 WFP 축에서 한/영 배지는 앞의 바탕화면·작업 표시줄 4종을 매칭하지 않는다(IsDesktopTaskbarClass).
     // #32768(PopupMenuClass) 은 FG 목록에 넣지 않고 프로브 전용(PR-32) — FG 미변경 메뉴는 WFP 축.
@@ -434,8 +462,23 @@ internal static partial class DefaultConfig
     /// <summary>설정 파일명 (exe 디렉토리에 생성됨 — 완전 포터블).</summary>
     public const string ConfigFileName = "koenvue_config.json";
 
-    /// <summary>설정 파일 변경 감지 간격 (약 5초 = 62폴링 x 80ms)</summary>
-    public const int ConfigCheckIntervalPolls = 62;
+    /// <summary>
+    /// 설정 파일 변경 감지 간격(ms). <b>시간 기준</b>이다 — 예전엔 "62폴링" 이라 80ms 폴링일 때만 5초였고,
+    /// <c>poll_interval_ms</c> 500 이면 31초, 감지 루프 백오프가 겹치면 2분 넘게 반영이 늦었다(bug-hunt 2026-11-05).
+    /// </summary>
+    public const int ConfigCheckIntervalMs = 5000;
+
+    /// <summary>
+    /// 파싱할 수 없는 설정 파일을 앱이 덮어쓰기 전에 보관하는 사본의 확장자 — <c>koenvue_config.json.broken</c>.
+    /// 사용자가 편집하다 깨뜨린 파일을 트레이 조작 한 번이 기본값으로 덮어 사라지게 하지 않는다(bug-hunt 2026-11-05).
+    /// </summary>
+    public const string BrokenConfigBackupSuffix = ".broken";
+
+    /// <summary><c>indicator_positions</c> 항목 값의 길이 — [x, y]. 로드 정리와 조회 가드가 공유한다.</summary>
+    public const int FixedPositionEntryLength = 2;
+
+    /// <summary><c>indicator_positions_relative</c> 항목 값의 길이 — [corner, deltaX, deltaY].</summary>
+    public const int RelativePositionEntryLength = 3;
 
     // === IME 감지 ===
 

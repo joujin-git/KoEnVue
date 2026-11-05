@@ -232,6 +232,8 @@ window) records `_dragTargetHwnd` / `_dragTargetProcess`; `HandleOverlayDragEnd`
 position for that pair (falling back to the current values if no ENTERSIZEMOVE was seen), resolves
 `position_mode` from that app's profile, and clears both fields.
 
+**Drag vs. animation tracks and the post-drop redraw (bug-hunt 2026-11-05).** During the sizemove loop the slide/highlight timers keep running while their blits are blocked, so after the drop the leftover frames blitted to the pre-drag coordinates and the badge jumped back (with the dropped position saved). `WM_ENTERSIZEMOVE` and `HandleOverlayDragEnd` now call `Animation.CancelMotion(x, y)` (→ `OverlayAnimator.CancelMotion`). `LayeredOverlayBase.EndDrag` converts the window rect to a **same-center base-size** rect, so dragging while a highlight pop is enlarged no longer saves a position shifted by (scale−1)·width/2. Finally `ShowAfterDrop` redraws: if another app came to the front mid-drag (`dragTargetHwnd != _lastForegroundHwnd`), it re-places the badge for **that** app (or hides it if that app's profile is `enabled:false`) instead of painting it at the dropped spot with the new app's style — the detection loop has already sent that app's position message and will not send it again.
+
 ### Drag modifier (drag initiation gate)
 
 `config.drag_modifier` (`DragModifier` enum: `None` / `Ctrl` / `Alt` / `CtrlAlt`) gates whether
@@ -300,8 +302,8 @@ Multi-monitor / resolution stability: offsets are stored relative to a `Corner` 
 `Overlay.ResolveAnchor`(work area 기준)와 `Overlay.ResolveRelativePosition`(창 프레임 기준)은 동일한 corner 분기(`TopLeft/BottomLeft → Left+dx` vs `Right+dx`, `TopLeft/TopRight → Top+dy` vs `Bottom+dy`)를 갖고 있어, 공통 헬퍼 `ResolveCornerPosition(RECT frame, Corner, dx, dy, dpiScale)` 한 곳으로 통합되고 두 메서드는 각자의 기준 RECT 만 넘기는 1줄 위임이다 (P4 중복 제거 — 두 분기의 부호·DPI 승산이 갈라지지 않도록 단일 진실원).
 
 Tray menu:
-- **"현재 위치로 설정"**: branches on current mode — Fixed calls `Overlay.ComputeAnchorFromCurrentPosition()` (work area corners), Window calls `Overlay.ComputeRelativeFromCurrentPosition(hwndForeground)` (window frame corners). Both use Manhattan distance to pick the nearest corner
-- **"초기화"**: resets the current mode's field to null (menu item grayed when already null)
+- **"현재 위치로 설정"**: branches on the **effective** mode — `Tray.EffectivePositionMode(config, hwndForeground)`, i.e. the badge owner app's per-app `position_mode` (bug-hunt 2026-11-05; the badge position has used the per-app mode since 2026-11-04 #25, but this menu still read the global one, so on a window-mode profile app it changed the fixed-mode default). Fixed calls `Overlay.ComputeAnchorFromCurrentPosition()` (work area corners), Window calls `Overlay.ComputeRelativeFromCurrentPosition(hwndForeground)` (window frame corners). Both use Manhattan distance to pick the nearest corner
+- **"초기화"**: resets the effective mode's field to null (menu item grayed when already null — the gray state uses the same effective mode)
 
 ### Off-screen position clamp
 
@@ -363,7 +365,7 @@ Shift can be pressed/released mid-drag — axis flips if the user drags far enou
 `config.SnapToWindows` (default `true`) toggles magnetic edge snapping to nearby top-level windows and the current monitor's work area. Tray menu toggle: `IDM_SNAP_TO_WINDOWS = 4004`.
 
 - **`BeginDrag(bool snapToWindows)`** captures `_dragHotPointX/Y` (cursor offset from window top-left via `GetCursorPos`) and, when enabled, enumerates candidates into `_snapRects` via `User32.EnumWindows` with a `[UnmanagedCallersOnly]` callback
-- **Filter**: excludes the overlay itself, non-visible windows, iconic windows, DWM-cloaked windows (`Dwmapi.IsCloaked` wrapping `DWMWA_CLOAKED = 14`), and anything smaller than `MinWindowSizePx = 80`
+- **Filter**: excludes the overlay itself, **every window of our own process** (bug-hunt 2026-11-05 — the cursor halo window is always `WS_VISIBLE` (hidden = alpha-0 blit) and by default a ~468 logical px square centred on the cursor, so the badge snapped to its invisible edges; dialogs and message boxes are excluded for the same reason), non-visible windows, iconic windows, DWM-cloaked windows (`Dwmapi.IsCloaked` wrapping `DWMWA_CLOAKED = 14`), and anything smaller than `MinWindowSizePx = 80`
 - **Candidate rect source**: `Dwmapi.TryGetVisibleFrame` — snap aligns with the DWM visible frame, not `GetWindowRect`'s invisible resize border
 - **`HandleMoving(ref RECT, style, snapToWindows, snapThresholdPx, snapGapPx)`** picks the smallest X and Y edge-pair distances within `snapThresholdPx = 10` (DPI-scaled) via the private `ApplySnap` helper. Window edge snaps apply a configurable gap (`snapGapPx`, default 10, DPI-scaled) to prevent the indicator from overlapping with the target window's border; screen (work area) edges snap flush with zero gap. Only applied to axes not already locked by Shift
 - **`EndDrag`** clears `_snapRects`
@@ -402,9 +404,15 @@ Timer IDs (injected via `AnimationTimerIds` record so Core stays ID-agnostic):
 |-------|---------|-----------------|
 | `Fade` | Fade-in / fade-out frame tick | `DefaultConfig.AnimationFrameMs = 15` (실배달 ~15.6ms≈64fps; `SetTimer` ~15.625ms 격자 — [dev-notes](dev-notes/2026-07-22-settimer-tick-quantization.md)) |
 | `Hold` | Holding → next phase. OnEvent: FadingOut → Hidden. Always: FadeToIdle (→ IdleOpacity) | OnEvent: `config.EventDisplayDurationMs`, Always: `config.AlwaysIdleTimeoutMs` |
-| `Highlight` | IME-change zoom (1.3× → 1.0×) | `config.HighlightDurationMs` |
+| `Highlight` | IME-change zoom (1.3× → 1.0×) | `config.HighlightDurationMs` — **fixed at pop start** (`_highlightDurationMs`, 2026-11-05; re-reading it every frame made the scale jump when a per-app profile switch or reload changed it mid-pop) |
 | `Topmost` | Periodic `ForceTopmost` re-assert | `config.Advanced.ForceTopmostIntervalMs` (default 5000) |
 | `Slide` | Ease-out cubic position interpolation | `config.SlideSpeedMs` |
+
+### In-place refresh vs. show event (bug-hunt 2026-11-05)
+
+`Program.RefreshVisibleIndicator` (config reload, system color/theme change, display change, DPI change, power resume) used to call `ShowIndicatorAtForeground` → `Animation.TriggerShow`, which **restarts the state machine**. A badge in its natural on_event fade-out (`_indicatorVisible` only drops when the fade completes) came back and its display time restarted; an Always-mode badge dimmed at idle brightened without any IME event — on every unrelated broadcast (wallpaper change, environment-variable change, taskbar move's `SPI_SETWORKAREA`). It now calls `Animation.Refresh(x, y, state, config)`: the facade redraws with the new style/position (`Overlay.Show`, current alpha) and `OverlayAnimator.Refresh` only retargets alpha — Holding → new active opacity, FadingIn → the in-flight fade ends at the new active opacity, Idle → new idle opacity (or, if Always was turned off, fades out to Hidden), FadingOut → left to finish. Hold timers keep running; the next hold uses the new duration. A slide toward a now-stale destination is stopped. The return value (still in a visible phase) is assigned to `_indicatorVisible`, so there are now six assignment sites (see [배지 가시성 상태 기계](#배지-가시성-상태-기계-bug-hunt-2026-08-02-g4g14g19)). If the badge owner's profile became `enabled:false`, `RefreshVisibleIndicator` hides instead of redrawing with the global style.
+
+**Motion-track cleanup**: slide and highlight are position/size tracks with their own timers, and several paths left them running — they are now stopped (`StopMotionTracks`/`StopSlide`) when a hide completes (on_event/forced fade end, `BeginFadeOutToHidden`), when the state machine is entered from Hidden, and when a show does **not** start a new slide (cross-monitor moves skip sliding — an old slide used to drag the freshly drawn badge back to the previous monitor for the whole display time, flickering across DPI boundaries). Drag start/end use `CancelMotion` ([Draggable floating window](#draggable-floating-window)).
 
 ### NonKoreanImeMode Dim
 
@@ -457,15 +465,16 @@ System filter and tray toggle off both pass `forceHidden: true` to `Animation.Tr
 
 ```
 Detection thread (80 ms poll):
+  0. Every ~5 s (time-based, before the lock gate): CheckConfigFileChange → WM_CONFIG_CHANGED
   1. Every poll: ResolveForApp + SystemFilter.ShouldHide
      - Filter confirmed + indicator visible:       WM_HIDE_INDICATOR (level trigger on `_indicatorVisible`; `LastFiltered` for dedupe/`foregroundChanged` only — PR-26)
      - Filter exit or foreground change:          WM_POSITION_UPDATED(hwndForeground)
-  2. IME state change → WM_IME_STATE_CHANGED(ImeState)
+  2. IME state change → WM_IME_STATE_CHANGED(ImeState, sampleStamp)
   3. Focus change    → WM_FOCUS_CHANGED(hwndFocus)
 
 Main thread:
   WM_POSITION_UPDATED  → If foreground changed OR previously hidden: resolve position + TriggerShow
-  WM_IME_STATE_CHANGED → Tray update + TriggerShow
+  WM_IME_STATE_CHANGED → drop if sampleStamp < last applied; Tray update + TriggerShow
   WM_FOCUS_CHANGED     → TriggerShow
   WM_HIDE_INDICATOR    → Animation.TriggerHide(forceHidden: true) — bypasses Always-mode dim
   WM_MOVING            → Shift axis lock (HandleMoving) + drag-time DPI re-compute
@@ -473,7 +482,9 @@ Main thread:
 
 ### Detection loop resilience
 
-`DetectionService.RunLoop`의 while 본문은 `catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or COMException or ArgumentException)` 로 래핑되어 단일 폴링 예외(예: `WindowProcessInfo.GetProcessName` 실패, UAC 전환 중 일시적 `COMException`)가 감지 스레드를 종료시키지 않는다. 로직 버그(`NullReferenceException` 등) 는 이 필터에 걸리지 않아 표면화된다. `Thread.Sleep`은 try 밖에 위치하여 예외 후에도 폴링 간격이 유지된다. `_stopping` 필드는 `volatile`로 선언되어 `OnProcessExit`에서의 쓰기가 감지 스레드(`host.IsStopping()`)에서 즉시 가시적이다. `ProcessDetectionTick` 은 config 스냅샷 직후 `host.GetHwndMain() == IntPtr.Zero` 면 그 틱을 건너뛴다 — 메인 창이 `OnProcessExit` 보다 먼저 파괴되는 경로(트레이 「관리자 권한」 토글의 `WM_CLOSE` → `WM_DESTROY` 가 필드를 Zero 로 내림)에서 Program 주석이 기대하던 "감지 스레드가 Zero 를 보고 멈춤" 가드가 실제로는 없어, `PostMessageW(NULL)` 이 감지 스레드 자신의 펌프되지 않는 큐로 쌓였다 (bug-hunt 2026-11-04 확정 #54).
+`DetectionService.RunLoop`의 while 본문은 `catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or COMException or ArgumentException)` 로 래핑되어 단일 폴링 예외(예: `WindowProcessInfo.GetProcessName` 실패, UAC 전환 중 일시적 `COMException`)가 감지 스레드를 종료시키지 않는다. 로직 버그(`NullReferenceException` 등) 는 이 필터에 걸리지 않아 표면화된다. `Thread.Sleep`은 try 밖에 위치하여 예외 후에도 폴링 간격이 유지된다. `_stopping` 필드는 `volatile`로 선언되어 `OnProcessExit`에서의 쓰기가 감지 스레드(`host.IsStopping()`)에서 즉시 가시적이다. `ProcessDetectionTick` 은 config 스냅샷 직후 `host.GetHwndMain() == IntPtr.Zero` 면 그 틱을 건너뛴다 — 메인 창이 `OnProcessExit` 보다 먼저 파괴되는 경로(트레이 「관리자 권한」 토글의 `WM_CLOSE` → `WM_DESTROY` 가 필드를 Zero 로 내림)에서 Program 주석이 기대하던 "감지 스레드가 Zero 를 보고 멈춤" 가드가 실제로는 없어, `PostMessageW(NULL)` 이 감지 스레드 자신의 펌프되지 않는 큐로 쌓였다 (bug-hunt 2026-11-04 확정 #54). 값은 **한 번만** 읽어 `DetectionState.HwndMain` 에 두고 그 틱의 모든 post 가 쓴다 (bug-hunt 2026-11-05) — post 마다 volatile 필드를 다시 읽으면 가드 뒤에 `WM_DESTROY` 가 Zero 로 내린 경우 #54 와 같은 `PostMessageW(NULL)` 이 그대로 났다. 파괴된 HWND 로의 post 는 `ERROR_INVALID_WINDOW_HANDLE` 로 깨끗하게 실패한다.
+
+**설정 파일 확인은 시간 기준** (bug-hunt 2026-11-05): 종전 "62번째 폴링마다" 는 80ms 폴링일 때만 5초였고 `poll_interval_ms` 500 이면 31초, 아래 백오프가 겹치면 2분을 넘겼으며 잠금 게이트 뒤라 잠긴 동안은 아예 멈췄다. 이제 `DetectionState.LastConfigCheckTick`(`Environment.TickCount64`) 기준 `DefaultConfig.ConfigCheckIntervalMs`(5000) 마다, 잠금 게이트 **앞**에서 확인한다(첫 확인은 부팅 로드 한 주기 뒤).
 
 **메인 스레드 WndProc 도 대칭 catch**: 메인 윈도우 메시지 핸들러는 얇은 `[UnmanagedCallersOnly] WndProc` 래퍼 + 실제 디스패치 `WndProcCore` 로 분리되어 있다. 핸들러 예외가 unmanaged 경계(`DispatchMessageW`)를 넘으면 NativeAOT 가 예외를 전파하지 못해 **프로세스를 종료**시키므로 — 감지 스레드/`EnumWindows` 콜백([Snap callbacks](#enumwindows--enumchildwindows-nativeaot-callbacks))과 동일한 위험 — 래퍼가 `WndProcCore` 를 `try`로 감싸 예상 가능한 일시 예외(`Win32Exception`/`COMException`/`IOException`/`UnauthorizedAccessException`/`InvalidOperationException`/`ArgumentException`)만 잡아 `Logger.Error` 로그 후 `DefWindowProcW` 로 그 메시지만 스킵하고 메시지 루프를 유지한다. 로직 버그(`NullReferenceException` 등)는 필터 밖이라 그대로 전파돼 `AppDomain` 크래시 핸들러로 표면화된다 — 콜백 catch 정책과 대칭.
 
@@ -516,11 +527,15 @@ Detection loop sends `WM_POSITION_UPDATED` **before** `WM_IME_STATE_CHANGED` / `
 
 ### Modal dialog gate
 
-`DetectionService` short-circuits when `ModalDialogLoop.IsActive` **and** the foreground window belongs to our own process: `GetWindowThreadProcessId(hwndForeground, out fgPid); if (ModalDialogLoop.IsActive && fgPid == (uint)Environment.ProcessId) { if (_indicatorVisible) post WM_HIDE_INDICATOR; LastFiltered=true; continue; }` (PR-26: same level trigger as `TryHandleFilter` — HIDE while visible regardless of `LastFiltered` edge). The three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) and `MessageBoxW` are separate top-level windows with distinct HWNDs, so the `_hwndMain`/`_hwndOverlay` self-skip doesn't cover them — without the gate, the detection thread would resolve the dialog HWND as a regular foreground app and emit `WM_POSITION_UPDATED`, making the indicator jump next to the dialog (Window mode) and causing `TriggerShow` renders that interfered with the dialog's focus (delayed ESC dismissal until after the first render settled). The gate unifies OK/Cancel/Esc exit behavior: indicator hides on self-process modal entry, and `LastFiltered=true` forces `foregroundChanged=true` on the first post-modal tick so the original foreground app naturally re-triggers the show. Applies uniformly across `PositionMode` (Fixed/Window) and `DragModifier` (None/Ctrl/Alt/CtrlAlt) combinations.
+`DetectionService` short-circuits when the foreground window belongs to our own process: `GetWindowThreadProcessId(hwndForeground, out fgPid); if (fgPid == (uint)Environment.ProcessId) { if (_indicatorVisible) post WM_HIDE_INDICATOR; LastFiltered=true; continue; }` (PR-26: same level trigger as `TryHandleFilter` — HIDE while visible regardless of `LastFiltered` edge).
 
-**Process-ID scoping**: the gate is restricted to *our* process's windows, not "any foreground while a modal is open". If the user Alt+Tabs to another app while a dialog is up (Win32 dialogs are modal to the owner only, not system-wide), the foreground switches to an external process — the gate falls through and the indicator renders on that app as usual. `ModalDialogLoop.ActiveDialog` HWND comparison alone would miss `MessageBoxW` (its HWND is owned by `user32` and unknown to us), so PID comparison is the only robust way to cover custom dialogs + `MessageBoxW` while still allowing external-app rendering. `Environment.ProcessId` is a .NET BCL property — no P/Invoke needed. `GetWindowThreadProcessId` is hoisted above the gate so the following `GUITHREADINFO` path reuses the same `threadId` — one syscall per tick.
+**`ModalDialogLoop.IsActive` 조건은 2026-11-05 에 뺐다.** 종전 게이트는 `IsActive && fgPid == 자기 PID` 였는데, 플래그는 다이얼로그가 화면에 뜨고 포그라운드가 된 **뒤에** 서고 닫힐 때는 창이 파괴되기 **전에** 내려갔다 — 그 틈에 걸린 틱이 우리 설정 창을 일반 앱으로 보고 배지를 그 위에 띄운 뒤 `_lastForegroundHwnd` 를 다이얼로그로 박았다(그 뒤로 설정 창에서 한/영을 칠 때마다 배지가 깜빡였다). 메인·배지·헤일로 세 창은 앞의 self-HWND 가드에서 걸러지므로 여기 오는 자기 창은 다이얼로그·안내 박스뿐이고, 배지가 그 위에 붙을 이유가 없어 판정을 PID 하나로 단순화했다. 표식 쪽 틈도 함께 닫았다 — `DialogShell` 이 보이기 전 `MarkActive`, 파괴 뒤 `MarkInactive` ([Dialogs](#dialogs)). 강제 표시 경로(`TryShowIndicatorIfForegroundAllowed`)도 같은 기준으로 포그라운드 PID 가 자기 것이면 건너뛴다.
 
-**External modals (`MessageBoxW`)**: `Tray` 의 두 경고 대화상자("이미 저장된 위치입니다", "저장된 위치 기록이 없습니다")는 `User32.MessageBoxW` 가 자체 메시지 루프를 돌리므로 `ModalDialogLoop.Run` 을 쓸 수 없다. 대신 `ModalDialogLoop.RunExternal(hwndSentinel, action)` 로 호출 구간만 감싸 `IsActive` 센티넬을 세팅/복원한다. `RunExternal` 은 메시지 펌프나 `EnableWindow` 은 건드리지 않고 감지 스레드 가드만 세우므로, `MessageBoxW` 가 활성인 동안 같은 프로세스 PID 이므로 위 게이트가 발동해 인디케이터가 해당 다이얼로그 근처로 튀는 폴링 부작용이 억제된다. 기존 활성 모달이 있으면 이전 값을 보관 후 finally 에서 복원하여 중첩을 지원한다.
+**포그라운드가 보이지 않는 메인 창일 때** (트레이 우클릭 메뉴가 `TrackPopupMenu` 앞에서 `SetForegroundWindow(hwndMain)` 을 부른 뒤, 사용자가 다른 창을 누를 때까지): 종전엔 self-HWND 가드로 그냥 돌아가 (1) 우리 메뉴 위에서는 Pointer 축(PR-32)이 평가되지 않아 다른 앱 메뉴와 달리 배지가 메뉴 위에 남았고, (2) `LastFiltered` 가 서지 않아 원래 앱의 같은 창을 다시 눌러도 포그라운드 변화로 보이지 않았다. 이제 `HandleOwnMainForeground` 가 Pointer 축을 평가해 숨기고 `LastFiltered` 래치를 세운다 (bug-hunt 2026-11-05). 메뉴가 닫혀도 포그라운드는 메인 창이라 이 경로는 재표시하지 않는다 — 그래서 `Tray.ShowMenu` 가 `TrackPopupMenu` 뒤에 `WM_APP_TRAY_MENU_CLOSED` 를 post 하고(메뉴 명령의 `WM_COMMAND` 보다 큐 뒤), `Program.HandleTrayMenuClosed` 가 **「항상 표시」 배지**가 메뉴를 쓰는 동안(작업 표시줄 FG 필터·메뉴 위 Pointer 축) 숨었으면 `TryShowIndicatorIfForegroundAllowed` 로 배지 주인 앱 기준으로 되돌린다(리뷰 2026-11-05 — 그러지 않으면 메뉴로 바꾼 투명도·배율이 다른 창을 누를 때까지 보이지 않았다). 이벤트 표시 모드의 숨김은 평상시라 건드리지 않고, 「종료」(`Tray.ExitRequested`)·명령이 연 다이얼로그(포그라운드가 우리 창)·이미 다른 창으로 옮긴 경우도 건너뛴다. The three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) and `MessageBoxW` are separate top-level windows with distinct HWNDs, so the `_hwndMain`/`_hwndOverlay` self-skip doesn't cover them — without the gate, the detection thread would resolve the dialog HWND as a regular foreground app and emit `WM_POSITION_UPDATED`, making the indicator jump next to the dialog (Window mode) and causing `TriggerShow` renders that interfered with the dialog's focus (delayed ESC dismissal until after the first render settled). The gate unifies OK/Cancel/Esc exit behavior: indicator hides on self-process modal entry, and `LastFiltered=true` forces `foregroundChanged=true` on the first post-modal tick so the original foreground app naturally re-triggers the show. Applies uniformly across `PositionMode` (Fixed/Window) and `DragModifier` (None/Ctrl/Alt/CtrlAlt) combinations.
+
+**Process-ID scoping**: the gate is restricted to *our* process's windows — with or without a modal flag (2026-11-05). If the user Alt+Tabs to another app while a dialog is up (Win32 dialogs are modal to the owner only, not system-wide), the foreground switches to an external process — the gate falls through and the indicator renders on that app as usual. `ModalDialogLoop.ActiveDialog` HWND comparison alone would miss `MessageBoxW` (its HWND is owned by `user32` and unknown to us), so PID comparison is the only robust way to cover custom dialogs + `MessageBoxW` while still allowing external-app rendering. `Environment.ProcessId` is a .NET BCL property — no P/Invoke needed. `GetWindowThreadProcessId` is hoisted above the gate so the following `GUITHREADINFO` path reuses the same `threadId` — one syscall per tick.
+
+**External modals (`MessageBoxW`)**: `Tray` 의 두 경고 대화상자("이미 저장된 위치입니다", "저장된 위치 기록이 없습니다")는 `User32.MessageBoxW` 가 자체 메시지 루프를 돌리므로 `ModalDialogLoop.Run` 을 쓸 수 없다. 대신 `ModalDialogLoop.RunExternal(hwndSentinel, action)` 로 호출 구간만 감싸 `IsActive` 센티넬을 세팅/복원한다. `RunExternal` 은 메시지 펌프나 `EnableWindow` 은 건드리지 않고 표식만 세운다 — 이 표식은 재진입 가드(`RejectReentry` — 박스가 떠 있는 동안 트레이 메뉴 차단)와 강제 표시 경로가 쓴다. 감지 루프 쪽은 `MessageBoxW` 도 같은 프로세스 PID 라 위 게이트가 표식과 무관하게 발동해, 인디케이터가 박스 근처로 튀는 폴링 부작용이 억제된다. 기존 활성 모달이 있으면 이전 값을 보관 후 finally 에서 복원하여 중첩을 지원한다.
 
 ### `wasHidden` re-trigger
 
@@ -552,6 +567,8 @@ IME 감지 경로는 두 가지다 — (1) 디텍션 스레드 80ms 폴링 (`Det
 
 - **기준 공유 (#14)** — 훅의 중복 제거 필드 `ImeStatus._lastState` 는 훅이 **자기가 마지막으로 보낸 값**만 기억했다. 감지 루프가 다른 값을 게시한 뒤(다른 앱으로 전환 등)엔 기준이 낡아, 그 앱에서 첫 한/영 전환을 "변화 없음" 으로 삼켜 다음 폴링(최대 80ms)까지 늦게 반영됐다. 이제 `Program.HandleImeStateChanged` 가 받아들인 상태를 `ImeStatus.NotePublishedState(newState)` 로 기준에 반영한다(둘 다 메인 스레드 — 동기화 불필요).
 - **포그라운드 확인 (#52)** — 훅 경로는 필터 판정 없이 지금 포그라운드의 상태를 게시한다. 바탕화면·`enabled:false` 앱처럼 감지 루프가 위치를 알리지 않는 창이 앞에 있으면 `_lastForegroundHwnd` 는 **이전 앱**이라 그 자리에 배지가 한 번 깜빡였다. `HandleImeStateChanged` 는 `GetForegroundWindow() == _lastForegroundHwnd` 일 때만 표시한다 — 새로 앞에 온 앱이면 감지 루프의 `WM_POSITION_UPDATED` 가 곧 새 상태로 띄운다. 트레이 아이콘 갱신은 이 확인보다 앞이라 영향 없음.
+- **같은 창이 그 자리에서 숨김 대상이 된 경우 (bug-hunt 2026-11-05)** — 위 확인은 "포그라운드가 배지 주인 앱과 같은가" 만 본다. F11 전체화면·리로드로 `enabled:false`·창 이동 중처럼 **같은 창이** 필터 대상이 되면 감지 루프는 `WM_POSITION_UPDATED` 를 보내지 않으므로 그대로 통과해, 한/영을 누를 때마다 숨겨 둔 배지가 강조 팝과 함께 떴다가 다음 틱에 사라졌다. 감지 루프가 숨김을 확정한 분기(필터 확정·모달 게이트·Pointer suppress·창 이동·시스템 입력 이탈)마다 `DetectionService.IsForegroundSuppressed`(volatile) 를 세우고 필터 통과 시 `WindowMoving` 으로 되돌린다 — 히스테리시스 유예 구간은 값을 바꾸지 않는다. 훅 경로는 이것이 true 면 표시하지 않고, 표시 판정은 `TryResolveCurrent`(끈 앱이면 false) 를 쓴다.
+- **두 생산자의 순서 (bug-hunt 2026-11-05)** — 두 경로가 각자 샘플링해 보내는데 순서 정보가 없어 "나중에 도착한 값" 이 이겼다. 감지 루프가 토글 직전 값을 읽고 post 전에 선점되면 그 사이 훅이 보낸 새 값을 옛 값이 덮어 배지·트레이가 한 폴링 동안 반대 상태로 돌아가고 훅 기준선까지 오염됐다. 이제 둘 다 조회 **시작** 시각(`Stopwatch.GetTimestamp`)을 lParam 에 싣고, `HandleImeStateChanged` 는 `_lastImeSampleStamp` 보다 이른 샘플을 버린다(0 = 시각 모름은 그대로 받음).
 
 ### System filter (8 conditions)
 
@@ -573,7 +590,7 @@ IME 감지 경로는 두 가지다 — (1) 디텍션 스레드 80ms 폴링 (`Det
 
 ### Lock screen hiding (WTS session notification)
 
-`hide_on_lock_screen` (기본 `true`) 은 **WTS Session Notification** 으로 구현된다. `Program.MainImpl` 이 메인 윈도우 생성 직후 `Wtsapi32.WTSRegisterSessionNotification(_hwndMain, NOTIFY_FOR_THIS_SESSION)` 을 호출해 `WM_WTSSESSION_CHANGE` (0x02B1) 메시지를 받도록 등록하고, `OnProcessExit` 가 `DestroyWindow` 전에 `WTSUnRegisterSessionNotification` 으로 해제한다(wtsapi32 내부 핸들 매핑 누수 방지).
+`hide_on_lock_screen` (기본 `true`) 은 **WTS Session Notification** 으로 구현된다. `Program.MainImpl` 이 메인 윈도우 생성 직후 `Wtsapi32.WTSRegisterSessionNotification(_hwndMain, NOTIFY_FOR_THIS_SESSION)` 을 호출해 `WM_WTSSESSION_CHANGE` (0x02B1) 메시지를 받도록 등록하고, 창 파괴 **전에** `WTSUnRegisterSessionNotification` 으로 해제한다(wtsapi32 내부 핸들 매핑 누수 방지). 해제는 `UnregisterSessionNotification` 이 `_wtsRegistered` 표식으로 **한 번만** 한다 — `WM_CLOSE` 종료 경로(트레이 「관리자 권한」 토글)는 `WM_DESTROY` 안에서, `WM_QUIT` 경로는 `OnProcessExit` 1a 에서. 종전엔 `OnProcessExit` 에만 있었는데 `WM_DESTROY` 가 핸들 필드를 먼저 Zero 로 내려 1a 의 `_hwndMain != Zero` 가드에 걸려, `WM_CLOSE` 경로에서는 해제가 한 번도 불리지 않았다 (bug-hunt 2026-11-05).
 
 메인 스레드의 `HandleSessionChange(uint wParam)` 가 `WTS_SESSION_LOCK` / `WTS_SESSION_UNLOCK` 두 이벤트만 처리:
 
@@ -581,7 +598,9 @@ IME 감지 경로는 두 가지다 — (1) 디텍션 스레드 80ms 폴링 (`Det
 - **UNLOCK**: `_sessionLocked = false` 해제. 별도 show 호출 없음 — 잠금 해제 직후 사용자가 창을 포커스하면 감지 스레드의 foreground-changed 경로가 자연스럽게 인디를 다시 켠다
 - 로그오프 / 콘솔 접속 전환 등 그 외 이벤트는 무시
 
-감지 스레드(`ProcessDetectionTick`) 는 진입 직후 `if (_sessionLocked && _config.HideOnLockScreen) { state.LastFiltered = true; return; }` 가드로 한 틱을 통째로 스킵한다. 이유: `SystemFilter` 의 기본 클래스 블랙리스트가 LogonUI 의 창 클래스(`CredentialDialogXamlHost` / `LockAppHost`) 를 포함하지 않아 잠금 화면 동안에도 필터가 뚫려 인디가 다시 표시될 수 있기 때문이다. WTS 이벤트는 LogonUI 보다 **먼저** 도착하므로 이 플래그가 감지 루프를 잠금 구간 동안 확실히 침묵시킨다. `LastFiltered = true` 는 잠금 해제 후 첫 정상 틱이 `foregroundChanged` 판정을 유도하도록 하는 sentinel.
+감지 스레드(`ProcessDetectionTick`) 는 진입 직후 `if (_sessionLocked && _config.HideOnLockScreen) { state.LastFiltered = true; return; }` 가드로 한 틱을 통째로 스킵한다. 이유: `SystemFilter` 의 기본 클래스 블랙리스트가 LogonUI 의 창 클래스(`CredentialDialogXamlHost` / `LockAppHost`) 를 포함하지 않아 잠금 화면 동안에도 필터가 뚫려 인디가 다시 표시될 수 있기 때문이다. WTS 이벤트는 LogonUI 보다 **먼저** 도착하므로 이 플래그가 감지 루프를 잠금 구간 동안 확실히 침묵시킨다. `LastFiltered = true` 는 잠금 해제 후 첫 정상 틱이 `foregroundChanged` 판정을 유도하도록 하는 sentinel. 단 **설정 파일 확인은 이 가드보다 앞**이다 (bug-hunt 2026-11-05) — 잠긴 동안 저장된 편집도 반영돼야 한다.
+
+**잠긴 동안 `hide_on_lock_screen` 이 켜진 경우 (bug-hunt 2026-11-05)** — 잠금 숨김은 `WTS_SESSION_LOCK` 에서 한 번만 일어나는 edge 라, 그때 꺼져 있었다면 잠금 화면 위 배지를 아무도 숨기지 않았다. `ApplyConfigTransition` 이 끝에서 `IsHiddenByLock && _indicatorVisible` 이면 `HideOverlay` 한다.
 
 **메인 스레드 표시 경로도 잠금을 본다 (bug-hunt 2026-11-04 확정 #13).** 위 게이트는 감지 틱 **시작**에만 있어, 잠금 직전 틱이 늦게 보낸 메시지나 잠금 화면 비밀번호 칸의 한/영 전환(WinEvent 훅 — 메인 스레드)이 `HideOverlay` 뒤에 배지를 다시 띄우면 잠금 내내 남았다. `Program.IsHiddenByLock` (= `_sessionLocked && _config.HideOnLockScreen`) 을 `ShowIndicatorAtForeground` 첫 줄과 `HandlePositionUpdated` 의 재표시 조건이 확인한다.
 
@@ -626,7 +645,7 @@ Read twice on startup — once inside `Overlay.Initialize` (so the very first `P
 `Settings.Load()` runs through `JsonSettingsManager<T>.Load` which invokes 5 hooks in fixed order:
 
 1. **Deserialize** — reads and deserializes the JSON
-2. **`ApplyNullSafetyNet`** (EnsureSubObjects) — guards against null `AppProfiles` / `Advanced` etc. from malformed config
+2. **`ApplyNullSafetyNet`** (EnsureSubObjects) — guards against null `AppProfiles` / `Advanced` etc. from malformed config. **Element-level too** (bug-hunt 2026-11-05): `DropBlankEntries` removes null/blank strings from `system_hide_*` / `app_filter_list`, `DropShortEntries` removes null or too-short values from `indicator_positions` (< 2) / `indicator_positions_relative` (< 3), each with one Warning. Only the array-level null used to be patched, so `[null]` reached the detection thread / halo timer as `string[]{null}` and the `s.Equals(...)` NRE (outside every catch filter) killed the process on the first tick of every launch (measured `0xC0000409`); `"notepad": null` in the position map did the same on the main thread. `SystemFilter.MatchesAny` and the position lookups also use null-safe comparisons as a second line
 3. **`PostDeserializeFixup(config, mergedJson, userJson)`** — `mergedJson` is the `MergeWithDefaults` result (default `AppConfig` serialized to JSON with user keys overlaid, done **before** step 1's deserialize — works around STJ source-gen init-default loss, see [conventions.md](conventions.md#net-10-compatibility-notes)); `userJson` is the raw user file text **this load already read**. `AppSettingsManager` uses it for the `indicator_positions` manual re-parse and the PR-31 `cursor_motion_dim_enabled` → `cursor_display_mode` migration (`CursorDisplayModeMigration.TryResolveFromUserJson`). Hooks that need "is this key present in the user file" must use `userJson` and **not reopen the file** — the old migration did, and an atomic-replace editor's delete→rename gap read as "fresh install", overwriting sharp/motion with Soft (bug-hunt 2026-11-04 #12)
 4. **`Migrate`** — `JsonSettingsManager<T>` 의 pass-through virtual 훅. 현재 단독 사용자 단계라 `AppSettingsManager` 는 override 하지 않으며, 파일에 version 필드도 저장하지 않는다. 향후 공개 배포 전환 시 override 부활 예정
 5. **`Validate`** — range clamping and normalization
@@ -634,40 +653,44 @@ Read twice on startup — once inside `Overlay.Initialize` (so the very first `P
 
 ### Delete-safe hot reload
 
-`Settings.CheckConfigFileChange` returns early via `File.Exists(_configFilePath)` **before** calling `GetLastWriteTimeUtc`. For a missing file, `File.GetLastWriteTimeUtc` returns the sentinel `1601-01-01` without throwing, which differs from the cached mtime and would trigger a spurious `WM_CONFIG_CHANGED` → `Load()` → silent reset to defaults → next `Save()` overwrites the user's real config when it reappears.
+`JsonSettingsManager.CheckReload` (via `Settings.CheckConfigFileChange`) returns early via `File.Exists` **before** stamping, and also ignores `FileStamp.None`. For a missing file, `File.GetLastWriteTimeUtc` returns the sentinel `1601-01-01` without throwing, which differs from the cached mtime and would trigger a spurious `WM_CONFIG_CHANGED` → `Load()` → silent reset to defaults → next `Save()` overwrites the user's real config when it reappears.
+
+**The stamp is mtime + length** (`JsonSettingsFile.GetStamp` → `FileStamp`, bug-hunt 2026-11-05). FAT32 (portable USB) has 2-second mtime resolution, so two saves in the same slot looked identical — the poller missed the edit and the 3-way merge guard skipped it, letting the next app save overwrite it. Length catches most of those; an edit with the same slot **and** the same length remains a known limit.
 
 Locking the file to forbid deletion was rejected because atomic-replace editors (VSCode, Notepad++) rely on `delete → rename` during save.
 
 ### Atomic save (tmp + rename)
 
-`JsonSettingsFile.WriteAllText` 는 단순 `File.WriteAllText(path, json)` 대신 `path + ".tmp"` 에 전체를 먼저 기록한 뒤 `File.Move(tmpPath, path, overwrite: true)` 로 교체한다. Windows 동일 볼륨에서 `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` 는 원자적 rename 을 보장하므로 쓰기 도중 전원 차단/프로세스 강제 종료/크래시가 발생해도 원본 파일 또는 새 파일 중 하나는 항상 온전한 상태로 남는다 (truncate 된 반쪽 파일 불가능). `CheckConfigFileChange` 의 5 초 mtime 폴링은 타겟 경로 한 곳만 관찰하므로 `.tmp` 파일이 핫 리로드를 유발하지 않으며, 프로세스가 `.tmp` 쓰기 직후·Move 직전에 죽어 잔여물이 남더라도 다음 정상 저장에서 같은 이름에 덮어쓰기 때문에 누적되지 않는다. 원자성은 **동일 볼륨** 에 한정된 보장 — config 파일이 exe 옆에 고정되어 있으므로(§ Config file location) 볼륨을 건너뛸 수 없다.
+`JsonSettingsFile.WriteAllText` 는 단순 `File.WriteAllText(path, json)` 대신 `path + ".tmp"` 에 전체를 먼저 기록한 뒤(`WriteTemp`) `File.Move(tmpPath, path, overwrite: true)` 로 교체한다(`CommitTemp`). `Save` 는 두 단계를 직접 부르고 그 사이에서 **임시 파일의 표식을 찍는다** — rename 은 mtime 을 보존하므로 교체 뒤 대상의 값과 같고, 교체 **뒤에** 대상을 다시 조회하면 그 사이 편집기·동기화 클라이언트가 저장한 편집의 표식이 "우리 저장" 으로 박혀 폴러도 병합도 그 편집을 영영 못 봤다(3차 N 이 `TryLoad` 쪽에서 닫은 것과 같은 결함, bug-hunt 2026-11-05). 같은 자리에서 병합 판정 이후 디스크가 또 바뀌었으면 교체 전에 다시 병합한다(`MaxSaveMergeAttempts` = 3 — `_mtimeLock` 은 다른 프로세스를 막지 못하므로 창을 교체 직전의 µs 로 좁힐 뿐 완전히 닫지는 못한다). Windows 동일 볼륨에서 `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` 는 원자적 rename 을 보장하므로 쓰기 도중 전원 차단/프로세스 강제 종료/크래시가 발생해도 원본 파일 또는 새 파일 중 하나는 항상 온전한 상태로 남는다 (truncate 된 반쪽 파일 불가능). `CheckConfigFileChange` 의 5 초 표식(mtime+길이) 폴링은 타겟 경로 한 곳만 관찰하므로 `.tmp` 파일이 핫 리로드를 유발하지 않으며, 프로세스가 `.tmp` 쓰기 직후·Move 직전에 죽어 잔여물이 남더라도 다음 정상 저장에서 같은 이름에 덮어쓰기 때문에 누적되지 않는다. 원자성은 **동일 볼륨** 에 한정된 보장 — config 파일이 exe 옆에 고정되어 있으므로(§ Config file location) 볼륨을 건너뛸 수 없다.
 
 ### Corrupted config spam prevention
 
-`JsonSettingsManager.TryLoad`'s catch block sets the polling baseline `_lastMtime` even when the load throws. Without this, the 5-second poll sees `mtime ≠ cached value`, re-posts `WM_CONFIG_CHANGED`, the load fails with the same parse error, and the warning log spams forever.
+`JsonSettingsManager.TryLoad`'s catch block sets the polling baseline `_lastStamp` even when the load throws. Without this, the 5-second poll sees `stamp ≠ cached value`, re-posts `WM_CONFIG_CHANGED`, the load fails with the same parse error, and the warning log spams forever.
 
-The value is the **mtime taken before the failed read** (`mtimeBeforeRead`, declared outside the `try` so the catch can use it), never a fresh stat (bug-hunt 2026-11-04 #7). Re-statting in the catch let an editor finish writing good content between the failed read and the stat; that good version's mtime was then recorded as "already seen" and the fix never loaded. By failure kind:
-- **Content failure** (JSON / unsupported type): read-time mtime — spam stays blocked for the same broken file, and any later edit has a different mtime so the next poll reads it.
-- **Transient lock** (`IOException` — editor's exclusive lock etc.): `DateTime.MinValue` — the content was never seen, so the next poll must re-read even if the mtime is unchanged after the lock releases. Retries happen only at the poll interval (5 s) and only for `MaxLockRetryLoads` (6, ≈30 s) consecutive failures; after that, and for `UnauthorizedAccessException` (an ACL is not "brief"), the pre-read mtime is used like a content failure — otherwise a long-held lock re-tried and logged a Warning every 5 s forever (release-review 2026-11-04). `_consecutiveLockFailures` resets on a successful load.
+The value is the **stamp taken before the failed read** (`mtimeBeforeRead`, a `FileStamp` declared outside the `try` so the catch can use it), never a fresh stat (bug-hunt 2026-11-04 #7). Re-statting in the catch let an editor finish writing good content between the failed read and the stat; that good version's mtime was then recorded as "already seen" and the fix never loaded. By failure kind (`LastLoadFailure` in parentheses — bug-hunt 2026-11-05):
+- **Content failure** (JSON / unsupported type, or a literal `null` file — `LoadFailure.Content`): read-time stamp — spam stays blocked for the same broken file, and any later edit has a different stamp so the next poll reads it.
+- **Transient lock** (`IOException` — editor's exclusive lock etc., `LoadFailure.Locked`): `FileStamp.None` — the content was never seen, so the next poll must re-read even if the mtime is unchanged after the lock releases. Retries happen only at the poll interval (5 s) and only for `MaxLockRetryLoads` (6, ≈30 s) consecutive failures; after that, and for `UnauthorizedAccessException` (an ACL is not "brief"), the pre-read stamp is used like a content failure (`LoadFailure.Content`) — otherwise a long-held lock re-tried and logged a Warning every 5 s forever (release-review 2026-11-04). `_consecutiveLockFailures` resets on a successful load.
+- **Missing file** (`FileNotFoundException` mid atomic-replace, or the not-found branch — `LoadFailure.Missing`): transient, the next poll reads it.
 
-Catch intentionally does NOT `Save()` — the user's broken file stays on disk so they can inspect and recover manually.
+Catch intentionally does NOT `Save()` — the user's broken file stays on disk so they can inspect and recover manually. **A later app save may still overwrite it** (any tray toggle writes the in-memory settings), so since 2026-11-05 `MergeOntoDiskIfChanged` first copies a file that fails `JsonDocument.Parse` to `{file}{BrokenFileBackupSuffix}` — `koenvue_config.json.broken` in this app (Core default null = no backup, since Core cannot reference the App constant — P6). The previous backup is overwritten: the most recently broken content is the one to recover. Only syntax-level breakage goes this way — a file that parses but fails to deserialize (e.g. `"font_weight": "Bold"`) still goes through the normal 3-way merge, which keeps the disk value of every field the app did not change.
 
 ### 저장은 디스크와 3-way 병합한다 (AUDIT-2026-07-30 §N-48, 2026-08-01)
 
 `Save` 는 메모리 인스턴스를 통째로 직렬화해 파일을 덮으므로, 앱이 마지막으로 읽은 뒤 사용자가 `koenvue_config.json` 에 넣은 편집은 **앱이 손대지도 않은 필드까지** 사라졌다. 5초 폴링이 그 편집을 읽어가기 전에 트레이 토글 한 번이면 충분하다 — §B 는 "창이 열려 있는 동안" 만 닫았고 이건 그보다 넓다.
 
 - **기준선** `_lastPersistedJson` — 앱이 마지막으로 디스크와 동기화된 시점의 설정을 **앱의 표현으로** 직렬화한 것(파일 원문이 아니다. 주석·포맷 차이가 diff 를 오염시킨다). `TryLoad` 성공과 `Save` 성공이 갱신한다.
-- **트리거** — 저장 시 디스크 mtime 이 `_syncedMtime` 과 다르면 병합 경로. 같으면 파싱 비용 없이 그대로 쓴다(흔한 경로). **`_lastMtime` 을 보면 안 된다** — 그쪽은 감지 스레드가 "변경을 눈치챘다" 는 뜻으로 올리는 폴링 기준이라, 파일이 바뀐 것을 알았지만 읽지는 못한 상태에서도 같아져 가드가 무장 해제된다 (bug-hunt 2026-08-02 확정 #1·#14).
+- **트리거** — 저장 시 디스크 표식(mtime+길이)이 `_syncedStamp` 과 다르면 병합 경로. 같으면 파싱 비용 없이 그대로 쓴다(흔한 경로). **`_lastStamp` 을 보면 안 된다** — 그쪽은 감지 스레드가 "변경을 눈치챘다" 는 뜻으로 올리는 폴링 기준이라, 파일이 바뀐 것을 알았지만 읽지는 못한 상태에서도 같아져 가드가 무장 해제된다 (bug-hunt 2026-08-02 확정 #1·#14).
 - **규칙** — *기준선 대비 이번에 값이 달라진 키는 앱이 이기고, 나머지는 디스크가 이긴다.* 기준선이 "앱이 디스크와 같다고 아는 상태" 이므로 그 대비 변경분이 앱의 의도이고, 그 외 디스크와의 차이는 사용자 편집이다. 중첩 객체는 재귀해야 그 안의 부분 편집이 살아남고, 디스크에만 있는 키(손으로 추가한 프로필·미래 키)는 그대로 보존한다.
-- **병합 불가 시** — 기준선 없음(첫 저장)·디스크 읽기/파싱 실패·최상위 비객체면 앱 값을 그대로 쓴다. 저장 자체를 포기하면 사용자의 트레이 조작이 조용히 무시되므로 그쪽이 더 나쁘다.
+- **기준선이 없을 때** — 부팅 로드가 실패해 기본값으로 시작한 경우다. **기본값(`new T()` 직렬화)을 기준선으로 쓴다** (bug-hunt 2026-11-05). 종전엔 여기서 곧장 앱 값(전 필드 기본값 + 방금 바꾼 값)을 써 사용자 파일이 트레이 클릭 한 번에 기본값으로 덮였다. 기본값 대비 바뀐 필드만 앱이 이기게 하면, 디스크가 JSON 으로 읽히는 한(일시 잠금이 풀린 뒤, 값 오류만 있는 파일 등) 사용자 값이 살아남는다.
+- **병합 불가 시** — 파일 없음·디스크 읽기/파싱 실패·최상위 비객체면 앱 값을 그대로 쓴다. 저장 자체를 포기하면 사용자의 트레이 조작이 조용히 무시되므로 그쪽이 더 나쁘다. 단 파싱 실패(`JsonException`)면 덮기 전에 `.broken` 사본을 남긴다(위 Corrupted config 절).
 
-- **되읽기 실패 시** — 병합 후 `TryLoad` 가 실패하면(백신·에디터·동기화 클라이언트의 순간 잠금) 디스크와 기준선에는 병합 결과가, 호출자가 받는 인메모리에는 병합 **전** 값이 남는다. 이 상태를 "동기화됨" 으로 두면 다음 저장이 두 번 배신한다 — 병합을 통째로 건너뛰거나(mtime 일치), 병합하더라도 기준선이 병합 결과라 사용자 편집 필드를 "앱이 이번에 바꿨다" 로 오분류한다. 그래서 `_lastMtime`·`_syncedMtime`·`_lastPersistedJson` 세 표식을 함께 **물린다** — 기준선은 호출자가 실제로 들고 있는 값으로 되돌리고, self-bump 를 취소해 5초 폴러가 핫리로드로 따라잡게 한다(그 `TryLoad` 성공이 넷을 한 번에 정상화). 확정 #19, `SaveMergeTests` 3종이 대조군으로 고정.
+- **되읽기 실패 시** — 병합 후 `TryLoad` 가 실패하면(백신·에디터·동기화 클라이언트의 순간 잠금) 디스크와 기준선에는 병합 결과가, 호출자가 받는 인메모리에는 병합 **전** 값이 남는다. 이 상태를 "동기화됨" 으로 두면 다음 저장이 두 번 배신한다 — 병합을 통째로 건너뛰거나(표식 일치), 병합하더라도 기준선이 병합 결과라 사용자 편집 필드를 "앱이 이번에 바꿨다" 로 오분류한다. 그래서 `_lastStamp`·`_syncedStamp`·`_lastPersistedJson` 세 표식을 함께 **물린다** — 기준선은 호출자가 실제로 들고 있는 값으로 되돌리고, self-bump 를 취소해 5초 폴러가 핫리로드로 따라잡게 한다(그 `TryLoad` 성공이 넷을 한 번에 정상화). 확정 #19, `SaveMergeTests` 3종이 대조군으로 고정.
 
 값 비교는 `JsonElement.GetRawText()` 문자열 비교로 충분하다 — 기준선과 현재 값 모두 같은 직렬화기가 만든 것이라 공백·키 순서가 동일하고, 이 판정은 "앱이 이 필드를 건드렸나"만 답하면 된다.
 
 ### 병합으로 들어온 값도 핫리로드와 같게 적용한다 (bug-hunt 2026-08-02 G6)
 
-3-way 병합이 일어났다는 것은 **디스크에서 앱이 모르던 설정이 들어왔다**는 뜻이고, 이는 핫리로드와 본질적으로 같은 사건이다. 그런데 `Save` 의 mtime self-bump 가 5초 폴러를 잠재우므로 `HandleConfigChanged` 는 돌지 않는다 — 저장 경로가 그 자리를 대신하지 않으면 **어디서도 처리되지 않는다.**
+3-way 병합이 일어났다는 것은 **디스크에서 앱이 모르던 설정이 들어왔다**는 뜻이고, 이는 핫리로드와 본질적으로 같은 사건이다. 그런데 `Save` 의 표식 self-bump 가 5초 폴러를 잠재우므로 `HandleConfigChanged` 는 돌지 않는다 — 저장 경로가 그 자리를 대신하지 않으면 **어디서도 처리되지 않는다.**
 
 이전에는 `SaveAndSync` 가 프로필 캐시·I18n·감지 방식·오버레이 엔진 **4가지만** 다시 세웠고, 커서 헤일로·트레이·로거·표시 전이는 각 호출자가 자기 맥락으로 이미 적용한 뒤였다 — **병합 전 값으로**. 헬퍼 주석은 "각 호출자가 자기 전이 판정으로 이미 수행" 을 근거로 들었지만, 그 판정 자체가 병합 전 값 위에서 끝난 것이라 전제가 성립하지 않았다. 결과는 화면과 설정의 영구 불일치였다(자기치유 경로도 self-bump 로 막혀 있다). 확정 #28·#31·#47.
 
@@ -676,30 +699,34 @@ Catch intentionally does NOT `Save()` — the user's broken file stays on disk s
 - 전이 판정이 전부 `prev`/`next` 비교라 **두 번 호출해도 안전하다.** 저장 호출자가 자기 변경을 먼저 적용한 뒤 병합이 겹쳐 들어오면, 두 번째 호출은 실제로 달라진 것만 처리한다.
 - `SaveAndSync` 는 **반환값이 없고 `_config` 를 직접 갱신한다.** 이전 시그니처는 병합 결과를 반환했고 호출자가 대입을 빠뜨리면 조용히 손실됐다 — 릴리즈 리뷰 2026-08-01 확정 #1 의 정체가 정확히 그 미대입이다. 주석으로 경고하는 대신 함정 자체를 없앴다.
 - `_config` 는 `ApplyConfigTransition` **호출 전에** 새 값이어야 한다 — `ApplyCursorConfigChange` 와 `ApplyTrayEnabledTransition` 이 파라미터가 아니라 필드를 직접 읽는다.
+- **반대 방향 — 저장에 실패해 메모리에만 남은 변경** (bug-hunt 2026-11-05): `Save` 가 실패하면(NF-25 인메모리 유지) 그 변경은 디스크에 없다. 그 상태에서 디스크가 외부에서 바뀌면 핫리로드가 디스크 내용으로 통째 교체해 트레이 토글·드래그 위치를 실제로 되돌렸다 — 저장 쪽에는 병합이 있는데 리로드 쪽에는 없던 비대칭. 이제 `JsonSettingsManager.HasUnsavedChanges` 가 실패를 기억하고(다음 성공 저장이 지움), `ReloadConfigFromDisk` 는 그것이 서 있고 디스크가 JSON 으로 읽히면(`IsDiskContentParsable`) 리로드 대신 `SaveAndSync` 로 메모리 변경을 디스크 위에 병합한다. 깨진 파일 위에는 병합할 수 없으므로 일반 경로(실패 안내)로 간다.
+- **진입 순서** — `ApplyConfigTransition` 은 세션 위치 캐시 무효화(`InvalidateSessionPositions`)를 **표시 갱신보다 먼저** 한다 (bug-hunt 2026-11-05). 두 표시 경로가 `GetAppPositionFixed` 를 거치는데 그것이 이 캐시를 1순위로 읽어, 뒤에 두면 곧 버려질 옛 드래그 좌표로 배지를 다시 그렸다(3차 Q 무력화).
 
 ### 커밋 베이스는 "지금 값" — 스냅샷이 아니다 (AUDIT-2026-07-30 §B, 2026-08-01)
 
 트레이 메뉴와 상세 설정 다이얼로그는 둘 다 **자체 모달 루프 안에서 산다** — `TrackPopupMenu` 와 `ModalDialogLoop` 모두 메시지를 계속 디스패치하므로, 열려 있는 동안 감지 스레드가 post 한 `WM_CONFIG_CHANGED` 가 그대로 처리돼 `_config` 가 교체될 수 있다(감지 루프의 `Settings.CheckConfigFileChange` 는 `TryHandleModalGate` **앞**에 있어 모달 게이트의 보호를 받지 않는다). 그런데 커밋은 "열릴 때의 스냅샷" 위에 `with { … }` 를 얹었다 → 방금 반영된 외부 편집이 조용히 되돌아가고 뒤따르는 `Settings.Save` 가 디스크까지 덮었다.
 
-- **다이얼로그** — `TryCommit` 의 베이스를 `_initialConfig` → `_currentConfigProvider?.Invoke()` 로 교체. 별도의 필드 diff 로직은 필요 없었다: 그 루프가 **모든 필드를 컨트롤에서 다시 읽어 베이스 위에 덮으므로**, 사용자가 화면에서 본 값은 그대로 이기고 다이얼로그가 노출하지 않는 필드(위치 기록·앱 프로필)만 최신값이 살아남는다 — 이것이 감사가 말한 "필드 병합 커밋"의 실질이다.
-- **트레이 메뉴** — `HandleMenuCommand` 초입의 `config = currentConfig();` 한 줄이 `config with { … }` 24곳을 한꺼번에 덮는다.
+- **다이얼로그** — `TryCommit` 의 베이스를 `_initialConfig` → `_currentConfigProvider?.Invoke()` 로 교체. 당시엔 "별도의 필드 diff 로직은 필요 없다 — 루프가 모든 필드를 컨트롤에서 다시 읽어 덮으므로 다이얼로그가 노출하지 않는 필드만 최신값이 살아남는다" 고 판단했는데, **그것이 절반의 해결이었다** (bug-hunt 2026-11-05). 다이얼로그가 노출하는 약 40개 필드는 건드리지 않았어도 "열 때 채운 값" 으로 커밋돼, 열려 있는 동안 리로드로 반영된 외부 편집이 확인 한 번에 조용히 되돌아갔다 — 리로드가 이미 동기화 기준을 맞춰 둔 뒤라 3-way 병합도 막지 못했다. 이제 **바꾼 칸만** 커밋한다: `FieldDef.IsDirty(initial, hwnd)` 가 컨트롤 값과 열 때 값을 비교하고, 바꾼 칸만 검증해 `(필드, 값을 담은 설정)` 쌍으로 `_pendingCommit` 에 담는다. 적용은 **적용 시점의** 현재 설정 위에 `FieldDef.Transfer` 로 값만 옮겨 다시 얹는다(`ComposeCommit`) — 커밋과 적용 사이에도 리로드가 끼어들 수 있어서다(리로드 실패 안내 박스는 소유자가 메인 창이라 설정 창을 막지 않는다 — 박스가 떠 있는 동안 「확인」 을 누르면 커밋은 박스의 중첩 루프 안에서 돌고, 박스를 닫을 때 보류된 리로드가 먼저 반영된다). 바꾼 칸이 없으면 저장하지 않는다.
+- **트레이 메뉴** — `HandleMenuCommand` 초입의 `config = currentConfig();` 한 줄이 `config with { … }` 24곳을 한꺼번에 덮는다. 단 **토글의 목표값은 메뉴에 보였던 값의 반대**다 (bug-hunt 2026-11-05): 체크 표시·투명도 라벨은 메뉴를 그릴 때의 스냅샷(`_menuSnapshot`)으로 그려지는데, 토글까지 현재 값을 뒤집으면 메뉴가 열린 사이 리로드로 그 필드가 바뀐 경우 사용자가 본 체크와 반대로 적용됐다(「배지 숨김」 해제를 눌렀는데 숨겨지는 식). "어느 값으로" 는 스냅샷(`shown`), "어디에 얹을지" 는 현재 값 — 두 질문을 섞지 않는다. 투명도 프리셋도 라벨에 보였던 값을 쓴다.
 - **"모달 중 이벤트 보류" 안은 채택하지 않았다** — 보류해도 커밋이 먼저 디스크를 덮은 뒤 보류분이 처리되므로 순서만 바뀔 뿐 lost update 가 남는다.
 
 `_currentConfigProvider` 는 `Show` 의 에필로그에서 null 로 되돌리고, `TryCommit` 은 공급자가 없으면 `_initialConfig` 로 폴백한다(셸을 거치지 않는 직접 호출 방어).
 
 ### `Save` 의 쓰기와 mtime 갱신은 한 덩어리 (AUDIT-2026-07-30 §F, 2026-08-01)
 
-`_mtimeLock` 의 원래 주석은 "I/O 는 lock 밖에서 수행, 필드 대입/비교만 보호" 였는데, 그 결과 `Save` 의 `WriteAllText` 와 `_lastMtime` 갱신 사이가 열려 있었다. 그 틈에 감지 스레드가 `CheckReload` 를 돌면 새 mtime ≠ 옛 `_lastMtime` 이라 **자기 저장을 외부 편집으로 오인**해 전체 리로드를 유발한다 — 배지 깜빡임과 메모리 전용 변경 소실도 문제지만, 그 리로드가 위 §B 의 재진입 트리거를 늘리는 것이 더 컸다.
+`_mtimeLock` 의 원래 주석은 "I/O 는 lock 밖에서 수행, 필드 대입/비교만 보호" 였는데, 그 결과 `Save` 의 `WriteAllText` 와 `_lastMtime`(현 `_lastStamp`) 갱신 사이가 열려 있었다. 그 틈에 감지 스레드가 `CheckReload` 를 돌면 새 mtime ≠ 옛 값이라 **자기 저장을 외부 편집으로 오인**해 전체 리로드를 유발한다 — 배지 깜빡임과 메모리 전용 변경 소실도 문제지만, 그 리로드가 위 §B 의 재진입 트리거를 늘리는 것이 더 컸다.
 
-이제 `Save` 의 쓰기+mtime 조회와 `CheckReload` 의 mtime 조회+비교가 모두 `_mtimeLock` 안에 있다(직렬화는 순수 계산이라 락 밖). 경합 비용은 무시할 수준 — `CheckReload` 는 5초에 1회, `Save` 는 사용자 조작 시에만 돈다.
+이제 `Save` 의 쓰기+표식 조회와 `CheckReload` 의 표식 조회+비교가 모두 `_mtimeLock` 안에 있다(직렬화는 순수 계산이라 락 밖). 경합 비용은 무시할 수준 — `CheckReload` 는 5초에 1회, `Save` 는 사용자 조작 시에만 돈다. (2026-11-05 부터 표식은 mtime+길이 `FileStamp` 이고, `Save` 는 교체 전 임시 파일에서 찍는다 — 위 Atomic save 절.)
 
 ### 파싱 실패는 `TryLoad` 로 호출자에게 전달한다 (AUDIT-2026-07-30 §G, 2026-08-01)
 
 `Load()` 는 성공이든 실패든 `T` 하나만 돌려주므로, 호출자는 받은 값이 **정상 로드분인지 실패분 디폴트인지 구분할 수 없었다.** 핫리로드 경로(`HandleConfigChanged`)가 그 디폴트를 `_config` 에 대입하면 이후 **어떤** 저장 경로(트레이 토글·드래그 종료)든 그것을 디스크에 확정해 사용자 설정이 전멸한다. 위 "Corrupted config spam prevention" 이 파일을 지켜도 **메모리 쪽에서 무너지는** 구멍이었다 — koenvue_config.json 은 편집 중 한순간만 파싱 불가여도 이 경로를 탄다.
 
 - `JsonSettingsManager<T>.TryLoad(out T)` 가 성공 여부를 반환하고, `Load()` 는 그 위임이 되었다(부팅처럼 유지할 기존 인스턴스가 없는 경로는 계속 `Load()` 사용).
-- 실패 시 `HandleConfigChanged` 는 **기존 `_config` 를 그대로 두고 물러난다.** 파일이 고쳐지는 순간 다음 mtime 변화가 정상 리로드한다.
-- 안내는 `_configReloadFailed` 래치로 **연속 실패당 1회** — 5초 폴링이라 매번 띄우면 편집을 방해한다. 정상 로드 시 해제되므로 다시 깨뜨리면 한 번 더 알린다.
+- 실패 시 `HandleConfigChanged` 는 **기존 `_config` 를 그대로 두고 물러난다.** 파일이 고쳐지는 순간 다음 표식 변화가 정상 리로드한다.
+- 안내는 **내용 문제(`LoadFailure.Content`)일 때만** 띄운다 (bug-hunt 2026-11-05). 편집기·백신·동기화 클라이언트의 짧은 잠금(`Locked`)이나 원자 교체 중간의 "파일 없음"(`Missing`)은 다음 폴링이 저절로 읽는 일시 상태라, 예전엔 정상 저장에 「읽지 못했다」 거짓 경보가 났고 박스가 떠 있는 동안 정상 리로드까지 보류됐다. 재시도 한도를 넘긴 잠금·권한 거부는 `Content` 로 분류돼 알린다.
+- 안내는 `_configReloadFailed` 래치로 **연속 실패당 1회** — 5초 폴링이라 매번 띄우면 편집을 방해한다. 정상 로드 시 해제되므로 다시 깨뜨리면 한 번 더 알린다. **앱 저장이 디스크를 정상화해도 해제한다** (`SaveAndSync` 에서 `!HasUnsavedChanges` 면, bug-hunt 2026-11-05) — 깨진 파일 위에 앱이 저장하면 self-bump 라 리로드가 돌지 않아 래치가 고착되고, 그 뒤 다시 깨뜨린 편집이 안내 없이 무시됐다.
+- **부팅 로드 실패** (bug-hunt 2026-11-05) — 부팅은 `Load()` 라 실패해도 기본값으로 계속 간다. 종전엔 로그 한 줄뿐이라 사용자가 모른 채 트레이를 누르면 그 파일이 기본값으로 덮였다. 이제 `MainImpl` 이 `Settings.LastLoadFailure` 를 보고 (a) 실패면(`!= None`) 그 실행에서 **되돌릴 수 없는 부팅 1회 부수효과** — 시작 프로그램 작업 동기화(`SyncStartupPathAsync`, 기본값 `admin_elevation=false` 로 `HighestAvailable` 작업을 `LeastPrivilege` 로 재등록하는 다운그레이드가 실제 경로였다)와 업데이트 확인(꺼 둔 확인을 기본값 켬으로 실행) — 을 **첫 정상 리로드까지 미루고**(`_bootSideEffectsDeferred` → `RunBootSideEffects`, 리뷰 2026-11-05 — 일시 잠금으로 부팅 로드만 실패한 경우 5초 뒤 리로드가 곧 성공하는데 그 세션 내내 건너뛴 채 남지 않도록), (b) 내용 문제면(`Content`) 메시지 루프 진입 직전 `I18n.ConfigBootLoadFailed` 안내를 띄우며 `_configReloadFailed` 래치를 세운다(첫 핫리로드 실패가 같은 안내를 또 띄우지 않게). 파일을 고치면 핫리로드가 메모리를 바로잡는다.
 - 문구(`I18n.ConfigReloadFailed`)는 "지금 앱에서 설정을 바꾸면 편집 중인 내용이 덮어써진다"까지 알린다 — `_config` 유지는 *디폴트 전멸*만 막을 뿐, 그 상태에서 저장하면 사용자가 편집 중이던 파일은 여전히 앱 값으로 덮인다(§N-48 read-modify-write 와 같은 뿌리).
 
 **최상위 타입 가드** — 같은 작업의 회귀 테스트가 별건을 드러냈다. `MergeWithDefaults` 는 사용자 JSON 의 최상위를 객체로 가정하고 `TryGetProperty` 를 부르는데, `null`·배열·스칼라가 오면 `JsonElementWrongTypeException`(= `InvalidOperationException`)이 나고 이 타입은 `IsExpectedLoadException` 필터 **밖**이라 `Load` 를 뚫고 `WndProc` 최상위까지 전파됐다 — koenvue_config.json 에 `null` 한 줄만 남겨도 프로세스가 종료되던 경로다. 이제 병합 진입점이 최상위 `ValueKind` 를 검사해 객체가 아니면 `JsonException` 으로 바꿔 던지므로 정상 실패 경로를 탄다.
@@ -718,7 +745,7 @@ P5 (`app.manifest asInvoker`, PR-03, v0.9.3.0) intentionally drops the `requireA
 
 ### Self-triggered reload prevention
 
-`_lastConfigMtime` is updated **after** `Settings.Save()` to prevent `WM_CONFIG_CHANGED` from firing on our own writes.
+`JsonSettingsManager.Save` sets `_lastStamp` (and `_syncedStamp`) to the stamp of what it just wrote, inside `_mtimeLock`, so `CheckReload` does not fire `WM_CONFIG_CHANGED` on our own writes ("self-bump"). Since 2026-11-05 that stamp is taken from the temp file **before** the replace — see Atomic save.
 
 ### STJ source-gen init default workaround
 
@@ -745,11 +772,15 @@ P5 (`app.manifest asInvoker`, PR-03, v0.9.3.0) intentionally drops the `requireA
 
 **메인 스레드 — `ResolveCurrent()` 헬퍼로 렌더 경로까지 도달 (PR-13)**. 감지 스레드의 `resolved` AppConfig 는 처음에 `TryHandleFilter` / `TrackWindowMove` / `ImeStatus.Detect` 3개 분기에만 사용됐고 메인 스레드로 전달되는 메시지(`WM_FOCUS_CHANGED` / `WM_IME_STATE_CHANGED` / `WM_POSITION_UPDATED`) 는 `resolved` 를 페이로드로 싣지 않았다 — 시각 필드 override 가 렌더링까지 도달하지 않는 미배선 상태. PR-13 에서 메인 스레드에 `ResolveCurrent()` 정적 헬퍼를 도입해 같은 `Settings.ResolveForApp(_config, _lastForegroundHwnd)` 를 재호출하는 방식으로 해결 — LRU 캐시가 같은 프로세스명 키에서 즉시 hit 하므로 메인 스레드 핫패스 비용이 무시할 수 있다. `Animation.TriggerShow` / `Overlay.Show` / `Overlay.UpdateColor` 시그니처가 `AppConfig` 를 명시 인자로 받도록 확장되어, `HandleImeStateChanged` / `HandleFocusChanged` / `HandlePositionUpdated` / `HandleConfigChanged` / `HandleActivateRequest` / `HandleCapsLockTimer` / `HandleDisplayChange` / `HandleSettingChange` / `ApplyUserHiddenTransition` / `HandleMenuCommand` updateConfig lambda / `HandleOverlayDragEnd` 의 모든 렌더 호출(18개) 이 `ResolveCurrent()` 결과를 사용한다. 추가로 `HandleImeStateChanged` / `HandleFocusChanged` 의 `DisplayMode` + `EventTriggers` 평가도 `resolved` 기반으로 전환 — `display_mode` / `event_triggers` 의 per-app override 도 동시 활성. `Overlay._config` 필드는 렌더 경로에서 의존이 제거되었고 `HandleConfigChanged` 시점의 캐시 재빌드 + 드래그 경로(`HandleMoving`) + 기본 위치 계산(`GetDefaultPosition`) 의 글로벌-only 경로에만 잔존. 메시지 페이로드 마샬링 대신 메인 스레드 재호출을 택한 이유는 변경 표면 최소화 + race window 가 다음 틱에서 자연 수렴 + LRU 캐시 hit 비용 무시. 단점은 메인 스레드 `_lastForegroundHwnd` 와 감지 스레드 `state.LastHwndForeground` 가 일시적으로 다를 수 있다는 점이지만 80ms 폴링이 즉시 수렴시킨다.
 
-**글로벌로 남아 있던 자리 정리 (bug-hunt 2026-11-04 확정 #11·#24·#25·#34)**: `GetAppPosition` 의 `position_mode` 분기가 `ResolveCurrent().PositionMode` 를 본다 — 감지 스레드 `TrackWindowMove` 는 이미 per-app 을 봐서, 프로필로 모드를 바꾼 앱에서 두 스레드가 다른 모드로 움직였다(#25). `HideOverlay` 의 `TriggerHide` 인자(#11, [HideOverlay `forceHidden`](#hideoverlay-forcehidden)), 표시 전 위치 계산이 읽는 DIB 크기(#24 — `Overlay.Paint` 선행), 드래그 중 DPI 경계 재렌더 스타일(#34)도 per-app 기준이 됐다. `Overlay._config` 의 잔존 용도는 위 셋(캐시 재빌드·`GetDefaultPosition`·그린 적 없을 때의 드래그 폴백)이다.
+**글로벌로 남아 있던 자리 정리 (bug-hunt 2026-11-04 확정 #11·#24·#25·#34)**: `GetAppPosition` 의 `position_mode` 분기가 per-app `PositionMode` 를 본다(2026-11-05 부터는 호출자가 크기 확정·렌더에 쓴 **같은 해석**을 `GetAppPosition(resolved)` 인자로 받는다 — 단계마다 `ResolveCurrent()` 를 다시 부르면 `app_profile_match=title` 에서 그 사이 창 제목이 바뀔 때 세 단계가 서로 다른 프로필을 썼다) — 감지 스레드 `TrackWindowMove` 는 이미 per-app 을 봐서, 프로필로 모드를 바꾼 앱에서 두 스레드가 다른 모드로 움직였다(#25). `HideOverlay` 의 `TriggerHide` 인자(#11, [HideOverlay `forceHidden`](#hideoverlay-forcehidden)), 표시 전 위치 계산이 읽는 DIB 크기(#24 — `Overlay.Paint` 선행), 드래그 중 DPI 경계 재렌더 스타일(#34)도 per-app 기준이 됐다. `Overlay._config` 의 잔존 용도는 위 셋(캐시 재빌드·`GetDefaultPosition`·그린 적 없을 때의 드래그 폴백)이다.
+
+**표시 경로는 `TryResolveCurrent` (bug-hunt 2026-11-05)**: `ResolveCurrent()` 의 글로벌 폴백(`?? _config`)은 숨김 경로의 스냅샷용이라, 표시 경로가 그대로 쓰면 `enabled:false` 로 끈 앱 위에 글로벌 스타일 배지가 떴다(리로드로 현재 앱을 끄는 순간마다). `TryResolveCurrent(out resolved)` 는 프로필이 꺼져 있으면 false(값은 글로벌) — `HandleImeStateChanged`·`HandleFocusChanged`·`HandlePositionUpdated`·`RefreshVisibleIndicator`·드래그 종료가 쓰고, false 면 그리지 않거나 숨긴다.
 
 ### Window class name validation
 
 `Settings.Validate.ValidateAdvanced` 가 `AppConfig.Advanced.OverlayClassName` 을 영문/숫자/언더스코어 + 길이 1-255 로 검증해 위반 시 `"KoEnVueOverlay"` 기본값으로 폴백한다. 이 문자열은 `Program.Bootstrap.RegisterWindowClasses` / `CreateOverlayWindow` 의 `RegisterClassExW` / `CreateWindowExW` 에 그대로 흘러가므로 비정상 값(빈 문자열·과도한 길이·제어문자·공백/슬래시 등 ASCII 외 문자) 이 들어오면 등록 자체가 실패해 부팅이 침묵 종료된다. 사용자가 `koenvue_config.json` 을 손으로 편집해도 부팅 경로가 끊기지 않도록 단일 폴백 경로로 흡수. 검증 실패 시 `Logger.Warning` 1회만 남기고 정상 부팅을 보장.
+
+**문자 집합만으로는 부족했다 (bug-hunt 2026-11-05)** — 형식이 맞는 **다른 창의 클래스 이름**이 그대로 통과했다. 오버레이 클래스는 `Program.WndProc` 로 부팅 때 먼저 등록되므로, 나중에 같은 이름을 등록하는 쪽이 "이미 있음" 으로 그 클래스를 재사용해 엉뚱한 WndProc 을 받는다 — `KoEnVueSettingsDlg` 면 설정 창이 닫히지 않은 채 트레이가 영구히 막혔고, 스크롤 뷰포트 이름이면 메시지를 주고받다 스택 오버플로로 죽었다. `Button`·`Edit` 같은 시스템 컨트롤 이름이면 프로세스 안의 해당 컨트롤 생성이 전부 우리 클래스로 바뀌고, 셸 클래스 이름이면 다른 앱의 `FindWindow` 가 최상위인 배지를 잡는다. `DefaultConfig.IsReservedWindowClassName` 이 `KoEnVue` 접두(기본값 `KoEnVueOverlay` 제외)·시스템 컨트롤 클래스(`Button`·`ComboBox`·`ComboLBox`·`Edit`·`ListBox`·`MDIClient`·`ScrollBar`·`Static`·`Message`)·`DefaultSystemHideClasses` 를 대소문자 무관으로 거부한다.
 
 ---
 
@@ -761,7 +792,7 @@ P5 (`app.manifest asInvoker`, PR-03, v0.9.3.0) intentionally drops the `requireA
 
 ### NIM_ADD / NIM_SETVERSION return value check
 
-`NotifyIconManager.Add`는 `Shell_NotifyIconW(NIM_ADD)` 반환값을 확인하여 실패 시 `_added = false`를 유지하고 즉시 반환한다. `NIM_ADD` 성공 후에만 `NIM_SETVERSION`을 호출하며, `NIM_SETVERSION` 실패는 `Logger.Warning`으로 기록하되 `_added = true`는 유지한다 (아이콘 자체는 등록된 상태이므로). 이 가드 덕분에 이후 `Modify` 호출이 등록되지 않은 아이콘에 대해 무한 실패하는 상황을 방지한다.
+`NotifyIconManager.Add`는 `Shell_NotifyIconW(NIM_ADD)` 반환값을 확인한다. **실패가 곧 "등록 안 됨" 은 아니다** (bug-hunt 2026-11-05) — `Shell_NotifyIconW` 는 explorer 로 가는 `SendMessageTimeout` 이라, explorer 가 바쁘면 시간 초과로 FALSE 를 돌려준 뒤 이미 전달된 요청을 처리해 아이콘을 실제로 등록한다. 그 상태를 미등록으로 확정하면 재시도 `NIM_ADD` 는 같은 GUID 가 있어 계속 실패하고, `NIM_SETVERSION` 이 불리지 않아 우클릭 메뉴(종료 포함)가 열리지 않으며, 종료 때 `NIM_DELETE` 도 건너뛰어 유령 아이콘이 남았다. 그래서 `NIM_ADD` 가 실패하면 같은 GUID 로 `NIM_MODIFY` 를 보내 성공하면 등록된 것으로 채택하고, 그것도 실패해야 `_added = false` 로 즉시 반환한다. 짝으로 `Remove` 는 `_added` 와 무관하게 **항상** `NIM_DELETE` 를 보낸다(NIF_GUID 라 멱등 — 등록한 적 없으면 실패를 성공으로 본다). `NIM_ADD` (또는 채택) 성공 후에만 `NIM_SETVERSION`을 호출하며, `NIM_SETVERSION` 실패는 `Logger.Warning`으로 기록하되 `_added = true`는 유지한다 (아이콘 자체는 등록된 상태이므로). 이 가드 덕분에 이후 `Modify` 호출이 등록되지 않은 아이콘에 대해 무한 실패하는 상황을 방지한다.
 
 ### WM_CONTEXTMENU (not WM_RBUTTONUP)
 
@@ -804,11 +835,11 @@ Handled in [Program.cs](../Program.cs) (not `Tray.cs`) because it needs `_indica
 `HandleTrayToggle` advances the visibility cycle via `Tray.ComputeLeftClickCycle(_config)` (pure — sets `UserHidden` + `CursorIndicatorEnabled` for the next of the four stages; see [Tray.LeftClick.cs](../App/UI/Tray.LeftClick.cs)), calls `Settings.Save(_config)` immediately (so the state survives restart), calls `ApplyCursorConfigChange()` **only when `CursorIndicatorEnabled` actually flipped** (the halo window lifecycle — a direct call is required because `Settings.Save`'s mtime self-bump suppresses `WM_CONFIG_CHANGED`), rebuilds the tray icon via `Tray.UpdateState` (so the drawn shapes match the new stage), and delegates the badge overlay transition to the shared `ApplyUserHiddenTransition(wasHidden, isHidden)` helper — which no-ops unless `UserHidden` itself changed:
 
 - `UserHidden: false → true` — invokes `HideOverlay()` (`Animation.TriggerHide(forceHidden: true)` + sets `_indicatorVisible = false` + clears system-input frame cache).
-- `UserHidden: true → false` — does **not** unconditionally Show. Calls `TryShowIndicatorIfForegroundAllowed` (PR-26): live `GetForegroundWindow` + `ResolveFocusWindow` + `ResolveForApp` + `SystemFilter.ShouldHide`; only then `ShowIndicatorAtForeground`. If the live foreground is filtered (desktop / tray / `enabled:false` profile / etc.), the show is skipped — the detection thread will Show on the next non-filtered tick via `WM_POSITION_UPDATED`. The same helper is used by `HandleActivateRequest` (second-instance Activate).
+- `UserHidden: true → false` — does **not** unconditionally Show. Calls `TryShowIndicatorIfForegroundAllowed` (PR-26): live `GetForegroundWindow` + `ResolveFocusWindow` + `ResolveForApp` + `SystemFilter.ShouldHide`; only then `ShowIndicatorAtForeground`. If the live foreground is filtered (desktop / tray / `enabled:false` profile / etc.), the show is skipped — the detection thread will Show on the next non-filtered tick via `WM_POSITION_UPDATED`. The same helper is used by `HandleActivateRequest` (second-instance Activate). **Two foreground special cases (bug-hunt 2026-11-05)**: (a) when the foreground is the invisible main window — the right-click menu's `SetForegroundWindow(hwndMain)` leaves it there until the user clicks elsewhere — and no modal is up, the helper targets the badge owner app (`_lastForegroundHwnd`, if visible) instead of giving up; previously unhiding from the menu did not bring the badge back until the next app switch. (b) when the foreground belongs to our own process (settings/cleanup/scale dialogs, message boxes — the helper also runs inside modal loops via second-instance Activate and reload-driven unhide), it skips, matching the detection loop's modal gate; previously it pinned `_lastForegroundHwnd` to the dialog.
 
 Config hot-reload (`HandleConfigChanged`): when `prev.UserHidden == false` and the new config has `UserHidden == true` while the indicator is visible, `HideOverlay("config UserHidden")` runs immediately (previously a visible indicator could freeze in place after a hand-edit of `user_hidden`).
 
-The menu path (`IDM_USER_HIDDEN` → `updateConfig(config with { UserHidden = !config.UserHidden })`) reaches the same helper: the `HandleMenuCommand` lambda in [Program.cs](../Program.cs) captures `wasHidden = _config.UserHidden` before applying `newConfig`, then calls `ApplyUserHiddenTransition` when the bit actually flipped (otherwise falls through to the existing `_indicatorVisible`-based config-changed branch). This ensures the right-click "한/영 배지 숨김" toggle produces identical overlay/tray-icon behavior as the left-click toggle, even when `tray_click_action` has been set to `"settings"` or `"none"` (in which case the right-click menu is the only GUI path back from `user_hidden = true`).
+The menu path (`IDM_USER_HIDDEN` → `updateConfig(config with { UserHidden = !shown.UserHidden })` — `shown` = the menu-time snapshot, see [커밋 베이스](#커밋-베이스는-지금-값--스냅샷이-아니다-audit-2026-07-30-b-2026-08-01)) reaches the same helper: the `HandleMenuCommand` lambda in [Program.cs](../Program.cs) captures `wasHidden = _config.UserHidden` before applying `newConfig`, then calls `ApplyUserHiddenTransition` when the bit actually flipped (otherwise falls through to the existing `_indicatorVisible`-based config-changed branch). This ensures the right-click "한/영 배지 숨김" toggle produces identical overlay/tray-icon behavior as the left-click toggle, even when `tray_click_action` has been set to `"settings"` or `"none"` (in which case the right-click menu is the only GUI path back from `user_hidden = true`).
 
 Five event handlers gate on `_config.UserHidden` to prevent detection-thread events from re-showing a user-hidden indicator: `HandleImeStateChanged`, `HandleFocusChanged`, `HandlePositionUpdated`, `HandleConfigChanged` (skips the refresh/`TriggerShow` branch when still hidden — tray icon still rebuilds so a hot-edited `user_hidden` / `cursor_indicator_enabled` renders the right shapes; false→true hide is handled above), and `HandleActivateRequest`. The detection thread itself does **not** read `UserHidden` — `_indicatorVisible = false` is sufficient to suppress the `TriggerShow` path in main-thread handlers, and cost of the `_config.UserHidden` check is trivial compared to the `WindowProcessInfo.GetProcessName` P/Invoke chain in the detection tick.
 
@@ -824,7 +855,7 @@ Reset paths: (1) right-click tray → "한/영 배지 숨김" menu toggle (flips
 
 Registration uses `schtasks /create /xml` with an embedded `<LogonTrigger><Delay>PT15S</Delay></LogonTrigger>` (constant `StartupTaskManager.StartupTaskDelay`). The 15-second logon delay avoids the "Shell_NotifyIconW NIM_ADD failed" race at boot where the task fires before `explorer.exe` has initialized the tray — the `NIM_ADD` retry timer still recovers if the delay is ever absent, but the delay prevents the warn log line from appearing on every boot. `RegisterStartupTaskWithXml` writes the XML to `%TEMP%\koenvue-task-{Guid:N}.xml` as UTF-16 LE with BOM (the encoding schtasks expects) and deletes it in `finally`.
 
-`StartupTaskManager.SyncStartupPathAsync()` runs on a background thread immediately after `Tray.Initialize` in `Program.cs`. It:
+`StartupTaskManager.SyncStartupPathAsync()` runs on a background thread from `RunBootSideEffects` at the end of `MainImpl` (together with the update check) — **deferred to the first successful hot reload when the boot config load failed** (`Settings.LastLoadFailure != None`, bug-hunt 2026-11-05: re-registering from defaults would downgrade an `admin_elevation=true` task to `LeastPrivilege`). It:
 
 1. Invokes `schtasks.exe /query /tn ... /xml ONE`
 2. Extracts the `<Command>`, `<Delay>` and `<RunLevel>` elements with plain string `IndexOf` (no `XmlDocument` — NativeAOT-friendly) via `ExtractTagFromXml`. Manually unescapes `&amp;` / `&quot;` / etc. for `Command` (Delay is raw ISO 8601 so no unescape).
@@ -832,6 +863,8 @@ Registration uses `schtasks /create /xml` with an embedded `<LogonTrigger><Delay
 4. Re-registers the task via XML if the stored path differs from `Environment.ProcessPath`, OR the stored `<Delay>` is missing/different from `PT15S` (this also migrates older `/tr`-registered tasks to the new XML form on the next launch), OR the stored `<RunLevel>` differs from the one `config.AdminElevation` implies (PR-15 — `HighestAvailable` when on, `LeastPrivilege` when off)
 
 Handles the "user moved the exe" case: the first boot after a move still misses because Task Scheduler launches the old path, but on the next manual launch the sync runs and subsequent boots pick up the corrected path. `QueryRegisteredTask` wraps `Process.Start` in try/catch so schtasks being absent or non-zero exit is silently ignored.
+
+All three schtasks invocations (`/query`, `/query /xml`, command) go through one helper, `RunSchtasksCapture` (bug-hunt 2026-11-05, P4). It reads stdout/stderr concurrently (pipe-buffer deadlock), kills a timed-out child, and **disposes both redirect readers** — once `StandardOutput`/`StandardError` has been accessed, `Process.Close()` treats the streams as caller-owned and leaves them open, so two pipe handles per call lingered until finalization (measured: 30 calls +100 handles without disposal, +5 with). The tray right-click runs a query every time, so it accumulated in a resident app; G12's fix had only added the Kill.
 
 ### Tray menu structure
 
@@ -863,7 +896,7 @@ KoEnVue v{cur} — GitHub                         ← always-visible header (MF_
 종료
 ```
 
-Menu IDs live in [Tray.cs](../App/UI/Tray.cs) as `private const int IDM_*`. The header uses `IDM_HOMEPAGE = 4010` with `MF_STRING | MF_DEFAULT` **plus** an explicit `User32.SetMenuDefaultItem(hMenu, (uint)IDM_HOMEPAGE, 0)` call right after `AppendMenuW` — the flag alone sets the internal default bit but does not reliably trigger bold rendering on Windows 11; `SetMenuDefaultItem` is the canonical Win32 API for this and MSDN explicitly recommends it (the `ModifyMenu` page directs callers to it, and the `SetMenuDefaultItem` page guarantees "displayed in bold type"). Only one item per popup can be the default — verified once via grep that no other `MF_DEFAULT` exists in the codebase. The `_pendingUpdate is not null` branch swaps the label, and the click handler dispatches to `OpenUpdatePage` or `OpenHomepage` accordingly. The `4008` slot is intentionally vacant (formerly `IDM_UPDATE_DOWNLOAD`, removed in v0.9.2.6 with the header unification). Position mode submenu uses `IDM_POSITION_FIXED = 3301` / `IDM_POSITION_WINDOW = 3302` with `CheckMenuRadioItem`. `IDM_USER_HIDDEN = 4009` renders as `MF_CHECKED` when `config.UserHidden == true` — its handler calls `updateConfig(config with { UserHidden = !config.UserHidden })`, and the `Program.HandleMenuCommand` lambda routes the resulting transition through `ApplyUserHiddenTransition` (shared with `HandleTrayToggle`).
+Menu IDs live in [Tray.cs](../App/UI/Tray.cs) as `private const int IDM_*`. The header uses `IDM_HOMEPAGE = 4010` with `MF_STRING | MF_DEFAULT` **plus** an explicit `User32.SetMenuDefaultItem(hMenu, (uint)IDM_HOMEPAGE, 0)` call right after `AppendMenuW` — the flag alone sets the internal default bit but does not reliably trigger bold rendering on Windows 11; `SetMenuDefaultItem` is the canonical Win32 API for this and MSDN explicitly recommends it (the `ModifyMenu` page directs callers to it, and the `SetMenuDefaultItem` page guarantees "displayed in bold type"). Only one item per popup can be the default — verified once via grep that no other `MF_DEFAULT` exists in the codebase. The `_pendingUpdate is not null` branch swaps the label, and the click handler dispatches to `OpenUpdatePage` or `OpenHomepage` accordingly. The `4008` slot is intentionally vacant (formerly `IDM_UPDATE_DOWNLOAD`, removed in v0.9.2.6 with the header unification). Position mode submenu uses `IDM_POSITION_FIXED = 3301` / `IDM_POSITION_WINDOW = 3302` with `CheckMenuRadioItem`. `IDM_USER_HIDDEN = 4009` renders as `MF_CHECKED` when `config.UserHidden == true` — its handler calls `updateConfig(config with { UserHidden = !shown.UserHidden })` (every check toggle targets the opposite of what the menu showed — `_menuSnapshot`, bug-hunt 2026-11-05), and the `Program.HandleMenuCommand` lambda routes the resulting transition through `ApplyUserHiddenTransition` (shared with `HandleTrayToggle`).
 
 ### Quick opacity presets (`ApplyQuickOpacity`)
 
@@ -881,9 +914,9 @@ The duplication is kept as vertical copy rather than extracted to a helper becau
 
 All three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) share the same modal infrastructure:
 
-- **`DialogShell.Run(...)`** — 모달 라이프사이클 통합 진입점. reentry guard (`ModalDialogLoop.RejectReentry()` — **2차 방어**, 아래 항목 참조) → `GetCursorPos` → `MonitorFromPoint` → DPI/font/class 등록 → `CalculateDialogPosition` → `CreateWindowExW` outer dialog → `ShowWindow` → 선택적 `SetForegroundWindow` → `onAfterShow` → `ModalDialogLoop.Run` → `DestroyWindow` (try/finally) 의 11단계를 단일 메서드로 흡수. 각 다이얼로그는 `measureDlgHeight` 콜백 (DPI-스케일 다이얼로그 높이) + `useCursorAnchor` (Scale 만 true) + `bringToForeground` + `buildChildren` (자식 컨트롤 생성) + `onAfterShow` (Scale 의 SetFocus/EM_SETSEL) 만 책임지고, WndProc 와 다이얼로그-고유 정적 상태 (`_hwndDialog`, `_hwndViewport`, `_dlgResult`, `_dlgClosed` 등) 는 호출자가 소유. `DialogShellMetrics` (record struct: DPI/non-client/pad/dlgWidth) 와 `DialogShellContext` (sealed: + HwndDialog/HFont/DlgHeight + ClientW/ClientH 파생 + `Scale(int logical)` 메서드) 두 단계로 정보 전달. `HandleStandardCommands(wmCommandId, idOk, idCancel, ref result, ref closed, tryCommit?)` 헬퍼는 IDOK/IDCANCEL + 다이얼로그-고유 OK/Cancel ID 동시 수락 패턴을 흡수 — IsDialogMessageW 가 Enter→IDOK / ESC→IDCANCEL 변환해 보내는 경로와 사용자 클릭 경로 양쪽 동일 분기
-- **`ModalDialogLoop.Run(hwndDialog, hwndOwner, ref isClosed)`** — DialogShell 의 내부 모달 루프. Core helper for the `EnableWindow(owner, false) + while(GetMessageW... IsDialogMessageW(...)) { Translate/Dispatch } + EnableWindow(owner, true)` boilerplate. The `ref bool isClosedFlag` lets each dialog's WndProc signal close from inside `WM_COMMAND`/`WM_CLOSE` without the loop helper knowing the close semantics. When the nested loop consumes `WM_QUIT` (e.g., tray Exit while a dialog is open), it re-posts `PostQuitMessage` so the outer message loop also terminates
-- **`ModalDialogLoop.RunExternal(hwndSentinel, action)`** — `IsActive` 가드만 씌우는 경량 변형. `User32.MessageBoxW` 처럼 Win32 가 자체 메시지 루프를 돌려 `Run` 을 쓸 수 없는 외부 모달 구간에 사용한다 (현재 `Tray.ShowPositionError` / `Tray.CleanupPositions` 의 빈 목록 알림 / TryCommit 검증 실패 메시지박스). 메시지 펌프 · `EnableWindow` 는 건드리지 않고 감지 스레드의 폴링 사이드-이펙트만 차단한다. 기존 활성 모달이 있으면 스택처럼 이전 값을 보관 후 `finally` 에서 복원
+- **`DialogShell.Run(...)`** — 모달 라이프사이클 통합 진입점. reentry guard (`ModalDialogLoop.RejectReentry()` — **2차 방어**, 아래 항목 참조) → `GetCursorPos` → `MonitorFromPoint` → DPI/font/class 등록 → `CalculateDialogPosition` → `CreateWindowExW` outer dialog → `ModalDialogLoop.MarkActive` → `ShowWindow` → 선택적 `SetForegroundWindow` → `onAfterShow` → `ModalDialogLoop.Run(callerOwnsActiveFlag: true)` → `DestroyWindow` → `MarkInactive` (try/finally) 의 단계를 단일 메서드로 흡수. 모달 표식은 **보이기 전에 세우고 파괴한 뒤에 내린다** (bug-hunt 2026-11-05) — `Run` 이 진입·종료 때 세우고 내리면 `ShowWindow`(활성화 포함)·`SetForegroundWindow` 뒤에야 서고 `DestroyWindow` 앞에서 내려가, 그 틈의 감지 틱·강제 표시가 우리 다이얼로그를 일반 앱으로 보았다. `MarkInactive` 는 CAS 라 다른 다이얼로그의 표식은 건드리지 않는다. 각 다이얼로그는 `measureDlgHeight` 콜백 (DPI-스케일 다이얼로그 높이) + `useCursorAnchor` (Scale 만 true) + `bringToForeground` + `buildChildren` (자식 컨트롤 생성) + `onAfterShow` (Scale 의 SetFocus/EM_SETSEL) 만 책임지고, WndProc 와 다이얼로그-고유 정적 상태 (`_hwndDialog`, `_hwndViewport`, `_dlgResult`, `_dlgClosed` 등) 는 호출자가 소유. `DialogShellMetrics` (record struct: DPI/non-client/pad/dlgWidth) 와 `DialogShellContext` (sealed: + HwndDialog/HFont/DlgHeight + ClientW/ClientH 파생 + `Scale(int logical)` 메서드) 두 단계로 정보 전달. `HandleStandardCommands(wmCommandId, idOk, idCancel, ref result, ref closed, tryCommit?)` 헬퍼는 IDOK/IDCANCEL + 다이얼로그-고유 OK/Cancel ID 동시 수락 패턴을 흡수 — IsDialogMessageW 가 Enter→IDOK / ESC→IDCANCEL 변환해 보내는 경로와 사용자 클릭 경로 양쪽 동일 분기
+- **`ModalDialogLoop.Run(hwndDialog, hwndOwner, ref isClosed)`** — DialogShell 의 내부 모달 루프. Core helper for the `EnableWindow(owner, false) + while(GetMessageW... IsDialogMessageW(...)) { Translate/Dispatch } + EnableWindow(owner, true)` boilerplate. The `ref bool isClosedFlag` lets each dialog's WndProc signal close from inside `WM_COMMAND`/`WM_CLOSE` without the loop helper knowing the close semantics. The loop also ends when the dialog window no longer exists (`while (!isClosedFlag && IsWindow(hwndDialog))`, bug-hunt 2026-11-05) — if the window is destroyed by another path (e.g. `DefWindowProc`'s `WM_CLOSE` → `DestroyWindow`) nobody sets the flag, and the loop used to spin forever with the owner disabled and the reentry guard held, so the tray menu (including Exit) never opened again. When the nested loop consumes `WM_QUIT` (e.g., tray Exit while a dialog is open), it re-posts `PostQuitMessage` so the outer message loop also terminates
+- **`ModalDialogLoop.RunExternal(hwndSentinel, action)`** — `IsActive` 가드만 씌우는 경량 변형. `User32.MessageBoxW` 처럼 Win32 가 자체 메시지 루프를 돌려 `Run` 을 쓸 수 없는 외부 모달 구간에 사용한다 (현재 `Tray.ShowPositionError` / `Tray.CleanupPositions` 의 빈 목록 알림 / TryCommit 검증 실패 메시지박스). 메시지 펌프 · `EnableWindow` 는 건드리지 않고 `IsActive` 표식만 세운다 — 재진입 가드·강제 표시 경로가 이 표식을 본다(감지 루프의 모달 게이트는 2026-11-05 부터 포그라운드 PID 만으로 판정하므로 표식과 무관). 기존 활성 모달이 있으면 스택처럼 이전 값을 보관 후 `finally` 에서 복원
 - **`ModalDialogLoop.RejectReentry()` — 재진입 판정 단일 진실원 (AUDIT-2026-07-30 §A, 2026-08-01)** — 활성 모달이 있으면 그 창을 포그라운드로 끌어내고 `true` 를 반환한다. 호출처는 **다이얼로그 3종의 `Show()` 첫 문장** + `Tray.ShowMenu` + `DialogShell.Run` 5곳.
 
   **왜 `DialogShell.Run` 안의 가드만으로는 부족했나** — 각 `Show()` 는 `Run` 을 부르기 **전에** 자기 정적 상태를 리셋하고(`CleanupDialog._items = items`, `SettingsDialog._workingConfig = config` + `_fields.Clear()`, `ScaleInputDialog._scaleDlgClosed = false`), `Run` 이 재진입으로 `false` 를 돌려줘도 그 뒤 에필로그가 그대로 실행돼 상태를 마무리로 무효화한다(`_items = null!`, `_hwndScaleEdit = 0`). 즉 **가드가 있었는데도 첫 다이얼로그의 상태가 두 번째 호출에 의해 파괴**됐고, 살아 있던 창에서 「확인」을 누르면 `CommitSelections` 의 `_items` 참조가 `NullReferenceException` → WndProc 이 `[UnmanagedCallersOnly]` 라 관리 예외가 `DispatchMessageW` 경계를 넘어 **NativeAOT 가 프로세스를 종료**했다. 따라서 판정은 **상태를 건드리기 전**이어야 하며, 이 위치 조건은 grep 으로 검증되지 않으므로 `ModalReentryGuardTests` 가 정적 필드 보존으로 고정한다(가드를 프롤로그 뒤로 옮기면 3케이스가 실패).
@@ -897,7 +930,7 @@ All three dialogs (`CleanupDialog`, `ScaleInputDialog`, `SettingsDialog`) share 
 - **`[UnmanagedCallersOnly]` WndProc function pointers** private to each file (no NativeAOT export name collision). DialogShell 의 `delegate* unmanaged<...>` 파라미터로 셸에 전달
 - **a11y baseline (PR-07 H4-b)**: 모든 입력 컨트롤에 `WS_TABSTOP`, 섹션/그룹 시작 컨트롤에 `WS_GROUP` (화살표 키 그룹 경계). STATIC 라벨이 입력 컨트롤 직전 z-order 에 배치되어 UIA `LabeledBy` 자동 연결
 - **Tab/Enter/ESC** routed through `IsDialogMessageW`
-- **Detection-thread gate**: `DetectionService` checks `ModalDialogLoop.IsActive` **and** `GetWindowThreadProcessId(hwndForeground) == Environment.ProcessId` together — suppresses polling side effects only when a modal is up **and** the foreground belongs to our own process. External-app focus while a dialog is open (Alt+Tab) falls through so the indicator renders on that app. See [Detection → Modal dialog gate](#modal-dialog-gate)
+- **Detection-thread gate**: `DetectionService` checks `GetWindowThreadProcessId(hwndForeground) == Environment.ProcessId` — suppresses polling side effects whenever the foreground belongs to our own process (the `ModalDialogLoop.IsActive` half of the old `IsActive && same-PID` condition was dropped on 2026-11-05 because the flag lagged the window's real lifetime). External-app focus while a dialog is open (Alt+Tab) falls through so the indicator renders on that app. See [Detection → Modal dialog gate](#modal-dialog-gate)
 
 ### CleanupDialog
 
@@ -928,7 +961,7 @@ Parsing uses `double.TryParse` + `CultureInfo.InvariantCulture`, so `"2.3"` work
 
 `ScrollTo` / `ResolveVScrollPosition` / `CalculateWheelScrollPos` 3조합은 `CleanupDialog` 와 동일해 [Core/Windowing/ScrollableDialogHelper](../Core/Windowing/ScrollableDialogHelper.cs) 로 추출했다. 호출부는 expression-bodied 1-라이너로 축약되고 `WheelLineStep = 3` 상수도 헬퍼에서 소유 (P4 공통모듈 규칙).
 
-**Validation failure handling**: `TryCommit` shows a MessageBox, calls `ScrollFieldIntoView` to bring the offending field into view, refocuses the control, and for EDITs selects all text via `EM_SETSEL`.
+**Validation failure handling**: `TryCommit` shows a MessageBox, calls `ScrollFieldIntoView` to bring the offending field into view, refocuses the control, and for EDITs selects all text via `EM_SETSEL`. Only **changed** fields are validated and committed (`FieldDef.IsDirty` / `Transfer`, `_pendingCommit`, applied onto the config current at apply time — bug-hunt 2026-11-05, see [커밋 베이스](#커밋-베이스는-지금-값--스냅샷이-아니다-audit-2026-07-30-b-2026-08-01)). If nothing changed, OK does not save.
 
 **`controlColW` dynamic cap**: capped to `innerContentW - labelColW - colGap` so input boxes never encroach on the vertical scrollbar reserve area — a fixed `controlColW` would get clipped under the scrollbar at the default dialog width. The cap 결과는 `Math.Max(1, ...)` 로 한 번 더 감싸 최소 1px 을 보장한다 — 고배율 DPI + 매우 좁은 다이얼로그 조합에서 우변이 음수가 되면 컨트롤 생성 시 GDI 가 혼란 상태에 빠질 수 있기 때문이다.
 
@@ -1226,15 +1259,17 @@ dev-note 신규 불요 (5 LOC cleanup), [PR-15 design doc §7](improvement-plan/
 
 ### Second-instance activation signal
 
-`TryAcquireMutex` 실패 시 `NotifyExistingInstance` 가 호출된다. 메인 윈도우 클래스명(`"KoEnVueMain"`)으로 `User32.FindWindowW` 호출 → 기존 인스턴스의 HWND 를 얻고 `PostMessageW(hwnd, AppMessages.WM_APP_ACTIVATE, 0, 0)`. 두 번째 인스턴스는 즉시 종료한다.
+`TryAcquireMutex` 실패 시 `NotifyExistingInstance` 가 호출된다. 메인 윈도우 클래스명(`"KoEnVueMain"`)으로 `User32.FindWindowW` 호출 → 기존 인스턴스의 HWND 를 얻고 `SendMessageTimeoutW(hwnd, WM_APP_ACTIVATE, …, SMTO_ABORTIFHUNG, 2000ms)`. 기존 인스턴스가 `AppMessages.ActivateAck`(1) 로 응답하면 두 번째 인스턴스는 종료한다.
+
+**기존 인스턴스가 종료 중이면 이어받는다 (bug-hunt 2026-11-05).** 종전엔 `PostMessageW` 하고 무조건 종료했는데, Post 는 펌프하지 않는 창에도 성공한다. 옛 인스턴스가 끝나는 중이면(트레이 「관리자 권한」 토글은 사용자에게 재실행을 요구하는 경로라 재실행이 옛 인스턴스의 정리와 겹치기 쉽다) **실행 중인 인스턴스가 0개**가 됐다. 이제 (a) 창을 찾지 못했거나(WM_CLOSE 종료 경로는 메인 창이 먼저 파괴된다) (b) 응답이 없거나(시간 초과) (c) 0 이 돌아오면 — `RunMessageLoop` 가 끝나는 즉시 `_stopping = true` 가 서고 `WM_APP_ACTIVATE` 분기는 그때 0 을 돌려준다(STA 대기 중 sent 메시지가 디스패치되므로 `OnProcessExit` 보다 앞에서 세운다) — `WaitForMutexHandover` 가 뮤텍스를 최대 10초(`MutexHandoverTimeoutMs`) 기다렸다 이어받아 계속 기동한다(`AbandonedMutexException` 도 이어받음, `UnauthorizedAccessException` 이면 종료). 옛 인스턴스는 트레이 아이콘을 지운 뒤에야 뮤텍스를 놓으므로 아이콘이 겹치지 않는다.
 
 **IL mismatch mutex (감사 M1)**: High IL 1st 인스턴스가 mutex 를 보유한 채 Medium 2nd 가 `Mutex` 생성자에 접근하면 `UnauthorizedAccessException` 이 난다 (`createdNew=false` 가 아니라 예외). [`Program.Bootstrap.TryAcquireMutex`](../Program.Bootstrap.cs) 가 이를 catch 해 `false` 반환 → 호출부가 동일하게 `NotifyExistingInstance()` 로 이어지게 한다 (소유권은 못 얻지만 기존 인스턴스 활성화 신호는 보냄).
 
 기존 인스턴스의 WndProc 는 `WM_APP_ACTIVATE` (`WM_APP + 7`) 를 수신해 `HandleActivateRequest` 로 분기한다. 여기서 현재 포그라운드 앱 기준 좌표로 `Animation.TriggerShow` 를 호출해 인디케이터를 즉시 표시 — `DisplayMode` 와 `EventTriggers` 설정을 **무시**하고 강제 표시하는 이유는 사용자의 명시적인 재실행 행위에 대한 응답이기 때문.
 
-메시지 전용 윈도우(HWND_MESSAGE parent) 가 아니라 일반 최상위 윈도우(데스크톱 parent + 화면 미표시)로 생성되므로 `FindWindowW` 가 정상 매칭한다. 탐색 실패(기존 창이 막 파괴 중이거나 클래스명이 달라진 경우)는 조용히 무시된다.
+메시지 전용 윈도우(HWND_MESSAGE parent) 가 아니라 일반 최상위 윈도우(데스크톱 parent + 화면 미표시)로 생성되므로 `FindWindowW` 가 정상 매칭한다. 탐색 실패(기존 창이 막 파괴 중이거나 클래스명이 달라진 경우)는 위 이어받기 경로로 간다(종전엔 조용히 무시하고 종료).
 
-기존(1st) 인스턴스가 admin(High IL) 으로 떠 있고 2nd 인스턴스가 Medium IL 로 남는 경로(① `admin_elevation` self-relaunch 의 UAC 취소 → 일반 권한 계속 ② admin 환경 외부 spawn 인데 `config.AdminElevation=false` ③ 설정 변경 과도기)에서는, 2nd 의 `PostMessageW(WM_APP_ACTIVATE)` 가 UIPI(Medium → High) 로 차단돼 "이미 실행 중" 인디 즉시 표시 피드백이 소실된다. 이를 막기 위해 `Program.MainImpl` 은 메인 윈도우 생성 직후(8a-2) `User32.ChangeWindowMessageFilterEx(_hwndMain, AppMessages.WM_APP_ACTIVATE, MSGFLT_ALLOW, ...)` 로 이 메시지를 UIPI 화이트리스트에 등록한다(바로 아래 TaskbarCreated 와 동일 메커니즘). `WM_APP_ACTIVATE` 는 정적 상수라 `RegisterWindowMessageW` 불요. 동일 IL(일반 사용자) 끼리는 애초에 UIPI 차단이 없어 무해한 no-op (감사 ⑫, 2026-06-02).
+기존(1st) 인스턴스가 admin(High IL) 으로 떠 있고 2nd 인스턴스가 Medium IL 로 남는 경로(① `admin_elevation` self-relaunch 의 UAC 취소 → 일반 권한 계속 ② admin 환경 외부 spawn 인데 `config.AdminElevation=false` ③ 설정 변경 과도기)에서는, 2nd 의 `WM_APP_ACTIVATE` (당시 `PostMessageW`, 현 `SendMessageTimeoutW`) 가 UIPI(Medium → High) 로 차단돼 "이미 실행 중" 인디 즉시 표시 피드백이 소실된다. 이를 막기 위해 `Program.MainImpl` 은 메인 윈도우 생성 직후(8a-2) `User32.ChangeWindowMessageFilterEx(_hwndMain, AppMessages.WM_APP_ACTIVATE, MSGFLT_ALLOW, ...)` 로 이 메시지를 UIPI 화이트리스트에 등록한다(바로 아래 TaskbarCreated 와 동일 메커니즘). `WM_APP_ACTIVATE` 는 정적 상수라 `RegisterWindowMessageW` 불요. 동일 IL(일반 사용자) 끼리는 애초에 UIPI 차단이 없어 무해한 no-op (감사 ⑫, 2026-06-02).
 
 ### TaskbarCreated — shell restart recovery
 
@@ -1296,10 +1331,10 @@ cross-thread 접근하는 `Program.cs` 의 hwnd 3종 (`_hwndMain` / `_hwndOverla
 
 `Program.Bootstrap.OnProcessExit`는 다음 순서로 리소스를 정리한다 (번호는 코드의 단계 주석과 같다):
 
-- `_stopping = true` — 감지 스레드 종료 신호 (volatile). 번호 없는 첫 줄이며, 바로 뒤에 스레드 친화성 계측 로그가 붙는다(아래 「종료 시퀀스의 스레드 친화성」).
+- `_stopping = true` — 감지 스레드 종료 신호 (volatile). 번호 없는 첫 줄이며, 바로 뒤에 스레드 친화성 계측 로그가 붙는다(아래 「종료 시퀀스의 스레드 친화성」). 정상 종료에서는 `RunMessageLoop` 가 루프를 빠져나오는 즉시 이미 세운다(bug-hunt 2026-11-05) — 이후 대기 구간에서 두 번째 인스턴스의 `WM_APP_ACTIVATE` 에 "살아 있음" 으로 답하지 않도록([Second-instance activation signal](#second-instance-activation-signal)).
 0. 감지 스레드 합류 (`Join(DetectionJoinTimeoutMs)`)
 1. IME 훅 해제 (`ImeStatus.UnregisterHook`)
-1a. 세션 알림 해제 (`WTSUnRegisterSessionNotification`) — `DestroyWindow` 전이어야 wtsapi32 내부 매핑이 정리된다
+1a. 세션 알림 해제 (`UnregisterSessionNotification` → `WTSUnRegisterSessionNotification`) — `DestroyWindow` 전이어야 wtsapi32 내부 매핑이 정리된다. `_wtsRegistered` 표식으로 한 번만 — `WM_CLOSE` 종료 경로는 `WM_DESTROY` 안에서 이미 풀었다 (bug-hunt 2026-11-05, [Lock screen hiding](#lock-screen-hiding-wts-session-notification))
 2. CAPS LOCK 폴링 타이머 명시적 해제 (`KillTimer`)
 2a. 커서 헤일로 모션 폴링 타이머 해제 (활성 중일 때만 등록되어 있음)
 3. 트레이 아이콘 제거 (`NIM_DELETE`) — **창 파괴보다 앞**이다. `Tray.Remove` 내부의 `StopAddRetryTimer` 가 `KillTimer(_hwndMain, …)` 를 부르므로 죽은 hwnd 에 Win32 호출이 나가면 안 된다
@@ -1316,7 +1351,7 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 
 `Logger.Shutdown`은 반드시 마지막에 호출하여 이전 단계의 로그가 모두 기록되도록 보장한다. 타이머 해제와 윈도우 파괴는 리소스 해제(5단계) 이후에 수행하여 타이머 콜백이 해제된 리소스를 참조하는 것을 방지한다.
 
-`ProcessExit` 미발화 경로 (FailFast / Access Violation Exception 등 비정상 종료) 에서는 `Program.cs` 의 `AppDomain.CurrentDomain.UnhandledException` 핸들러가 `Logger.Shutdown` 전에 `CleanupPreviousTrayIcon()` 을 best-effort 호출해 트레이 좀비 아이콘을 줄인다 (PR-19). 핸들러가 실패해도 다음 부팅의 `CleanupPreviousTrayIcon` 자기치유 (mutex 획득 직후 step 2) 가 안전망 — 즉시 재실행 시 셸 알림 영역의 좀비 잔류 시간만 좁히는 보조 차단.
+`ProcessExit` 미발화 경로 (FailFast / Access Violation Exception 등 비정상 종료) 에서는 `Program.cs` 의 `AppDomain.CurrentDomain.UnhandledException` 핸들러가 `Logger.Shutdown` 전에 `CleanupPreviousTrayIcon()` 을 best-effort 호출해 트레이 좀비 아이콘을 줄인다 (PR-19). `Logger.Shutdown` **뒤에 한 번 더** 부른다 (bug-hunt 2026-11-05) — Shutdown 이 최대 수 초 블록하는 동안 메인 스레드는 메시지를 처리하므로 그 사이 TaskbarCreated 재등록·NIM_ADD 재시도·`tray_enabled` 리로드가 아이콘을 다시 등록할 수 있다(NIF_GUID 라 두 번 불러도 무해). 핸들러가 실패해도 다음 부팅의 `CleanupPreviousTrayIcon` 자기치유 (mutex 획득 직후 step 2) 가 안전망 — 즉시 재실행 시 셸 알림 영역의 좀비 잔류 시간만 좁히는 보조 차단.
 
 ### Logger 재초기화 — 세대 토큰 + writer 락 (AUDIT-2026-07-30 §C, 2026-08-01)
 
@@ -1352,11 +1387,13 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 
 회귀 가드는 `LoggerReinitTests` 3종(꺼진 동안의 로그가 파일에 새지 않는가 · 꺼진 동안 버퍼가 자라지 않는가 · 초기화 실패 시에도 자라지 않는가). **G2·G3 는 스레드 타이밍 의존이라 결정적 단위 테스트를 만들 수 없다** — 크래시 핸들러를 drain 스레드 위에서 재현하려면 그 스레드가 락을 쥔 채 예외를 던지도록 만들어야 한다. 대신 [conventions.md](conventions.md) 의 invariant grep 이 라우팅 판정이 스레드 필드로 되돌아가는 회귀를 잡는다.
 
+**판정과 적재 사이의 전이 (bug-hunt 2026-11-05).** G2 의 "한 번만 읽어 로컬에 담는다" 는 판정의 일관성만 지킨다 — 판정과 적재는 여전히 원자적이지 않고, 전이 쪽도 "`_route` 대입 → 옛 버퍼 배수" 두 단계다. 그 사이에 선점된 스레드의 줄이 **이미 비운** 버퍼에 들어가 소비자 없이 갇혔고, 다음 재초기화·종료 때 옛 타임스탬프로 로그 끝에 순서가 뒤바뀐 채 쓰이거나 파일 로깅을 끈 뒤에도 종료 때 파일에 쓰였다. 이제 `EnqueueToFile` 은 적재 **뒤** `_route` 를 다시 읽어 바뀌었으면 `ReconcileAfterRouteChange` 로 넘긴다 — Queue 면 pre-Init 버퍼를 큐로 배수, Drop 이면 두 버퍼를 비움, PreInit(재초기화 중)이면 뒤이은 `Initialize` 에 맡김. 전이가 "대입 뒤 배수" 순서라, 여기서 대입을 보지 못했다면 그 배수가 이 줄을 담는다. 배수가 멈춘 뒤 남은 줄을 세는 정리 단계도 `_preInitBuffer` 뿐 아니라 `_logQueue` 까지 비운다.
+
 ### 창 lifecycle / 모달 계약 (bug-hunt 2026-08-02 G5·G10·G16·G17)
 
 네 결함의 공통 성질은 **예외 상황이 아니라 정상 조작이 타는 경로에 가드가 없었다**는 것이다.
 
-**보이지 않는 소유자에게 포커스를 주면 안 된다 (G10).** `_hwndMain` 은 `CreateWindowExW(0, MainClassName, …, 0, 0,0,0,0)` 로 만든 **0×0 · 스타일 0 · 비가시** 메시지 전용 창이다. `SetForegroundWindow` 는 그런 창에도 성공하는데(트레이 메뉴가 의존하는 Q135788 트릭과 같다), 그 결과 포그라운드가 자기 프로세스의 보이지 않는 창이 된다. 그러면 `DetectionService.ProcessDetectionTick` 의 self-HWND 가드(`hwndForeground == host.GetHwndMain() → return`)에 **매 틱** 걸려 아무것도 post 하지 않고, 모달 게이트가 이미 배지를 숨겨 둔 상태(`LastFiltered = true`)라 사용자가 다른 창을 직접 클릭할 때까지 배지가 돌아오지 않는다. 그래서 `ModalDialogLoop` 의 두 복원 지점(`Run` 의 finally, `RejectReentry`)에 `IsWindowVisible` 가드를 둔다 — 가시 소유자면 종전대로 복원한다(그쪽이 모달의 정석이고 Core 는 재사용 컴포넌트다).
+**보이지 않는 소유자에게 포커스를 주면 안 된다 (G10).** `_hwndMain` 은 `CreateWindowExW(0, MainClassName, …, 0, 0,0,0,0)` 로 만든 **0×0 · 스타일 0 · 비가시** 메시지 전용 창이다. `SetForegroundWindow` 는 그런 창에도 성공하는데(트레이 메뉴가 의존하는 Q135788 트릭과 같다), 그 결과 포그라운드가 자기 프로세스의 보이지 않는 창이 된다. 그러면 `DetectionService.ProcessDetectionTick` 의 self-HWND 가드(`hwndForeground == host.GetHwndMain() → return` — 2026-11-05 부터는 `HandleOwnMainForeground` 가 Pointer 축과 `LastFiltered` 래치만 처리하고 돌아간다)에 **매 틱** 걸려 표시 경로로는 아무것도 post 하지 않고, 모달 게이트가 이미 배지를 숨겨 둔 상태(`LastFiltered = true`)라 사용자가 다른 창을 직접 클릭할 때까지 배지가 돌아오지 않는다. 그래서 `ModalDialogLoop` 의 두 복원 지점(`Run` 의 finally, `RejectReentry`)에 `IsWindowVisible` 가드를 둔다 — 가시 소유자면 종전대로 복원한다(그쪽이 모달의 정석이고 Core 는 재사용 컴포넌트다).
 
 같은 뿌리의 두 번째 경로가 `Tray.ShowMessage` 였다. `ExternalModalSentinel` 은 "외부 모달(`MessageBoxW`)은 진짜 창이 없으니 포커스 복원 대상에서 뺀다" 는 계약을 위해 존재하는데, `RunExternal(_hwndMain, …)` 로 실제 핸들을 넘기면 그 배제 조건이 통째로 우회된다. 이제 `IntPtr.Zero` 를 넘겨 센티넬로 치환시킨다 — `MessageBoxW` **자체의 소유자**는 그대로 `_hwndMain` 이다(그건 모달 소유자 지정이라 별개다).
 
@@ -1376,13 +1413,15 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 
 종전에는 `ShowIndicatorAtForeground` 가 `TriggerShow` **전에** true 로 선-대입했다. 그런데 `Animation.TriggerShow` 는 `state == NonKorean && config.NonKoreanIme == Hide`(기본값)면 렌더 없이 `TriggerHide(forceHidden: true)` 로 빠지고, `OverlayAnimator.TriggerHide` 의 첫 줄이 `if (_phase == AnimPhase.Hidden) return;` 이라 **`_onHide()` 가 호출되지 않는다** — 그러면 `Animation.Initialize` 가 배선한 `onHidden` 훅(§N-34 가 놓은 안전망)도 발화하지 않아 플래그를 되돌릴 기회가 사라진다. `_phase` 초기값이 `Hidden` 이므로 **부팅 후 첫 NonKorean 알림에서 바로** 성립했다.
 
-수정은 `Animation.TriggerShow` 가 `bool`(실제로 표시했는지)을 반환하고 호출자가 그 결과를 대입하는 것이다. 회귀 가드는 invariant grep — `_indicatorVisible = true` 가 **0 매치**여야 한다. 대입 지점은 다섯뿐이다(`= Animation.TriggerShow(...)` 둘, `= false` 셋 — `HideOverlay`·드래그 종료 보류 숨김·애니메이션 `onHidden` 훅).
+수정은 `Animation.TriggerShow` 가 `bool`(실제로 표시했는지)을 반환하고 호출자가 그 결과를 대입하는 것이다. 회귀 가드는 invariant grep — `_indicatorVisible = true` 가 **0 매치**여야 한다. 대입 지점은 여섯뿐이다(`= Animation.TriggerShow(...)` 둘, `= Animation.Refresh(...)` 하나 — `RefreshVisibleIndicator` 의 제자리 갱신, 2026-11-05, `= false` 셋 — `HideOverlay`·드래그 종료 보류 숨김·애니메이션 `onHidden` 훅).
 
 **tick 간 래치는 config 교체를 인지해야 한다 (G14).** `DetectionService.TrackWindowMove` 의 `state.WindowMoving` 은 창 이동을 감지하면 서고 이동이 멎으면 풀리는데, **푸는 쪽이 `PositionMode == Window` 가드 뒤**에 있었다. 「숨김」과 「복구」 사이에 `position_mode` 가 `window → fixed` 로 바뀌면 매 틱 조기 return 하면서 래치가 영구 true 로 굳고 복구 경로 자체가 사라진다. 그 틱들에서 `foregroundChanged` 는 false(같은 hwnd·미필터)라 `EmitStateChanges` 도 아무것도 post 하지 않고, 메인 쪽 자기치유(`RefreshVisibleIndicator`)는 `_indicatorVisible` 이 false 라 no-op 이다.
 
 가드를 둘로 쪼개 모드 검사에서 래치를 풀고 나간다. **나머지 가드 조건은 영구적이지 않다** — 시스템 입력 프로세스·`foregroundChanged`·프레임 조회 실패는 모두 다음 틱에 정상 경로로 돌아와 래치를 푼다. 모드 전환만 복구 경로를 없앤다.
 
 **전이 처리는 세 경로가 같아야 한다 (G19).** `user_hidden` 을 되돌리는 경로는 셋이다 — 트레이 좌클릭, 메뉴 토글, config 리로드. 앞의 둘은 `ApplyUserHiddenTransition` → `TryShowIndicatorIfForegroundAllowed` 로 정상 복원하는데, 리로드만 `RefreshVisibleIndicator` 로 떨어졌다. 그 헬퍼는 `if (_indicatorVisible && _lastForegroundHwnd != Zero)` 가드가 있어 **숨김 상태에서 항상 no-op** 이고, true→false 전이의 출발점이 정확히 그 상태다. 감지 스레드도 구제하지 못한다 — `WM_POSITION_UPDATED` 는 `foregroundChanged` 일 때만 post 되는데 편집기에 포커스를 둔 채 저장하면 포그라운드가 바뀌지 않는다. 리로드도 같은 헬퍼를 쓰게 하고(P4), 전이가 없을 때만 `RefreshVisibleIndicator` 로 스타일을 갱신한다.
+
+**같은 모양의 비대칭이 표시 정책에도 있었다 (bug-hunt 2026-11-05).** `display_mode` on_event→always, `non_korean_ime` hide→show/dim 처럼 숨김 상태에서 "보여야 하는" 정책으로 바뀌는 리로드도 `RefreshVisibleIndicator` 는 보이는 배지만 다루므로 no-op 이었고, 편집기에 머문 채 저장하면 감지 루프도 아무것도 보내지 않아 「항상 표시」 가 다음 이벤트까지 지켜지지 않았다. `ApplyConfigTransition` 은 이제 `ShowPolicyBecameVisible(prev, next)`(배지 주인 앱 기준 per-app 해석, 프로필이 꺼졌다 켜진 경우는 감지 루프의 필터 래치에 맡김)가 true 이고 숨김·클릭 일시 숨김이 아니면 `TryShowIndicatorIfForegroundAllowed` 로 표시한다.
 
 회귀 가드는 `IndicatorVisibilityTests`(G14 3케이스 — 래치 해제 + 반대 방향 가드 둘)와 위 invariant grep. **G14 의 모드 가드 경로는 `Dwmapi.TryGetVisibleFrame` 보다 앞이라 Win32 에 닿지 않아** 실제 창 없이 결정적으로 검증된다. G4 의 애니메이터 상태 조합과 G19 의 `ApplyConfigTransition` 은 실제 창을 요구해 단위 테스트가 불가능하다.
 
@@ -1401,7 +1440,7 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 이제 셸 호출 구간은 전부 `Tray.RunShellCall(Action call, bool drainPending)` 을 지나간다 (P4). 계약 넷:
 
 1. **최외곽 프레임만 가드를 되돌린다** — `bool outermost = !_shellCallInProgress` 로 판정한다. 중첩 호출의 `finally` 가 바깥 구간의 가드를 먼저 내리면 그 구간의 재진입이 다시 열린다(`ModalDialogLoop.RunExternal` 의 스택형 복원과 같은 이유).
-2. **`Remove` 만 `drainPending: false`, 그러나 표식은 지우지 않는다** — 제거 중에 보류분을 재생하면 방금 지운 아이콘을 되살리고 그 시점 `_currentIcon`·`_notifyIcon` 은 정리된 뒤다. 그렇다고 버리면 `Recreate`(= `Remove` → `Initialize`) 의 제거 구간에 들어온 더 새로운 상태가 유실된다 — 그것은 뒤따르는 `Initialize` 의 드레인이 소비해야 한다. 종료 경로에서 남는 표식은 `_initialized == false` 라 아무도 읽지 않는다.
+2. **`Remove` 만 `drainPending: false`, 그러나 표식은 지우지 않는다** — 제거 중에 보류분을 재생하면 방금 지운 아이콘을 되살리고 그 시점 `_currentIcon`·`_notifyIcon` 은 정리된 뒤다. 그렇다고 버리면 `Recreate`(= `Remove` → `Initialize`) 의 제거 구간에 들어온 더 새로운 상태가 유실된다 — 그것은 뒤따르는 `Initialize` 의 드레인이 소비해야 한다. 종료 경로에서 남는 표식은 `_initialized == false` 라 아무도 읽지 않는다. **실제로는 그 표식이 남지 않았다** (bug-hunt 2026-11-05) — 계약 3 대로 `Remove` 가 블로킹 `NIM_DELETE` **전에** `_initialized` 를 내리므로, 그 대기 중 sent 로 들어온 `UpdateState` 는 첫 줄 `!_initialized` 에서 흔적 없이 돌아갔다. 이제 `Recreate` 가 `Remove` 를 부르는 동안만 `_removingForRecreate` 를 세우고, 그 구간의 `UpdateState` 는 보류 표식을 남긴다(종료·`tray_enabled` 해제 제거 중이면 여전히 버린다). `Recreate` 는 보류분이 있으면 진입 시점 인자 대신 그 상태·설정으로 `Initialize` 한다.
 3. **`_initialized` 전이는 셸 호출 밖에 둔다** — `Initialize` 는 NIM_ADD **전**에 true 로(그래야 그 구간의 재진입이 `_initialized` 가드에서 조용히 사라지지 않고 보류로 남는다), `Remove` 는 NIM_DELETE **전**에 false 로(그래야 재진입이 첫 줄에서 돌아가 방금 셸에 넘긴 HICON 을 만지지 않는다).
 4. **재등록(`Recreate`)도 셸 호출 구간 안에서는 보류한다** (bug-hunt 2026-11-04 확정 #16) — `TaskbarCreated` 브로드캐스트도 블로킹 호출 중에 배달된다. `Recreate` 는 `Remove`(`_currentIcon`·`_notifyIcon` 정리) + `Initialize` 라, 중첩 실행이 바깥 프레임이 쥔 아이콘을 치우면 바깥 프레임이 돌아와 해제된 핸들·새 아이콘을 덮어썼다. `_shellCallInProgress` 면 `_recreatePending`/`_pendingRecreateState`/`_pendingRecreateConfig` 에 적어 두고, 최외곽 `RunShellCall` 이 가드를 푼 **뒤** 대신 실행한다. `Remove` 구간에서 보류됐다면 `_initialized` 가 이미 false 라 `Recreate` 첫 줄에서 무시된다(종료·재등록 중 — 둘 다 옳다). 보류분은 호출자의 후처리보다 먼저 실행되므로, `Initialize`·`HandleAddRetryTimer` 는 셸 호출 전후 `_recreateGeneration` 이 바뀌었으면 자기 `added` 결과를 낡은 것으로 보고 후처리(재시도 타이머)를 건너뛴다(리뷰 2026-11-04). 재등록이 보류된 사이 들어온 `UpdateState` 는 보류 스냅샷(`_pendingRecreateState/Config`)도 최신 값으로 덮는다 — 안 그러면 드레인 뒤에 도는 Recreate 가 테마 변경 전 config 로 아이콘을 새로 등록했다(release-review 2026-11-04).
 
@@ -1416,6 +1455,14 @@ COM 해제는 `[STAThread]` 기반으로 CLR 이 메인 스레드 종료 시 자
 G6 이 "개별 호출자를 고치는 대신 진입점을 하나로 모은다" 고 적은 함정이 이 자리에서 그대로 터진 것이라, 나열을 걷어내고 ③ 도 같은 함수를 쓰게 했다. 두 경로의 유일한 실질 차이였던 「포그라운드 hwnd 를 모를 때 색만 갱신」은 `RefreshVisibleIndicator` 에 흡수했다 — 이제 DPI 변경·설정 변경·메뉴 조작이 모두 같은 헬퍼를 지난다.
 
 invariant 2줄로 고정한다([conventions.md](conventions.md)): `ApplyConfigTransition(` = **4**(정의 1 + 호출 3), `Logger.(SetLevel|Initialize)(` in `Program.cs` = **4**(부팅 2 + 전이 함수 2). 후자가 핵심이다 — 호출자가 자체 나열로 되돌아가도 앞 카운트는 그대로이므로, 로거 적용이 전이 함수 **안에만** 있다는 사실을 따로 못 박아야 한다.
+
+### 설정 갱신 트랜잭션 — STA 대기 중 sent 메시지 재진입 (bug-hunt 2026-11-05)
+
+**STA 메인 스레드의 블로킹 대기는 sent 메시지를 디스패치한다.** 경합한 `lock`(`Monitor`)·`Thread.Join`·`Process.WaitForExit`·COM 호출 대기는 CoWaitForMultipleHandles 를 거치므로, 대기 중에 **sent** 메시지가 처리되고 posted 메시지·타이머는 대기 뒤로 밀린다(2026-11-05 실측, NativeAOT 동일). 종전 `StartupTaskManager` 주석의 "`Monitor` 는 메시지를 펌프하지 않는다" 는 posted 쪽에만 맞는 말이었다. `WM_SETTINGCHANGE`/`WM_THEMECHANGED` 류 브로드캐스트는 `SendMessageTimeout` 으로 오므로 정확히 이 대기 안으로 들어온다.
+
+그 결과 `SaveAndSync` 의 `before = _config → Save(대기) → _config = saved` 사이에 `HandleSettingChange` 가 끼어 새 시스템 색으로 바꾼 `_config` 를 바깥 프레임이 옛 값으로 덮었다. 같은 모양이 핫리로드(`Logger.Initialize` 의 Join)·전이 적용·강제 표시(VDM COM 호출)·`HandleSettingChange` 자신(트레이 HICON 갱신의 블로킹 셸 호출)에 있었다.
+
+`Program._configTxnDepth` + `_settingChangePending` 으로 닫는다. `SaveAndSync`·`HandleConfigChangedCore`·`ApplyConfigTransition`·`TryShowIndicatorIfForegroundAllowed`·`HandleMenuCommand` 의 `updateConfig` 람다·`HandleSettingChange` 가 `BeginConfigTxn`/`EndConfigTxn` 으로 감싸고, 깊이가 0 보다 크면 `HandleSettingChange` 는 보류 표식만 남긴다. 최외곽 `EndConfigTxn` 이 트랜잭션이 확정한 `_config` 위에 보류된 시스템 설정 변경을 한 번 처리한다(그 안에서 같은 브로드캐스트가 다시 오면 끝에 한 번으로 합쳐진다). 같은 계열의 부팅 경로 결함 하나 — 9b 의 블로킹 `NIM_ADD` 대기 중 sent 로 끼어든 `WM_SETTINGCHANGE`(theme=system)가 `ApplyCursorConfigChange` 로 커서 헤일로 창을 먼저 만들면 9e 가 두 번째 창을 만들어 첫 창이 고아(항상 `WS_VISIBLE`·알파 0)로 남았다 — 는 `EnableCursorOverlay` 의 "이미 있으면 만들지 않는다" 가드로 막았다. `HandleSettingChange` 는 또 테마가 시스템을 따르지 않으면 트레이 아이콘을 다시 만들지 않는다(무관한 브로드캐스트마다 블로킹 셸 호출을 하지 않도록).
 
 ### `TryLoad` 와 `Load` 의 책임 분리 (bug-hunt 3차 E)
 
@@ -1468,9 +1515,11 @@ Enabled in [KoEnVue.csproj](../KoEnVue.csproj) — strips ICU from the NativeAOT
 1. **`Dwmapi.DwmGetColorizationColor(out uint argb, out bool opaqueBlend)`** — Win11 personalization accent 의 source-of-truth. "제목 표시줄과 창 테두리에 강조색 표시" 옵션 ON/OFF 와 무관하게 항상 최신 accent 를 반환한다. 반환값은 0xAARRGGBB ARGB DWORD — `Dwmapi.TryGetColorizationRgb` 헬퍼가 R/G/B 3 채널로 분리 (alpha 무시). HRESULT 비-0 이면 false.
 2. **`User32.GetSysColor(Win32Constants.COLOR_HIGHLIGHT)`** 폴백 — DWM composition 비활성 / 안전 모드 등 예외 경로용. Win11 에서 위 옵션이 OFF 면 personalization accent 변경이 `COLOR_HIGHLIGHT` 에 즉시 반영되지 않는 known limitation 이 있어 일반 환경에선 1번 경로가 절대 우선.
 
+**전경색은 사용자 커스텀 백업에서 (bug-hunt 2026-11-05)**: 이 분기는 `WM_SETTINGCHANGE` 마다 이미 파생된 config 위에 다시 적용되는데, 고대비 분기만 전경색(`HangulFg`/`EnglishFg`)을 덮고 이 분기는 그대로 두어 고대비를 껐다 켜면 고대비 글자색(#000000/#FFFFFF)이 남았다 — 그 값이 저장되면 재시작해도 복구되지 않았다. 이제 `custom_backup_*_fg`(없으면 현재 값)로 되돌린다. 백업은 `Apply` 가 `EnsureBackup` 으로 보장한다.
+
 **ARGB byte 순서 주의**: DWM 의 0xAARRGGBB (R 이 high byte) 와 `GetSysColor` 의 COLORREF 0x00BBGGRR (B 가 high byte) 는 R/B 순서가 반대다. 두 경로가 같은 `ColorHelper` 헬퍼를 공유하지 않고 각자 분리한다 — `ColorHelper.ColorRefToRgb` 는 COLORREF 전용이라 ARGB 에 그대로 쓰면 색이 뒤집힌다.
 
-**메시지 시그널** (모두 같은 `HandleSettingChange` 핸들러로 라우팅, **메인 창 사본만** — 세 창이 각자 받으므로 [TaskbarCreated](#taskbarcreated--shell-restart-recovery) 절의 `hwnd == _hwndMain` 필터, bug-hunt 2026-11-04 확정 #2 — `ThemePresets.Apply`(theme=system 일 때) → `Settings.ClearProfileCache` → `Overlay.HandleConfigChanged` + `ApplyCursorConfigChange`(둘 다 theme=system 일 때) → `RefreshVisibleIndicator`(→ `Animation.TriggerShow`) → `Tray.UpdateState` 를 순서대로 트리거):
+**메시지 시그널** (모두 같은 `HandleSettingChange` 핸들러로 라우팅, **메인 창 사본만** — 세 창이 각자 받으므로 [TaskbarCreated](#taskbarcreated--shell-restart-recovery) 절의 `hwnd == _hwndMain` 필터, bug-hunt 2026-11-04 확정 #2 — `ThemePresets.Apply`(theme=system 일 때) → `Settings.ClearProfileCache` → `Overlay.HandleConfigChanged` + `ApplyCursorConfigChange`(둘 다 theme=system 일 때) → `RefreshVisibleIndicator`(→ `Animation.Refresh` — 제자리 갱신, 2026-11-05 전엔 `TriggerShow`) → `Tray.UpdateState`(2026-11-05 부터 theme=system 일 때만) 를 순서대로 트리거. 설정 갱신 트랜잭션 안에 도착하면 보류했다가 끝에서 처리 — [설정 갱신 트랜잭션](#설정-갱신-트랜잭션--sta-대기-중-sent-메시지-재진입-bug-hunt-2026-11-05)):
 
 > **트레이 아이콘도 같이 갱신해야 한다** — `TrayIcon.CreateIcon` 이 배경/도형에 쓰는 색은 `ThemePresets.Apply` 가 재계산하는 Bg/Fg 6쌍과 같은 값이고, 셸은 `NIM_MODIFY` 를 받기 전까지 이전 HICON 을 계속 들고 있다. 마지막 `Tray.UpdateState` 가 빠지면 배지·헤일로만 새 색으로 바뀌고 **트레이 아이콘만 옛 색으로 남아** 다음 IME 전환까지 유지된다(v1.0.0.0 에서 수정). `HandleConfigChanged` 의 동일 갱신과 대칭을 맞춰야 하는 자리다.
 

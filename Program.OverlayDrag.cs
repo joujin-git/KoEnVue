@@ -96,6 +96,10 @@ internal static partial class Program
     {
         var (x, y, hiddenOnDragEnd) = Overlay.EndDrag();
 
+        // 드래그 중(sizemove 루프 안)에 시작된 슬라이드·강조 팝을 끝내고 애니메이터 기준 좌표를 놓은 자리로 맞춘다 —
+        // 남은 프레임이 드래그 전 좌표로 블리트해 배지가 놓은 자리에서 옛 자리로 튀었다 (bug-hunt 2026-11-05).
+        Animation.CancelMotion(x, y);
+
         // 드래그 중 보류됐던 숨김이 여기서 적용됐다면 가시 플래그도 내려야 한다 — 이 경로의 Hide 는
         // 애니메이션의 onHide 래퍼를 거치지 않아 §N-34 의 onHidden 훅이 발화하지 않는다.
         // 놓치면 창은 숨겨졌는데 메인·감지 로직은 "보이는 중" 으로 오판한 채 남는다 (확정 #13).
@@ -114,7 +118,7 @@ internal static partial class Program
         if (DefaultConfig.IsSystemInputProcess(targetProcess))
         {
             Logger.Debug($"Skip saving indicator position for system input process: {targetProcess}");
-            Overlay.Show(x, y, _lastImeState, ResolveCurrent());
+            ShowAfterDrop(x, y, targetHwnd, hiddenOnDragEnd);
             return;
         }
 
@@ -175,6 +179,32 @@ internal static partial class Program
         // Window 모드: 상대 저장은 드래그 원좌표 기준 유지, Show 만 화면 안으로.
         // Fixed 모드는 위에서 이미 클램프됨(idempotent).
         (x, y) = ClampToVisibleArea(x, y);
+        ShowAfterDrop(x, y, targetHwnd, hiddenOnDragEnd);
+    }
+
+    /// <summary>
+    /// 드롭 뒤 화면 정리. 드래그 중 보류된 숨김이 적용됐으면 다시 그리지 않는다.
+    ///
+    /// <para>
+    /// <b>드래그 중 다른 앱이 앞으로 왔으면</b>(Alt+Tab·알림 창) 지금 앞의 앱 기준으로 다시 배치한다 (bug-hunt 2026-11-05).
+    /// 놓은 자리는 끌기 시작한 앱 기준으로 저장되지만(확정 #18), 종전엔 그 자리에 <b>새 앱의 색·배율</b>로 그린 채 끝나
+    /// 새 앱의 다음 IME·포커스 이벤트까지 엉뚱한 자리에 남았다 — 감지 루프는 이미 새 앱의 위치 메시지를 보냈으므로 다시
+    /// 보내지 않는다.
+    /// </para>
+    /// </summary>
+    private static void ShowAfterDrop(int x, int y, IntPtr dragTargetHwnd, bool hiddenOnDragEnd)
+    {
+        if (hiddenOnDragEnd) return;
+
+        if (dragTargetHwnd != IntPtr.Zero && dragTargetHwnd != _lastForegroundHwnd && _lastForegroundHwnd != IntPtr.Zero)
+        {
+            if (TryResolveCurrent(out AppConfig fgResolved))
+                ShowIndicatorAtForeground(_lastImeState, fgResolved, imeChanged: false);
+            else
+                HideOverlay("drag ended while a disabled app is in front");
+            return;
+        }
+
         // 새 위치의 모니터 DPI로 리소스 재생성
         Overlay.Show(x, y, _lastImeState, ResolveCurrent());
     }

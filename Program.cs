@@ -9,6 +9,7 @@ using KoEnVue.App.UI;
 using KoEnVue.App.Update;
 using KoEnVue.Core.Native;
 using KoEnVue.Core.Color;
+using KoEnVue.Core.Config;
 using KoEnVue.Core.Dpi;
 using KoEnVue.Core.Logging;
 using KoEnVue.Core.Windowing;
@@ -98,6 +99,12 @@ internal static partial class Program
     // 실제 상태와 우연히 같을 수 있어, 첫 메시지를 중복으로 오인해 버리지 않도록 하는 래치 (§N-55).
     private static bool _imeStateReceived;
 
+    // 마지막으로 반영한 IME 샘플의 시각(Stopwatch 틱, 메인 스레드 전용). WM_IME_STATE_CHANGED 는 감지 루프와 WinEvent
+    // 훅이 **각자 샘플링해** 보내는데 순서 정보가 없어 "나중에 도착한 값" 이 이겼다. 감지 루프가 토글 직전 값을 읽고
+    // post 전에 선점되면, 그 사이 훅이 보낸 새 값을 옛 값이 덮어 배지·트레이가 한 폴링 동안 반대 상태로 돌아가고 훅
+    // 기준선까지 오염됐다(bug-hunt 2026-11-05). 샘플 시각이 이보다 이른 메시지는 버린다.
+    private static long _lastImeSampleStamp;
+
     // koenvue_config.json 핫리로드가 파싱 실패 중인지 (메인 스레드 전용 — HandleConfigChanged).
     // 안내 박스를 연속 실패당 1회로 제한하는 래치. 정상 로드 시 해제되므로, 사용자가 파일을 고친 뒤
     // 다시 깨뜨리면 새로 한 번 더 안내한다.
@@ -110,6 +117,21 @@ internal static partial class Program
     // Pending 은 그 재진입을 버리지 않기 위한 표식이다: 바깥 프레임이 끝날 때 한 번 더 처리한다.
     private static bool _configChangeInProgress;
     private static bool _configChangePending;
+
+    // 부팅 로드 실패로 건너뛴 부팅 1회 부수효과(시작 프로그램 경로 동기화·업데이트 확인)가 남아 있는지 (메인 스레드 전용).
+    // 첫 정상 리로드가 실제 설정으로 한 번 실행한다 — 일시 잠금으로 부팅 로드만 실패한 경우 5초 뒤 리로드가 곧 성공하는데,
+    // 그 세션 내내 건너뛴 채 남지 않도록 (리뷰 2026-11-05).
+    private static bool _bootSideEffectsDeferred;
+
+    // 설정 갱신 트랜잭션 깊이와 그 안에 도착한 시스템 설정 변경 보류 표식 (메인 스레드 전용).
+    //
+    // STA 메인 스레드의 블로킹 대기(경합한 lock · Thread.Join · Process.WaitForExit · COM 호출)는 **sent 메시지를
+    // 디스패치한다** — NativeAOT 도 CoWaitForMultipleHandles 로 기다린다(bug-hunt 2026-11-05 실측: 대기 중 sent 처리,
+    // posted 는 대기 뒤). WM_SETTINGCHANGE 류 브로드캐스트는 SendMessageTimeout 으로 오므로, SaveAndSync 의
+    // `before = _config → Save(대기) → _config = saved` 사이에 HandleSettingChange 가 끼어 새 시스템 색으로 바꾼
+    // _config 를 바깥 프레임이 옛 값으로 덮었다. 트랜잭션 안에서는 보류만 해 두고 끝에서 한 번 처리한다.
+    private static int _configTxnDepth;
+    private static bool _settingChangePending;
 
     // UpdateChecker 백그라운드 스레드 → 메인 스레드 페이로드 전달.
     // PostMessage 의 wParam/lParam 으로 객체를 직접 못 보내므로 volatile 참조로 게시한다.
@@ -171,6 +193,10 @@ internal static partial class Program
             // 자기치유는 그대로 유지 — 본 호출은 사용자가 즉시 재실행할 때를 위한 best-effort.
             CleanupPreviousTrayIcon();
             Logger.Shutdown();
+            // 한 번 더 — Logger.Shutdown 이 최대 수 초 블록하는 동안 메인 스레드는 멈추지 않고 메시지를 처리하므로, 그 사이
+            // TaskbarCreated 재등록·NIM_ADD 재시도·tray_enabled 리로드가 아이콘을 다시 등록할 수 있다. 그러면 프로세스가
+            // 끝난 뒤 유령 아이콘이 남는다(bug-hunt 2026-11-05). NIF_GUID 기반이라 두 번 불러도 무해하다.
+            CleanupPreviousTrayIcon();
         };
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {
@@ -233,6 +259,13 @@ internal static partial class Program
         //     등은 LogProvider.Sink 의 pre-Init 버퍼 경유로 Logger.Initialize 직후 flush.
         _config = Settings.Load();
 
+        // 0b-0. 부팅 로드 실패 — 파일은 있는데 읽지 못해 **기본값으로** 시작한 경우 (bug-hunt 2026-11-05). 이 값으로 부팅
+        //       1회 부수효과(시작 프로그램 작업 재등록·업데이트 확인)를 돌리면 되돌릴 수 없다 — admin_elevation=true 로
+        //       등록된 시작 작업이 기본값(false) 기준 LeastPrivilege 로 재등록되는 다운그레이드가 실제 경로였다. 사용자가
+        //       파일을 고치면 핫리로드가 메모리를 바로잡지만, 부팅 부수효과는 다음 실행까지 다시 돌지 않는다.
+        bool bootConfigUntrusted = Settings.LastLoadFailure != LoadFailure.None;
+        bool bootConfigBroken = Settings.LastLoadFailure == LoadFailure.Content;
+
         // 0b-1. PR-15 후속 fix — Tray 메뉴 토글 재시작 + self-elevation 손자 spawn 경로에서
         //       부모 종료를 명시 대기. 환경변수 KOENVUE_RELAUNCH_PARENT_PID 가 set 돼 있을 때만
         //       동작 (정상 부팅에는 noop). mutex / trayicon GUID / WTS notification 등 race 차단.
@@ -251,8 +284,9 @@ internal static partial class Program
         //    NIM_DELETE 로 지워버리는 부작용이 없다.
         if (!TryAcquireMutex())
         {
-            NotifyExistingInstance();
-            return;
+            // 기존 인스턴스가 응답하면 그것으로 끝. 종료 중이면 뮤텍스를 이어받아 계속 기동한다 (NotifyExistingInstance 참조).
+            if (NotifyExistingInstance() || !WaitForMutexHandover())
+                return;
         }
 
         // 2. 이전 트레이 찌꺼기 정리 — Mutex 획득 성공했으므로 동일 GUID 로 남은 아이콘은
@@ -324,7 +358,9 @@ internal static partial class Program
 
         // 8b. 세션 잠금/해제 알림 등록 — HideOnLockScreen 이 동작하려면 필수.
         //     실패해도 앱 부팅은 계속 (잠금 화면 숨김만 비활성). Wtsapi32.dll 은 Windows 기본 탑재.
-        if (!Wtsapi32.WTSRegisterSessionNotification(_hwndMain, Win32Constants.NOTIFY_FOR_THIS_SESSION))
+        if (Wtsapi32.WTSRegisterSessionNotification(_hwndMain, Win32Constants.NOTIFY_FOR_THIS_SESSION))
+            _wtsRegistered = true;
+        else
             Logger.Warning($"WTSRegisterSessionNotification failed: error={Marshal.GetLastPInvokeError()}");
 
         // 9. 오버레이 윈도우 생성
@@ -358,8 +394,7 @@ internal static partial class Program
         // 9b. 트레이 아이콘 초기화
         Tray.Initialize(_hwndMain, _lastImeState, _config);
 
-        // 9c. 시작 프로그램 태스크 경로 동기화 (exe 이동 감지 → 재등록, 백그라운드)
-        StartupTaskManager.SyncStartupPathAsync(_config);
+        // 9c. (시작 프로그램 태스크 경로 동기화는 12 의 RunBootSideEffects 로 옮겼다 — 기본값으로 시작했으면 미룬다, 0b-0.)
 
         // 9d. CAPS LOCK 폴링 타이머 시작 (200ms, 메인 스레드)
         //     GetKeyState는 calling thread 입력 상태를 읽기 때문에 메시지 큐가 있는 메인 스레드에서만
@@ -383,17 +418,17 @@ internal static partial class Program
         ImeStatus.SetPerAppDetectionMethodResolver(
             static hwnd => (Settings.ResolveForApp(_config, hwnd) ?? _config).DetectionMethod);
 
-        // 12. 업데이트 체크 (백그라운드 1회) — UpdateCheckEnabled=false 면 네트워크 호출 없음.
-        //     hwndMain 을 로컬로 스냅샷해 lambda closure 에 캡처: UpdateChecker.CheckInBackground 는
-        //     즉시 반환하고 워커 스레드가 수 초 후 콜백을 호출하므로 그 시점의 _hwndMain 는 항상 valid.
-        if (_config.UpdateCheckEnabled)
+        // 12. 부팅 1회 부수효과 — 시작 프로그램 태스크 경로 동기화(exe 이동 감지 → 재등록) + 업데이트 체크, 둘 다 백그라운드.
+        //     설정 파일을 읽지 못해 기본값으로 시작했으면 첫 정상 리로드까지 미룬다 (0b-0) — 기본값으로 돌리면 관리자 권한
+        //     시작 작업이 일반 권한으로 재등록되거나 사용자가 꺼 둔 업데이트 확인이 실행된다 (bug-hunt 2026-11-05).
+        if (bootConfigUntrusted)
         {
-            IntPtr hwndForUpdate = _hwndMain;
-            UpdateChecker.CheckInBackground(
-                DefaultConfig.AppVersion,
-                DefaultConfig.UpdateRepoOwner,
-                DefaultConfig.UpdateRepoName,
-                info => OnUpdateCheckResult(hwndForUpdate, info));
+            _bootSideEffectsDeferred = true;
+            Logger.Warning("Startup task sync and update check deferred: settings file could not be read at startup");
+        }
+        else
+        {
+            RunBootSideEffects();
         }
 
         // 13. 종료 핸들러
@@ -405,6 +440,15 @@ internal static partial class Program
         AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
 
         Logger.Info("Initialization complete, entering message loop");
+
+        // 13a. 부팅 로드가 내용 문제로 실패했으면 알린다 (0b-0). 예전엔 로그 한 줄뿐이라 사용자가 모른 채 트레이를 누르면
+        //      그 파일이 기본값으로 덮였다. 안내 래치도 세워 첫 핫리로드 실패가 같은 안내를 한 번 더 띄우지 않게 한다 —
+        //      정상 리로드나 정상 저장이 래치를 푼다.
+        if (bootConfigBroken)
+        {
+            _configReloadFailed = true;
+            Tray.ShowConfigBootLoadFailed();
+        }
 
         // 14. 메인 메시지 루프
         RunMessageLoop();
@@ -421,6 +465,9 @@ internal static partial class Program
             User32.TranslateMessage(ref msg);
             User32.DispatchMessageW(ref msg);
         }
+        // 루프가 끝났다 = 종료 중. OnProcessExit 보다 앞서 세워, 그 사이 대기(STA 는 sent 메시지를 디스패치한다)에서
+        // 두 번째 인스턴스의 활성화 확인에 "살아 있음" 으로 답하지 않게 한다 (WM_APP_ACTIVATE 분기 참조).
+        _stopping = true;
     }
 
     // ================================================================
@@ -463,7 +510,7 @@ internal static partial class Program
             // === 커스텀 메시지 (감지 스레드 → 메인 스레드) ===
 
             case AppMessages.WM_IME_STATE_CHANGED:
-                HandleImeStateChanged((ImeState)(int)wParam);
+                HandleImeStateChanged((ImeState)(int)wParam, (long)lParam);
                 return IntPtr.Zero;
 
             case AppMessages.WM_FOCUS_CHANGED:
@@ -486,9 +533,16 @@ internal static partial class Program
                 HandleUpdateFound();
                 return IntPtr.Zero;
 
-            case AppMessages.WM_APP_ACTIVATE:
-                HandleActivateRequest();
+            case AppMessages.WM_APP_TRAY_MENU_CLOSED:
+                HandleTrayMenuClosed();
                 return IntPtr.Zero;
+
+            case AppMessages.WM_APP_ACTIVATE:
+                // 두 번째 인스턴스는 SendMessageTimeout 으로 이 값을 받아 "기존 인스턴스가 살아 있다" 를 확인한다 — 종료 중이면
+                // 0 을 돌려줘 그쪽이 뮤텍스를 이어받게 한다(Program.Bootstrap.NotifyExistingInstance).
+                if (_stopping) return IntPtr.Zero;
+                HandleActivateRequest();
+                return AppMessages.ActivateAck;
 
             // === 트레이 ===
 
@@ -577,6 +631,10 @@ internal static partial class Program
                 // (bug-hunt 2026-08-02 확정 #10·#40·#43).
                 if (hwnd == _hwndMain)
                 {
+                    // 세션 알림 해제는 **창 파괴 전(이 메시지 안)** 이어야 한다 — MSDN 계약이자 OnProcessExit 1a 주석의 요구.
+                    // 핸들 필드를 여기서 Zero 로 내린 뒤로는 1a 의 `_hwndMain != Zero` 가드에 걸려 WM_CLOSE 종료 경로(트레이
+                    // 「관리자 권한」 토글)에서 해제가 한 번도 불리지 않았다(bug-hunt 2026-11-05).
+                    UnregisterSessionNotification(hwnd);
                     _hwndMain = IntPtr.Zero;
                     User32.PostQuitMessage(0);
                 }
@@ -648,6 +706,10 @@ internal static partial class Program
                 {
                     _dragTargetHwnd = _lastForegroundHwnd;
                     _dragTargetProcess = _currentProcessName;
+                    // 진행 중인 슬라이드·강조 팝을 끝낸다 — 드래그 중에도 타이머는 돌고 블리트만 막히므로, 남겨 두면 놓는 순간
+                    // 드래그 전 좌표로 블리트한다 (bug-hunt 2026-11-05). 끝(HandleOverlayDragEnd)에서도 한 번 더 끊는다.
+                    var (dragFromX, dragFromY) = Overlay.GetLastPosition();
+                    Animation.CancelMotion(dragFromX, dragFromY);
                     Overlay.BeginDrag(_config.SnapToWindows);
                 }
                 return IntPtr.Zero;
@@ -689,7 +751,7 @@ internal static partial class Program
         // per-app 스타일로 먼저 그려 두지 않으면 직전 앱이나 글로벌 기준 크기로 자리를 잡아, 앱별 indicator_scale
         // 이 다른 배지가 폭 차이의 절반만큼 어긋났다(bug-hunt 2026-11-04 확정 #24). 블리트는 TriggerShow 가 한다.
         PaintForPositioning(state, resolved);
-        var (x, y) = GetAppPosition();
+        var (x, y) = GetAppPosition(resolved);
         _indicatorVisible = Animation.TriggerShow(x, y, state, resolved, imeChanged);
     }
 
@@ -704,8 +766,20 @@ internal static partial class Program
         Overlay.Paint(state, resolved);
     }
 
-    private static void HandleImeStateChanged(ImeState newState)
+    private static void HandleImeStateChanged(ImeState newState, long sampleStamp)
     {
+        // 두 생산자의 순서 역전 차단 — 필드 주석 참조. 0 은 "시각 모름" 이라 그대로 받는다.
+        if (sampleStamp != 0)
+        {
+            if (sampleStamp < _lastImeSampleStamp)
+            {
+                if (newState != _lastImeState)
+                    Logger.Debug($"Stale IME sample dropped: {newState} (newer sample already applied: {_lastImeState})");
+                return;
+            }
+            _lastImeSampleStamp = sampleStamp;
+        }
+
         // 같은 IME 전이 1회에 이 메시지가 **2회 도착**한다 — 감지 루프(DetectionService)와 WinEvent
         // 콜백(ImeStatus.OnImeChange)이 각각 post 하기 때문이다. 멱등 가드가 없으면 강조 팝
         // 애니메이션이 두 번 트리거돼 배지가 연달아 튄다 (AUDIT-2026-07-30 §N-55).
@@ -732,10 +806,13 @@ internal static partial class Program
         // 깜빡였다(bug-hunt 2026-11-04 확정 #52). 지금 포그라운드가 배지가 붙은 앱일 때만 표시 — 새로 앞에
         // 온 앱이면 감지 루프의 WM_POSITION_UPDATED 가 곧 새 상태로 띄운다.
         if (User32.GetForegroundWindow() != _lastForegroundHwnd) return;
+        // 같은 창이 **그 자리에서** 필터 대상이 된 경우(F11 전체화면·리로드로 enabled:false·창 이동 중)는 위 검사를
+        // 통과한다 — 감지 루프가 숨김을 확정해 두었으면 그 판정을 따른다 (bug-hunt 2026-11-05).
+        if (DetectionService.IsForegroundSuppressed) return;
 
         // PR-13: DisplayMode / EventTriggers / 렌더 인자 모두 per-app resolved 사용.
         // 좌클릭 일시 숨김(_clickDismissed) 중이면 EventTriggers 와 무관하게 한·영 변경으로 재표시.
-        AppConfig resolved = ResolveCurrent();
+        if (!TryResolveCurrent(out AppConfig resolved)) return;
         if (_clickDismissed
             || resolved.DisplayMode == DisplayMode.Always
             || resolved.EventTriggers.OnImeChange)
@@ -747,7 +824,7 @@ internal static partial class Program
         if (_config.UserHidden) return;
         if (_lastForegroundHwnd == IntPtr.Zero) return;
 
-        AppConfig resolved = ResolveCurrent();
+        if (!TryResolveCurrent(out AppConfig resolved)) return;
         // 좌클릭 일시 숨김 중이면 EventTriggers 와 무관하게 포커스 변경으로 재표시.
         if (_clickDismissed
             || resolved.DisplayMode == DisplayMode.Always
@@ -787,8 +864,13 @@ internal static partial class Program
 
         if ((foregroundChanged || wasHidden || sysInput) && !IsHiddenByLock)
         {
-            PaintForPositioning(_lastImeState, ResolveCurrent());  // 위치 계산 전 크기 확정 — 확정 #24
-            var (x, y) = GetAppPosition();
+            // per-app 해석은 **한 번만** 한다 (bug-hunt 2026-11-05). 크기 확정·위치 모드·렌더가 각자 ResolveCurrent() 를
+            // 다시 부르면, app_profile_match=title 에서 그 사이 창 제목이 바뀔 때 세 단계가 서로 다른 프로필을 써서
+            // 확정 #24(크기 확정 후 위치 계산)가 다시 깨졌다. 감지 판정 뒤 리로드로 꺼진 앱(enabled:false)이면
+            // 글로벌 스타일로 폴백해 그리지 않는다.
+            if (!TryResolveCurrent(out AppConfig resolved)) return;
+            PaintForPositioning(_lastImeState, resolved);  // 위치 계산 전 크기 확정 — 확정 #24
+            var (x, y) = GetAppPosition(resolved);
             // hwnd/class 를 함께 남긴다 — 한 프로세스가 top-level 창을 여러 개 쓰는 앱(파일 관리자의
             // 내장 뷰어 등)에서 프로세스명만으로는 어느 창에 인디가 붙었는지 구분할 수 없어 진단이 막힌다.
             // GetClassName 은 P/Invoke 라 레벨 가드로 감싼다 (Logger.IsEnabled 계약 참조).
@@ -797,7 +879,7 @@ internal static partial class Program
                              $"class={WindowProcessInfo.GetClassName(hwndForeground)}, pos=({x},{y}), saved={_config.IndicatorPositions.Count}");
             // PR-13: per-app resolved (theme/색/투명도/폰트/라벨 등 시각 override 반영)
             // 플래그는 **결과**로 세운다 — 선-대입 금지 이유는 ShowIndicatorAtForeground 참조 (확정 #7).
-            _indicatorVisible = Animation.TriggerShow(x, y, _lastImeState, ResolveCurrent(), imeChanged: false);
+            _indicatorVisible = Animation.TriggerShow(x, y, _lastImeState, resolved, imeChanged: false);
         }
         // 같은 앱 내 윈도우 이동 — 한/영 배지는 위치 고정이므로 무시
     }
@@ -824,6 +906,24 @@ internal static partial class Program
     }
 
     /// <summary>
+    /// <see cref="ResolveCurrent"/> 의 <b>표시 경로용</b> 판정. 배지 주인 앱의 프로필이 <c>enabled:false</c> 면 false —
+    /// 그 앱 위에는 배지를 그리지 않는다. <see cref="ResolveCurrent"/> 의 글로벌 폴백(<c>?? _config</c>)은 숨김 경로의
+    /// 스냅샷용이라, 표시 경로가 그대로 쓰면 끈 앱 위에 글로벌 스타일 배지가 떴다(리로드로 현재 앱을 끄는 순간마다,
+    /// bug-hunt 2026-11-05). <paramref name="resolved"/> 는 false 여도 non-null(글로벌)이다.
+    /// </summary>
+    private static bool TryResolveCurrent(out AppConfig resolved)
+    {
+        if (_lastForegroundHwnd == IntPtr.Zero)
+        {
+            resolved = _config;
+            return true;
+        }
+        AppConfig? perApp = Settings.ResolveForApp(_config, _lastForegroundHwnd);
+        resolved = perApp ?? _config;
+        return perApp is not null;
+    }
+
+    /// <summary>
     /// 라이브 포그라운드에 대해 SystemFilter / <c>enabled:false</c> / Pointer suppress(PR-32) 를
     /// 재평가한 뒤 통과할 때만 인디를 표시한다 (PR-26). UserHidden 해제·두 번째 인스턴스 Activate 등
     /// 강제 Show 경로용. stale <c>_lastForegroundHwnd</c> 를 쓰지 않는다.
@@ -832,7 +932,32 @@ internal static partial class Program
     /// </summary>
     private static void TryShowIndicatorIfForegroundAllowed(ImeState state, bool imeChanged)
     {
+        BeginConfigTxn();   // 아래 VDM COM 호출 대기 중 sent 메시지 재진입 — _configTxnDepth 주석 참조
+        try
+        {
+            TryShowIndicatorIfForegroundAllowedCore(state, imeChanged);
+        }
+        finally
+        {
+            EndConfigTxn();
+        }
+    }
+
+    private static void TryShowIndicatorIfForegroundAllowedCore(ImeState state, bool imeChanged)
+    {
         IntPtr hwndFg = User32.GetForegroundWindow();
+
+        // 트레이 우클릭 메뉴는 TrackPopupMenu 앞에서 보이지 않는 메인 창을 포그라운드로 만들고, 메뉴가 닫혀도 사용자가
+        // 다른 창을 누를 때까지 그대로다. 메뉴의 「한/영 배지 숨김」 해제가 이 경로로 들어오는데, 종전엔 "쓸 수 있는
+        // 포그라운드 없음" 으로 건너뛰어 배지가 바로 돌아오지 않았다(bug-hunt 2026-11-05). 사용자가 보고 있던 앱 —
+        // 배지 주인 앱 — 을 대상으로 판정한다. 모달 중(우리 다이얼로그가 떠 있음)이면 대상으로 삼지 않는다.
+        if (hwndFg == _hwndMain && _hwndMain != IntPtr.Zero && !ModalDialogLoop.IsActive
+            && _lastForegroundHwnd != IntPtr.Zero && User32.IsWindowVisible(_lastForegroundHwnd))
+        {
+            Logger.Debug("Forced show: foreground is the hidden main window (tray menu); targeting the badge owner app");
+            hwndFg = _lastForegroundHwnd;
+        }
+
         if (hwndFg == IntPtr.Zero
             || hwndFg == _hwndMain
             || hwndFg == _hwndOverlay
@@ -842,7 +967,17 @@ internal static partial class Program
             return;
         }
 
-        uint threadId = User32.GetWindowThreadProcessId(hwndFg, out _);
+        uint threadId = User32.GetWindowThreadProcessId(hwndFg, out uint fgPid);
+        // KoEnVue 자신의 창(설정·배율·위치 정리 대화상자, 안내 박스)은 배지 대상이 아니다. 이 함수는 모달 루프 안에서도
+        // 불린다 — 두 번째 인스턴스의 WM_APP_ACTIVATE, 리로드의 user_hidden 해제. 종전엔 세 self-HWND 만 걸러 우리
+        // 다이얼로그를 정상 포그라운드로 받아들여 배지를 그 위에 띄우고 `_lastForegroundHwnd` 를 다이얼로그로 박았다 —
+        // 그 뒤로 설정 창에서 한/영을 칠 때마다 배지가 깜빡였다(bug-hunt 2026-11-05). 감지 루프의 모달 게이트와 같은 기준.
+        if (fgPid == (uint)Environment.ProcessId)
+        {
+            Logger.Info("Forced show skipped: foreground is a KoEnVue dialog");
+            return;
+        }
+
         IntPtr hwndFocus = DetectionService.ResolveFocusWindow(threadId, hwndFg);
         AppConfig? resolved = Settings.ResolveForApp(_config, hwndFg);
         if (resolved is null || SystemFilter.ShouldHide(hwndFg, hwndFocus, resolved))
@@ -870,7 +1005,7 @@ internal static partial class Program
     /// 시스템 입력 프로세스는 항상 기본 위치 — 저장 위치를 무시 (z-band 가시성 보장).
     /// 저장 위치는 모니터 제거 / 해상도 변경으로 화면 밖이 될 수 있으므로 가시 영역으로 클램프한다.
     /// </summary>
-    private static (int x, int y) GetAppPosition()
+    private static (int x, int y) GetAppPosition(AppConfig resolved)
     {
         // 시스템 입력 프로세스: 모드 무관하게 기존 방식
         if (DefaultConfig.IsSystemInputProcess(_currentProcessName))
@@ -878,7 +1013,8 @@ internal static partial class Program
 
         // per-app 기준 — 감지 스레드의 창 이동 추적(TrackWindowMove)도 per-app resolved 의 position_mode 를 본다.
         // 여기만 글로벌이면 프로필로 모드를 바꾼 앱에서 두 스레드가 다른 모드로 움직였다(bug-hunt 2026-11-04 확정 #25).
-        if (ResolveCurrent().PositionMode == PositionMode.Window)
+        // 호출자가 크기·렌더에 쓴 **같은 해석**을 받는다 — 여기서 다시 해석하면 title 매칭에서 프로필이 섞인다.
+        if (resolved.PositionMode == PositionMode.Window)
             return GetAppPositionWindow();
 
         return GetAppPositionFixed();
@@ -978,7 +1114,7 @@ internal static partial class Program
         // 2. config 프로세스명별 위치 (영구 저장)
         if (_currentProcessName.Length > 0
             && _config.IndicatorPositions.TryGetValue(_currentProcessName, out int[]? pos)
-            && pos.Length >= 2)
+            && pos is { Length: >= DefaultConfig.FixedPositionEntryLength })   // null 방어 — 로드가 거르지만 메인 스레드 NRE 는 곧 종료다
         {
             return ClampToVisibleArea(pos[0], pos[1]);
         }
@@ -992,7 +1128,7 @@ internal static partial class Program
         // 1. config 프로세스명별 상대 위치
         if (_currentProcessName.Length > 0
             && _config.IndicatorPositionsRelative.TryGetValue(_currentProcessName, out int[]? rel)
-            && rel.Length >= 3
+            && rel is { Length: >= DefaultConfig.RelativePositionEntryLength }
             && Enum.IsDefined((Corner)rel[0])
             && _lastForegroundHwnd != IntPtr.Zero
             && Dwmapi.TryGetVisibleFrame(_lastForegroundHwnd, out RECT frame))
@@ -1088,7 +1224,34 @@ internal static partial class Program
 
     private static void HandleConfigChangedCore()
     {
+        BeginConfigTxn();
+        try
+        {
+            ReloadConfigFromDisk();
+        }
+        finally
+        {
+            EndConfigTxn();
+        }
+    }
+
+    private static void ReloadConfigFromDisk()
+    {
         AppConfig prev = _config;
+
+        // **저장에 실패해 메모리에만 남은 변경이 있으면 통째로 교체하지 않는다** (bug-hunt 2026-11-05). 그 상태에서 디스크가
+        // 외부에서 바뀌면(편집·동기화 클라이언트) 아래 TryLoad 가 디스크 내용으로 교체하고 ApplyConfigTransition 이 트레이
+        // 토글·드래그 위치를 실제로 되돌렸다 — 저장 쪽에는 3-way 병합이 있는데 리로드 쪽에는 없던 비대칭이다. 메모리
+        // 변경을 디스크 위에 병합 저장하면, 병합 결과를 되읽는 것까지 SaveAndSync 가 처리한다. 깨진 파일 위에는 병합할 수
+        // 없으므로 아래 일반 경로(실패 안내)로 보낸다.
+        if (Settings.HasUnsavedChanges && Settings.IsDiskContentParsable())
+        {
+            Logger.Info("Config changed on disk while in-memory changes were unsaved; merging them instead of replacing");
+            SaveAndSync();
+            if (Settings.HasUnsavedChanges)
+                Logger.Warning("Config still could not be saved; keeping in-memory settings until the next change");
+            return;
+        }
 
         // 파싱 실패를 성공과 구분한다 (AUDIT-2026-07-30 §G). 실패 시 Load 가 돌려주는 전 필드 디폴트를
         // 채택하면, 그 뒤 어떤 저장 경로(트레이 토글·드래그 종료)든 그 디폴트를 디스크에 확정해
@@ -1096,9 +1259,13 @@ internal static partial class Program
         // 기존 인스턴스를 그대로 두고 물러나면, 파일이 고쳐지는 순간 다음 mtime 변화가 정상 리로드한다.
         if (!Settings.TryLoad(out AppConfig loaded))
         {
-            Logger.Warning("Config reload failed; keeping previous settings in memory");
+            LoadFailure why = Settings.LastLoadFailure;
+            Logger.Warning($"Config reload failed ({why}); keeping previous settings in memory");
+            // 사용자가 고쳐야 하는 **내용 문제**만 알린다 (bug-hunt 2026-11-05). 편집기·백신·동기화 클라이언트의 짧은 잠금이나
+            // 원자 교체 중간의 "파일 없음" 은 다음 폴링이 저절로 읽는다 — 예전엔 그 일시 실패에도 "읽지 못했다" 박스가
+            // 떠서 정상 저장에 거짓 경보가 났고, 박스가 떠 있는 동안 정상 리로드까지 보류됐다.
             // 연속 실패 중에는 첫 1회만 알린다 — 5초 폴링이라 매번 띄우면 편집을 방해한다.
-            if (!_configReloadFailed)
+            if (why == LoadFailure.Content && !_configReloadFailed)
             {
                 _configReloadFailed = true;
                 Tray.ShowConfigReloadFailed();
@@ -1111,6 +1278,48 @@ internal static partial class Program
         ApplyConfigTransition(prev, loaded);
 
         Logger.Info("Config reloaded");
+
+        if (_bootSideEffectsDeferred)
+        {
+            _bootSideEffectsDeferred = false;
+            Logger.Info("Running startup side effects skipped at boot (settings file is readable now)");
+            RunBootSideEffects();
+        }
+    }
+
+    /// <summary>
+    /// 부팅 1회 부수효과 — 시작 프로그램 작업 경로 동기화(백그라운드)와 업데이트 확인(백그라운드). 설정을 읽지 못한 부팅에서는
+    /// 기본값으로 돌리지 않고 첫 정상 리로드로 미룬다(<see cref="_bootSideEffectsDeferred"/>).
+    /// </summary>
+    private static void RunBootSideEffects()
+    {
+        StartupTaskManager.SyncStartupPathAsync(_config);
+
+        // UpdateCheckEnabled=false 면 네트워크 호출 없음. 콜백은 워커 스레드에서 수 초 뒤 돌며 그때의 _hwndMain 을 직접 읽는다
+        // (OnUpdateCheckResult 참조).
+        if (_config.UpdateCheckEnabled)
+        {
+            UpdateChecker.CheckInBackground(
+                DefaultConfig.AppVersion,
+                DefaultConfig.UpdateRepoOwner,
+                DefaultConfig.UpdateRepoName,
+                OnUpdateCheckResult);
+        }
+    }
+
+    /// <summary>설정 갱신 트랜잭션 시작 — <see cref="_configTxnDepth"/> 주석 참조.</summary>
+    private static void BeginConfigTxn() => _configTxnDepth++;
+
+    /// <summary>
+    /// 설정 갱신 트랜잭션 끝. 최외곽이면 그 사이 보류된 시스템 설정 변경을 지금 처리한다 — 트랜잭션이 확정한
+    /// <c>_config</c> 위에 새 시스템 색을 다시 입힌다.
+    /// </summary>
+    private static void EndConfigTxn()
+    {
+        if (--_configTxnDepth > 0 || !_settingChangePending) return;
+        _settingChangePending = false;
+        Logger.Debug("Applying system setting change deferred during a config update");
+        HandleSettingChange();
     }
 
     /// <summary>
@@ -1142,6 +1351,19 @@ internal static partial class Program
     /// </summary>
     private static void ApplyConfigTransition(AppConfig prev, AppConfig next)
     {
+        BeginConfigTxn();   // Logger.Initialize 의 Join 대기 중 sent 메시지 재진입 — _configTxnDepth 주석 참조
+        try
+        {
+            ApplyConfigTransitionCore(prev, next);
+        }
+        finally
+        {
+            EndConfigTxn();
+        }
+    }
+
+    private static void ApplyConfigTransitionCore(AppConfig prev, AppConfig next)
+    {
         Logger.SetLevel(next.LogLevel);
         // Logger.Initialize 는 drain 스레드를 종료(Join 최대 3s)·재시작하는 무거운 작업이라, 로그 관련
         // 설정이 실제로 바뀐 경우에만 재초기화한다 — 무변경 리로드가 메인 스레드를 블록하지 않도록.
@@ -1163,6 +1385,12 @@ internal static partial class Program
         // 커서 헤일로 lifecycle.
         ApplyCursorConfigChange();
 
+        // **세션 위치 캐시 무효화는 표시 갱신보다 먼저다** (bug-hunt 2026-11-05). 아래 두 표시 경로는
+        // GetAppPositionFixed 를 거치는데, 그것이 이 캐시를 1순위로 읽는다. 무효화가 뒤에 있으면 곧 버려질 옛 드래그
+        // 좌표로 배지를 다시 그린 다음에야 항목을 지우고, 다시 그리는 경로가 없어 다음 이벤트까지 옛 자리에 남았다 —
+        // 3차 Q(파일에서 좌표를 고치면 살아 있는 창에도 반영)가 즉시 갱신에서 무력화되던 순서 결함.
+        InvalidateSessionPositions(prev, next);
+
         // user_hidden 전이는 트레이 좌클릭·메뉴와 **같은 헬퍼**로 처리한다 (P4).
         // 종전에는 리로드만 RefreshVisibleIndicator 로 떨어졌는데, 그 헬퍼에는 `_indicatorVisible`
         // 가드가 걸려 있어 **숨김 상태에서 항상 no-op** 이다 — true→false 전이의 출발점이 바로 그
@@ -1174,11 +1402,23 @@ internal static partial class Program
 
         // 전이가 없었고 계속 보이는 상태면 스타일만 갱신한다 (색·크기·폰트 변경 반영).
         if (prev.UserHidden == next.UserHidden && !next.UserHidden)
+        {
             RefreshVisibleIndicator();
+
+            // 숨김 상태에서 "보여야 하는" 정책으로 바뀐 경우 — RefreshVisibleIndicator 는 보이는 배지만 다루므로 따로
+            // 처리한다 (bug-hunt 2026-11-05). display_mode on_event→always, non_korean_ime hide→show/dim 가 그 예인데,
+            // 편집기에 머문 채 저장하면 감지 루프도 아무것도 보내지 않아(포그라운드·IME·포커스 그대로) 「항상 표시」가
+            // 다음 이벤트까지 지켜지지 않았다. user_hidden(확정 #48)과 같은 모양의 비대칭이다.
+            if (!_indicatorVisible && !_clickDismissed && ShowPolicyBecameVisible(prev, next))
+                TryShowIndicatorIfForegroundAllowed(_lastImeState, imeChanged: false);
+        }
 
         ApplyTrayEnabledTransition(prev.TrayEnabled, next.TrayEnabled);
 
-        InvalidateSessionPositions(prev, next);
+        // 잠긴 동안 hide_on_lock_screen 이 켜졌다 — 잠금 숨김은 WTS_SESSION_LOCK 에서 한 번만 일어나는 edge 라, 그때 꺼져
+        // 있었으면 잠금 화면 위 배지를 아무도 숨기지 않았다 (bug-hunt 2026-11-05).
+        if (IsHiddenByLock && _indicatorVisible)
+            HideOverlay("hide_on_lock_screen enabled while locked");
 
         // overlay_class_name 은 부팅 시 1회 등록이라 런타임 변경을 반영할 수 없다 (AUDIT-2026-07-30 §H).
         // 조용히 무시하면 "고쳤는데 왜 그대로냐" 가 되고, 창 생성이 새 값을 쓰면 미등록 클래스로 실패한다.
@@ -1189,6 +1429,25 @@ internal static partial class Program
                 + $"registered once at startup; still using '{_registeredOverlayClassName}'. Restart to apply.");
         }
     }
+
+    /// <summary>
+    /// 배지 주인 앱 기준으로 <paramref name="prev"/> 에서는 표시 정책이 숨김이었는데 <paramref name="next"/> 에서는 "항상
+    /// 표시" 가 됐는지 — display_mode(→always)·non_korean_ime(hide→show/dim), 앱별 프로필 override 포함.
+    /// 프로필이 꺼져 있다가 켜진 경우(prev 해석 null)는 감지 루프의 필터 래치가 재표시하므로 여기서 다루지 않는다.
+    /// </summary>
+    private static bool ShowPolicyBecameVisible(AppConfig prev, AppConfig next)
+    {
+        if (_lastForegroundHwnd == IntPtr.Zero) return false;
+        AppConfig? after = Settings.ResolveForApp(next, _lastForegroundHwnd);
+        AppConfig? before = Settings.ResolveForApp(prev, _lastForegroundHwnd);
+        if (after is null || before is null) return false;
+        return WantsAlwaysVisible(after, _lastImeState) && !WantsAlwaysVisible(before, _lastImeState);
+    }
+
+    /// <summary>이 설정이 지금 IME 상태에서 배지를 계속 보이게 하는가 (Always 모드 + 비한국어 숨김 아님).</summary>
+    private static bool WantsAlwaysVisible(AppConfig resolved, ImeState state) =>
+        resolved.DisplayMode == DisplayMode.Always
+        && !(state == ImeState.NonKorean && resolved.NonKoreanIme == NonKoreanImeMode.Hide);
 
     /// <summary>
     /// <c>tray_enabled</c> 의 런타임 전이를 반영한다 (AUDIT-2026-07-30 §K).
@@ -1225,9 +1484,13 @@ internal static partial class Program
     /// 메인 메시지 큐로 WM_APP_UPDATE_FOUND 를 PostMessage 한다 — 본 람다는
     /// 워커 스레드에서 실행되므로 GUI 작업을 직접 하면 안 됨.
     /// </summary>
-    private static void OnUpdateCheckResult(IntPtr hwndMain, UpdateInfo info)
+    private static void OnUpdateCheckResult(UpdateInfo info)
     {
         _pendingUpdate = info;
+        // 부팅 때 복사해 둔 값이 아니라 **지금** 값을 읽는다 (bug-hunt 2026-11-05). 트레이 「관리자 권한」 토글은 메인 창을
+        // OnProcessExit 보다 먼저 파괴하고 WM_DESTROY 가 이 필드를 Zero 로 내리는데(§N-42), 사본은 영영 Zero 가 되지 않아
+        // 아래 가드가 죽은 코드였고 파괴된(또는 재발급된) HWND 로 WM_APP 메시지를 보냈다. 다른 백그라운드 경로와 같은 계약.
+        IntPtr hwndMain = _hwndMain;
         if (hwndMain != IntPtr.Zero)
             User32.PostMessageW(hwndMain, AppMessages.WM_APP_UPDATE_FOUND, IntPtr.Zero, IntPtr.Zero);
     }
@@ -1257,6 +1520,21 @@ internal static partial class Program
         TryShowIndicatorIfForegroundAllowed(_lastImeState, imeChanged: false);
     }
 
+    /// <summary>
+    /// 트레이 우클릭 메뉴가 닫힌 뒤(명령 적용 후). 「항상 표시」 배지가 메뉴를 쓰는 동안 숨었으면 배지 주인 앱 기준으로 되돌린다
+    /// (리뷰 2026-11-05). 메뉴를 열면 작업 표시줄이 포그라운드가 돼 FG 필터가, 메뉴 위에서는 Pointer 축이 배지를 숨기는데,
+    /// 메뉴가 닫혀도 포그라운드는 보이지 않는 메인 창이라 감지 루프는 사용자가 다른 창을 누를 때까지 재표시하지 않는다 —
+    /// 메뉴로 바꾼 투명도·배율이 바로 보이지 않았다. 이벤트 표시 모드에서 숨은 상태는 평상시라 건드리지 않는다. 사용자가 이미
+    /// 다른 창으로 옮겼거나(감지 루프 몫) 명령이 다이얼로그를 열었으면(포그라운드가 우리 다이얼로그) 아무것도 하지 않는다.
+    /// </summary>
+    private static void HandleTrayMenuClosed()
+    {
+        if (Tray.ExitRequested || _config.UserHidden || _indicatorVisible || _clickDismissed) return;
+        if (_lastForegroundHwnd == IntPtr.Zero || User32.GetForegroundWindow() != _hwndMain) return;
+        if (!TryResolveCurrent(out AppConfig resolved) || resolved.DisplayMode != DisplayMode.Always) return;
+        TryShowIndicatorIfForegroundAllowed(_lastImeState, imeChanged: false);
+    }
+
     private static void HideOverlay(string source = "?")
     {
         // 숨김 경로 추적 — source 로 호출자(시스템 필터 / 트레이 토글 / 세션 잠금)를 식별해
@@ -1281,7 +1559,7 @@ internal static partial class Program
         switch (mouseEvent)
         {
             case Win32Constants.WM_CONTEXTMENU:
-                Tray.ShowMenu(_hwndMain, _config);
+                Tray.ShowMenu(_hwndMain, _config, _lastForegroundHwnd);
                 break;
             case Win32Constants.WM_LBUTTONUP:
                 // 좌클릭도 모달 중에는 막는다. §A 는 ShowMenu 에만 가드를 넣었는데 이 분기는 그 경로를
@@ -1328,13 +1606,28 @@ internal static partial class Program
     /// </summary>
     private static void SaveAndSync()
     {
-        AppConfig before = _config;
-        AppConfig saved = Settings.Save(before);
-        _config = saved;
-        if (ReferenceEquals(saved, before)) return;
+        BeginConfigTxn();   // Save 의 lock 경합·로그 대기 중 sent 메시지 재진입 — _configTxnDepth 주석 참조
+        try
+        {
+            AppConfig before = _config;
+            AppConfig saved = Settings.Save(before);
+            _config = saved;
 
-        Logger.Info("Config merged with on-disk edits during save; applying merged state");
-        ApplyConfigTransition(before, saved);
+            // 저장이 디스크를 다시 읽을 수 있는 상태로 만들었으면 "읽을 수 없음" 안내 래치를 푼다 (bug-hunt 2026-11-05). 래치는
+            // 성공한 리로드에서만 풀렸는데, 깨진 파일 위에 앱이 저장하면(self-bump 라 리로드가 돌지 않는다) 래치가 고착돼
+            // 그 뒤 사용자가 파일을 다시 깨뜨려도 안내 없이 편집이 조용히 무시됐다.
+            if (!Settings.HasUnsavedChanges)
+                _configReloadFailed = false;
+
+            if (ReferenceEquals(saved, before)) return;
+
+            Logger.Info("Config merged with on-disk edits during save; applying merged state");
+            ApplyConfigTransition(before, saved);
+        }
+        finally
+        {
+            EndConfigTxn();
+        }
     }
 
     /// <summary>
@@ -1417,13 +1710,21 @@ internal static partial class Program
                 // 순서 계약은 그대로다 — _config 를 **먼저** 게시해야 ApplyCursorConfigChange /
                 // ApplyTrayEnabledTransition 이 필드를 직접 읽는 전제가 성립하고, ClearProfileCache 도
                 // 새 인스턴스 게시 뒤에 도는 것이 §N-59 가 세운 순서다.
-                AppConfig prev = _config;
-                _config = ThemePresets.Apply(newConfig);
-                ApplyConfigTransition(prev, _config);
+                BeginConfigTxn();
+                try
+                {
+                    AppConfig prev = _config;
+                    _config = ThemePresets.Apply(newConfig);
+                    ApplyConfigTransition(prev, _config);
 
-                // 저장 + 병합 시 전이 재적용까지 (확정 #1·#15·#28·#47). 위 적용은 병합 **전** 값으로
-                // 돌았으므로, 디스크에서 새 값이 들어왔으면 헬퍼가 그 차이만 다시 적용한다.
-                SaveAndSync();
+                    // 저장 + 병합 시 전이 재적용까지 (확정 #1·#15·#28·#47). 위 적용은 병합 **전** 값으로
+                    // 돌았으므로, 디스크에서 새 값이 들어왔으면 헬퍼가 그 차이만 다시 적용한다.
+                    SaveAndSync();
+                }
+                finally
+                {
+                    EndConfigTxn();
+                }
             });
     }
 

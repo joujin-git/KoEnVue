@@ -150,6 +150,15 @@ internal static partial class Tray
     // 끝난 뒤 RunShellCall 이 대신 실행한다.
     private static bool _recreatePending;
 
+    /// <summary>
+    /// 메뉴의 「종료」 가 눌렸다 — WM_QUIT 는 큐의 다른 메시지가 다 처리된 뒤에야 나오므로, 그 사이 메뉴 닫힘 알림
+    /// (WM_APP_TRAY_MENU_CLOSED)이 배지를 되돌리지 않도록 Program 이 본다. 메인 스레드 전용.
+    /// </summary>
+    internal static bool ExitRequested { get; private set; }
+
+    // Recreate 가 Remove 를 부르는 동안만 true — 그 구간의 UpdateState 를 버리지 않고 보류로 남기기 위한 표식 (메인 스레드 전용).
+    private static bool _removingForRecreate;
+
     // Recreate 가 실제로 돈 횟수. 보류된 재등록은 RunShellCall 끝에서 **호출자의 후처리보다 먼저** 실행되므로,
     // Initialize·HandleAddRetryTimer 는 셸 호출 뒤 이 값이 바뀌었으면 자기 결과(added)가 낡은 것으로 보고
     // 후처리를 건너뛴다 — 안 그러면 이미 새로 등록된 아이콘 위에서 재시도 타이머를 열었다(리뷰 2026-11-04).
@@ -295,7 +304,19 @@ internal static partial class Tray
     /// </summary>
     internal static void UpdateState(ImeState state, AppConfig config)
     {
-        if (!_initialized) return;
+        if (!_initialized)
+        {
+            // 재등록(Recreate)의 제거 구간 — Remove 가 블로킹 NIM_DELETE 전에 _initialized 를 내리므로, 그 대기 중 sent 로
+            // 들어온 갱신(테마 색 변경 등)이 여기서 흔적 없이 사라졌다. RunShellCall 의 "Recreate 직후 Initialize 가 소비한다"
+            // 약속이 지켜지도록 보류 표식을 남긴다 (bug-hunt 2026-11-05). 종료·비활성화 제거 중이면 버린다.
+            if (_removingForRecreate)
+            {
+                _updatePending = true;
+                _pendingUpdateState = state;
+                _pendingUpdateConfig = config;
+            }
+            return;
+        }
 
         // 셸 호출 중 재진입 — 표시만 남기고 돌아간다. 자세한 이유는 _shellCallInProgress 선언부.
         if (_shellCallInProgress)
@@ -440,7 +461,24 @@ internal static partial class Tray
 
         IntPtr hwndMain = _hwndMain;
         _recreateGeneration++;
-        Remove(TrayRemoveReason.Recreate);
+        _removingForRecreate = true;
+        try
+        {
+            Remove(TrayRemoveReason.Recreate);
+        }
+        finally
+        {
+            _removingForRecreate = false;
+        }
+
+        // 제거 구간에 더 새로운 상태가 들어왔으면 그것으로 등록한다 — 진입 시점 인자는 그 사이 테마가 바뀐 경우 이미 옛 값이다.
+        if (_updatePending && _pendingUpdateConfig is not null)
+        {
+            state = _pendingUpdateState;
+            config = _pendingUpdateConfig;
+            _updatePending = false;
+            _pendingUpdateConfig = null;
+        }
         Initialize(hwndMain, state, config);
         Logger.Info("Tray icon recreated (TaskbarCreated or recovery)");
     }
@@ -504,11 +542,19 @@ internal static partial class Tray
     internal static void HandleMenuCommand(int commandId, AppConfig config, IntPtr hwndMain,
         IntPtr hwndForeground, Func<AppConfig> currentConfig, Action<AppConfig> updateConfig)
     {
+        // **토글의 목표값은 메뉴에 보였던 값의 반대다** (bug-hunt 2026-11-05). 체크 표시·투명도 라벨은 메뉴를 그릴 때의
+        // 스냅샷(_menuSnapshot)으로 그려진다 — 아래에서 베이스를 현재 값으로 다시 잡는데(§B), 토글까지 현재 값을 뒤집으면
+        // 메뉴가 열린 사이 리로드로 그 필드가 바뀐 경우 사용자가 본 체크와 반대 방향으로 적용됐다(「배지 숨김」 해제를 눌렀는데
+        // 숨겨지는 식). 스냅샷이 없으면(테스트·직접 호출) 넘겨받은 값이 곧 화면 값이다.
+        AppConfig shown = _menuSnapshot ?? config;
+        _menuSnapshot = null;
+
         // 명령 적용의 베이스는 **지금** 값이어야 한다. 호출자가 넘긴 config 는 메뉴를 띄울 때의
         // 스냅샷인데, TrackPopupMenu 는 자체 모달 루프를 돌리므로 메뉴가 열려 있는 동안 감지
         // 스레드가 post 한 WM_CONFIG_CHANGED 가 그대로 디스패치돼 _config 가 교체될 수 있다.
         // 그 경우 아래 24곳의 `config with { … }` 가 옛 베이스 위에 얹혀 방금 반영된 외부 편집을
         // 조용히 되돌리고, 뒤따르는 Settings.Save 가 디스크까지 덮는다 (AUDIT-2026-07-30 §B).
+        // "어느 값으로 바꿀지" 는 shown, "어디에 얹을지" 는 config — 두 질문을 섞지 않는다.
         config = currentConfig();
 
         // --- 크기 배율 정수 프리셋 (동적 ID 범위 매칭) ---
@@ -541,17 +587,19 @@ internal static partial class Tray
         switch (commandId)
         {
             // --- 투명도 ---
+            // 적용 값은 메뉴 라벨에 보였던 프리셋(shown) — 메뉴가 열린 사이 tray_quick_opacity_presets 가 바뀌어도 라벨과
+            // 다른 값이 들어가지 않는다.
             case IDM_OPACITY_HIGH:
-                if (config.TrayQuickOpacityPresets.Length >= 1)
-                    updateConfig(ApplyQuickOpacity(config, config.TrayQuickOpacityPresets[0]));
+                if (shown.TrayQuickOpacityPresets.Length >= 1)
+                    updateConfig(ApplyQuickOpacity(config, shown.TrayQuickOpacityPresets[0]));
                 break;
             case IDM_OPACITY_NORMAL:
-                if (config.TrayQuickOpacityPresets.Length >= 2)
-                    updateConfig(ApplyQuickOpacity(config, config.TrayQuickOpacityPresets[1]));
+                if (shown.TrayQuickOpacityPresets.Length >= 2)
+                    updateConfig(ApplyQuickOpacity(config, shown.TrayQuickOpacityPresets[1]));
                 break;
             case IDM_OPACITY_LOW:
-                if (config.TrayQuickOpacityPresets.Length >= 3)
-                    updateConfig(ApplyQuickOpacity(config, config.TrayQuickOpacityPresets[2]));
+                if (shown.TrayQuickOpacityPresets.Length >= 3)
+                    updateConfig(ApplyQuickOpacity(config, shown.TrayQuickOpacityPresets[2]));
                 break;
 
             // --- 시작 프로그램 등록 ---
@@ -570,7 +618,7 @@ internal static partial class Tray
             // (KoEnVue 통제 외) — PR-15 §7.2 의 down-grade 한계 그대로 보존.
             case IDM_ADMIN_ELEVATION:
                 {
-                    AppConfig newAdminConfig = config with { AdminElevation = !config.AdminElevation };
+                    AppConfig newAdminConfig = config with { AdminElevation = !shown.AdminElevation };
                     updateConfig(newAdminConfig);
                     // schtasks 의 RunLevel 즉시 갱신 — 등록 안 됐으면 noop.
                     StartupTaskManager.ReregisterIfAdminChanged(newAdminConfig);
@@ -589,7 +637,7 @@ internal static partial class Tray
 
             // --- 기본 위치: 초기화 ---
             case IDM_DEFAULT_POS_RESET:
-                if (config.PositionMode == PositionMode.Window)
+                if (EffectivePositionMode(config, hwndForeground) == PositionMode.Window)
                     updateConfig(config with { DefaultIndicatorPositionRelative = null });
                 else
                     updateConfig(config with { DefaultIndicatorPosition = null });
@@ -628,20 +676,20 @@ internal static partial class Tray
 
             // --- 창에 자석처럼 붙이기 토글 ---
             case IDM_SNAP_TO_WINDOWS:
-                updateConfig(config with { SnapToWindows = !config.SnapToWindows });
-                Logger.Info($"SnapToWindows toggled: {!config.SnapToWindows}");
+                updateConfig(config with { SnapToWindows = !shown.SnapToWindows });
+                Logger.Info($"SnapToWindows toggled: {!shown.SnapToWindows}");
                 break;
 
             // --- 애니메이션 사용 토글 ---
             case IDM_ANIMATION_ENABLED:
-                updateConfig(config with { AnimationEnabled = !config.AnimationEnabled });
-                Logger.Info($"AnimationEnabled toggled: {!config.AnimationEnabled}");
+                updateConfig(config with { AnimationEnabled = !shown.AnimationEnabled });
+                Logger.Info($"AnimationEnabled toggled: {!shown.AnimationEnabled}");
                 break;
 
             // --- 변경 시 강조 토글 ---
             case IDM_CHANGE_HIGHLIGHT:
-                updateConfig(config with { ChangeHighlight = !config.ChangeHighlight });
-                Logger.Info($"ChangeHighlight toggled: {!config.ChangeHighlight}");
+                updateConfig(config with { ChangeHighlight = !shown.ChangeHighlight });
+                Logger.Info($"ChangeHighlight toggled: {!shown.ChangeHighlight}");
                 break;
 
             // --- 위치 기록 정리 ---
@@ -652,22 +700,22 @@ internal static partial class Tray
             // --- 한/영 배지 숨김 토글 ---
             // 좌클릭 동작이 Settings/None 이라 좌클릭 토글이 막혀 있어도 숨김 해제 경로를 보장.
             case IDM_USER_HIDDEN:
-                updateConfig(config with { UserHidden = !config.UserHidden });
-                Logger.Info($"UserHidden toggled via menu: {!config.UserHidden}");
+                updateConfig(config with { UserHidden = !shown.UserHidden });
+                Logger.Info($"UserHidden toggled via menu: {!shown.UserHidden}");
                 break;
 
             // --- 커서 헤일로 숨김 토글 (메뉴 체크박스 — MF_CHECKED = 현재 숨김 상태) ---
             // 한/영 배지 IDM_USER_HIDDEN 과 같은 패턴. 라벨 "커서 헤일로 숨김" + 체크 = 안 보임.
             // 클릭 시 enabled 반전 (체크 ON → enabled=true → 표시, 체크 OFF → enabled=false → 숨김).
             case IDM_CURSOR_TOGGLE:
-                updateConfig(config with { CursorIndicatorEnabled = !config.CursorIndicatorEnabled });
-                Logger.Info($"CursorIndicatorEnabled toggled via menu: {!config.CursorIndicatorEnabled}");
+                updateConfig(config with { CursorIndicatorEnabled = !shown.CursorIndicatorEnabled });
+                Logger.Info($"CursorIndicatorEnabled toggled via menu: {!shown.CursorIndicatorEnabled}");
                 break;
 
             // --- 커서 변경 시 강조(스케일 팝) 토글 (체크 = ON, 메인 ChangeHighlight 와 동형) ---
             case IDM_CURSOR_HIGHLIGHT:
-                updateConfig(config with { CursorChangeHighlight = !config.CursorChangeHighlight });
-                Logger.Info($"CursorChangeHighlight toggled via menu: {!config.CursorChangeHighlight}");
+                updateConfig(config with { CursorChangeHighlight = !shown.CursorChangeHighlight });
+                Logger.Info($"CursorChangeHighlight toggled via menu: {!shown.CursorChangeHighlight}");
                 break;
 
             case IDM_CURSOR_DISPLAY_SOFT:
@@ -697,6 +745,7 @@ internal static partial class Tray
 
             // --- 종료 ---
             case IDM_EXIT:
+                ExitRequested = true;
                 User32.PostQuitMessage(0);
                 break;
 
@@ -798,7 +847,7 @@ internal static partial class Tray
     private static void SetDefaultPositionToCurrent(AppConfig config, IntPtr hwndForeground,
         Action<AppConfig> updateConfig)
     {
-        if (config.PositionMode == PositionMode.Window)
+        if (EffectivePositionMode(config, hwndForeground) == PositionMode.Window)
         {
             RelativePositionConfig? rel =
                 Overlay.ComputeRelativeFromCurrentPosition(hwndForeground);
@@ -853,6 +902,13 @@ internal static partial class Tray
     /// </summary>
     internal static void ShowConfigReloadFailed()
         => ShowMessage(I18n.ConfigReloadFailed);
+
+    /// <summary>
+    /// 부팅 때 koenvue_config.json 을 읽지 못해 기본값으로 시작했음을 알린다 (bug-hunt 2026-11-05). 예전엔 로그 한 줄뿐이라
+    /// 사용자가 모른 채 트레이를 누르면 그 파일이 기본값으로 덮였다.
+    /// </summary>
+    internal static void ShowConfigBootLoadFailed()
+        => ShowMessage(I18n.ConfigBootLoadFailed);
 
     // ================================================================
     // Private — 툴팁

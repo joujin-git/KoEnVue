@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using KoEnVue.App.Config;
 using KoEnVue.App.Models;
 using KoEnVue.App.Messaging;
@@ -257,13 +258,14 @@ internal static class ImeStatus
         // 방식을 바꾼 앱에서 훅과 폴링이 서로 다른 상태를 게시한다 (AUDIT-2026-07-30 §N-50).
         // 해석기가 배선되기 전(RegisterHook 직후 첫 콜백)에는 global 로 폴백.
         DetectionMethod method = _perAppDetectionMethod?.Invoke(hwndFg) ?? _detectionMethod;
+        long sampleStamp = Stopwatch.GetTimestamp();   // 감지 루프와 같은 규칙 — 조회 시작 시각
         ImeState newState = Detect(hwndFg, threadId, method);
 
         if (newState != _lastState)
         {
             _lastState = newState;
             User32.PostMessageW(_hwndMain, AppMessages.WM_IME_STATE_CHANGED,
-                (nint)(int)newState, IntPtr.Zero);
+                (nint)(int)newState, (nint)sampleStamp);
 
             Logger.Debug($"IME state changed: {newState} (via hook)");
         }

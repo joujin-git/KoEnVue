@@ -30,13 +30,36 @@ internal static partial class Program
         RefreshVisibleIndicator();
     }
 
-    /// <summary>인디가 가시 상태(+ 포그라운드 유효)면 현재 위치로 TriggerShow 재호출 (per-app resolved,
-    /// imeChanged=false). config 리로드 / 디스플레이 변경 / 시스템 색 변경 등에서 가시 인디를 즉시 갱신한다.
-    /// HandleConfigChanged 는 추가로 !UserHidden 가드 후 호출 (숨김 상태 인디를 깨우지 않도록).</summary>
+    /// <summary>
+    /// 보이는 배지의 색·크기·위치를 <b>제자리에서</b> 갱신한다 (per-app resolved). config 리로드 / 디스플레이 변경 / 시스템 색
+    /// 변경 / DPI / 전원 복귀에서 쓴다. HandleConfigChanged 는 추가로 !UserHidden 가드 후 호출 (숨김 상태 인디를 깨우지 않도록).
+    ///
+    /// <para>
+    /// <b>표시 이벤트가 아니다</b> (bug-hunt 2026-11-05). 예전엔 ShowIndicatorAtForeground → Animation.TriggerShow 를 다시 돌려
+    /// 애니메이션 단계를 처음으로 되돌렸다 — 자연 페이드아웃 중(가시 플래그는 페이드가 끝나야 내려간다)인 배지가 되살아나
+    /// 표시 시간이 처음부터 다시 흘렀고, Always 모드의 흐려진(idle) 배지가 IME 이벤트 없이 밝아졌다. 배경화면 전환·환경변수
+    /// 변경 같은 무관한 시스템 브로드캐스트마다 그랬다. 지금은 단계·타이머를 건드리지 않고 다시 그리기만 한다.
+    /// </para>
+    ///
+    /// <para>
+    /// 새 설정에서 배지 주인 앱의 프로필이 꺼졌으면(enabled:false) 숨긴다 — 예전엔 글로벌 스타일로 다시 그려 밝혔다가 감지
+    /// 루프의 히스테리시스(3폴링) 뒤에야 숨겼다.
+    /// </para>
+    /// </summary>
     private static void RefreshVisibleIndicator()
     {
         if (_indicatorVisible && _lastForegroundHwnd != IntPtr.Zero)
-            ShowIndicatorAtForeground(_lastImeState, ResolveCurrent(), imeChanged: false);
+        {
+            if (!TryResolveCurrent(out AppConfig resolved))
+            {
+                HideOverlay("app profile disabled by config change");
+                return;
+            }
+            if (IsHiddenByLock) return;
+            PaintForPositioning(_lastImeState, resolved);   // 위치 계산 전 크기 확정 — 확정 #24
+            var (x, y) = GetAppPosition(resolved);
+            _indicatorVisible = Animation.Refresh(x, y, _lastImeState, resolved);
+        }
         else if (_indicatorVisible)
         {
             // 포그라운드 hwnd 를 아직 모르는 상태(부팅 직후·필터 구간 통과 전)에서는 위치를 다시
@@ -55,6 +78,27 @@ internal static partial class Program
     }
 
     private static void HandleSettingChange()
+    {
+        // 설정 갱신 트랜잭션 안(저장·리로드·전이 적용의 블로킹 대기에서 sent 로 끼어든 경우)이면 보류한다 — 바깥 프레임이
+        // 끝나며 `_config = …` 로 이 변경을 덮기 때문이다. 트랜잭션 끝(EndConfigTxn)에서 한 번 처리한다 (bug-hunt 2026-11-05).
+        if (_configTxnDepth > 0)
+        {
+            _settingChangePending = true;
+            return;
+        }
+
+        BeginConfigTxn();   // 아래 블로킹 셸 호출(트레이 HICON 갱신) 중 같은 브로드캐스트가 다시 오면 끝에 한 번으로 합친다
+        try
+        {
+            HandleSettingChangeCore();
+        }
+        finally
+        {
+            EndConfigTxn();
+        }
+    }
+
+    private static void HandleSettingChangeCore()
     {
         // 시스템 강조색 / 다크 모드 변경 시 프로필 머지 캐시 무효화 — 캐시된 머지 결과가
         // 옛 시스템 색을 박제하고 있을 수 있다 (프로필이 theme=system 을 상속하는 케이스).
@@ -83,13 +127,15 @@ internal static partial class Program
         }
 
         // PR-13: 글로벌 재적용 후 per-app resolved 로 렌더 — 프로필이 theme=system 상속 시
-        //         프로필 색상 6쌍이 새 시스템 색으로 재계산된 인스턴스로 갱신된다.
+        //         프로필 색상 6쌍이 새 시스템 색으로 재계산된 인스턴스로 갱신된다. 제자리 갱신이라 무관한 브로드캐스트
+        //         (작업 표시줄 이동의 SPI_SETWORKAREA 등)에도 단계·표시 시간은 그대로다 — RefreshVisibleIndicator 참조.
         RefreshVisibleIndicator();
 
         // 트레이 아이콘도 같은 색 6쌍(Bg/Fg)을 읽어 그리므로 함께 갱신 — 누락 시 셸이 이전
         // HICON 을 계속 들고 있어 다크/라이트 전환 후 트레이만 옛 색으로 남는다 (다음 IME
-        // 전환까지). HandleConfigChanged 의 동일 갱신과 대칭.
-        if (_config.TrayEnabled)
+        // 전환까지). HandleConfigChanged 의 동일 갱신과 대칭. 시스템 색을 따르지 않으면 아이콘 색이 바뀔 일이 없다 —
+        // 브로드캐스트마다 HICON 재생성(블로킹 셸 호출)을 하지 않는다.
+        if (themeFollowsSystem && _config.TrayEnabled)
             Tray.UpdateState(_lastImeState, _config);
     }
 

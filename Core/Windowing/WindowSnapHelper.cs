@@ -24,6 +24,9 @@ internal static class WindowSnapHelper
     private static readonly List<RECT> s_targets = new(64);
     private static IntPtr s_ownerHwnd;
 
+    /// <summary>이 프로세스 ID — 자기 창(커서 헤일로·다이얼로그)을 후보에서 뺀다. 콜백이 정적이라 필드로 둔다.</summary>
+    private static readonly uint s_ownPid = (uint)Environment.ProcessId;
+
     /// <summary>
     /// 스냅 후보 최소 크기 (DPI 미적용 px). <c>[UnmanagedCallersOnly]</c> 정적 콜백에서
     /// 인스턴스 필드 접근 불가라 본 유틸 내부 private const 로 보관.
@@ -153,6 +156,11 @@ internal static class WindowSnapHelper
         try
         {
             if (hwnd == s_ownerHwnd) return 1;
+            // 자기 프로세스 창은 스냅 대상이 아니다 (bug-hunt 2026-11-05). 특히 커서 헤일로 창은 숨길 때도 알파 0 블리트만
+            // 하므로 항상 WS_VISIBLE 이고, 기본값에서 약 468 logical px 정사각형이 잡은 지점(=커서) 중심에 놓여 있다 — 그
+            // 보이지 않는 네 변에 배지가 달라붙었다. 다이얼로그·안내 박스도 같은 이유로 뺀다.
+            User32.GetWindowThreadProcessId(hwnd, out uint pid);
+            if (pid == s_ownPid) return 1;
             if (!User32.IsWindowVisible(hwnd)) return 1;
             if (User32.IsIconic(hwnd)) return 1;
             if (Dwmapi.IsCloaked(hwnd)) return 1;

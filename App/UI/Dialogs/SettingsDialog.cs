@@ -122,6 +122,7 @@ internal static partial class SettingsDialog
         _fields.Clear();
         _fieldInputs.Clear();
         _scrollChildren.Clear();
+        _pendingCommit.Clear();
 
         var rows = BuildRowDefs();
 
@@ -139,8 +140,17 @@ internal static partial class SettingsDialog
             onAfterShow: null,
             isClosedFlag: ref _dlgClosed);
 
-        if (ran && _dlgResult && _updateCallback != null)
+        // **적용 시점의 현재 설정 위에 다시 얹는다** (bug-hunt 2026-11-05). 커밋(TryCommit)과 이 적용 사이에 다른 핸들러가 끼어들
+        // 수 있다 — 리로드 실패 안내 박스는 소유자가 메인 창이라 설정 창을 막지 않아, 박스가 떠 있는 동안 「확인」 을 누르면
+        // 커밋은 박스의 중첩 루프 안에서 돌고, 박스를 닫을 때 보류된 리로드가 먼저 반영된 뒤에야 이 줄이 실행된다. 커밋 시점
+        // 베이스를 그대로 쓰면 방금 반영된 외부 편집(다이얼로그에 없는 필드 포함)을 메모리와 디스크 양쪽에서 되돌렸다.
+        // 바꾼 칸이 없으면 저장하지 않는다.
+        if (ran && _dlgResult && _updateCallback != null && _pendingCommit.Count > 0)
+        {
+            _workingConfig = ComposeCommit(_currentConfigProvider?.Invoke() ?? _workingConfig);
             _updateCallback(_workingConfig);
+        }
+        _pendingCommit.Clear();
 
         _hwndDialog = IntPtr.Zero;
         _hwndViewport = IntPtr.Zero;
@@ -368,12 +378,20 @@ internal static partial class SettingsDialog
         // _initialConfig 를 베이스로 두면 다이얼로그가 떠 있는 동안 반영된 외부 편집이 확인 한 번에
         // 통째로 되돌아가고 Settings.Save 가 디스크까지 덮었다 (AUDIT-2026-07-30 §B).
         // 공급자가 없으면(직접 호출 등) 종전 동작으로 폴백.
+        //
+        // **사용자가 바꾼 칸만 커밋한다** (bug-hunt 2026-11-05). 예전엔 모든 칸을 컨트롤 값으로 덮어, 다이얼로그가 노출하는
+        // 약 40개 필드는 건드리지 않았어도 "열 때 채운 값" 으로 커밋됐다 — 열려 있는 동안 리로드로 반영된 외부 편집이 확인
+        // 한 번에 조용히 되돌아갔고, 리로드가 이미 동기화 기준을 맞춰 둔 뒤라 3-way 병합도 그것을 막지 못했다. 검증도 바꾼
+        // 칸만 한다 — 바꾸지 않은 칸은 적용하지 않으므로 막을 이유가 없다.
+        _pendingCommit.Clear();
         AppConfig newCfg = _currentConfigProvider?.Invoke() ?? _initialConfig;
         for (int i = 0; i < _fields.Count; i++)
         {
             var field = _fields[i];
             var hwnd = _fieldInputs[i];
-            var (result, error) = field.Commit(newCfg, hwnd, field.Label);
+            if (!field.IsDirty(_initialConfig, hwnd)) continue;
+
+            var (result, error) = field.Commit(_initialConfig, hwnd, field.Label);
             if (error != null || result == null)
             {
                 ModalDialogLoop.RunExternal(_hwndDialog, () =>
@@ -387,10 +405,24 @@ internal static partial class SettingsDialog
                 }
                 return false;
             }
-            newCfg = result;
+            _pendingCommit.Add((field, result));
         }
-        _workingConfig = newCfg;
+        _workingConfig = ComposeCommit(newCfg);
         return true;
+    }
+
+    /// <summary>
+    /// 확인 시 커밋할 칸 — (필드, 그 필드에 새 값이 들어간 설정). 값만 들고 있다가 적용 시점의 최신 설정 위에 옮긴다.
+    /// </summary>
+    private static readonly List<(FieldDef Field, AppConfig ValueHolder)> _pendingCommit = new();
+
+    /// <summary><paramref name="baseConfig"/> 위에 커밋할 칸의 값만 옮긴다.</summary>
+    private static AppConfig ComposeCommit(AppConfig baseConfig)
+    {
+        AppConfig composed = baseConfig;
+        foreach (var (field, holder) in _pendingCommit)
+            composed = field.Transfer(holder, composed);
+        return composed;
     }
 
     // ================================================================
