@@ -469,14 +469,16 @@ Detection thread (80 ms poll):
   1. Every poll: ResolveForApp + SystemFilter.ShouldHide
      - Filter confirmed + indicator visible:       WM_HIDE_INDICATOR (level trigger on `_indicatorVisible`; `LastFiltered` for dedupe/`foregroundChanged` only — PR-26)
      - Filter exit or foreground change:          WM_POSITION_UPDATED(hwndForeground)
+     - FG = our hidden main window (tray menu):   pointer over menu → WM_HIDE_INDICATOR; pointer left after hiding a visible badge → WM_RESTORE_INDICATOR (not while modal)
   2. IME state change → WM_IME_STATE_CHANGED(ImeState, sampleStamp)
   3. Focus change    → WM_FOCUS_CHANGED(hwndFocus)
 
 Main thread:
   WM_POSITION_UPDATED  → If foreground changed OR previously hidden: resolve position + TriggerShow
-  WM_IME_STATE_CHANGED → drop if sampleStamp < last applied; Tray update + TriggerShow
+  WM_IME_STATE_CHANGED → drop if wParam is not a defined ImeState; future sampleStamp → 0; drop if sampleStamp < last applied; Tray update + TriggerShow
   WM_FOCUS_CHANGED     → TriggerShow
   WM_HIDE_INDICATOR    → Animation.TriggerHide(forceHidden: true) — bypasses Always-mode dim
+  WM_RESTORE_INDICATOR → HandleRestoreIndicator: re-show for the badge owner app without re-filtering (skip if exit / user-hidden / already visible / click-dismissed / locked / modal / FG ≠ main)
   WM_MOVING            → Shift axis lock (HandleMoving) + drag-time DPI re-compute
   Forced show paths (UserHidden unhide / second-instance Activate) → `TryShowIndicatorIfForegroundAllowed` (live FG + ShouldHide; PR-26)```
 
@@ -568,7 +570,7 @@ IME 감지 경로는 두 가지다 — (1) 디텍션 스레드 80ms 폴링 (`Det
 - **기준 공유 (#14)** — 훅의 중복 제거 필드 `ImeStatus._lastState` 는 훅이 **자기가 마지막으로 보낸 값**만 기억했다. 감지 루프가 다른 값을 게시한 뒤(다른 앱으로 전환 등)엔 기준이 낡아, 그 앱에서 첫 한/영 전환을 "변화 없음" 으로 삼켜 다음 폴링(최대 80ms)까지 늦게 반영됐다. 이제 `Program.HandleImeStateChanged` 가 받아들인 상태를 `ImeStatus.NotePublishedState(newState)` 로 기준에 반영한다(둘 다 메인 스레드 — 동기화 불필요).
 - **포그라운드 확인 (#52)** — 훅 경로는 필터 판정 없이 지금 포그라운드의 상태를 게시한다. 바탕화면·`enabled:false` 앱처럼 감지 루프가 위치를 알리지 않는 창이 앞에 있으면 `_lastForegroundHwnd` 는 **이전 앱**이라 그 자리에 배지가 한 번 깜빡였다. `HandleImeStateChanged` 는 `GetForegroundWindow() == _lastForegroundHwnd` 일 때만 표시한다 — 새로 앞에 온 앱이면 감지 루프의 `WM_POSITION_UPDATED` 가 곧 새 상태로 띄운다. 트레이 아이콘 갱신은 이 확인보다 앞이라 영향 없음.
 - **같은 창이 그 자리에서 숨김 대상이 된 경우 (bug-hunt 2026-11-05)** — 위 확인은 "포그라운드가 배지 주인 앱과 같은가" 만 본다. F11 전체화면·리로드로 `enabled:false`·창 이동 중처럼 **같은 창이** 필터 대상이 되면 감지 루프는 `WM_POSITION_UPDATED` 를 보내지 않으므로 그대로 통과해, 한/영을 누를 때마다 숨겨 둔 배지가 강조 팝과 함께 떴다가 다음 틱에 사라졌다. 감지 루프가 숨김을 확정한 분기(필터 확정·모달 게이트·Pointer suppress·창 이동·시스템 입력 이탈)마다 **그 창의 숨김 판정을 기억하고**(`MarkSuppressed(hwnd)`), 그 창이 필터를 통과하면(이동 중이 아니면) 지운다(`MarkShowable`) — 히스테리시스 유예 구간은 바꾸지 않는다. 감지 스레드만 쓰는 copy-on-write 배열(`s_suppressedWindows`, 상한 `MaxSuppressedWindows` = 8)이라 읽기에 잠금이 없다. **최근에 판정한 창이 맨 뒤**다 — 다시 판정하면 맨 뒤로 옮기고(필터 확정은 그 창이 앞에 있는 동안 매 틱 다시 판정한다), 상한을 넘으면 가장 오래 다시 판정되지 않은 창부터 버리며, 넣을 때 파괴된 창을 정리한다. 모달 게이트의 우리 창(다이얼로그·안내 박스)은 배지 주인이 될 수 없어 기록하지 않는다(릴리즈 리뷰 3회차 — 처음 넣은 순서로만 버리던 때는 계속 유효한 전체화면 앱의 판정이 열 때마다 새로 생기는 다이얼로그 HWND 에 밀려났다). 훅 경로는 `DetectionService.IsForegroundSuppressed(_lastForegroundHwnd)` 가 true 면 표시하지 않고, 표시 판정은 `TryResolveCurrent`(끈 앱이면 false) 를 쓴다. **창마다** 기억하는 이유: bool 하나였을 때는 바탕화면에서 세운 숨김이 다음 틱 전에 앱으로 돌아와 누른 한/영 표시까지 버렸고(릴리즈 리뷰 1회차), 창 하나만 기억하게 바꾸자 전체화면 앱의 판정이 중간에 바탕화면·우리 메뉴를 거치며 덮여 돌아오자마자 누른 한/영이 전체화면 위로 배지를 띄웠다(2회차).
-- **두 생산자의 순서 (bug-hunt 2026-11-05)** — 두 경로가 각자 샘플링해 보내는데 순서 정보가 없어 "나중에 도착한 값" 이 이겼다. 감지 루프가 토글 직전 값을 읽고 post 전에 선점되면 그 사이 훅이 보낸 새 값을 옛 값이 덮어 배지·트레이가 한 폴링 동안 반대 상태로 돌아가고 훅 기준선까지 오염됐다. 이제 둘 다 조회 **시작** 시각(`Stopwatch.GetTimestamp`)을 lParam 에 싣고, `HandleImeStateChanged` 는 `_lastImeSampleStamp` 보다 이른 샘플을 버린다(0 = 시각 모름은 그대로 받음).
+- **두 생산자의 순서 (bug-hunt 2026-11-05)** — 두 경로가 각자 샘플링해 보내는데 순서 정보가 없어 "나중에 도착한 값" 이 이겼다. 감지 루프가 토글 직전 값을 읽고 post 전에 선점되면 그 사이 훅이 보낸 새 값을 옛 값이 덮어 배지·트레이가 한 폴링 동안 반대 상태로 돌아가고 훅 기준선까지 오염됐다. 이제 둘 다 조회 **시작** 시각(`Stopwatch.GetTimestamp`)을 lParam 에 싣고, `HandleImeStateChanged` 는 `_lastImeSampleStamp` 보다 이른 샘플을 버린다(0 = 시각 모름은 그대로 받음). **잘못 들어온 메시지 방어** (릴리즈 리뷰 2026-11-05): 메인 창은 소유자 없는 최상위 창이라 다른 앱이 WM_APP 범위를 잘못 브로드캐스트하면 이 메시지를 받는다. wParam 이 정의된 `ImeState` 가 아니면 버리고(`Enum.IsDefined`), 지금보다 미래의 시각은 0 으로 취급한다 — 엉뚱한 lParam 하나가 `_lastImeSampleStamp` 를 미래로 박으면 그 뒤 정상 샘플이 전부 "낡음" 으로 버려져 배지·트레이의 한/영 표시가 재시작 전까지 굳었다.
 
 ### System filter (8 conditions)
 
