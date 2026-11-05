@@ -6,7 +6,7 @@ Windows 한/영 IME 상태 인디케이터 — 드래그 가능한 플로팅 오
 
 > **한글** 모드면 "한", **영문** 모드면 "En", **비한국어 IME**면 "EN" 라벨이 화면 위에 떠 있어 타이핑 중 시선 이동 없이 입력 상태를 파악할 수 있습니다. CAPS LOCK이 켜지면 라벨 둘레에 보라색 테두리가 함께 표시됩니다.
 
-**완전 포터블** — NativeAOT 단일 exe (~4.9 MB), .NET 런타임 설치 불필요.
+**완전 포터블** — NativeAOT 단일 exe (~5 MB), .NET 런타임 설치 불필요.
 
 ---
 
@@ -79,7 +79,7 @@ dotnet publish -r win-x64 -c Release
    - Title: 자유 (예: `KoEnVue vX.Y.Z.W`)
    - Attach: `publish/KoEnVue.exe` + `publish/KoEnVue.exe.sha256.txt`
    - Body 에 SHA256 hash 값 인용 (사용자가 다운로드 후 `Get-FileHash` 로 비교)
-   - **"Set as a pre-release" 체크 해제** — 0.x.x 버전이라고 GitHub 가 자동으로 권장하지만, 체크하면 `release.prerelease=true` 로 `UpdateChecker` 가 건너뛰어 사용자에게 노출되지 않음. 정식 릴리스로 내보낼 때는 반드시 해제
+   - **"Set as a pre-release" 체크 해제** — 체크하면 `release.prerelease=true` 로 `UpdateChecker` 가 건너뛰어 사용자에게 노출되지 않음. 정식 릴리스로 내보낼 때는 반드시 해제
    - Publish release
 4. **검증 (선택)** — 이전 버전 exe 를 실행하면 트레이 메뉴 최상단 헤더 라벨이 `KoEnVue v{old} → v{new} — 다운로드` 로 자동 전환되는지 확인
 
@@ -91,13 +91,13 @@ dotnet publish -r win-x64 -c Release
 
 exe 폴더 또는 `%LOCALAPPDATA%\KoEnVue\` 의 `koenvue_config.json` 을 직접 편집하거나 트레이 **상세 설정** 대화상자를 사용하세요. 저장 즉시 핫 리로드됩니다.
 
-아래는 가장 자주 만지는 키만 추렸습니다. **전체 84개 키의 완전한 레퍼런스** — 타입·범위·기본값·섹션별 분류는 **[docs/config-reference.md](docs/config-reference.md)** 에 있습니다.
+아래는 가장 자주 만지는 키만 추렸습니다. **전체 키의 완전한 레퍼런스** — 타입·범위·기본값·섹션별 분류는 **[docs/config-reference.md](docs/config-reference.md)** 에 있습니다.
 
 | 키 | 기본값 | 설명 |
 |----|--------|------|
 | `display_mode` | `"always"` | `"always"` 항상 표시 / `"on_event"` 이벤트 시만 |
 | `indicator_scale` | `2.0` | 크기 배율 1.0~5.0 (0.1 단위) |
-| `opacity` | `0.85` | 활성 불투명도 |
+| `opacity` | `0.85` | `on_event` 모드 표시 시 불투명도 (`always` 모드 활성 불투명도는 `active_opacity`) |
 | `idle_opacity` | `0.55` | 유휴 불투명도 (Always 모드) |
 | `position_mode` | `"window"` | `"fixed"` 화면 고정 / `"window"` 창 기준 상대 위치 |
 | `snap_to_windows` | `true` | 드래그 중 창 엣지 자석 스냅 |
@@ -105,11 +105,11 @@ exe 폴더 또는 `%LOCALAPPDATA%\KoEnVue\` 의 `koenvue_config.json` 을 직접
 | `theme` | `"custom"` | 6 프리셋 (`custom`/`minimal`/`vivid`/`pastel`/`dark`/`system`) |
 | `non_korean_ime` | `"hide"` | 비한국어 IME 표시 동작 (`hide`/`show`/`dim`) |
 | `hide_on_lock_screen` | `true` | 잠금 화면에서 인디 숨김 |
-| `tray_click_action` | `"toggle"` | 트레이 좌클릭 동작 (`toggle`/`settings`) |
+| `tray_click_action` | `"toggle"` | 트레이 좌클릭 동작 (`toggle`/`settings`/`none`) |
 | `update_check_enabled` | `true` | 부팅 시 GitHub Releases 새 버전 1회 확인 |
 | `app_profiles` | `{}` | 앱별 override (GUI 미노출 — koenvue_config.json 직접 편집). 자세히는 [docs/config-reference.md §앱별 프로필](docs/config-reference.md) |
 
-트레이 "상세 설정" 대화상자는 12 섹션 (표시 모드 · 외관 · 애니메이션 · 감지 · 앱별 프로필 · 트레이 · 시스템 · 업데이트 · 인디케이터 조작 · 위치 · 단축 작업 · 고급) 으로 대부분의 키를 GUI 로 제공합니다. `app_profiles` 같은 GUI 미노출 키만 koenvue_config.json 을 직접 편집해 주세요.
+트레이 "상세 설정" 대화상자는 일반 · 트레이 · 공통 색상 · 한/영 배지 · 커서 헤일로 · 고급 영역의 섹션으로 대부분의 키를 GUI 로 제공합니다. `app_profiles` 같은 GUI 미노출 키만 koenvue_config.json 을 직접 편집해 주세요.
 
 ---
 
@@ -117,7 +117,7 @@ exe 폴더 또는 `%LOCALAPPDATA%\KoEnVue\` 의 `koenvue_config.json` 을 직접
 
 - **언어/런타임**: C# 14 / .NET 10, NativeAOT
 - **외부 패키지**: 없음 (.NET 10 BCL + Windows API P/Invoke 전용)
-- **P/Invoke**: User32, Imm32, Shell32, Gdi32, Kernel32, Shcore, Ole32, Dwmapi, WinHttp
+- **P/Invoke**: User32, Imm32, Shell32, Gdi32, Kernel32, Shcore, Ole32, Dwmapi, WinHttp, Advapi32, Wtsapi32
 - **렌더링**: GDI DIB section + UpdateLayeredWindow (premultiplied alpha)
 - **설정**: System.Text.Json source generation
 

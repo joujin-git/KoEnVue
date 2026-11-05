@@ -1,6 +1,6 @@
 # CLAUDE.md — KoEnVue
 
-Windows IME state indicator (한 / En / EN). C# 14 / .NET 10 + NativeAOT single exe (~4.9 MB). Zero external NuGet.
+Windows IME state indicator (한 / En / EN). C# 14 / .NET 10 + NativeAOT single exe (~5 MB). Zero external NuGet.
 
 ## Hard rules (P1–P6)
 

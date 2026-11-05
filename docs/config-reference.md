@@ -2,9 +2,9 @@
 
 KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 — **101 항목** (top-level 91 + 중첩 10). 중첩 10 은 `event_triggers.*` 2 + `advanced.*` 2 + `default_indicator_position.*` 3 + `default_indicator_position_relative.*` 3 이다 (`app_profiles` 는 값이 자유형 override 객체라 그 자체가 top-level 1행). 실측 invariant: `grep -cE '^\| \`[a-z_0-9.]+\`' docs/config-reference.md` → **101** (2026-11-04 `cursor_clear_radius` 추가로 99→100, 같은 날 `caps_lock_color` 추가로 100→101). (2026-07-29 정정: 종전 서술은 "101" 이었으나 실제는 줄곧 99 로 2 과다 표기였다.) 내역: 커서 헤일로 17 키 = 동심원 11 + 표시모드·안개 3 + 전환 효과 3, PR-15 `admin_elevation` 포함. 트레이 메뉴의 "상세 설정" 다이얼로그가 대부분을 GUI 로 제공하지만, **앱별 프로필** (`app_profiles`) 처럼 GUI 미노출 키는 직접 편집해야 합니다.
 
-`koenvue_config.json` 의 위치: `%LOCALAPPDATA%\KoEnVue\koenvue_config.json` (기본) 또는 exe 폴더 (writable 일 때). 자세한 결정 절차는 [README §다운로드](../README.md) 의 권장 설치 위치 절을 참고하세요. 저장 즉시 **핫 리로드** 됩니다 (메인 스레드 mtime 폴링, ~5초 간격).
+`koenvue_config.json` 의 위치: exe 폴더 (기본 — 폴더에 이미 있거나 쓰기 가능할 때). exe 폴더에 쓸 수 없으면 `%LOCALAPPDATA%\KoEnVue\koenvue_config.json` 으로 폴백 ([PortablePath](../App/Config/PortablePath.cs)). 자세한 결정 절차는 [README §다운로드](../README.md) 의 권장 설치 위치 절을 참고하세요. 저장 즉시 **핫 리로드** 됩니다 (감지 스레드의 mtime 폴링, ~5초 간격 — 바뀌면 메인 스레드에 `WM_CONFIG_CHANGED` 통지).
 
-> 키 표기: JSON 은 `snake_case`, C# 소스 (`AppConfig`) 는 `PascalCase`. 본 문서는 JSON 표기 기준. 클램프 범위는 [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) 의 `Min/MaxX` const 16쌍이 단일 진실원 — [App/Config/Settings.cs:107](../App/Config/Settings.cs#L107) `Validate` 가 범위를 벗어나면 silent 보정합니다.
+> 키 표기: JSON 은 `snake_case`, C# 소스 (`AppConfig`) 는 `PascalCase`. 본 문서는 JSON 표기 기준. **enum 값은 표에 적힌 소문자 표기 그대로** 써야 합니다 (예: `"bold"`, `"top_right"`) — `"Bold"`·`"TopRight"` 처럼 대소문자나 표기가 다르면 **파일 전체 읽기가 실패해 기본값으로 동작**합니다 (파일은 덮어쓰지 않고 로그에 `Failed to load config … Path: $.font_weight` 경고 — 2026-11-05 실측). 클램프 범위는 [App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs) 의 `Min/MaxX` const 쌍이 단일 진실원 — [Settings.Validate](../App/Config/Settings.cs) 가 범위를 벗어나면 silent 보정합니다.
 
 ---
 
@@ -14,7 +14,7 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 |---|---|---|---|---|
 | `display_mode` | enum | `"always"` | `always` / `on_event` | `always` 는 인디케이터를 항상 표시 (유휴 시 `idle_opacity`). `on_event` 는 IME / 포커스 변경 이벤트 시에만 페이드인 → 유지 → 페이드아웃 |
 | `event_display_duration_ms` | int | `2000` | 500 ~ 10000 | `on_event` 모드의 유지 시간 (ms) |
-| `always_idle_timeout_ms` | int | `3000` | 1000 ~ 30000 | `always` 모드에서 유휴 전환 (`idle_opacity` 로 dim) 까지 대기 시간 (ms). 0 이면 즉시 dim |
+| `always_idle_timeout_ms` | int | `3000` | 1000 ~ 30000 | `always` 모드에서 유휴 전환 (`idle_opacity` 로 dim) 까지 대기 시간 (ms). 범위 밖 값은 보정 (예: 0 → 1000) |
 | `event_triggers.on_focus_change` | bool | `true` | — | 포그라운드 윈도우 변경 시 인디 표시 트리거 |
 | `event_triggers.on_ime_change` | bool | `true` | — | IME 상태 변경 (한/영 전환 등) 시 인디 표시 트리거 |
 
@@ -50,7 +50,7 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 |---|---|---|---|---|
 | `font_family` | string | `"맑은 고딕"` | — | 라벨 텍스트 폰트 패밀리 |
 | `font_size` | int | `12` | 8 ~ 36 | 라벨 텍스트 폰트 크기 (pt). DPI + `indicator_scale` 와 합쳐 적용 |
-| `font_weight` | enum | `"Bold"` | `Normal` / `Bold` | 폰트 굵기 |
+| `font_weight` | enum | `"bold"` | `normal` / `bold` | 폰트 굵기 |
 | `hangul_label` | string | `"한"` | — | 한글 모드에 표시할 라벨 문자열 |
 | `english_label` | string | `"En"` | — | 영문 모드 라벨 |
 | `non_korean_label` | string | `"EN"` | — | 비한국어 IME 모드 라벨 |
@@ -106,8 +106,8 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 
 | 키 | 타입 | 기본값 | 설명 |
 |---|---|---|---|
-| `app_profiles` | object | `{}` | 프로세스명 (또는 정규식, `app_profile_match` 에 따라) 키 → 부분 AppConfig override 값. 매칭 시 글로벌 `AppConfig` 와 deep merge 후 적용. GUI 미노출 — koenvue_config.json 직접 편집. 사용 예: `{"chrome": {"opacity": 0.5, "theme": "dark"}, "notepad": {"enabled": false}}` |
-| `app_profile_match` | enum | `"process"` | `process` / `title` / `class_name`. 매칭 키 종류 |
+| `app_profiles` | object | `{}` | 프로세스명 (또는 정규식, `app_profile_match` 에 따라) 키 → 부분 AppConfig override 값. 매칭 시 글로벌 `AppConfig` 와 deep merge 후 적용. `process` 모드 키는 **확장자 없는 소문자 프로세스명** (`"chrome"` — `"chrome.exe"`·`"Chrome"` 은 매칭 안 됨). `"enabled": false` 면 그 앱에서 한/영 배지를 숨김. GUI 미노출 — koenvue_config.json 직접 편집. 사용 예: `{"chrome": {"opacity": 0.5, "theme": "dark"}, "notepad": {"enabled": false}}` |
+| `app_profile_match` | enum | `"process"` | `process` / `class` / `title`. 매칭 키 종류 (`class` = 윈도우 클래스명, `title` = 창 제목 정규식) |
 | `app_filter_mode` | enum | `"blacklist"` | `blacklist` / `whitelist`. `app_filter_list` 의 의미 결정 |
 | `app_filter_list` | string[] | `[]` | 프로세스명 리스트. blacklist 모드: 리스트의 앱에서 숨김. whitelist 모드: 리스트의 앱에서만 표시 |
 
@@ -125,7 +125,7 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 
 | 키 | 타입 | 기본값 | 범위 | 설명 |
 |---|---|---|---|---|
-| `admin_elevation` | bool | `false` | — | UIPI 우회용 관리자 권한 실행 옵션 (PR-15). `false` (default) — 매니페스트 `asInvoker` (PR-03) 그대로, UAC 0. `true` — (a) 단일 실행은 부팅 시 [AdminElevation.TryRelaunchAsAdmin](../App/Bootstrap/AdminElevation.cs) 가 `ShellExecuteW("runas")` 로 자기 재실행 (UAC 1회), (b) 부팅 자동 시작은 schtasks `<RunLevel>HighestAvailable</RunLevel>` 으로 등록 (등록 시 UAC 1회, 부팅마다 0). UAC 거부 시 안내 다이얼로그 후 일반 권한 계속 (관리자 콘솔의 한/영 표시 미작동). 트레이 메뉴 "관리자 권한으로 실행" + Settings 다이얼로그 "시스템" 섹션 양쪽에서 토글 가능하지만 **후처리가 다르다** (결정 #4 — Settings 사일런트): **트레이**는 `ReregisterIfAdminChanged` 로 schtasks RunLevel 을 즉시 재등록 + 안내 후 `WM_CLOSE` 자동 종료, **Settings** 는 config 만 조용히 저장하고 재등록도 종료도 하지 않는다 — RunLevel 은 다음 부팅의 `SyncStartupPathAsync` 가 맞추므로 **UAC 없는 자동 시작은 그다음 부팅부터** 적용된다(그 부팅에도 `TryRelaunchAsAdmin` self-elevation 으로 관리자 권한 자체는 얻는다 — UAC 1회). **시작 프로그램 미등록이면 두 경로의 schtasks 동작은 모두 noop** (`QueryRegisteredTask` → null 즉시 return) 이라 차이가 사라진다. 어느 쪽도 즉시 권한 전환(자동 재실행)은 하지 않는다 — admin→일반 down-grade 가 토큰 모델상 불가라 수동 재실행에 맡긴다. 트레이 메뉴의 **체크 표시는 `config.AdminElevation || IsCurrentProcessElevated()`** 라 외부에서 관리자로 띄우면 config 가 `false` 여도 체크가 켜지고 라벨에 `Config = User` 가 붙는 반면, Settings 체크박스는 **config 값만** 반영 — 같은 순간 두 UI 가 달라 보일 수 있고 의도된 동작이다. 자세한 설계: [dev-notes/2026-05-27-admin-elevation.md](dev-notes/2026-05-27-admin-elevation.md) |
+| `admin_elevation` | bool | `false` | — | UIPI 우회용 관리자 권한 실행 옵션 (PR-15). `false` (default) — 매니페스트 `asInvoker` (PR-03) 그대로, UAC 0. `true` — (a) 단일 실행은 부팅 시 [AdminElevation.TryRelaunchAsAdmin](../App/Bootstrap/AdminElevation.cs) 가 `ShellExecuteW("runas")` 로 자기 재실행 (UAC 1회), (b) 부팅 자동 시작은 schtasks `<RunLevel>HighestAvailable</RunLevel>` 으로 등록 (등록 시 UAC 1회, 부팅마다 0). UAC 거부 시 안내 다이얼로그 후 일반 권한 계속 (관리자 콘솔의 한/영 표시 미작동). 트레이 메뉴 "관리자 권한으로 실행" + Settings 다이얼로그 "일반" 섹션 양쪽에서 토글 가능하지만 **후처리가 다르다** (결정 #4 — Settings 사일런트): **트레이**는 `ReregisterIfAdminChanged` 로 schtasks RunLevel 을 즉시 재등록 + 안내 후 `WM_CLOSE` 자동 종료, **Settings** 는 config 만 조용히 저장하고 재등록도 종료도 하지 않는다 — RunLevel 은 다음 부팅의 `SyncStartupPathAsync` 가 맞추므로 **UAC 없는 자동 시작은 그다음 부팅부터** 적용된다(그 부팅에도 `TryRelaunchAsAdmin` self-elevation 으로 관리자 권한 자체는 얻는다 — UAC 1회). **시작 프로그램 미등록이면 두 경로의 schtasks 동작은 모두 noop** (`QueryRegisteredTask` → null 즉시 return) 이라 차이가 사라진다. 어느 쪽도 즉시 권한 전환(자동 재실행)은 하지 않는다 — admin→일반 down-grade 가 토큰 모델상 불가라 수동 재실행에 맡긴다. 트레이 메뉴의 **체크 표시는 `config.AdminElevation || IsCurrentProcessElevated()`** 라 외부에서 관리자로 띄우면 config 가 `false` 여도 체크가 켜지고 라벨에 `Config = User` 가 붙는 반면, Settings 체크박스는 **config 값만** 반영 — 같은 순간 두 UI 가 달라 보일 수 있고 의도된 동작이다. 자세한 설계: [dev-notes/2026-05-27-admin-elevation.md](dev-notes/2026-05-27-admin-elevation.md) |
 
 ## 시스템 — 로깅 (Logging)
 
@@ -150,12 +150,12 @@ KoEnVue 의 `koenvue_config.json` 에서 사용 가능한 **모든** 설정 키 
 | `position_mode` | enum | `"window"` | `fixed` / `window`. `fixed` = 화면 작업영역 기준 절대 좌표, `window` = 포그라운드 창 DWM 프레임 기준 상대 오프셋 (창 이동 시 인디도 따라감) |
 | `indicator_positions` | object | `{}` | (고정 모드) 프로세스명 → `[x, y]` 절대 좌표. 드래그 종료 시 자동 저장 |
 | `indicator_positions_relative` | object | `{}` | (창 기준 모드) 프로세스명 → `[corner, deltaX, deltaY]`. `corner`: 0=TopLeft / 1=TopRight / 2=BottomLeft / 3=BottomRight |
-| `default_indicator_position` | object? | `null` | (고정 모드) 저장 위치 없는 앱의 기본 위치. 형식 예: `{"corner": "TopRight", "delta_x": -40, "delta_y": 10}`. `null` = 포그라운드 모니터 작업 영역 정중앙 (트레이「기본 위치 → 현재 위치로 설정」으로 Corner+delta 저장) |
-| `default_indicator_position.corner` | enum | `"TopRight"` | `TopLeft` / `TopRight` / `BottomLeft` / `BottomRight`. 작업영역 모서리 앵커 (객체 존재 시 init 디폴트) |
+| `default_indicator_position` | object? | `null` | (고정 모드) 저장 위치 없는 앱의 기본 위치. 형식 예: `{"corner": "top_right", "delta_x": -40, "delta_y": 10}`. `null` = 포그라운드 모니터 작업 영역 정중앙 (트레이「한/영 배지 ▸ 기본 위치 ▸ 현재 위치로 설정」으로 Corner+delta 저장) |
+| `default_indicator_position.corner` | enum | `"top_right"` | `top_left` / `top_right` / `bottom_left` / `bottom_right`. 작업영역 모서리 앵커 (객체 존재 시 init 디폴트) |
 | `default_indicator_position.delta_x` | int | `0` | 앵커에서 X 오프셋 (음수 = 왼쪽). 논리 px |
 | `default_indicator_position.delta_y` | int | `0` | 앵커에서 Y 오프셋 (양수 = 아래쪽). 논리 px |
-| `default_indicator_position_relative` | object? | `{corner: "BottomRight", delta_x: -69, delta_y: -58}` | (창 기준 모드) 저장 위치 없는 앱의 기본 위치. init 디폴트는 `DefaultConfig.DefaultRelative{Corner,OffsetX,OffsetY}` 3 const 를 직접 참조하는 객체이며, 사용자가 명시적으로 `null` 로 저장한 경우에도 Overlay 가 동일 const 로 폴백 (두 경로 단일 진실원) |
-| `default_indicator_position_relative.corner` | enum | `"BottomRight"` | 창 DWM visible frame 의 4 모서리 |
+| `default_indicator_position_relative` | object? | `{corner: "bottom_right", delta_x: -69, delta_y: -58}` | (창 기준 모드) 저장 위치 없는 앱의 기본 위치. init 디폴트는 `DefaultConfig.DefaultRelative{Corner,OffsetX,OffsetY}` 3 const 를 직접 참조하는 객체이며, 사용자가 명시적으로 `null` 로 저장한 경우에도 Overlay 가 동일 const 로 폴백 (두 경로 단일 진실원) |
+| `default_indicator_position_relative.corner` | enum | `"bottom_right"` | 창 DWM visible frame 의 4 모서리 |
 | `default_indicator_position_relative.delta_x` | int | `-69` | 앵커에서 X 오프셋 (논리 px). 창의 모니터 DPI 스케일로 변환 후 적용 |
 | `default_indicator_position_relative.delta_y` | int | `-58` | 앵커에서 Y 오프셋 (논리 px) |
 | `snap_to_windows` | bool | `true` | 드래그 중 다른 창 엣지 + 모니터 작업영역 엣지에 자석처럼 붙음 |
@@ -209,7 +209,7 @@ IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 스케일
 | 키 | 타입 | 기본값 | 설명 |
 |---|---|---|---|
 | `advanced.force_topmost_interval_ms` | int | `5000` | TopmostWatchdog 가 인디를 `HWND_TOPMOST` 로 재고정하는 주기. 0 = 비활성. 일부 풀스크린 / 게임 모드 / 가상 데스크톱 잔재가 z-order 를 깨는 케이스 방어 |
-| `advanced.overlay_class_name` | string | `"KoEnVueOverlay"` | 오버레이 윈도우의 Win32 클래스명. 1~255자 ASCII 영문/숫자/언더스코어만 허용. [Settings.Validate](../App/Config/Settings.cs#L184) 에서 비정상 값은 디폴트로 폴백. **런타임 변경은 반영되지 않는다** (2026-08-01, AUDIT §H) — 윈도우 클래스는 부팅 시 1회 등록이라 실행 중 값을 바꾸면 경고 로그 1회만 남기고 무시한다. 적용하려면 재시작 |
+| `advanced.overlay_class_name` | string | `"KoEnVueOverlay"` | 오버레이 윈도우의 Win32 클래스명. 1~255자 ASCII 영문/숫자/언더스코어만 허용. [Settings.ValidateAdvanced](../App/Config/Settings.cs) (`IsValidWindowClassName`) 에서 비정상 값은 디폴트로 폴백. **런타임 변경은 반영되지 않는다** (2026-08-01, AUDIT §H) — 윈도우 클래스는 부팅 시 1회 등록이라 실행 중 값을 바꾸면 경고 로그 1회만 남기고 무시한다. 적용하려면 재시작 |
 
 ---
 
@@ -220,7 +220,7 @@ IME 한↔영 전환 시 동심원이 잠깐 확대됐다 복귀하는 스케일
 | `AppConfig` 의 모든 numeric init 디폴트 ([App/Models/AppConfig.cs](../App/Models/AppConfig.cs)) | `DefaultConfig.*` 동명 const — PR-05 D7 가 6쌍 (`FadeInMs`/`FadeOutMs`/`HighlightScale`/`HighlightDurationMs`/`AlwaysIdleTimeoutMs`/`PollIntervalMs`) 도입 + PR-17 (v0.9.5.0) 가 14 필드 추가 (외관 6 + 투명도 3 + 슬라이드 1 + 동작/시스템/고급 4). 검증: `git grep -nE "\}\s*=\s*-?[0-9]+(\.[0-9]+)?\s*;" App/Models/AppConfig.cs` → 0 매치 |
 | `AppConfig` 의 색상/문자열/배열 init 디폴트 + `Settings.EnsureSubObjects`/`ValidateAdvanced` 폴백 ([App/Models/AppConfig.cs](../App/Models/AppConfig.cs) + [App/Config/Settings.cs](../App/Config/Settings.cs)) | `DefaultConfig` 의 색상 8 const (`DefaultHangulBg` 등 + 2026-11-04 `DefaultCapsLockColor`) + 폰트 (`DefaultIndicatorFontFamily`) + 라벨 3 + 클래스명 (`DefaultOverlayClassName`) const + 숨김 배열 2 property (`DefaultSystemHideClasses`/`DefaultSystemHideProcesses`) — AUDIT 묶음 2 (DUP-1) 가 PR-17 numeric 단일화의 비-numeric 축 완성. 검증: `git grep '"#1A73E8"\|"#9333EA"\|"맑은 고딕"\|"KoEnVueOverlay"\|"Progman"\|"ShellExperienceHost"' App/Models/AppConfig.cs App/Config/Settings.cs` → 0 (배열/문자열은 정규식 미포착 — 수동 확인 병기) |
 | `AppConfig.DefaultIndicatorPositionRelative` init 디폴트 + Overlay null 폴백 ([App/Models/AppConfig.cs](../App/Models/AppConfig.cs) + [App/UI/Overlay.cs](../App/UI/Overlay.cs)) | `DefaultConfig.{DefaultRelativeCorner, DefaultRelativeOffsetX, DefaultRelativeOffsetY}` 3 const — record init 디폴트 객체와 null 폴백 경로가 동일 const 참조 (두 경로 단일 진실원 일치) |
-| `Min/MaxX` 18쌍 ([App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs)) | `Settings.Validate` clamp 20개 인자 + `SettingsDialog.Fields.cs` Int/Dbl min/max 15개 인자. PR-21 이 커서 전환 효과 2쌍 추가 (`Min/MaxCursorHighlightScale` 1.0/2.0 + `Min/MaxCursorHighlightDurationMs` 0/2000) — `MaxCursorHighlightScale` 는 `CursorStyle.MaxHighlightScale` (Core) 를 참조 (App→Core 단일 진실원, P6 정방향 — DIB bbox 팝 상한과 clamp 상한 동기화) |
+| `Min/MaxX` const 쌍 ([App/Config/DefaultConfig.cs](../App/Config/DefaultConfig.cs)) — 개수는 적지 않는다(늘어나 낡음). 세기: `grep -cE "public const\s+\w+\s+Min[A-Z]" App/Config/DefaultConfig.cs` | `Settings.Validate` 의 `Math.Clamp` 인자 + `SettingsDialog.Fields.cs` Int/Dbl min/max 인자. PR-21 이 커서 전환 효과 2쌍 추가 (`Min/MaxCursorHighlightScale` 1.0/2.0 + `Min/MaxCursorHighlightDurationMs` 0/2000) — `MaxCursorHighlightScale` 는 `CursorStyle.MaxHighlightScale` (Core) 를 참조 (App→Core 단일 진실원, P6 정방향 — DIB bbox 팝 상한과 clamp 상한 동기화) |
 | `KoEnVue.csproj` `<Version>` | PE 헤더 3종 (Assembly/File/Informational) + `Directory.Build.targets` 가 emit 하는 `Version.g.cs` 의 `DefaultConfig.AppVersion` (PR-11 D6) |
 | `ThemeColors` 4 preset ([App/Config/ThemePresets.cs](../App/Config/ThemePresets.cs)) | `record ThemeColors(HBg,HFg,EBg,EFg,NBg,NFg)` + `Dictionary<Theme, ThemeColors>` 정적 사전 |
 

@@ -42,7 +42,7 @@ dotnet publish -r win-x64 -c Release
 
 산출물 — `bin/Release/net10.0-windows/win-x64/publish/`:
 
-- `KoEnVue.exe` — NativeAOT 단일 exe (~4.9 MB).
+- `KoEnVue.exe` — NativeAOT 단일 exe (~5 MB).
 - `KoEnVue.exe.sha256.txt` — SHA256 hash 두 줄 (`Algorithm` + `Hash`, PR-11 G4, [Directory.Build.targets](../Directory.Build.targets) 의 `EmitSha256` Target 가 publish 후 PowerShell `Get-FileHash | Format-List Algorithm, Hash` 로 자동 emit).
 
 확인:
@@ -81,7 +81,7 @@ git push origin vX.Y.Z.W  # 태그 푸시
 - **Attach binaries** (Drag & drop):
   - `KoEnVue.exe`
   - `KoEnVue.exe.sha256.txt`
-- **"Set as a pre-release" 체크 해제** — 0.x.x 라고 GitHub 가 자동 권장하지만 체크하면 `release.prerelease=true` 로 [UpdateChecker.PickLatestRelease](../App/Update/UpdateChecker.cs) 가 건너뛰어 사용자에게 알림이 안 갑니다.
+- **"Set as a pre-release" 체크 해제** — 체크하면 `release.prerelease=true` 로 [UpdateChecker.PickLatestRelease](../App/Update/UpdateChecker.cs) 가 건너뛰어 사용자에게 알림이 안 갑니다.
 - **Publish release**.
 
 ## 5. 검증 (선택)
